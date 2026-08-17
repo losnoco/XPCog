@@ -22,6 +22,7 @@
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/AudioEngine.hpp"
 #include "xpcog/core/audio/Equalizer.hpp"
+#include "xpcog/core/audio/Fader.hpp"
 #include "xpcog/core/audio/OfflineOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 
@@ -532,4 +533,95 @@ TEST_CASE("an equaliser change is heard promptly", "[dsp]") {
     // being guarded against is three seconds, so a 1 s bound catches it without
     // turning scheduling noise into a failure.
     REQUIRE(latency < 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// The fader.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("fading disabled leaves the signal alone", "[dsp]") {
+    Fader fader;
+    fader.prepare(formatFor(kRate, kChannels));
+    // enableFading defaults off, and off must mean bit-exact rather than a
+    // multiply by 1.0f.
+    REQUIRE_FALSE(fader.active());
+
+    std::vector<float> buffer(256, 0.5F);
+    const std::vector<float> reference = buffer;
+    fader.process(buffer.data(), buffer.size() / kChannels);
+    REQUIRE(buffer == reference);
+}
+
+TEST_CASE("a fade in ramps from silence over Cog's 200 ms", "[dsp]") {
+    Fader fader;
+    fader.setEnabled(true);
+    fader.prepare(formatFor(kRate, kChannels));
+    REQUIRE(fader.active());
+    REQUIRE(fader.level() == 0.0);
+
+    // One second, so the ramp has room to land well inside the buffer.
+    const std::size_t frames = static_cast<std::size_t>(kRate);
+    std::vector<float> buffer(frames * kChannels, 1.0F);
+    fader.process(buffer.data(), frames);
+
+    // It must start at silence and never step backwards: a ramp that overshoots
+    // and corrects would be heard as the click it exists to remove.
+    REQUIRE(buffer[0] < 0.01F);
+    for (std::size_t frame = 1; frame < frames; ++frame) {
+        REQUIRE(buffer[frame * kChannels] >= buffer[(frame - 1) * kChannels]);
+    }
+
+    // Landing point: 200 ms at this rate, within a frame either way.
+    const auto expected = static_cast<std::size_t>(kRate * 0.2);
+    std::size_t landed  = 0;
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        if (buffer[frame * kChannels] >= 1.0F) {
+            landed = frame;
+            break;
+        }
+    }
+    INFO("landed at frame " << landed << ", expected about " << expected);
+    REQUIRE(landed == Approx(static_cast<double>(expected)).epsilon(0.01));
+
+    // And once landed it is transparent again, so the chain stops running it.
+    REQUIRE_FALSE(fader.active());
+    REQUIRE(fader.level() == 1.0);
+}
+
+TEST_CASE("both channels fade together", "[dsp]") {
+    Fader fader;
+    fader.setEnabled(true);
+    fader.prepare(formatFor(kRate, kChannels));
+
+    // A per-sample rather than per-frame ramp would advance twice as fast on the
+    // right as the left, which is a moving image rather than a fade.
+    const std::size_t frames = 1024;
+    std::vector<float> buffer(frames * kChannels, 1.0F);
+    fader.process(buffer.data(), frames);
+
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        REQUIRE(buffer[frame * kChannels] == buffer[(frame * kChannels) + 1]);
+    }
+}
+
+TEST_CASE("a seek fades in, and only when fading is enabled", "[dsp]") {
+    // reset() is the seam signal the whole chain already receives, so the fader
+    // needs no transport plumbing of its own -- this checks that wiring rather
+    // than the ramp.
+    Fader fader;
+    fader.prepare(formatFor(kRate, kChannels));
+
+    fader.reset();
+    REQUIRE_FALSE(fader.active());  // disabled: a seek changes nothing
+
+    fader.setEnabled(true);
+    fader.reset();
+    REQUIRE(fader.active());
+    REQUIRE(fader.level() == 0.0);
+
+    // Turning it off mid-ramp must land rather than freeze the signal at a
+    // partial gain, which would leave everything quiet until the next seek.
+    fader.setEnabled(false);
+    REQUIRE(fader.level() == 1.0);
+    REQUIRE_FALSE(fader.active());
 }

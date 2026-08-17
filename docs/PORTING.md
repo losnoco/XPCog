@@ -185,7 +185,24 @@ Cost, measured rather than assumed: all 31 bands on stereo 44.1 kHz is **0.31% o
 one core**, 322× realtime, 35 ns/sample. The first stage with a real per-sample
 cost on the feeder thread, and comfortably free.
 
-**Still to do:** fader, downmix, rubberband, signalsmith, FreeSurround.
+**Also done:** the fader, which is what finally implements `enableFading` -- the
+setting existed in `settings.def` and was read by nothing. A linear 200 ms ramp,
+Cog's `fadeTimeMS` and Cog's shape (`vDSP_vrampmuladd` is linear too).
+
+It hangs off `reset()` rather than having a transport API of its own: reset()
+already means "the signal does not flow across this point", which is exactly when
+a fade in is wanted, so no engine plumbing can introduce a discontinuity without
+the fade following it.
+
+**Only the fade in, though.** Cog also fades the *outgoing* audio out across a
+seek, which it can do because `DSPFaderNode` retains the discarded audio in a
+`FadedBuffer` and mixes its decaying tail over the new position. Here that audio
+is discarded by a ring flush before this stage would see it again, so a symmetric
+crossfade needs the fader to retain a tail of its own output. A seek therefore
+ramps in cleanly but still cuts the outgoing audio abruptly.
+
+**Still to do:** the fade out above, downmix, rubberband, signalsmith,
+FreeSurround.
 
 *Verify:* the equaliser showed that one test is not enough, because each
 plausible test is blind to something. Three were needed, and the second and third

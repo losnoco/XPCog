@@ -41,6 +41,7 @@
 #include "xpcog/core/audio/AudioConverter.hpp"
 #include "xpcog/core/audio/DSPNode.hpp"
 #include "xpcog/core/audio/Equalizer.hpp"
+#include "xpcog/core/audio/Fader.hpp"
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 
@@ -139,8 +140,8 @@ public:
     /// Push rather than poll: the chain's settings are 32 keys, and re-reading
     /// them per chunk to notice a slider move would cost more than the filter
     /// does. This only raises a flag, so it is safe to call from any thread --
-    /// the feeder picks it up at the top of its next pass, which is also the
-    /// only place the coefficients may be rewritten without racing process().
+    /// the DSP thread picks it up at the top of its next pass, which is the only
+    /// place the coefficients may be rewritten without racing process().
     ///
     /// Unlike volumeScaling, this takes effect during the current track. An
     /// equaliser that waited for the next one would leave a user dragging a
@@ -202,6 +203,7 @@ private:
     /// anything: the set of stages is fixed at compile time, so a vector of
     /// unique_ptr would buy indirection and nothing else.
     Equalizer             equalizer_;
+    Fader                 fader_;
     std::vector<DSPNode*> chain_;
     std::atomic<bool>     dspDirty_{true};
 

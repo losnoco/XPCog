@@ -7,6 +7,7 @@ add_library(xpcog-core STATIC
     src/audio/AudioConverter.cpp
     src/audio/AudioEngine.cpp
     src/audio/Equalizer.cpp
+    src/audio/Fader.cpp
     src/audio/MiniaudioOutput.cpp
     src/audio/OfflineOutput.cpp
     src/audio/ReplayGain.cpp

@@ -40,10 +40,12 @@ AudioEngine::AudioEngine(const PluginRegistry& registry, IAudioOutput& output,
                          RingBuffer& ring, const Settings& settings)
     : registry_(registry), output_(output), settings_(settings), ring_(ring),
       preRing_(kPreRingSamples) {
-    // Order is the signal path. The equaliser sits after conversion, so it
-    // always runs at the device's rate and its coefficients survive a track
-    // whose source rate differs.
+    // Order is the signal path. The equaliser sits after conversion, so it always
+    // runs at the device's rate and its coefficients survive a track whose source
+    // rate differs. The fader is last, so it ramps the finished signal rather than
+    // the equaliser's input -- fading before a boost would let the boost undo it.
     chain_.push_back(&equalizer_);
+    chain_.push_back(&fader_);
 }
 
 AudioEngine::~AudioEngine() { stop(); }
@@ -186,6 +188,7 @@ void AudioEngine::applyReplayGain(const TrackProperties& props) {
 }
 
 void AudioEngine::applyDspSettings() {
+    fader_.setEnabled(settings_.EnableFading());
     equalizer_.setPreamp(settings_.EqPreamp());
 
     const auto keys = Equalizer::bandSettingsKeys();
