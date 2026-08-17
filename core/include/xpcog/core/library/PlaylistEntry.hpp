@@ -55,6 +55,11 @@ struct PlaylistEntry {
     /// Everything not promoted above, verbatim from the decoder.
     MetadataMap metadata;
 
+    /// SHA-256 of the album art, or empty. The image itself is content-addressed
+    /// in the library rather than carried per entry, so twelve tracks of one
+    /// album hold one copy between them -- as in Cog (PlaylistEntry.m:447).
+    std::string artHash;
+
     TrackProperties properties;
 
     // --- state ----------------------------------------------------------

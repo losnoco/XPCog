@@ -13,9 +13,12 @@ add_library(xpcog-core STATIC
     src/audio/SampleConvert.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp
+    src/library/Library.cpp
     src/library/Playlist.cpp
     src/library/PlaylistEntry.cpp
+    src/library/Sqlite.cpp
     src/MetadataMap.cpp
+    src/Sha256.cpp
     src/MultiDecoder.cpp
     src/PluginRegistry.cpp
     src/Settings.cpp
@@ -40,9 +43,21 @@ if(NOT soxr_FOUND)
         INTERFACE_INCLUDE_DIRECTORIES "${SOXR_INCLUDE_DIR}")
 endif()
 
+# SQLite replaces Core Data. Core talks to the C API directly rather than to
+# QtSql, so the scanner, the CLI and the tests reach the library without needing
+# a QCoreApplication -- and Cog sets the precedent with SQLiteStore.m.
+find_package(unofficial-sqlite3 CONFIG QUIET)
+if(unofficial-sqlite3_FOUND)
+    set(XPCOG_SQLITE unofficial::sqlite3::sqlite3)
+else()
+    find_package(SQLite3 REQUIRED)
+    set(XPCOG_SQLITE SQLite::SQLite3)
+endif()
+
 target_link_libraries(xpcog-core
     PUBLIC  vendor-miniaudio
     PRIVATE vendor-hdcd
+    PRIVATE ${XPCOG_SQLITE}
     PRIVATE soxr::soxr XPCog::warnings)
 
 set_target_properties(xpcog-core PROPERTIES FOLDER core)

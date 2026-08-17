@@ -159,6 +159,27 @@ public:
     /// What Previous would select, without selecting it.
     [[nodiscard]] std::optional<TrackId> peekPrevious();
 
+    // --- persistence ----------------------------------------------------
+
+    /// Everything a Library needs to store, and everything restoring needs to
+    /// bring back. Having one seam means persistence cannot quietly forget a
+    /// field: adding state to Playlist that is not in the snapshot is visible
+    /// here rather than as a setting that silently fails to survive a restart.
+    struct Snapshot {
+        std::vector<PlaylistEntry> entries;  ///< ids are meaningful and preserved
+        std::vector<TrackId>       queue;
+        std::vector<TrackId>       shuffleOrder;
+        std::optional<TrackId>     current;
+        RepeatMode                 repeat  = RepeatMode::All;
+        ShuffleMode                shuffle = ShuffleMode::Off;
+    };
+
+    [[nodiscard]] Snapshot snapshot() const;
+
+    /// Replaces the entire contents. Ids in `entries` are kept as given, so a
+    /// reload preserves whatever else referenced them.
+    void restore(Snapshot state);
+
 private:
     /// Where playback begins when nothing is current: the head of the shuffle
     /// order when shuffling, otherwise the top of the list.

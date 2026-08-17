@@ -201,6 +201,48 @@ void Playlist::randomize() {
     notify({Change::Kind::Reset, 0, 0, 0});
 }
 
+// --- persistence --------------------------------------------------------
+
+Playlist::Snapshot Playlist::snapshot() const {
+    return Snapshot{entries_, queue_, shuffleList_, current_, repeat_, shuffle_};
+}
+
+void Playlist::restore(Snapshot state) {
+    entries_ = std::move(state.entries);
+    reindex();
+
+    nextId_ = 1;
+    for (const auto& entry : entries_) {
+        nextId_ = std::max(nextId_, entry.id + 1);
+    }
+
+    // Ids that no longer exist would otherwise sit in the queue and the shuffle
+    // order forever, since nothing removes them: a stored playlist can name an
+    // entry that a later version of the file no longer produces.
+    const auto keepKnown = [this](std::vector<TrackId>& list) {
+        std::erase_if(list, [this](TrackId id) { return !index_.contains(id); });
+    };
+    queue_ = std::move(state.queue);
+    keepKnown(queue_);
+    shuffleList_ = std::move(state.shuffleOrder);
+    keepKnown(shuffleList_);
+
+    current_ = (state.current && index_.contains(*state.current)) ? state.current
+                                                                 : std::nullopt;
+    currentRemoved_ = false;
+    resumeAt_.reset();
+
+    repeat_  = state.repeat;
+    shuffle_ = state.shuffle;
+
+    renumberQueue();
+    for (std::size_t i = 0; i < shuffleList_.size(); ++i) {
+        entries_[index_[shuffleList_[i]]].shuffleIndex = static_cast<std::int64_t>(i);
+    }
+
+    notify({Change::Kind::Reset, 0, 0, 0});
+}
+
 // --- modes --------------------------------------------------------------
 
 void Playlist::setRepeat(RepeatMode mode) {
