@@ -125,6 +125,12 @@ void PlaybackController::playPause() {
     emitState();
 }
 
+void PlaybackController::reloadDsp() {
+    if (engine_) {
+        engine_->reloadDsp();
+    }
+}
+
 void PlaybackController::stop() {
     engine_->stop();
     paused_  = false;

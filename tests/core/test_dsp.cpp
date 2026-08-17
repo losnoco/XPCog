@@ -17,7 +17,13 @@
 #include "../TestSignal.hpp"
 
 #include "xpcog/core/AudioFormat.hpp"
+#include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/Settings.hpp"
+#include "xpcog/core/Url.hpp"
+#include "xpcog/core/audio/AudioEngine.hpp"
 #include "xpcog/core/audio/Equalizer.hpp"
+#include "xpcog/core/audio/OfflineOutput.hpp"
+#include "xpcog/core/audio/RingBuffer.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -27,6 +33,9 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <filesystem>
+#include <string>
 #include <vector>
 
 using namespace xpcog;
@@ -303,4 +312,156 @@ TEST_CASE("bands above Nyquist become identity sections", "[dsp]") {
         REQUIRE(biquad.a1 == 0.0);
         REQUIRE(biquad.a2 == 0.0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// The chain as the engine runs it.
+//
+// Everything above tests the kernel in isolation. What that cannot show is
+// whether the engine actually routes audio through it: there are four places
+// that fill the converted buffer -- the prebuffer, the normal path and two
+// drains -- and a chain wired into three of them would still pass every test
+// above while dropping audio past the filter at a seam.
+//
+// A WAV rather than a FLAC on purpose: no external encoder, so this runs on a
+// bare machine and cannot join the sixteen that skip.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::filesystem::path dspFixtureDir() {
+    static const std::filesystem::path dir = [] {
+        auto path = std::filesystem::temp_directory_path() / "xpcog-dsp-tests";
+        std::filesystem::create_directories(path);
+        return path;
+    }();
+    return dir;
+}
+
+/// Two seconds of 1 kHz sine as 16-bit stereo WAV.
+std::filesystem::path toneWav() {
+    static const std::filesystem::path path = [] {
+        const auto out    = dspFixtureDir() / "tone.wav";
+        const int  frames = static_cast<int>(kRate) * 2;
+
+        std::vector<std::int16_t> samples;
+        samples.reserve(static_cast<std::size_t>(frames) * kChannels);
+        for (int frame = 0; frame < frames; ++frame) {
+            const double t = static_cast<double>(frame) / kRate;
+            const auto   value =
+                static_cast<std::int16_t>(12000.0 * std::sin(xpcog::test::kTwoPi * 1000.0 * t));
+            samples.push_back(value);
+            samples.push_back(value);
+        }
+
+        const auto dataBytes = static_cast<std::uint32_t>(samples.size() * sizeof(std::int16_t));
+        std::FILE* file      = std::fopen(out.string().c_str(), "wb");
+        REQUIRE(file != nullptr);
+        const auto u32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, file); };
+        const auto u16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, file); };
+        std::fwrite("RIFF", 1, 4, file);
+        u32(36 + dataBytes);
+        std::fwrite("WAVEfmt ", 1, 8, file);
+        u32(16);
+        u16(1);
+        u16(kChannels);
+        u32(static_cast<std::uint32_t>(kRate));
+        u32(static_cast<std::uint32_t>(kRate) * kChannels * 2);
+        u16(kChannels * 2);
+        u16(16);
+        std::fwrite("data", 1, 4, file);
+        u32(dataBytes);
+        std::fwrite(samples.data(), 1, dataBytes, file);
+        std::fclose(file);
+        return out;
+    }();
+    return path;
+}
+
+const PluginRegistry& dspRegistry() {
+    static const PluginRegistry& instance = *[] {
+        auto* built = new PluginRegistry;
+        registerAllCodecs(*built);
+        return built;
+    }();
+    return instance;
+}
+
+/// Renders the tone through a whole engine and returns the captured audio.
+std::vector<float> renderWith(double preampDb, int band, double bandDb) {
+    RingBuffer ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    auto       output = makeOfflineOutput(ring);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setEqPreamp(preampDb);
+    if (band >= 0) {
+        settings.setRawValue(Equalizer::bandSettingsKeys()[static_cast<std::size_t>(band)],
+                             std::to_string(bandDb));
+    }
+
+    AudioEngine engine{dspRegistry(), *output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(toneWav())));
+    engine.waitUntilFinished();
+    engine.stop();
+    return capturedAudio(*output);
+}
+
+[[nodiscard]] double rmsOf(const std::vector<float>& samples) {
+    if (samples.empty()) {
+        return 0.0;
+    }
+    // The first tenth of a second is skipped: it holds the filter's transient,
+    // and at a boost of several dB that is louder than the steady state.
+    const std::size_t skip = static_cast<std::size_t>(kRate * 0.1) * kChannels;
+    if (samples.size() <= skip) {
+        return 0.0;
+    }
+    double sum = 0.0;
+    for (std::size_t index = skip; index < samples.size(); ++index) {
+        sum += static_cast<double>(samples[index]) * samples[index];
+    }
+    return std::sqrt(sum / static_cast<double>(samples.size() - skip));
+}
+
+}  // namespace
+
+TEST_CASE("the engine renders through the equaliser", "[dsp]") {
+    const std::vector<float> flat = renderWith(0.0, -1, 0.0);
+    REQUIRE_FALSE(flat.empty());
+
+    // The gain the kernel says a +9 dB band at 1 kHz should produce, so this
+    // catches the chain running twice or not at all as readily as it catches it
+    // running at the wrong setting -- a bare "output differs" assertion would
+    // pass on a double application.
+    constexpr int    kBand   = 17;  // 1 kHz
+    constexpr double kBandDb = 9.0;
+    Equalizer        reference;
+    reference.prepare(formatFor(kRate, kChannels));
+    reference.setBandGain(kBand, kBandDb);
+    const double expected = cascadeMagnitude(reference, 1000.0);
+
+    const std::vector<float> boosted = renderWith(0.0, kBand, kBandDb);
+    REQUIRE(boosted.size() == flat.size());
+
+    const double measured = rmsOf(boosted) / rmsOf(flat);
+    INFO("expected " << expected << ", measured " << measured);
+    REQUIRE(measured == Approx(expected).epsilon(0.02));
+}
+
+TEST_CASE("a flat equaliser leaves the engine's output untouched", "[dsp]") {
+    // Bit-identical, which is the property that lets the equaliser exist in the
+    // signal path at all times without costing anyone who never opens it.
+    const std::vector<float> first  = renderWith(0.0, -1, 0.0);
+    const std::vector<float> second = renderWith(0.0, 17, 0.0);
+    REQUIRE_FALSE(first.empty());
+    REQUIRE(first == second);
+}
+
+TEST_CASE("the preamp reaches the engine's output", "[dsp]") {
+    const std::vector<float> flat     = renderWith(0.0, -1, 0.0);
+    const std::vector<float> attenuated = renderWith(-6.0, -1, 0.0);
+    REQUIRE(attenuated.size() == flat.size());
+    REQUIRE(rmsOf(attenuated) / rmsOf(flat) ==
+            Approx(std::pow(10.0, -6.0 / 20.0)).epsilon(0.01));
 }

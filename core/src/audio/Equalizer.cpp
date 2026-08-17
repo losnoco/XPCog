@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <numbers>
 #include <span>
 
@@ -17,6 +18,20 @@ constexpr double kFrequencies[Equalizer::kBands] = {
     160.0,  200.0,  250.0,  315.0,  400.0,  500.0,  630.0,   800.0,   1000.0,
     1200.0, 1600.0, 2000.0, 2500.0, 3100.0, 4000.0, 5000.0,  6300.0,  8000.0,
     10000.0, 12000.0, 16000.0, 20000.0};
+
+/// Cog's NSUserDefaults keys for the same bands, in the same order -- see
+/// EqualizerWindowController's _cog_equalizer_band_settings(). `p` is Cog's
+/// spelling of a decimal point.
+constexpr const char* kSettingsKeys[Equalizer::kBands] = {
+    "eq20Hz",   "eq25Hz",   "eq31p5Hz", "eq40Hz",   "eq50Hz",   "eq63Hz",
+    "eq80Hz",   "eq100Hz",  "eq125Hz",  "eq160Hz",  "eq200Hz",  "eq250Hz",
+    "eq315Hz",  "eq400Hz",  "eq500Hz",  "eq630Hz",  "eq800Hz",  "eq1kHz",
+    "eq1p2kHz", "eq1p6kHz", "eq2kHz",   "eq2p5kHz", "eq3p1kHz", "eq4kHz",
+    "eq5kHz",   "eq6p3kHz", "eq8kHz",   "eq10kHz",  "eq12kHz",  "eq16kHz",
+    "eq20kHz"};
+
+static_assert(std::size(kSettingsKeys) == std::size(kFrequencies),
+              "every band needs exactly one settings key");
 
 /// The RBJ peaking-EQ biquad, normalised by a0. Identical to Cog's
 /// setupOneBand(), including the Nyquist guard that yields an identity section
@@ -47,6 +62,10 @@ constexpr double kFrequencies[Equalizer::kBands] = {
 
 std::span<const double> Equalizer::bandFrequencies() noexcept {
     return std::span<const double>{kFrequencies, kBands};
+}
+
+std::span<const char* const> Equalizer::bandSettingsKeys() noexcept {
+    return std::span<const char* const>{kSettingsKeys, kBands};
 }
 
 Equalizer::Equalizer() : gainsDb_(kBands, 0.0), biquads_(kBands) {}

@@ -19,6 +19,8 @@
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/AudioConverter.hpp"
+#include "xpcog/core/audio/DSPNode.hpp"
+#include "xpcog/core/audio/Equalizer.hpp"
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 
@@ -112,6 +114,19 @@ public:
 
     [[nodiscard]] std::uint64_t underrunCount() const { return output_.underrunCount(); }
 
+    /// Re-reads the DSP settings. Call after changing an equaliser setting.
+    ///
+    /// Push rather than poll: the chain's settings are 32 keys, and re-reading
+    /// them per chunk to notice a slider move would cost more than the filter
+    /// does. This only raises a flag, so it is safe to call from any thread --
+    /// the feeder picks it up at the top of its next pass, which is also the
+    /// only place the coefficients may be rewritten without racing process().
+    ///
+    /// Unlike volumeScaling, this takes effect during the current track. An
+    /// equaliser that waited for the next one would leave a user dragging a
+    /// slider in silence, which reads as broken rather than as deferred.
+    void reloadDsp() { dspDirty_.store(true, std::memory_order_relaxed); }
+
 private:
     struct Seam {
         /// Total frames delivered to the device before this track becomes audible.
@@ -132,6 +147,23 @@ private:
     /// Applies the ReplayGain setting for the track now being decoded.
     void applyReplayGain(const TrackProperties& props);
     void publishSeams();
+
+    /// Runs the DSP chain over `converted_`, in place. Feeder thread only.
+    ///
+    /// Every path that fills `converted_` calls this before handing it to the
+    /// ring -- there are four, counting the prebuffer and the two drains -- so a
+    /// new one that forgets would be the one place a stage silently stops
+    /// applying.
+    void applyDsp();
+    /// Reads the equaliser settings into the chain. Feeder thread only.
+    void applyDspSettings();
+
+    /// The chain, in order. Points at the members below rather than owning
+    /// anything: the set of stages is fixed at compile time, so a vector of
+    /// unique_ptr would buy indirection and nothing else.
+    Equalizer             equalizer_;
+    std::vector<DSPNode*> chain_;
+    std::atomic<bool>     dspDirty_{true};
 
     const PluginRegistry& registry_;
     IAudioOutput&         output_;

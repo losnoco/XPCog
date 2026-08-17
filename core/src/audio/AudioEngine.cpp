@@ -5,7 +5,10 @@
 #include "xpcog/core/audio/ReplayGain.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include <array>
 #include <chrono>
+#include <cstdlib>
+#include <string>
 #include <utility>
 
 namespace xpcog {
@@ -25,7 +28,12 @@ struct AudioEngine::OpenTrack {
 
 AudioEngine::AudioEngine(const PluginRegistry& registry, IAudioOutput& output,
                          RingBuffer& ring, const Settings& settings)
-    : registry_(registry), output_(output), settings_(settings), ring_(ring) {}
+    : registry_(registry), output_(output), settings_(settings), ring_(ring) {
+    // Order is the signal path. The equaliser sits after conversion, so it
+    // always runs at the device's rate and its coefficients survive a track
+    // whose source rate differs.
+    chain_.push_back(&equalizer_);
+}
 
 AudioEngine::~AudioEngine() { stop(); }
 
@@ -81,6 +89,17 @@ bool AudioEngine::play(const Url& url) {
     converter_.setHdcdEnabled(settings_.EnableHDCD());
     applyReplayGain(firstProps);
 
+    // The chain runs at the device format, so it is sized here rather than per
+    // track: a track at another sample rate is resampled to this one before it
+    // reaches the equaliser, which is what lets the filter state survive a
+    // format-changing seam instead of being rebuilt mid-album.
+    for (DSPNode* node : chain_) {
+        node->prepare(format_);
+        node->reset();
+    }
+    applyDspSettings();
+    dspDirty_.store(false, std::memory_order_relaxed);
+
     // The ring is the caller's and already sized; just make sure nothing is left
     // over from a previous track.
     ring_.clear();
@@ -115,6 +134,7 @@ bool AudioEngine::play(const Url& url) {
             if (!converter_.process(chunk, converted_) || converted_.empty()) {
                 continue;
             }
+            applyDsp();
             ring_.write(converted_.data(), converted_.size());
             framesWritten_ += converted_.size() / format_.channels;
         }
@@ -137,6 +157,33 @@ bool AudioEngine::play(const Url& url) {
 
 void AudioEngine::applyReplayGain(const TrackProperties& props) {
     converter_.setGain(replayGainScale(props.replayGain, settings_.VolumeScaling()));
+}
+
+void AudioEngine::applyDspSettings() {
+    equalizer_.setPreamp(settings_.EqPreamp());
+
+    const auto keys = Equalizer::bandSettingsKeys();
+    std::array<double, Equalizer::kBands> gains{};
+    for (std::size_t band = 0; band < keys.size(); ++band) {
+        // By key rather than by generated accessor: naming 31 of them here would
+        // be 31 chances to pair a band with the wrong frequency, and the table
+        // that pairs them already exists next to the frequencies.
+        const std::string raw = settings_.rawValue(keys[band]);
+        gains[band]           = raw.empty() ? 0.0 : std::strtod(raw.c_str(), nullptr);
+    }
+    equalizer_.setBandGains(gains);
+}
+
+void AudioEngine::applyDsp() {
+    if (converted_.empty()) {
+        return;
+    }
+    const std::size_t frames = converted_.size() / format_.channels;
+    for (DSPNode* node : chain_) {
+        if (node->active()) {
+            node->process(converted_.data(), frames);
+        }
+    }
 }
 
 bool AudioEngine::writeSamples(const float* samples, std::size_t count) {
@@ -168,6 +215,8 @@ bool AudioEngine::writeToRing(const AudioChunk& chunk) {
         return true;  // the resampler is still filling its delay line
     }
 
+    applyDsp();
+
     if (!writeSamples(converted_.data(), converted_.size())) {
         return false;
     }
@@ -181,6 +230,12 @@ void AudioEngine::feederLoop() {
 
     while (running_.load(std::memory_order_acquire)) {
         publishSeams();
+
+        // Here rather than in reloadDsp(): this is the feeder thread, the only
+        // one that may touch the coefficients while process() is not running.
+        if (dspDirty_.exchange(false, std::memory_order_relaxed)) {
+            applyDspSettings();
+        }
 
         if (const std::int64_t requested =
                 pendingSeek_.exchange(-1, std::memory_order_acq_rel);
@@ -231,6 +286,7 @@ void AudioEngine::feederLoop() {
                     // that meet the seam.
                     converted_.clear();
                     converter_.drain(converted_);
+                    applyDsp();
                     if (!converted_.empty() &&
                         !writeSamples(converted_.data(), converted_.size())) {
                         break;
@@ -270,6 +326,7 @@ void AudioEngine::feederLoop() {
     if (running_.load(std::memory_order_acquire)) {
         converted_.clear();
         converter_.drain(converted_);
+        applyDsp();
         if (!converted_.empty()) {
             writeSamples(converted_.data(), converted_.size());
         }
@@ -313,6 +370,13 @@ void AudioEngine::performSeek(std::int64_t frame) {
     // listening for the jump to land.
     converter_.reset();
     converted_.clear();
+
+    // Same reasoning for the chain: a biquad holding two samples from the old
+    // position rings them into the new one, which is the click a user hears at
+    // precisely the moment they are listening for the seek to land.
+    for (DSPNode* node : chain_) {
+        node->reset();
+    }
 
     ring_.requestFlush();
 

@@ -52,6 +52,53 @@ XPCOG_SETTING(SelectionFollowsPlayback, bool, "selectionFollowsPlayback", false)
 XPCOG_SETTING(ResumePlaybackOnStartup, bool, "resumePlaybackOnStartup", false)
 XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", true)
 
+// --- equaliser ------------------------------------------------------------
+
+/// Gain in dB applied ahead of the bands, to buy back headroom a boost costs.
+XPCOG_SETTING(EqPreamp, double, "eqPreamp", 0.0)
+
+/// The 31 band gains in dB, in the order Equalizer::bandFrequencies() reports.
+///
+/// One key per band rather than a single packed value because that is how Cog
+/// stores them -- these names come from EqualizerWindowController's
+/// `_cog_equalizer_band_settings()`, and keeping them means an existing Cog plist
+/// carries a user's curve across verbatim instead of flattening it. The `p`
+/// stands for a decimal point, again Cog's spelling.
+///
+/// Verbose, and worth it: the alternative is one string that has to be parsed,
+/// which cannot be imported from Cog and cannot be edited one band at a time.
+XPCOG_SETTING(Eq20Hz, double, "eq20Hz", 0.0)
+XPCOG_SETTING(Eq25Hz, double, "eq25Hz", 0.0)
+XPCOG_SETTING(Eq31p5Hz, double, "eq31p5Hz", 0.0)
+XPCOG_SETTING(Eq40Hz, double, "eq40Hz", 0.0)
+XPCOG_SETTING(Eq50Hz, double, "eq50Hz", 0.0)
+XPCOG_SETTING(Eq63Hz, double, "eq63Hz", 0.0)
+XPCOG_SETTING(Eq80Hz, double, "eq80Hz", 0.0)
+XPCOG_SETTING(Eq100Hz, double, "eq100Hz", 0.0)
+XPCOG_SETTING(Eq125Hz, double, "eq125Hz", 0.0)
+XPCOG_SETTING(Eq160Hz, double, "eq160Hz", 0.0)
+XPCOG_SETTING(Eq200Hz, double, "eq200Hz", 0.0)
+XPCOG_SETTING(Eq250Hz, double, "eq250Hz", 0.0)
+XPCOG_SETTING(Eq315Hz, double, "eq315Hz", 0.0)
+XPCOG_SETTING(Eq400Hz, double, "eq400Hz", 0.0)
+XPCOG_SETTING(Eq500Hz, double, "eq500Hz", 0.0)
+XPCOG_SETTING(Eq630Hz, double, "eq630Hz", 0.0)
+XPCOG_SETTING(Eq800Hz, double, "eq800Hz", 0.0)
+XPCOG_SETTING(Eq1kHz, double, "eq1kHz", 0.0)
+XPCOG_SETTING(Eq1p2kHz, double, "eq1p2kHz", 0.0)
+XPCOG_SETTING(Eq1p6kHz, double, "eq1p6kHz", 0.0)
+XPCOG_SETTING(Eq2kHz, double, "eq2kHz", 0.0)
+XPCOG_SETTING(Eq2p5kHz, double, "eq2p5kHz", 0.0)
+XPCOG_SETTING(Eq3p1kHz, double, "eq3p1kHz", 0.0)
+XPCOG_SETTING(Eq4kHz, double, "eq4kHz", 0.0)
+XPCOG_SETTING(Eq5kHz, double, "eq5kHz", 0.0)
+XPCOG_SETTING(Eq6p3kHz, double, "eq6p3kHz", 0.0)
+XPCOG_SETTING(Eq8kHz, double, "eq8kHz", 0.0)
+XPCOG_SETTING(Eq10kHz, double, "eq10kHz", 0.0)
+XPCOG_SETTING(Eq12kHz, double, "eq12kHz", 0.0)
+XPCOG_SETTING(Eq16kHz, double, "eq16kHz", 0.0)
+XPCOG_SETTING(Eq20kHz, double, "eq20kHz", 0.0)
+
 // --- appearance -----------------------------------------------------------
 
 /// Which Qt widget style to use. Empty means whatever the platform picks for

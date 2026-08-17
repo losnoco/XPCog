@@ -45,6 +45,15 @@ public:
     /// The band centre frequencies in Hz, low to high. kBands entries.
     [[nodiscard]] static std::span<const double> bandFrequencies() noexcept;
 
+    /// The settings key holding each band's gain, in the same order.
+    ///
+    /// Kept beside the frequencies rather than wherever settings happen to be
+    /// read, because the one thing that must never drift is which key belongs to
+    /// which centre: reorder them and every existing user's curve silently
+    /// shifts along the spectrum, which no test of the filter itself would
+    /// notice. Both tables live in one file so they are edited together.
+    [[nodiscard]] static std::span<const char* const> bandSettingsKeys() noexcept;
+
     /// The fixed Q every band uses, as in Cog.
     static constexpr double kQ = 1.4;
 

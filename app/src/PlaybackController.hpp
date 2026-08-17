@@ -62,6 +62,10 @@ public slots:
     /// `seconds` into the audible track.
     void seek(double seconds);
 
+    /// Asks the engine to re-read the DSP settings, so an equaliser change is
+    /// heard on the track already playing rather than the next one.
+    void reloadDsp();
+
     /// 0.0 to 1.0. Stored in settings so it survives a restart, as Cog does.
     void setVolume(double linear);
     [[nodiscard]] double volume() const;

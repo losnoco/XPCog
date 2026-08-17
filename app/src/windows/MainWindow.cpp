@@ -454,6 +454,12 @@ void MainWindow::showPreferences() {
         if (key == QLatin1String("alwaysStopAfterCurrent")) {
             playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
         }
+        // The equaliser is push, not poll: re-reading 32 keys per chunk to notice
+        // a slider move would cost more than the filter itself. Every one of
+        // those keys begins "eq".
+        if (key.startsWith(QLatin1String("eq"))) {
+            playback_->reloadDsp();
+        }
     });
     dialog.exec();
     settings_.sync();

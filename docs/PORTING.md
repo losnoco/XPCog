@@ -135,14 +135,56 @@ and changing them changes latency behaviour.
   worker thread, macOS media keys and Now Playing, i18n scaffolding, and a `deploy`
   target producing a signed self-contained bundle.
 
-### Next: M4 — the DSP chain
+### In progress: M4 — the DSP chain
 
-`DSPNode` base, equaliser (hand-written cascaded biquad DF2T replacing
-`vDSP_biquadm`), fader, downmix, rubberband, signalsmith, FreeSurround.
+**Done:** `DSPNode` and the equaliser, wired into the engine.
 
-*Verify:* magnitude response against a reference impulse; A/B against Cog. Capture
-golden reference output from Cog **before** replacing each kernel — numeric drift
-from removing vDSP is silent otherwise.
+`DSPNode` is deliberately not Cog's. Cog's is a threaded node — a thread, a
+`ChunkList`, two semaphores and a recursive lock each, chained as
+producer/consumer handoffs — which follows from an engine where every stage
+between decoder and output is such a node. XPCog has one feeder thread writing
+into a lock-free ring, so that shape would add a thread and a lock per stage to a
+pipeline that already has the concurrency it needs. A node here is a synchronous
+in-place transform and the chain is a sequence, which also makes each stage
+testable by calling `process()` on a buffer.
+
+The equaliser keeps Cog's filter exactly (31 AUGraphicEQ centres, Q 1.4, RBJ
+peaking normalised by `a0`, Nyquist bands as identity sections so indices are
+stable across sample rates) and Cog's settings keys, so a Cog plist carries a
+user's curve across. It differs in two documented ways: double state where
+`vDSP_biquadm` keeps single, and flat is *skipped* rather than run, which makes
+0 dB bit-transparent by construction.
+
+Cost, measured rather than assumed: all 31 bands on stereo 44.1 kHz is **0.31% of
+one core**, 322× realtime, 35 ns/sample. The first stage with a real per-sample
+cost on the feeder thread, and comfortably free.
+
+**Still to do:** fader, downmix, rubberband, signalsmith, FreeSurround.
+
+*Verify:* the equaliser showed that one test is not enough, because each
+plausible test is blind to something. Three were needed, and the second and third
+gaps only became visible once the previous test passed:
+
+- Cascade magnitude measured off a sine against its transfer function evaluated
+  in the complex plane. Catches a transposed-form slip — but takes its
+  expectation from `coefficients()`, so it cannot see a wrong *formula*.
+- Each band's peak against the definition of a peaking EQ. Checks the formula
+  against the maths rather than a re-derivation of itself — but peak gain is
+  independent of Q.
+- Q recovered from the half-gain bandwidth, the only parameter the other two are
+  blind to.
+
+Plus one at engine level, because there are four places that fill the converted
+buffer — the prebuffer, the normal path and two drains — and a chain wired into
+three of them passes every kernel test while dropping audio past the filter at a
+seam. Deleting the prebuffer call moves the measured gain by 6%, which that test
+catches.
+
+For rubberband, signalsmith and FreeSurround, capture golden reference output
+from Cog **before** replacing each kernel — numeric drift from removing vDSP is
+silent otherwise, and unlike the equaliser those are not pinned down by a
+closed-form response. Note this needs a macOS machine: Cog does not run
+elsewhere, so on Windows or Linux that verification is simply unavailable.
 
 LPC extrapolation is already vendored but deliberately not built: the converter keeps
 soxr's delay line continuous, so chunk edges already are. It earns its place at the
