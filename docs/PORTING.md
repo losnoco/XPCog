@@ -575,9 +575,20 @@ asserted a property Qt provides rather than the one the code was responsible for
   the capture, but that it sounds like a fade rather than a duck is a listening
   judgement.
 - MSVC emits `C4324` for `RingBuffer`'s deliberate cache-line `alignas`, several
-  times per translation unit that includes it. Harmless, and the only warnings in
-  the tree — which is worth either suppressing narrowly or padding explicitly,
-  since "no warnings" is otherwise true and therefore useful.
+  times per translation unit that includes it. Harmless, and now the *only*
+  warning in the tree on any of the four CI jobs — worth either suppressing
+  narrowly or padding explicitly, since "no warnings" is otherwise true and
+  therefore useful.
+
+  It was not the only one until recently, and the way that was found is worth
+  recording: the warnings each compiler emits are not the same set, and a
+  Windows-only development host sees only MSVC's. GCC additionally reported two
+  `-Wshadow` hits (one of them a `data` that shadowed a `QWidget` member) and
+  C++20's deprecation of a bitwise operation between two different enumeration
+  types; Clang reported `-Wdouble-promotion` in three more places than GCC did.
+  All were real and all are fixed. The lesson is that "the tree is warning-clean"
+  is a claim about the compiler in front of you, so the list to check is CI's
+  annotations across all four jobs, not the local build log.
 - **Preferences has no keyboard shortcut on Windows or Linux.**
   `QKeySequence::Preferences` is bound only on macOS, so `ActionRegistry` gives the
   action an empty sequence everywhere else. The menu item works; the keyboard does

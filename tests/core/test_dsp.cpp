@@ -100,7 +100,7 @@ constexpr int    kChannels = 2;
     const auto rms = [](const std::vector<float>& samples) {
         double sum = 0.0;
         for (std::size_t frame = kSettle; frame < kFrames; ++frame) {
-            const double value = samples[frame * kChannels];
+            const double value = static_cast<double>(samples[frame * kChannels]);
             sum += value * value;
         }
         return std::sqrt(sum / static_cast<double>(kFrames - kSettle));
@@ -437,7 +437,8 @@ std::vector<float> renderWith(double preampDb, int band, double bandDb) {
     }
     double sum = 0.0;
     for (std::size_t index = skip; index < samples.size(); ++index) {
-        sum += static_cast<double>(samples[index]) * samples[index];
+        const double value = static_cast<double>(samples[index]);
+        sum += value * value;
     }
     return std::sqrt(sum / static_cast<double>(samples.size() - skip));
 }
@@ -761,7 +762,12 @@ TEST_CASE("mono is the average of the stereo downmix", "[dsp]") {
 TEST_CASE("channels the matrix has no place for are dropped", "[dsp]") {
     // Front centre left and right, and everything from the top layer up, fall
     // through Cog's switch to a zero ratio. Reproduced rather than improved on.
-    const std::uint32_t config = kConfig5Point1 | kChannelFrontCenterLeft;
+    // Cast rather than relying on the enums combining: C++20 deprecates a bitwise
+    // operation between two *different* enumeration types, which ChannelConfig
+    // and ChannelFlag are. A config is a std::uint32_t bitmask everywhere else, so
+    // saying so here costs nothing.
+    const std::uint32_t config = static_cast<std::uint32_t>(kConfig5Point1) |
+                                 static_cast<std::uint32_t>(kChannelFrontCenterLeft);
     std::vector<float>  out(2, 0.0F);
 
     // Index 6 within this config is the front-centre-left flag.
@@ -812,8 +818,9 @@ TEST_CASE("a seek crossfade never goes quiet in the middle", "[dsp]") {
 
     for (std::size_t frame = 0; frame < span; ++frame) {
         INFO("frame " << frame);
-        REQUIRE(after[frame * kChannels] >= Approx(0.5F).margin(0.01));
-        REQUIRE(after[frame * kChannels] <= Approx(0.5F * std::sqrt(2.0)).margin(0.01));
+        const double sample = static_cast<double>(after[frame * kChannels]);
+        REQUIRE(sample >= Approx(0.5).margin(0.01));
+        REQUIRE(sample <= Approx(0.5 * std::sqrt(2.0)).margin(0.01));
     }
     REQUIRE_FALSE(fader.crossfading());
 }
@@ -970,7 +977,8 @@ TEST_CASE("a back centre does not clobber a routed back pair", "[dsp]") {
     // its own slots, and the centre -- having no home and no safe split -- is
     // dropped rather than overwriting them.
     const std::uint32_t inConfig =
-        kConfig4Point0 | kChannelBackCenter;  // FL FR BL BR + BC
+        static_cast<std::uint32_t>(kConfig4Point0) |
+        static_cast<std::uint32_t>(kChannelBackCenter);  // FL FR BL BR + BC
     const std::vector<float> in{0.1F, 0.2F, 0.3F, 0.4F, 0.9F};
     std::vector<float>       out(8, -1.0F);
 

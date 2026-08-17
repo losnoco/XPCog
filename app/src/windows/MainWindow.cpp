@@ -709,11 +709,13 @@ void MainWindow::publishNowPlaying(TrackId id) {
     // Artwork is content-addressed in the library rather than carried on the
     // entry, so this is the one place that can resolve it.
     if (library_ && !entry->artHash.empty()) {
-        const std::vector<std::byte> data = library_->artwork(entry->artHash);
-        if (!data.empty()) {
+        // Not `data`: QWidget has a member of that name, so this shadowed it --
+        // MSVC's C4458 and GCC's -Wshadow both said so.
+        const std::vector<std::byte> artBytes = library_->artwork(entry->artHash);
+        if (!artBytes.empty()) {
             info.artwork.loadFromData(
-                QByteArray(reinterpret_cast<const char*>(data.data()),
-                           static_cast<qsizetype>(data.size())));
+                QByteArray(reinterpret_cast<const char*>(artBytes.data()),
+                           static_cast<qsizetype>(artBytes.size())));
         }
     }
 

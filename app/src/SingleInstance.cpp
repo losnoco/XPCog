@@ -136,13 +136,17 @@ bool SingleInstance::claim(const QStringList& arguments) {
 
                 QDataStream unpacker(inner);
                 unpacker.setVersion(QDataStream::Qt_6_0);
-                QStringList arguments;
-                unpacker >> arguments;
+                // Not `arguments`: that is claim()'s parameter, meaning *our*
+                // command line, and these are someone else's. GCC caught the
+                // shadowing; the confusion it invites is the actual reason to
+                // rename rather than silence it.
+                QStringList received;
+                unpacker >> received;
 
                 // Closing from this end is what releases the sender, which is
                 // waiting to be sure the message landed before it exits.
                 socket->disconnectFromServer();
-                emit launched(arguments);
+                emit launched(received);
             });
             connect(socket, &QLocalSocket::disconnected, socket, &QLocalSocket::deleteLater);
         }
