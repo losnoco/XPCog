@@ -18,6 +18,8 @@
 
 namespace xpcog {
 
+class PluginRegistry;
+
 /// Byte-oriented input, mirroring Cog's CogSource protocol.
 /// Implementations: FileSource (M1a); HTTPSource and ArchiveSource (M6).
 class ISource {
@@ -90,6 +92,15 @@ public:
     /// True for the silence decoder, which stands in for unplayable input so a
     /// broken file does not stall the playlist. Mirrors Cog's -isSilence.
     [[nodiscard]] virtual bool isSilence() const { return false; }
+
+    /// Called by the registry immediately after construction, before open().
+    ///
+    /// Decoders that must open a *second* file keep it -- a cue sheet decodes the
+    /// audio file its sheet points at, and archive members work the same way.
+    /// Cog reaches for the AudioSource/AudioDecoder singletons instead; passing
+    /// the registry keeps that dependency explicit and testable.
+    /// Every other decoder ignores this.
+    virtual void setRegistry(const PluginRegistry* /*registry*/) {}
 
     /// Replaces the KVO on @"properties"/@"metadata" that Cog's InputNode
     /// registers (Audio/Chain/InputNode.m). Called from the decode thread.

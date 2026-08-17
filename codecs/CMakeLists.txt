@@ -26,6 +26,9 @@ endif()
 if(XPCOG_WITH_FFMPEG)
     add_subdirectory(ffmpeg)
 endif()
+if(XPCOG_WITH_CUESHEET)
+    add_subdirectory(cuesheet)
+endif()
 
 # M1b onward: ffmpeg, vorbis, opus, mpg123, wavpack, ape, musepack, taglib,
 # cuesheet, m3u, pls, xmlplaylist. M6: the remaining ~27 Cog decoders.

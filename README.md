@@ -75,10 +75,27 @@ cmake --preset macos-headless && cmake --build --preset macos-headless
 ```sh
 xpcog-cli codecs                     # what this build can decode
 xpcog-cli info   song.flac           # format, duration, ReplayGain, tags
-xpcog-cli expand playlist.m3u        # the tracks a playlist points at
+xpcog-cli expand album.cue           # the tracks a playlist or cue sheet holds
+xpcog-cli info   album.cue#3         # one track of a single-file album
 xpcog-cli decode song.flac out.raw   # headerless native-endian PCM
 xpcog-cli play   a.flac b.m4a c.mp3  # gapless across the queue
 ```
+
+### Cue sheets
+
+A `.cue` expands to one URL per track (`album.cue#1`, `#2`, …). Opening one decodes
+the referenced audio file, seeks to that track's `INDEX 01`, and stops at the next
+track's start, so each track reports its own duration and metadata and seeks
+relative to itself.
+
+Two bugs in Cog's parser are fixed rather than reproduced, both of which corrupt
+real albums:
+
+- Cog keeps one `artist` variable for the whole sheet and never resets it per
+  track, so a single track-level `PERFORMER` mis-credits every following track.
+  Track-level fields here fall back to the album value instead.
+- A non-`AUDIO` `TRACK` is skipped, but Cog still lets its `INDEX` create an
+  entry, so a mixed-mode disc gains a bogus track that decodes to noise.
 
 ### Formats
 
@@ -137,7 +154,7 @@ never confused with the expected tail.
 |---|---|---|
 | ✅ | **M0** | Toolchain, module layout, codec registration, Qt shell |
 | ✅ | **M1a** | Walking skeleton: FLAC decode → miniaudio output |
-| 🚧 | **M1b** | Transport, gapless, seven decoders and M3U/PLS containers done. Remaining: TagLib tag writing, cue sheets |
+| ✅ | **M1b** | Transport, gapless, seven decoders, M3U/PLS playlists and cue sheets |
 | | **M1c** | ReplayGain, LPC extrapolation, HDCD, settings |
 | | **M2** | SQLite library, playlist model, shuffle/repeat/queue |
 | | **M3** | The Qt application: playlist view, preferences, media keys |

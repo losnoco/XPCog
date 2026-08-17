@@ -8,6 +8,7 @@ add_executable(xpcog-tests
     core/test_version.cpp
     codecs/test_conformance.cpp
     codecs/test_containers.cpp
+    codecs/test_cuesheet.cpp
 )
 
 target_link_libraries(xpcog-tests PRIVATE

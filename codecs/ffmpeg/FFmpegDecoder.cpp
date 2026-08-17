@@ -148,11 +148,30 @@ public:
             int status = avcodec_receive_frame(codec_ctx_, frame_);
 
             if (status == 0) {
+                // av_seek_frame lands on a packet boundary at or before the
+                // target, so the first frames after a seek belong to an earlier
+                // position. Work out how many to drop for a sample-accurate seek.
+                if (resolveSeek_) {
+                    const std::int64_t pts =
+                        (frame_->best_effort_timestamp != AV_NOPTS_VALUE)
+                            ? frame_->best_effort_timestamp
+                            : frame_->pts;
+                    if (pts != AV_NOPTS_VALUE) {
+                        const AVStream* stream = format_ctx_->streams[streamIndex_];
+                        const std::int64_t landed =
+                            av_rescale_q(pts, stream->time_base,
+                                         AVRational{1, codec_ctx_->sample_rate});
+                        skipFrames_ = (landed < seekTarget_) ? seekTarget_ - landed : 0;
+                        framePos_   = std::max(landed, seekTarget_);
+                    }
+                    resolveSeek_ = false;
+                }
+
                 const int channels = static_cast<int>(audioFormat_.channels);
                 converted_.resize(static_cast<std::size_t>(frame_->nb_samples) * channels);
 
                 auto*     dst    = reinterpret_cast<std::uint8_t*>(converted_.data());
-                const int frames = swr_convert(swr_, &dst, frame_->nb_samples,
+                int       frames = swr_convert(swr_, &dst, frame_->nb_samples,
                                                const_cast<const std::uint8_t**>(frame_->data),
                                                frame_->nb_samples);
                 av_frame_unref(frame_);
@@ -160,12 +179,24 @@ public:
                     continue;
                 }
 
+                std::size_t offset = 0;
+                if (skipFrames_ > 0) {
+                    if (skipFrames_ >= frames) {
+                        // The whole frame precedes the target; fetch another.
+                        skipFrames_ -= frames;
+                        continue;
+                    }
+                    offset = static_cast<std::size_t>(skipFrames_) * channels;
+                    frames -= static_cast<int>(skipFrames_);
+                    skipFrames_ = 0;
+                }
+
                 out.clear();
                 out.setFormat(audioFormat_);
                 out.lossless        = lossless_;
                 out.streamTimestamp = timestamp;
                 out.streamTimeRatio = 1.0;
-                out.assign(converted_.data(), static_cast<std::size_t>(frames));
+                out.assign(converted_.data() + offset, static_cast<std::size_t>(frames));
 
                 framePos_ += frames;
                 return true;
@@ -202,16 +233,28 @@ public:
             return -1;
         }
 
-        AVStream*          stream = format_ctx_->streams[streamIndex_];
-        const std::int64_t target = av_rescale_q(
-            frame, AVRational{1, codec_ctx_->sample_rate}, stream->time_base);
+        AVStream* stream = format_ctx_->streams[streamIndex_];
+
+        // Seek behind the target and decode forward into it. Codecs with
+        // overlapping transform windows (AAC and friends) reconstruct a block
+        // from its predecessor, so starting cold at a packet boundary yields
+        // audibly wrong samples for the first block. Decoding a little history
+        // first warms that state up; the extra frames are discarded below.
+        const std::int64_t preRoll = codec_ctx_->sample_rate / 4;  // 250 ms
+        const std::int64_t from    = std::max<std::int64_t>(0, frame - preRoll);
+
+        const std::int64_t target =
+            av_rescale_q(from, AVRational{1, codec_ctx_->sample_rate}, stream->time_base);
 
         if (av_seek_frame(format_ctx_, streamIndex_, target, AVSEEK_FLAG_BACKWARD) < 0) {
             return -1;
         }
         avcodec_flush_buffers(codec_ctx_);
-        drained_  = false;
-        framePos_ = frame;
+        drained_     = false;
+        seekTarget_  = frame;
+        resolveSeek_ = true;
+        skipFrames_  = 0;
+        framePos_    = frame;
         return frame;
     }
 
@@ -378,6 +421,11 @@ private:
     AVFrame*         frame_       = nullptr;
     int              streamIndex_ = -1;
     bool             drained_     = false;
+
+    // Sample-accurate seek bookkeeping.
+    std::int64_t seekTarget_  = 0;
+    std::int64_t skipFrames_  = 0;
+    bool         resolveSeek_ = false;
 
     AudioFormat        audioFormat_{};
     std::vector<float> converted_;

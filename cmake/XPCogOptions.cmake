@@ -6,6 +6,7 @@ option(XPCOG_BUILD_TESTS "Build the test suite"            ON)
 
 option(XPCOG_WITH_FLAC   "FLAC decoder"                    ON)
 option(XPCOG_WITH_PLAYLISTS "M3U and PLS playlist containers" ON)
+option(XPCOG_WITH_CUESHEET  "Cue sheet container and decoder"  ON)
 
 # Deferred to later milestones; the options exist now so the wiring is stable.
 option(XPCOG_WITH_FFMPEG    "FFmpeg decoder (M1b)"         OFF)

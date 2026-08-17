@@ -395,15 +395,22 @@ std::int64_t FlacDecoder::seek(std::int64_t frame) {
     if (decoder_ == nullptr) {
         return -1;
     }
+
+    // Drop stale pre-seek audio BEFORE seeking, never after.
+    //
+    // FLAC__stream_decoder_seek_absolute decodes the block containing the target
+    // sample and hands it to the write callback as part of seeking. Clearing
+    // blockFrames_ afterwards therefore discards exactly the data the seek just
+    // produced, losing up to a block at every seek -- which is what made cue
+    // sheet tracks start late and decode to the wrong bytes.
+    blockFrames_ = 0;
+
     if (!FLAC__stream_decoder_seek_absolute(decoder_,
                                             static_cast<FLAC__uint64>(frame))) {
         return -1;
     }
 
-    // The seek discards whatever was buffered, so drop it rather than emitting
-    // audio from the old position. Cog leaves this stale.
-    blockFrames_ = 0;
-    framePos_    = frame;
+    framePos_ = frame;
     seconds_     = (format_.sampleRate > 0.0)
                        ? static_cast<double>(frame) / format_.sampleRate
                        : 0.0;

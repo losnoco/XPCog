@@ -11,6 +11,8 @@
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -46,12 +48,32 @@ xpcog::PluginRegistry& registry() {
     return instance;
 }
 
-/// Accepts either a URL or a plain filesystem path, so the CLI is pleasant to use.
+/// Accepts a URL or a plain filesystem path, so the CLI is pleasant to use.
+///
+/// A trailing "#<digits>" is treated as a track fragment when the literal path
+/// does not exist -- "album.cue#2" is far nicer to type than the file:// URL,
+/// while a real file called "Track #1.flac" still resolves as itself.
 xpcog::Url urlFromArgument(std::string_view argument) {
     if (auto parsed = xpcog::Url::parse(argument)) {
         return *parsed;
     }
-    return xpcog::Url::fromLocalPath(std::filesystem::path{argument});
+
+    const std::filesystem::path literal{argument};
+    if (!std::filesystem::exists(literal)) {
+        const std::size_t hash = argument.rfind('#');
+        if (hash != std::string_view::npos && hash + 1 < argument.size()) {
+            const std::string_view tail = argument.substr(hash + 1);
+            const bool allDigits = std::all_of(tail.begin(), tail.end(), [](char c) {
+                return std::isdigit(static_cast<unsigned char>(c)) != 0;
+            });
+            if (allDigits) {
+                return xpcog::Url::fromLocalPath(
+                           std::filesystem::path{argument.substr(0, hash)})
+                    .withFragment(tail);
+            }
+        }
+    }
+    return xpcog::Url::fromLocalPath(literal);
 }
 
 const char* sampleFormatName(xpcog::SampleFormat format) {

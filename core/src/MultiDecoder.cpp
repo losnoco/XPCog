@@ -27,6 +27,7 @@ public:
             }
 
             decoder->setChangeCallback(onChange_);
+            decoder->setRegistry(registry_);
             if (decoder->open(source)) {
                 active_ = std::move(decoder);
                 return true;
@@ -82,10 +83,18 @@ public:
         }
     }
 
+    void setRegistry(const PluginRegistry* registry) override {
+        registry_ = registry;
+        if (active_) {
+            active_->setRegistry(registry);
+        }
+    }
+
 private:
     std::vector<const DecoderDescriptor*> candidates_;
     DecoderPtr                            active_;
     ChangeCallback                        onChange_;
+    const PluginRegistry*                 registry_ = nullptr;
 };
 
 }  // namespace

@@ -264,6 +264,65 @@ TEST_CASE("every registered decoder claims at least one extension",
     CHECK_FALSE(r.allExtensions().empty());
 }
 
+TEST_CASE("seeking lands on the right audio, not just the right frame",
+          "[codecs][conformance]") {
+    // A seek that reports success but delivers the wrong samples is the failure
+    // mode that matters: it made cue sheet tracks decode the wrong bytes while
+    // every return code looked healthy. Comparing content is the only check that
+    // catches it.
+    for (const Codec& codec : kCodecs) {
+        if (!codecCompiledIn(codec)) {
+            continue;
+        }
+        const auto path = encode(codec);
+        if (!path) {
+            continue;
+        }
+        INFO("codec: " << codec.name);
+
+        TrackProperties props;
+        const std::vector<float> whole = decodeAll(*path, props);
+        if (!props.seekable || whole.empty()) {
+            continue;
+        }
+
+        const std::uint32_t channels = props.format.channels;
+        const std::int64_t  target   = static_cast<std::int64_t>(props.format.sampleRate / 2);
+        if (target <= 0 || static_cast<std::size_t>(target) * channels >= whole.size()) {
+            continue;
+        }
+
+        auto opened = registry().open(Url::fromLocalPath(*path));
+        REQUIRE(opened);
+        REQUIRE(opened.decoder->seek(target) >= 0);
+
+        AudioChunk chunk;
+        REQUIRE(opened.decoder->readAudio(chunk));
+        REQUIRE(chunk.frameCount() > 0);
+
+        std::vector<float> afterSeek(float32SampleCount(chunk));
+        convertToFloat32(chunk, afterSeek);
+
+        // Lossy codecs re-prime their decoder state after a seek, so the samples
+        // are close rather than identical. Lossless codecs must match exactly.
+        const std::size_t compare =
+            std::min<std::size_t>(afterSeek.size(),
+                                  whole.size() - static_cast<std::size_t>(target) * channels);
+        const float* expected = whole.data() + static_cast<std::size_t>(target) * channels;
+
+        double worst = 0.0;
+        for (std::size_t i = 0; i < compare; ++i) {
+            worst = std::max(worst, std::abs(static_cast<double>(afterSeek[i]) - expected[i]));
+        }
+
+        if (codec.lossless) {
+            CHECK(worst == 0.0);
+        } else {
+            CHECK(worst < 0.30);
+        }
+    }
+}
+
 TEST_CASE("seeking returns to a consistent position", "[codecs][conformance]") {
     for (const Codec& codec : kCodecs) {
         if (!codecCompiledIn(codec)) {

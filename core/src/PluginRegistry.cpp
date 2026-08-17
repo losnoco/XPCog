@@ -141,9 +141,17 @@ DecoderPtr PluginRegistry::makeDecoder(const ISource& source, SkipCue skipCue) c
         return nullptr;
     }
     if (candidates.size() == 1) {
-        return candidates.front()->create();
+        DecoderPtr decoder = candidates.front()->create();
+        if (decoder) {
+            decoder->setRegistry(this);
+        }
+        return decoder;
     }
-    return makeMultiDecoder(std::move(candidates));
+    DecoderPtr multi = makeMultiDecoder(std::move(candidates));
+    if (multi) {
+        multi->setRegistry(this);
+    }
+    return multi;
 }
 
 PluginRegistry::OpenResult PluginRegistry::open(const Url& url, SkipCue skipCue) const {
