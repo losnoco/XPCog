@@ -226,13 +226,23 @@ exercises core headlessly in CI on all three platforms.
 - **Architecture** — CI greps `core/` for `#include <Q`; `xpcog-cli` failing to link
   *is* the Qt-free test.
 
-### Three things that bite
+### Four things that bite
 
 **Tests that build fixtures skip silently when their encoder is missing.** Sixteen
 tests shell out to `flac`, `oggenc`, `opusenc`, `lame`, `wavpack` or `ffmpeg`. A skip
 is not a failure, so CI reported "100% tests passed out of 178" for months while
 gapless, seeking, cue spans and tag reading went unrun on every platform. CI now
 installs the encoders. **Check the skip count, not just the pass rate.**
+
+**The fixture commands are POSIX shell, and `std::system` on Windows is not.**
+Every one of those sixteen tests ended its command with `2>/dev/null`, and the
+scanner probed for its encoder with `command -v`. Under `cmd.exe` the redirection
+names a file called `\dev\null`, whose directory does not exist, so the
+redirection fails and the encoder never runs; `command -v` is a shell builtin
+`cmd.exe` does not have. Both surface identically to a missing tool, so
+installing the encoders on Windows changed *nothing* — the tests skipped anyway.
+Two silent failures composing into a third is why `tests/TestShell.hpp` now owns
+the difference (`kSilenceStderr`, `haveTool`) rather than each call site.
 
 **Tests share a temp directory across separate processes.** `catch_discover_tests`
 runs every Catch2 case in its own process and ctest orders them *by name*, so a test
@@ -257,6 +267,21 @@ drain — collapses to nothing under it and cannot be regression-tested that way
 produced two convincing-looking tests for the seek-position fix that both passed with
 the bug deliberately restored.
 
+It also makes any test that acts *during* playback a race, and the test does not
+look like one. An eight-second file is consumed in the time it takes to decode it,
+so "play, wait for the position to pass 0.5 s, then seek" read a position of 8.0
+and seeked a track that had already ended. It passed on macOS for as long as
+decoding happened to be slower than the poll loop, and failed immediately on a
+faster Windows machine — restoring the unpaced output fails it 3 runs in 5, so it
+was always flaky, just not where anyone was looking.
+
+`makeOfflineOutput(ring, speedMultiple)` therefore takes an optional rate limit:
+0 (the default) keeps the unlimited drain for every test that only checks *what*
+was produced, and a positive value consumes at that multiple of real time for the
+few that must observe playback in flight. The entitlement is capped at one read,
+so a slow decoder open cannot bank credit and then burst through the ring — which
+would be the unpaced behaviour again, intermittently.
+
 Which leads to the general rule, and the most useful habit in this project:
 
 > **Before claiming a fix is tested, put the bug back and confirm the test fails.**
@@ -271,8 +296,30 @@ asserted a property Qt provides rather than the one the code was responsible for
 - Windows CI installs no encoders, so those sixteen tests still skip there.
   Chocolatey has no dependable packages for them, and the decoders they exercise are
   not platform-specific — what the Windows job catches is compiling, linking and path
-  handling.
+  handling. A Windows *workstation* can run them all: winget supplies `flac`,
+  `ffmpeg`, `lame` and `opusenc`, and `oggenc` and `wavpack` come from their
+  upstream builds. See the README.
+- The Windows SMTC card is captioned **"Unknown app"** above otherwise correct
+  track metadata. This is app identity, not metadata: an unpackaged executable
+  has none, and Windows derives the name either from an AppUserModelID backed by
+  a Start Menu shortcut carrying `System.AppUserModel.ID`, or from a package
+  (MSIX, or an external-location "sparse" package). A version resource does not
+  do it — `app/XPCog.rc.in` supplies `FileDescription`, which fixes Task Manager
+  and the file's properties but leaves the caption unchanged, and
+  `AssocQueryString(ASSOCSTR_FRIENDLYAPPNAME)` still answers `XPCog.exe`.
+  Microsoft's guidance is that the shortcut is the installer's job, so this waits
+  on there being an installer rather than the app writing to the Start menu
+  itself.
+- `windeployqt` is invoked with `--no-translations`, so a deployed Windows build
+  carries no Qt catalogues and Qt's own dialog strings stay English even in
+  Spanish. XPCog's strings are unaffected — they are compiled into the executable
+  as a `:/i18n` resource — and `macdeployqt` copies Qt's by default, so the two
+  platforms currently disagree.
 - `populateMenuBar()`'s translation lookup is not covered by a test: it needs a
   `QMenuBar`, so a `QApplication` and a platform plugin, and the test binary has
   neither.
 - The macOS Now Playing integration is verified by hand, not by test.
+- Gapless playback against a **real** Windows device — both a cue sheet's spans
+  and consecutive loose FLACs — is verified by hand. `OfflineOutput` establishes
+  that the seam is sample-exact, which is the part that can be automated; that it
+  is also inaudible through WASAPI is not.

@@ -78,6 +78,18 @@ ctest --preset windows-debug
 If you would rather manage `CMAKE_PREFIX_PATH` yourself, leave `XPCOG_QT_ROOT`
 unset and it stays out of the way.
 
+The Windows presets build with MSVC, so the Qt installed must be the
+**`msvc2022_64`** component and not `mingw_64`. The two are not
+ABI-interchangeable, and pointing `XPCOG_QT_ROOT` at a MinGW Qt gets past the
+path check in `cmake/XPCogQt.cmake` — the layout is identical — before failing
+much later and much less clearly. Any MSVC from 2019 onward links Qt's
+msvc2022 binaries; a VS 2026 toolset (14.5x) is fine.
+
+`cmake --build build/windows-debug --target deploy` runs `windeployqt`, copying
+the Qt runtime and plugins beside `XPCog.exe` so it can be launched from Explorer
+rather than only from a shell with Qt on `PATH`. Windows has no rpath, so a
+freshly built `XPCog.exe` cannot start without one or the other.
+
 ### Other prerequisites
 
 `nasm` is required on every platform for FFmpeg's assembly — vcpkg downloads it
@@ -99,8 +111,23 @@ brew install flac vorbis-tools opus-tools lame wavpack ffmpeg    # macOS
 sudo apt install flac vorbis-tools opus-tools lame wavpack ffmpeg  # Debian/Ubuntu
 ```
 
-There is no dependable Chocolatey source for these, so on Windows those sixteen
-tests skip. Watch the skip count in `ctest` output, not just the pass rate.
+On Windows, four of the six come from winget and the other two from their upstream
+builds:
+
+```bat
+winget install Xiph.FLAC Gyan.FFmpeg LAME.LAME Mozilla.opus-tools
+```
+
+`oggenc` and `wavpack` are not packaged. Take `wavpack-5.9.0-x64.zip` from
+[wavpack.com](https://www.wavpack.com/downloads.html) and `oggenc2` from
+[RareWares](https://www.rarewares.org/ogg-oggenc.php), and put `wavpack.exe` and
+`oggenc.exe` (renamed from `oggenc2.exe`) anywhere on `PATH`.
+
+Watch the skip count in `ctest` output, not just the pass rate — a full run is
+178 tests and **0 skipped**. Note that the encoders alone were not enough before
+the fixture commands stopped assuming a POSIX shell: `2>/dev/null` under
+`cmd.exe` fails the whole command, which every call site read as "encoder
+missing". See `tests/TestShell.hpp`.
 
 To build the engine without Qt at all:
 
