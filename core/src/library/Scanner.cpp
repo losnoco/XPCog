@@ -5,8 +5,9 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <system_error>
-#include <unordered_set>
 
 namespace xpcog {
 namespace {

@@ -134,8 +134,8 @@ int info(std::string_view path) {
 
     if (const auto& rg = props.replayGain; !rg.empty()) {
         std::fputs("replaygain:  ", stdout);
-        if (rg.trackGain) std::printf(" track %+.2f dB", *rg.trackGain);
-        if (rg.albumGain) std::printf(" album %+.2f dB", *rg.albumGain);
+        if (rg.trackGain) std::printf(" track %+.2f dB", static_cast<double>(*rg.trackGain));
+        if (rg.albumGain) std::printf(" album %+.2f dB", static_cast<double>(*rg.albumGain));
         std::putchar('\n');
     }
 

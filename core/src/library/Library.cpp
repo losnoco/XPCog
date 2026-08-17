@@ -5,6 +5,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <filesystem>
+#include <string>
 #include <string_view>
 
 namespace xpcog {

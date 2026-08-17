@@ -2,8 +2,9 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
+#include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace xpcog::plist {
 namespace {

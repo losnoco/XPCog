@@ -3,11 +3,12 @@
 #include "PropertyList.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cctype>
-#include <charconv>
+#include <cstddef>
 #include <cstdlib>
-#include <map>
+#include <filesystem>
+#include <optional>
+#include <string>
 
 namespace xpcog {
 namespace {
