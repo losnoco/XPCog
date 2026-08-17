@@ -7,6 +7,8 @@
 // lets the same objects be swapped for test doubles below it.
 
 #include "Appearance.hpp"
+#include "SingleInstance.hpp"
+#include "StatusPresence.hpp"
 #include "windows/MainWindow.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
@@ -33,6 +35,17 @@ namespace {
 /// Both are leaked deliberately: a QTranslator must outlive every widget that
 /// asks it for text, and the alternative is a static whose destruction order
 /// against QApplication is not something to rely on.
+/// The file arguments, as URLs. Shared between the command line this process
+/// was given and the one a later launch hands over, so both reach openUrls()
+/// having been interpreted the same way.
+QList<QUrl> urlsFromArguments(const QStringList& arguments) {
+    QList<QUrl> urls;
+    for (qsizetype i = 1; i < arguments.size(); ++i) {
+        urls.append(QUrl::fromLocalFile(arguments.at(i)));
+    }
+    return urls;
+}
+
 void installTranslations() {
     const QLocale locale = QLocale::system();
 
@@ -63,6 +76,23 @@ int main(int argc, char** argv) {
 
     installTranslations();
 
+    // Before anything expensive is constructed. A later launch's only job is to
+    // hand its files over and go, and every decoder registered or database
+    // opened first is latency the user waits through for a process that is
+    // about to exit -- and, in the library's case, a second connection to a
+    // file the running instance already holds.
+    //
+    // macOS is excluded on purpose. LaunchServices already delivers a second
+    // open as an event to the running app rather than starting a new process,
+    // so there is no second instance to arbitrate; claiming a socket there
+    // would add a failure mode to solve a problem the platform does not have.
+#ifndef Q_OS_MACOS
+    xpcog::app::SingleInstance instance;
+    if (!instance.claim(QApplication::arguments())) {
+        return 0;
+    }
+#endif
+
     xpcog::PluginRegistry registry;
     xpcog::registerAllCodecs(registry);
 
@@ -78,15 +108,26 @@ int main(int argc, char** argv) {
     xpcog::app::MainWindow window{registry, settings};
     window.show();
 
+    // A later launch: take its files and come to the front. Raising even when
+    // it brought none is the point -- someone who runs the app again while it
+    // is minimised is asking for the window, and a launch that appears to do
+    // nothing reads as the program having failed to start.
+#ifndef Q_OS_MACOS
+    QObject::connect(&instance, &xpcog::app::SingleInstance::launched, &window,
+                     [&window](const QStringList& arguments) {
+                         const QList<QUrl> urls = urlsFromArguments(arguments);
+                         if (!urls.isEmpty()) {
+                             window.openUrls(urls);
+                         }
+                         xpcog::app::raiseWindow(&window);
+                     });
+#endif
+
     // Files named on the command line, so `XPCog album.cue` works and the OS can
     // hand us documents. Done after show() so the scan's progress dialog has a
     // parent window to be modal to.
-    QList<QUrl> opened;
-    const QStringList arguments = QApplication::arguments();
-    for (qsizetype i = 1; i < arguments.size(); ++i) {
-        opened.append(QUrl::fromLocalFile(arguments.at(i)));
-    }
-    if (!opened.isEmpty()) {
+    if (const QList<QUrl> opened = urlsFromArguments(QApplication::arguments());
+        !opened.isEmpty()) {
         window.openUrls(opened);
     }
 

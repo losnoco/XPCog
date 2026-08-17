@@ -40,6 +40,7 @@ if(XPCOG_BUILD_APP)
         app/test_playlistcommands.cpp
         app/test_playlistmodel.cpp
         app/test_scantask.cpp
+        app/test_singleinstance.cpp
         app/test_translations.cpp
     )
 

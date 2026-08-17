@@ -39,6 +39,7 @@ class SeekSlider;
 class PlaybackController;
 class PlaylistModel;
 class PlaylistProxyModel;
+class StatusPresence;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -129,6 +130,10 @@ private:
     /// pushing every transport tick would be four rewrites a second for a
     /// display that is already counting correctly on its own.
     double mediaPosition_ = -1.0;
+
+    /// The tray icon, or the Dock menu on macOS. Never null, but its methods do
+    /// nothing where the platform has no notification area.
+    StatusPresence* presence_ = nullptr;
 
     QProgressBar* scanBar_    = nullptr;
     QToolButton*  scanCancel_ = nullptr;

@@ -8,6 +8,7 @@
 #include "PlaylistModel.hpp"
 #include "ScanTask.hpp"
 #include "SeekSlider.hpp"
+#include "StatusPresence.hpp"
 #include "PreferencesDialog.hpp"
 
 #include "xpcog/core/Version.hpp"
@@ -83,6 +84,10 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     buildUi();
     buildMenus();
     wireUp();
+
+    // After buildMenus(), because it hands out the same QActions the menu bar
+    // uses and they have to exist first.
+    presence_ = new StatusPresence(*actions_, this, this);
 
     if (library_ && library_->loadPlaylist(playlist_)) {
         statusBar()->showMessage(statusSummary());
@@ -700,12 +705,15 @@ void MainWindow::onCurrentTrackChanged(TrackId id) {
         nowPlaying_->clear();
         setWindowTitle(QStringLiteral("XPCog"));
         seekBar_->setValue(0);
+        presence_->clear();
         return;
     }
 
     const QString display = QString::fromStdString(entry->display());
     nowPlaying_->setText(display);
     setWindowTitle(QStringLiteral("%1 — XPCog").arg(display));
+    presence_->setNowPlaying(QString::fromStdString(entry->title()),
+                             QString::fromStdString(entry->artist));
 
     // Follow the playing track, but only when it is visible in the current
     // sort and filter: scrolling to a row the user has filtered out would jump
@@ -726,6 +734,8 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
         command != nullptr) {
         command->setText((playing && !paused) ? tr("&Pause") : tr("&Play"));
     }
+
+    presence_->setPlaybackState(playing, paused);
 
     if (!playing) {
         media_->clear();

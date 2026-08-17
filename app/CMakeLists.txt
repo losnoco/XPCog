@@ -1,4 +1,7 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
+# Network is here for QLocalServer, not for anything that touches a network:
+# Qt puts the local socket classes in that module. The single-instance handler
+# is the only user, and it is why the deployed payload carries Qt6Network.
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network LinguistTools)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -21,6 +24,10 @@ set(XPCOG_APP_SOURCES
     src/PlaylistModel.hpp
     src/ScanTask.cpp
     src/ScanTask.hpp
+    src/SingleInstance.cpp
+    src/SingleInstance.hpp
+    src/StatusPresence.cpp
+    src/StatusPresence.hpp
     src/windows/AboutDialog.cpp
     src/windows/AboutDialog.hpp
     src/windows/MainWindow.cpp
@@ -42,6 +49,7 @@ target_link_libraries(xpcog-appcore PUBLIC
     xpcog-codecs
     xpcog-platform
     Qt6::Widgets
+    Qt6::Network
     PRIVATE XPCog::warnings)
 
 set_target_properties(xpcog-appcore PROPERTIES FOLDER app)
