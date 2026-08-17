@@ -39,8 +39,13 @@ TEST_CASE("paths beside the playlist are written relative", "[playlistfile]") {
 
     // Outside the playlist's directory it stays absolute. Cog never walks up
     // with "..", so a playlist cannot come to point outside its own tree.
-    REQUIRE(relativePathFor(Url::fromLocalPath("/music/Wish You Were Here/1.flac"),
-                            kDestination) == "/music/Wish You Were Here/1.flac");
+    //
+    // Compared against the URL's own path rather than a literal: on Windows a
+    // POSIX-looking path is made absolute against the current drive, so the
+    // literal would be testing fromLocalPath() rather than relativePathFor().
+    const Url outside = Url::fromLocalPath("/music/Wish You Were Here/1.flac");
+    REQUIRE(relativePathFor(outside, kDestination) ==
+            outside.localPath()->generic_string());
 
     // A cue-track fragment survives, or every track of a cue collapses to one.
     REQUIRE(relativePathFor(

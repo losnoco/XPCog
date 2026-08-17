@@ -92,7 +92,10 @@ TEST_CASE("M3U resolves relative paths against the playlist", "[containers]") {
     const auto first = entries[0].localPath();
     REQUIRE(first.has_value());
     CHECK(first->parent_path().filename().string() == "sub");
-    CHECK(first->string().starts_with(fixtureDir().string()));
+    // generic_string() on both sides: path::string() is backslash-separated on
+    // Windows while the URL round-trip yields forward slashes, so comparing the
+    // native forms fails on a difference that is not the one being tested.
+    CHECK(first->generic_string().starts_with(fixtureDir().generic_string()));
 }
 
 TEST_CASE("M3U converts Windows separators", "[containers]") {
