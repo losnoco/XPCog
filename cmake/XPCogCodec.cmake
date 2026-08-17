@@ -43,7 +43,12 @@ function(xpcog_add_codec)
         target_compile_definitions(${_target} PRIVATE ${C_DEFINES})
     endif()
     if(C_INCLUDES)
-        target_include_directories(${_target} PRIVATE ${C_INCLUDES})
+        # SYSTEM, because every INCLUDES a codec passes here belongs to a decoder
+        # library rather than to XPCog. Without it the compiler warns about that
+        # library's headers, in the same log as our own code and looking exactly
+        # like it: FFmpeg's libavutil/common.h alone produced four C4244s, which
+        # nobody here can fix and which crowd out the ones that matter.
+        target_include_directories(${_target} SYSTEM PRIVATE ${C_INCLUDES})
     endif()
     set_target_properties(${_target} PROPERTIES FOLDER codecs)
 

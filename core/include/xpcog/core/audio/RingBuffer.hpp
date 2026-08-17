@@ -67,6 +67,19 @@ private:
     const std::size_t  mask_;
     std::vector<float> data_;
 
+    // MSVC's C4324 reports that the alignas below pads the structure. It does,
+    // and that is the entire point of writing it -- so the warning is noise, and
+    // suppressed here rather than left to accumulate. Narrowly, around exactly
+    // the declarations that raise it: a warning switched off at project level
+    // would also hide the next unintended padding somewhere it matters.
+    //
+    // Worth being fussy about because this is now the only warning the four CI
+    // compilers emit between them, and a build log with one known entry in it is
+    // a build log nobody reads.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
     // Kept on separate cache lines: the producer writes one and the consumer the
     // other, every callback. Sharing a line would cause false sharing on the
     // audio path.
@@ -76,6 +89,9 @@ private:
     /// Set by the producer, cleared by the consumer. On its own cache line for
     /// the same reason as the indices.
     alignas(64) std::atomic<bool> flushRequested_{false};
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 };
 
 }  // namespace xpcog

@@ -574,21 +574,30 @@ asserted a property Qt provides rather than the one the code was responsible for
   pause and stop fades against a real device: the offline output shows the ramp in
   the capture, but that it sounds like a fade rather than a duck is a listening
   judgement.
-- MSVC emits `C4324` for `RingBuffer`'s deliberate cache-line `alignas`, several
-  times per translation unit that includes it. Harmless, and now the *only*
-  warning in the tree on any of the four CI jobs — worth either suppressing
-  narrowly or padding explicitly, since "no warnings" is otherwise true and
-  therefore useful.
+- Nothing here, but worth keeping: **the tree is warning-free**, on a clean build,
+  on all four CI jobs. That is a recent and hard-won property rather than a
+  standing one, and the way it was lost is the point.
 
-  It was not the only one until recently, and the way that was found is worth
-  recording: the warnings each compiler emits are not the same set, and a
-  Windows-only development host sees only MSVC's. GCC additionally reported two
-  `-Wshadow` hits (one of them a `data` that shadowed a `QWidget` member) and
+  Each compiler emits a different set, and a Windows-only development host sees
+  only MSVC's. CI's jobs between them reported nine warnings this host had never
+  shown: two `-Wshadow` from GCC (one a `data` that shadowed a `QWidget` member),
   C++20's deprecation of a bitwise operation between two different enumeration
-  types; Clang reported `-Wdouble-promotion` in three more places than GCC did.
-  All were real and all are fixed. The lesson is that "the tree is warning-clean"
-  is a claim about the compiler in front of you, so the list to check is CI's
-  annotations across all four jobs, not the local build log.
+  types, and `-Wdouble-promotion` in five places, three of which only Clang
+  reported. Meanwhile a *clean* local rebuild turned up four `C4244`s from
+  FFmpeg's own `libavutil/common.h`, which an incremental build had not
+  recompiled — those are now suppressed at the source, by passing a codec's
+  `INCLUDES` as `SYSTEM` in `xpcog_add_codec()`, since a decoder library's
+  warnings are not ours to fix and reading like ours is the harm.
+
+  `C4324` on `RingBuffer`'s deliberate cache-line `alignas` is suppressed
+  narrowly, around exactly the three declarations that raise it, rather than
+  project-wide — the padding is the entire point of the `alignas`, but switching
+  the warning off globally would also hide the next unintended padding somewhere
+  it matters.
+
+  So: the list to check is CI's annotations across every job **plus** a clean
+  local build, not the incremental log in front of you. Zero is only useful as a
+  threshold while it is actually zero.
 - **Preferences has no keyboard shortcut on Windows or Linux.**
   `QKeySequence::Preferences` is bound only on macOS, so `ActionRegistry` gives the
   action an empty sequence everywhere else. The menu item works; the keyboard does
