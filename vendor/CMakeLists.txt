@@ -8,9 +8,9 @@
 # Planned occupants:
 #   lpc/      <- Cog Audio/ThirdParty/lvqcl        (M1c)
 #   hdcd/     <- Cog Audio/ThirdParty/hdcd         (M1c)
-#   miniaudio/                                     (M1a)
+#   miniaudio/  vendored                           (M1a) -- done
 #   pffft/    <- Cog Audio/ThirdParty/deadbeef     (M5)
 #   dsd2pcm/  <- extracted from Cog ChunkList.m    (M6)
 #   fsurround/<- Cog Audio/ThirdParty/fsurround    (M4)
 
-# (nothing yet)
+add_subdirectory(miniaudio)

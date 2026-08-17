@@ -4,6 +4,9 @@ configure_file(
     @ONLY)
 
 add_library(xpcog-core STATIC
+    src/audio/MiniaudioOutput.cpp
+    src/audio/RingBuffer.cpp
+    src/audio/SampleConvert.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp
     src/MetadataMap.cpp
@@ -19,7 +22,9 @@ target_include_directories(xpcog-core
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_BINARY_DIR}/include")
 
-target_link_libraries(xpcog-core PRIVATE XPCog::warnings)
+target_link_libraries(xpcog-core
+    PUBLIC  vendor-miniaudio
+    PRIVATE XPCog::warnings)
 
 set_target_properties(xpcog-core PROPERTIES FOLDER core)
 

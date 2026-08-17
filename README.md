@@ -6,8 +6,9 @@ A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio play
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
 
-> **Status: milestone 0 — skeleton.** The build system, the plugin-registration
-> mechanism and the Qt shell are in place. No audio is decoded or played yet.
+> **Status: milestone 1a — it plays audio.** `xpcog-cli play song.flac` decodes
+> and plays through the system audio device on macOS, Linux and Windows. Decoded
+> output is byte-exact against `flac -d`. The Qt application is still a shell.
 > See [the roadmap](#roadmap).
 
 ## Why a port rather than a fork
@@ -68,12 +69,36 @@ cmake --preset macos-headless && cmake --build --preset macos-headless
 ./build/macos-headless/bin/xpcog-cli codecs
 ```
 
+## Trying it
+
+```sh
+xpcog-cli info  song.flac        # format, duration, ReplayGain, tags
+xpcog-cli decode song.flac out.raw   # headerless native-endian PCM
+xpcog-cli play  song.flac        # to the default audio device
+```
+
+`decode` output is byte-identical to `flac -d` with the WAV header stripped, which
+is how the decoder is regression-tested.
+
+### Real-time audio
+
+The audio callback reads from a lock-free SPSC ring, applies an atomic gain, and
+zeroes any tail it could not fill. That is the whole callback: no lock, no
+allocation, no `std::function`, no logging. A feeder thread does the decoding and
+writes into the ring.
+
+This is deliberately stricter than Cog, whose callback
+(`Audio/Output/OutputCoreAudio.m:877`) takes an `NSLock` and enters an
+`@autoreleasepool` on the real-time thread. `xpcog-cli play` reports underruns
+separately for playback and for the post-stream drain, so a genuine dropout is
+never confused with the expected tail.
+
 ## Roadmap
 
 | | Milestone | Scope |
 |---|---|---|
 | ✅ | **M0** | Toolchain, module layout, codec registration, Qt shell |
-| | **M1a** | Walking skeleton: decode one FLAC to the speakers |
+| ✅ | **M1a** | Walking skeleton: FLAC decode → miniaudio output |
 | | **M1b** | Transport, gapless playback, 8 core formats, TagLib |
 | | **M1c** | ReplayGain, LPC extrapolation, HDCD, settings |
 | | **M2** | SQLite library, playlist model, shuffle/repeat/queue |
