@@ -17,19 +17,23 @@
 #include <QUrl>
 
 #include <memory>
+#include <vector>
 
 class QLabel;
 class QMenu;
 class QToolBar;
 class QLineEdit;
 class QSlider;
+class QProgressBar;
 class QTableView;
+class QToolButton;
 class QUndoStack;
 
 namespace xpcog::app {
 
 class ActionRegistry;
 class FileTree;
+class ScanTask;
 class SeekSlider;
 class PlaybackController;
 class PlaylistModel;
@@ -71,6 +75,10 @@ private:
     void savePlaylistAs();
     void addUrls(const QList<QUrl>& urls, int atRow = -1);
 
+    /// Starts the next queued scan, if any and if none is running.
+    void pumpScanQueue();
+    void addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled);
+
     void onPositionChanged(double seconds, double duration);
     void onCurrentTrackChanged(TrackId id);
     void onPlaybackStateChanged(bool playing, bool paused);
@@ -108,6 +116,19 @@ private:
     QLineEdit*  filter_   = nullptr;
     QLabel*     nowPlaying_ = nullptr;
     QLabel*     clock_    = nullptr;
+
+    QProgressBar* scanBar_    = nullptr;
+    QToolButton*  scanCancel_ = nullptr;
+
+    /// One scan at a time: the PluginCache the scans share is not synchronised.
+    /// Requests arriving while one runs wait their turn, which also keeps a
+    /// burst of drops landing in the order they were dropped.
+    struct ScanRequest {
+        std::vector<Url> inputs;
+        int              atRow = -1;
+    };
+    ScanTask*                scan_ = nullptr;
+    std::vector<ScanRequest> pendingScans_;
 
     /// The duration of the audible track, remembered so the clock can show the
     /// scrubbed time against it without asking the controller mid-drag.

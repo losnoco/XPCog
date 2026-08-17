@@ -19,6 +19,8 @@ qt_add_library(xpcog-appcore STATIC
     src/PlaylistCommands.hpp
     src/PlaylistModel.cpp
     src/PlaylistModel.hpp
+    src/ScanTask.cpp
+    src/ScanTask.hpp
     src/windows/AboutDialog.cpp
     src/windows/AboutDialog.hpp
     src/windows/MainWindow.cpp

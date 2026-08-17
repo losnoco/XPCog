@@ -6,6 +6,7 @@
 #include "PlaybackController.hpp"
 #include "PlaylistCommands.hpp"
 #include "PlaylistModel.hpp"
+#include "ScanTask.hpp"
 #include "SeekSlider.hpp"
 #include "PreferencesDialog.hpp"
 
@@ -25,14 +26,16 @@
 #include <QMenuBar>
 #include <QMimeData>
 #include <QMessageBox>
-#include <QProgressDialog>
+#include <QProgressBar>
 #include <QSaveFile>
 #include <QSettings>
 #include <QSplitter>
 #include <QSlider>
 #include <QStatusBar>
 #include <QTableView>
+#include <QStyle>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUndoStack>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -123,7 +126,14 @@ QMenu* MainWindow::createPopupMenu() {
     return menu;
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+    // The scan borrows the registry and the PluginCache, and the cache is a
+    // member of this window. QObject deletes its children only after every
+    // member is already gone, so leaving the task to that would let its thread
+    // outlive what it is reading from. ~ScanTask cancels and joins.
+    delete scan_;
+    scan_ = nullptr;
+}
 
 // --- construction -------------------------------------------------------
 
@@ -199,6 +209,25 @@ void MainWindow::buildUi() {
 
     nowPlaying_ = new QLabel(this);
     statusBar()->addPermanentWidget(nowPlaying_);
+
+    // In the status bar rather than a modal dialog: the scan runs on its own
+    // thread now, so there is nothing to block for. The window stays usable --
+    // including playing what has already been added -- while a large folder is
+    // still being read.
+    scanBar_ = new QProgressBar(this);
+    scanBar_->setMaximumWidth(140);
+    scanBar_->setTextVisible(false);
+    scanBar_->hide();
+    statusBar()->addPermanentWidget(scanBar_);
+
+    // Losing the modal dialog also loses its Cancel button, and a scan of a
+    // mistakenly-dropped drive needs a way out that is not quitting.
+    scanCancel_ = new QToolButton(this);
+    scanCancel_->setIcon(style()->standardIcon(QStyle::SP_BrowserStop));
+    scanCancel_->setAutoRaise(true);
+    scanCancel_->setToolTip(tr("Stop reading files"));
+    scanCancel_->hide();
+    statusBar()->addPermanentWidget(scanCancel_);
 
     // The toolbar is assembled after the actions exist, in buildMenus().
     transport->addSeparator();
@@ -329,6 +358,16 @@ void MainWindow::wireUp() {
     });
 
     connect(filter_, &QLineEdit::textChanged, proxy_, &PlaylistProxyModel::setFilterText);
+
+    connect(scanCancel_, &QToolButton::clicked, this, [this] {
+        // Everything not yet started goes too: cancelling one folder of a
+        // dropped batch and then watching the next one start is not what the
+        // button looks like it does.
+        pendingScans_.clear();
+        if (scan_ != nullptr) {
+            scan_->cancel();
+        }
+    });
 
     connect(model_, &PlaylistModel::filesDropped, this,
             [this](const QList<QUrl>& urls, int row) { addUrls(urls, row); });
@@ -461,26 +500,54 @@ void MainWindow::addUrls(const QList<QUrl>& urls, int atRow) {
         return;
     }
 
-    // Synchronous for now, with a modal progress dialog. A scan of a large
-    // folder belongs on a worker thread -- Scanner is already cancellable and
-    // reports progress for exactly that -- but a background scan needs the
-    // playlist mutation marshalled back, and doing that half-way is worse than
-    // doing it plainly.
-    QProgressDialog progress(tr("Reading files…"), tr("Cancel"), 0, 0, this);
-    progress.setWindowModality(Qt::WindowModal);
-    progress.setMinimumDuration(400);
+    pendingScans_.push_back(ScanRequest{std::move(inputs), atRow});
+    pumpScanQueue();
+}
 
-    Scanner scanner{registry_};
-    scanner.setCache(&cache_);
-    scanner.setProgressCallback([&progress](std::size_t done, std::size_t total) {
-        progress.setMaximum(static_cast<int>(total));
-        progress.setValue(static_cast<int>(done));
-        QCoreApplication::processEvents();
+void MainWindow::pumpScanQueue() {
+    if (scan_ != nullptr || pendingScans_.empty()) {
+        return;
+    }
+
+    ScanRequest request = std::move(pendingScans_.front());
+    pendingScans_.erase(pendingScans_.begin());
+
+    scan_ = new ScanTask(registry_, &cache_, std::move(request.inputs), this);
+
+    connect(scan_, &ScanTask::progress, this, [this](int done, int total) {
+        // A zero maximum is Qt's busy indicator, which is the truthful display
+        // while the expansion pass is still counting.
+        scanBar_->setMaximum(total);
+        scanBar_->setValue(done);
     });
 
-    std::vector<PlaylistEntry> entries = scanner.scan(inputs);
+    const int atRow = request.atRow;
+    connect(scan_, &ScanTask::finished, this,
+            [this, atRow](const std::vector<PlaylistEntry>& entries, bool cancelled) {
+                // The task owns the thread it is still returning from, so it
+                // cannot be deleted from inside its own signal.
+                scan_->deleteLater();
+                scan_ = nullptr;
+
+                scanBar_->hide();
+                scanCancel_->hide();
+                addScannedEntries(entries, atRow, cancelled);
+                pumpScanQueue();
+            });
+
+    scanBar_->setRange(0, 0);
+    scanBar_->show();
+    scanCancel_->show();
+    statusBar()->showMessage(tr("Reading files…"));
+    scan_->start();
+}
+
+void MainWindow::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow,
+                                   bool cancelled) {
     if (entries.empty()) {
-        statusBar()->showMessage(tr("Nothing playable was found"), 5000);
+        statusBar()->showMessage(cancelled ? tr("Cancelled")
+                                           : tr("Nothing playable was found"),
+                                 5000);
         return;
     }
 
@@ -490,6 +557,9 @@ void MainWindow::addUrls(const QList<QUrl>& urls, int atRow) {
         }
     }
 
+    // The row a drop targeted may no longer exist: the scan took time and the
+    // user could have edited the playlist meanwhile. insert() clamps, so this
+    // lands at the end rather than nowhere.
     const std::size_t where =
         (atRow >= 0) ? static_cast<std::size_t>(atRow) : playlist_.size();
     const auto count = static_cast<int>(entries.size());

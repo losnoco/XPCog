@@ -38,6 +38,7 @@ if(XPCOG_BUILD_APP)
         app/QtStringMaker.hpp
         app/test_playlistcommands.cpp
         app/test_playlistmodel.cpp
+        app/test_scantask.cpp
     )
 
     target_link_libraries(xpcog-app-tests PRIVATE
