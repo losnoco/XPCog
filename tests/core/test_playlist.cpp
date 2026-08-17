@@ -397,3 +397,75 @@ TEST_CASE("an untitled entry falls back to its file name", "[playlist]") {
     REQUIRE(entry.title() == "Pink Floyd - Animals.flac#2");
     REQUIRE(entry.display() == "Pink Floyd - Animals.flac#2");
 }
+
+// --- reinsert and reorder, which exist for the app's undo stack -----------
+
+TEST_CASE("reinsert brings entries back with the ids they had", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 4);
+
+    std::vector<PlaylistEntry> taken{playlist.at(1), playlist.at(2)};
+    playlist.removeAt(1, 2);
+    REQUIRE(playlist.size() == 2);
+
+    playlist.reinsert(1, taken);
+    REQUIRE(playlist.size() == 4);
+    REQUIRE(playlist.at(1).id == ids[1]);
+    REQUIRE(playlist.at(2).id == ids[2]);
+    REQUIRE(playlist.indexOf(ids[2]) == 2u);
+
+    // The id counter has to stay ahead of what was restored, or the next add
+    // hands out an id that is already in the list.
+    const TrackId fresh = playlist.add(makeEntry("new"));
+    for (const TrackId existing : ids) {
+        REQUIRE(fresh != existing);
+    }
+}
+
+TEST_CASE("a reinserted entry does not claim a place in the queue", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 3);
+
+    playlist.enqueue(ids[1]);
+    REQUIRE(playlist.at(1).queued());
+
+    std::vector<PlaylistEntry> taken{playlist.at(1)};
+    playlist.removeAt(1, 1);
+    playlist.reinsert(1, taken);
+
+    // The entry carried queuePosition 0 when it was captured, but reinsert does
+    // not restore the queue, so it must not come back looking queued.
+    REQUIRE_FALSE(playlist.at(1).queued());
+    REQUIRE(playlist.queue().empty());
+
+    // ...and it must be possible to put it back in the queue, which is what
+    // enqueue() refuses to do for something already queued.
+    playlist.enqueue(ids[1]);
+    REQUIRE(playlist.queue() == std::vector<TrackId>{ids[1]});
+}
+
+TEST_CASE("reorder rearranges into exactly the order given", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 4);
+
+    REQUIRE(playlist.reorder({ids[3], ids[0], ids[2], ids[1]}));
+    REQUIRE(playlist.at(0).id == ids[3]);
+    REQUIRE(playlist.at(3).id == ids[1]);
+    REQUIRE(playlist.indexOf(ids[0]) == 1u);
+}
+
+TEST_CASE("reorder refuses anything that is not a permutation", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 3);
+
+    // Too short, an unknown id, and a duplicate that would silently drop an
+    // entry while still having the right length.
+    REQUIRE_FALSE(playlist.reorder({ids[0], ids[1]}));
+    REQUIRE_FALSE(playlist.reorder({ids[0], ids[1], 999}));
+    REQUIRE_FALSE(playlist.reorder({ids[0], ids[1], ids[1]}));
+
+    // Nothing changed.
+    REQUIRE(playlist.at(0).id == ids[0]);
+    REQUIRE(playlist.at(1).id == ids[1]);
+    REQUIRE(playlist.at(2).id == ids[2]);
+}

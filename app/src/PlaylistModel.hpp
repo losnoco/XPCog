@@ -68,6 +68,11 @@ signals:
     /// window, not to a table model.
     void filesDropped(const QList<QUrl>& urls, int row);
 
+    /// A drag within the playlist wants the rows in this order. The model does
+    /// not apply it either: a drag is one undoable edit, and the undo stack
+    /// belongs to the window.
+    void reorderRequested(const std::vector<TrackId>& order);
+
 public:
     /// Highlights the playing row. Not stored on the entry: it is view state,
     /// and Cog storing `current` on the managed object is why its playlist has

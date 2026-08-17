@@ -96,6 +96,28 @@ public:
     /// Inserts at `index`, assigning ids. Returns the assigned ids in order.
     std::vector<TrackId> insert(std::size_t index, std::vector<PlaylistEntry> entries);
 
+    /// Inserts at `index` keeping the ids the entries already carry.
+    ///
+    /// This exists for undo. Undoing a removal has to bring back the same
+    /// entries, not equal ones: the queue, the playing track and anything else
+    /// holding a TrackId refer to the entry that was there, and fresh ids from
+    /// insert() would leave every one of those references dangling. Nothing but
+    /// undo should call it -- ids are the model's to hand out.
+    ///
+    /// The shuffle order is not restored, for the same reason insert() does not
+    /// extend it: where in an already-drawn permutation an entry belongs is not
+    /// a question with an answer.
+    void reinsert(std::size_t index, std::vector<PlaylistEntry> entries);
+
+    /// Rearranges the entries into exactly `order`. Returns false and changes
+    /// nothing unless `order` is a permutation of the current ids.
+    ///
+    /// A drag that moves several rows at once, and randomize(), are both single
+    /// user actions that reorder the whole list; expressing their undo as a
+    /// target order rather than as a sequence of inverse moves means the
+    /// inverse never has to be derived, and so never has to be derived wrongly.
+    bool reorder(const std::vector<TrackId>& order);
+
     void removeAt(std::size_t index, std::size_t count = 1);
     void remove(const std::vector<TrackId>& ids);
     void clear();

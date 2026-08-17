@@ -4,6 +4,7 @@
 #include "windows/AboutDialog.hpp"
 #include "FileTree.hpp"
 #include "PlaybackController.hpp"
+#include "PlaylistCommands.hpp"
 #include "PlaylistModel.hpp"
 #include "SeekSlider.hpp"
 #include "PreferencesDialog.hpp"
@@ -32,6 +33,7 @@
 #include <QStatusBar>
 #include <QTableView>
 #include <QToolBar>
+#include <QUndoStack>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -71,6 +73,7 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     }
 
     playback_ = std::make_unique<PlaybackController>(registry_, playlist_, settings_, this);
+    undo_     = new QUndoStack(this);
 
     buildUi();
     buildMenus();
@@ -79,6 +82,9 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     if (library_ && library_->loadPlaylist(playlist_)) {
         statusBar()->showMessage(statusSummary());
     }
+    // Restoring the saved playlist is not an edit the user made, so it must not
+    // be the first thing Undo offers to take back.
+    undo_->clear();
 
     // Modes come from settings, which hold Cog's integers.
     playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
@@ -260,6 +266,16 @@ void MainWindow::wireUp() {
     on(ActionId::EditRemove, [this] { removeSelected(); });
     on(ActionId::PlaybackEnqueue, [this] { enqueueSelected(); });
 
+    on(ActionId::EditUndo, [this] { undo_->undo(); });
+    on(ActionId::EditRedo, [this] { undo_->redo(); });
+    on(ActionId::EditRandomize, [this] {
+        if (playlist_.size() > 1) {
+            undo_->push(new RandomizeCommand(playlist_));
+        }
+    });
+    connect(undo_, &QUndoStack::indexChanged, this, [this] { refreshUndoActions(); });
+    refreshUndoActions();
+
     on(ActionId::PlaybackPlayPause, [this] { playback_->playPause(); });
     on(ActionId::PlaybackStop, [this] { playback_->stop(); });
     on(ActionId::PlaybackNext, [this] { playback_->next(); });
@@ -316,6 +332,26 @@ void MainWindow::wireUp() {
 
     connect(model_, &PlaylistModel::filesDropped, this,
             [this](const QList<QUrl>& urls, int row) { addUrls(urls, row); });
+
+    connect(model_, &PlaylistModel::reorderRequested, this,
+            [this](const std::vector<TrackId>& order) {
+                undo_->push(new ReorderCommand(playlist_, order, tr("Move Tracks")));
+            });
+}
+
+void MainWindow::refreshUndoActions() {
+    const auto label = [](const QString& base, const QString& what) {
+        return what.isEmpty() ? base : QStringLiteral("%1 %2").arg(base, what);
+    };
+
+    if (QAction* command = actions_->action(ActionId::EditUndo); command != nullptr) {
+        command->setEnabled(undo_->canUndo());
+        command->setText(label(tr("&Undo"), undo_->undoText()));
+    }
+    if (QAction* command = actions_->action(ActionId::EditRedo); command != nullptr) {
+        command->setEnabled(undo_->canRedo());
+        command->setText(label(tr("&Redo"), undo_->redoText()));
+    }
 }
 
 // --- commands -----------------------------------------------------------
@@ -456,7 +492,9 @@ void MainWindow::addUrls(const QList<QUrl>& urls, int atRow) {
 
     const std::size_t where =
         (atRow >= 0) ? static_cast<std::size_t>(atRow) : playlist_.size();
-    playlist_.insert(where, std::move(entries));
+    const auto count = static_cast<int>(entries.size());
+    undo_->push(new InsertTracksCommand(playlist_, where, std::move(entries),
+                                        tr("Add %n Track(s)", nullptr, count)));
 
     statusBar()->showMessage(statusSummary());
 }
@@ -467,7 +505,11 @@ void MainWindow::removeSelected() {
         ids.push_back(static_cast<TrackId>(
             proxy_->data(index, PlaylistModel::TrackIdRole).toULongLong()));
     }
-    playlist_.remove(ids);
+    if (ids.empty()) {
+        return;
+    }
+    undo_->push(new RemoveTracksCommand(
+        playlist_, ids, tr("Remove %n Track(s)", nullptr, static_cast<int>(ids.size()))));
     statusBar()->showMessage(statusSummary());
 }
 

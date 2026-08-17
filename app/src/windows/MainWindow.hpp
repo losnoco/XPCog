@@ -24,6 +24,7 @@ class QToolBar;
 class QLineEdit;
 class QSlider;
 class QTableView;
+class QUndoStack;
 
 namespace xpcog::app {
 
@@ -78,6 +79,12 @@ private:
     void removeSelected();
     void enqueueSelected();
 
+    /// Keeps the Undo and Redo commands' enabled state and labels in step with
+    /// the stack. Qt's QUndoStack::createUndoAction() would do this, but it
+    /// makes its own QAction, and every command in this window is one the
+    /// registry owns.
+    void refreshUndoActions();
+
     [[nodiscard]] QString statusSummary() const;
 
     const PluginRegistry& registry_;
@@ -91,6 +98,7 @@ private:
     ActionRegistry*     actions_ = nullptr;
     PlaylistModel*      model_   = nullptr;
     PlaylistProxyModel* proxy_   = nullptr;
+    QUndoStack*         undo_    = nullptr;
 
     QToolBar*   transport_ = nullptr;
     FileTree*   tree_     = nullptr;

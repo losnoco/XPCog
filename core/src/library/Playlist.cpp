@@ -89,6 +89,61 @@ std::vector<TrackId> Playlist::insert(std::size_t index,
     return ids;
 }
 
+void Playlist::reinsert(std::size_t index, std::vector<PlaylistEntry> entries) {
+    if (entries.empty()) {
+        return;
+    }
+    index = std::min(index, entries_.size());
+
+    const std::size_t count = entries.size();
+    for (PlaylistEntry& entry : entries) {
+        // Keep the counter ahead of anything restored, or a later add() would
+        // hand out an id that is already in the list.
+        nextId_ = std::max(nextId_, entry.id + 1);
+
+        // Neither the queue nor the shuffle order is restored here, so an entry
+        // must not come back claiming a place in either. Leaving the stale
+        // values on would make queued() true for an entry that is not in
+        // queue_, and enqueue() refuses to re-add something already queued --
+        // so restoring the queue afterwards would silently do nothing.
+        entry.queuePosition = -1;
+        entry.shuffleIndex  = -1;
+    }
+
+    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(index),
+                    std::make_move_iterator(entries.begin()),
+                    std::make_move_iterator(entries.end()));
+    reindex();
+
+    notify({Change::Kind::Inserted, index, count, 0});
+}
+
+bool Playlist::reorder(const std::vector<TrackId>& order) {
+    if (order.size() != entries_.size()) {
+        return false;
+    }
+
+    std::vector<PlaylistEntry> rearranged;
+    rearranged.reserve(order.size());
+    for (const TrackId id : order) {
+        const auto position = indexOf(id);
+        if (!position) {
+            return false;  // not a permutation; leave the playlist alone
+        }
+        rearranged.push_back(entries_[*position]);
+    }
+    // An id repeated in `order` would pass the check above while dropping a
+    // different entry, so verify the result covers everything exactly once.
+    if (std::unordered_set<TrackId>(order.begin(), order.end()).size() != order.size()) {
+        return false;
+    }
+
+    entries_ = std::move(rearranged);
+    reindex();
+    notify({Change::Kind::Reset, 0, 0, 0});
+    return true;
+}
+
 void Playlist::removeAt(std::size_t index, std::size_t count) {
     if (index >= entries_.size() || count == 0) {
         return;

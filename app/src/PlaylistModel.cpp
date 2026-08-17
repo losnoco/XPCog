@@ -1,5 +1,7 @@
 #include "PlaylistModel.hpp"
 
+#include "PlaylistCommands.hpp"
+
 #include <QDataStream>
 #include <QtGlobal>
 #include <QIODevice>
@@ -249,41 +251,23 @@ bool PlaylistModel::dropMimeData(const QMimeData* data, Qt::DropAction action, i
             return false;
         }
 
-        // Ids rather than rows: each move shifts every row after it, and
-        // recomputing indices between moves is how reordering a multi-row
-        // selection quietly scrambles it.
-        QList<TrackId> ids;
-        ids.reserve(rows.size());
+        // Ids rather than rows: the drop is turned into a target order, and
+        // rows stop meaning anything the moment the first one moves.
+        std::vector<TrackId> ids;
+        ids.reserve(static_cast<std::size_t>(rows.size()));
         for (const int source : rows) {
             if (source >= 0 && source < rowCount()) {
-                ids.append(trackIdAt(source));
+                ids.push_back(trackIdAt(source));
             }
+        }
+        if (ids.empty()) {
+            return false;
         }
 
         const TrackId anchor =
             (destination < rowCount()) ? trackIdAt(destination) : kInvalidTrackId;
 
-        // Playlist::move takes the final index of the moved row. Dropping a
-        // selection *before* the anchor therefore needs the target adjusted
-        // when the row is coming from above it -- removing it first shifts the
-        // anchor one place left. Getting this wrong reverses the selection,
-        // which looks like the drag picked the rows in the wrong order.
-        std::size_t target = (anchor == kInvalidTrackId)
-                                 ? playlist_.size()
-                                 : playlist_.indexOf(anchor).value_or(playlist_.size());
-
-        for (const TrackId id : ids) {
-            const auto from = playlist_.indexOf(id);
-            if (!from) {
-                continue;
-            }
-            std::size_t to = target;
-            if (*from < to && to > 0) {
-                --to;
-            }
-            playlist_.move(*from, 1, to);
-            target = playlist_.indexOf(id).value_or(to) + 1;
-        }
+        emit reorderRequested(orderAfterMove(playlist_, ids, anchor));
         return true;
     }
 

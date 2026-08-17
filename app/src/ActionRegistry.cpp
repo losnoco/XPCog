@@ -27,8 +27,11 @@ constexpr MenuItem kMenuLayout[] = {
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&View"), ActionId::ViewFileTree},
 
-    {QT_TRANSLATE_NOOP("ActionRegistry", "&Edit"), ActionId::EditSelectAll},
+    {QT_TRANSLATE_NOOP("ActionRegistry", "&Edit"), ActionId::EditUndo},
+    {nullptr, ActionId::EditRedo},
+    {nullptr, ActionId::EditSelectAll, true},
     {nullptr, ActionId::EditRemove},
+    {nullptr, ActionId::EditRandomize, true},
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&Playback"), ActionId::PlaybackPlayPause},
     {nullptr, ActionId::PlaybackStop},
@@ -71,8 +74,13 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
     tree->setCheckable(true);
     tree->setChecked(true);
 
+    // Undo and Redo are enabled by the undo stack, not here: an always-enabled
+    // Undo that does nothing is worse than a greyed-out one.
+    add(ActionId::EditUndo, tr("&Undo"), QKeySequence::Undo)->setEnabled(false);
+    add(ActionId::EditRedo, tr("&Redo"), QKeySequence::Redo)->setEnabled(false);
     add(ActionId::EditSelectAll, tr("Select &All"), QKeySequence::SelectAll);
     add(ActionId::EditRemove, tr("&Remove from Playlist"), QKeySequence::Delete);
+    add(ActionId::EditRandomize, tr("Randomi&ze Playlist"));
 
     add(ActionId::PlaybackPlayPause, tr("&Play/Pause"), QKeySequence(Qt::Key_Space));
     add(ActionId::PlaybackStop, tr("&Stop"), QKeySequence(Qt::CTRL | Qt::Key_Period));

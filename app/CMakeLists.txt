@@ -15,6 +15,8 @@ qt_add_library(xpcog-appcore STATIC
     src/FileTree.hpp
     src/SeekSlider.cpp
     src/SeekSlider.hpp
+    src/PlaylistCommands.cpp
+    src/PlaylistCommands.hpp
     src/PlaylistModel.cpp
     src/PlaylistModel.hpp
     src/windows/AboutDialog.cpp

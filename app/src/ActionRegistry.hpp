@@ -28,8 +28,11 @@ enum class ActionId {
     FilePreferences,
     FileQuit,
 
+    EditUndo,
+    EditRedo,
     EditRemove,
     EditSelectAll,
+    EditRandomize,
 
     PlaybackPlayPause,
     PlaybackStop,

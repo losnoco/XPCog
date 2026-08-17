@@ -36,6 +36,7 @@ if(XPCOG_BUILD_APP)
     add_executable(xpcog-app-tests
         app/main.cpp
         app/QtStringMaker.hpp
+        app/test_playlistcommands.cpp
         app/test_playlistmodel.cpp
     )
 
