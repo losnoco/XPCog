@@ -7,6 +7,7 @@ add_executable(xpcog-tests
     core/test_value_types.cpp
     core/test_version.cpp
     codecs/test_conformance.cpp
+    codecs/test_containers.cpp
 )
 
 target_link_libraries(xpcog-tests PRIVATE

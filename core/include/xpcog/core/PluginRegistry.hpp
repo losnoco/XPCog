@@ -50,6 +50,24 @@ struct DecoderDescriptor {
     bool (*available)() = nullptr;
 };
 
+/// Expands a playlist or archive into the tracks it contains. The registry opens
+/// `source` and hands it over, so containers never open files themselves --
+/// unlike Cog's CogContainer, which reaches for AudioSource internally. Taking
+/// the source as a parameter keeps containers testable without the filesystem.
+using ContainerExpandFn = std::vector<Url> (*)(const Url& url, ISource& source);
+
+struct ContainerDescriptor {
+    std::string_view                  name;
+    Priority                          priority = kDefaultPriority;
+    std::span<const std::string_view> extensions;
+    std::span<const std::string_view> mimeTypes;
+    ContainerExpandFn                 expand = nullptr;
+    /// Files the container needs alongside it (a cue sheet's audio file).
+    /// Optional; may be null. Mirrors Cog's +dependencyUrlsForContainerURL:.
+    ContainerExpandFn dependencies = nullptr;
+    bool (*available)()            = nullptr;
+};
+
 struct SourceDescriptor {
     std::string_view name;
     Priority         priority = kDefaultPriority;
@@ -73,6 +91,7 @@ public:
 
     void addSource(SourceDescriptor);
     void addDecoder(DecoderDescriptor);
+    void addContainer(ContainerDescriptor);
 
     /// Builds the extension/MIME lookup buckets and sorts each by descending
     /// priority. Must be called once after registration; mutators assert afterwards.
@@ -81,6 +100,14 @@ public:
 
     [[nodiscard]] std::size_t decoderCount() const noexcept { return decoders_.size(); }
     [[nodiscard]] std::size_t sourceCount()  const noexcept { return sources_.size(); }
+    [[nodiscard]] std::size_t containerCount() const noexcept { return containers_.size(); }
+
+    /// True when some container claims this URL's extension.
+    [[nodiscard]] bool isContainer(const Url& url) const;
+
+    /// Expands a playlist or archive into its tracks. Returns just `url` when no
+    /// container claims it, so callers can apply this uniformly to any input.
+    [[nodiscard]] std::vector<Url> expandContainer(const Url& url) const;
 
     /// Creates a source for `url`'s scheme, or nullptr if none claims it.
     /// The source is NOT opened.
@@ -113,8 +140,9 @@ public:
     [[nodiscard]] std::span<const std::string> allExtensions() const noexcept;
 
 private:
-    std::vector<SourceDescriptor>  sources_;
-    std::vector<DecoderDescriptor> decoders_;
+    std::vector<SourceDescriptor>    sources_;
+    std::vector<DecoderDescriptor>   decoders_;
+    std::vector<ContainerDescriptor> containers_;
     std::vector<std::string>       allExtensions_;
     bool                           frozen_ = false;
 };

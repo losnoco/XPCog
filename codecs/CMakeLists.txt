@@ -20,6 +20,12 @@ endif()
 if(XPCOG_WITH_WAVPACK)
     add_subdirectory(wavpack)
 endif()
+if(XPCOG_WITH_PLAYLISTS)
+    add_subdirectory(playlists)
+endif()
+if(XPCOG_WITH_FFMPEG)
+    add_subdirectory(ffmpeg)
+endif()
 
 # M1b onward: ffmpeg, vorbis, opus, mpg123, wavpack, ape, musepack, taglib,
 # cuesheet, m3u, pls, xmlplaylist. M6: the remaining ~27 Cog decoders.

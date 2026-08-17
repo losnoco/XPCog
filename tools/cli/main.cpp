@@ -27,6 +27,7 @@ int usage() {
               "  --version           print version and exit\n"
               "  codecs              list compiled-in codecs and claimed extensions\n"
               "  info <file>         print format and tags\n"
+              "  expand <playlist>   list the tracks a playlist or container holds\n"
               "  decode <in> <out>   decode to headerless native-endian PCM\n"
               "\n"
               "  play <file>...      play, gaplessly across multiple files");
@@ -236,6 +237,16 @@ int main(int argc, char** argv) {
 
     if (command == "codecs") {
         return listCodecs();
+    }
+
+    if (command == "expand") {
+        if (argc < 3) {
+            return usage();
+        }
+        for (const auto& entry : registry().expandContainer(urlFromArgument(argv[2]))) {
+            std::printf("%s\n", entry.toString().c_str());
+        }
+        return 0;
     }
 
     if (command == "info") {

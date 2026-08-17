@@ -53,6 +53,12 @@ constexpr Codec kCodecs[] = {
     {"Opus", "opus", R"(opusenc --quiet --bitrate 128 "{in}" "{out}")", "Opus", false},
     {"MP3", "mp3", R"(lame --quiet -b 192 "{in}" "{out}")", "MP3", false},
     {"WavPack", "wv", R"(wavpack -q -y "{in}" -o "{out}")", "WavPack", true},
+    // FFmpeg-backed. expectedCodec is FFmpeg's long name, which is what the
+    // decoder reports.
+    {"AAC", "m4a", R"(ffmpeg -y -loglevel error -i "{in}" -c:a aac -b:a 192k "{out}")",
+     "AAC (Advanced Audio Coding)", false},
+    {"ALAC", "alac", R"(ffmpeg -y -loglevel error -i "{in}" -c:a alac -f ipod "{out}")",
+     "ALAC (Apple Lossless Audio Codec)", true},
 };
 
 std::filesystem::path fixtureDir() {

@@ -6,10 +6,11 @@ A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio play
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
 
-> **Status: milestone 1b — gapless playback, five formats.** `xpcog-cli play a.flac
-> b.ogg c.mp3` plays a queue gaplessly on macOS, Linux and Windows. FLAC decoding
-> is byte-exact against `flac -d`, and the seam between tracks is verified
-> sample-exact. The Qt application is still a shell. See [the roadmap](#roadmap).
+> **Status: milestone 1b — gapless playback across 30+ formats.** `xpcog-cli play
+> a.flac b.m4a c.mp3` plays a queue gaplessly on macOS, Linux and Windows, and M3U
+> and PLS playlists expand into tracks. FLAC decoding is byte-exact against
+> `flac -d`, and the seam between tracks is verified sample-exact. The Qt
+> application is still a shell. See [the roadmap](#roadmap).
 
 ## Why a port rather than a fork
 
@@ -73,10 +74,27 @@ cmake --preset macos-headless && cmake --build --preset macos-headless
 
 ```sh
 xpcog-cli codecs                     # what this build can decode
-xpcog-cli info  song.flac            # format, duration, ReplayGain, tags
+xpcog-cli info   song.flac           # format, duration, ReplayGain, tags
+xpcog-cli expand playlist.m3u        # the tracks a playlist points at
 xpcog-cli decode song.flac out.raw   # headerless native-endian PCM
-xpcog-cli play  a.flac b.ogg c.mp3   # gapless across the queue
+xpcog-cli play   a.flac b.m4a c.mp3  # gapless across the queue
 ```
+
+### Formats
+
+Dedicated decoders for FLAC, Ogg Vorbis, Opus, MP3 (libmpg123) and WavPack, plus
+FFmpeg as the catch-all for AAC, ALAC, WMA, AC3, DTS, TAK, TTA, APE, PCM and the
+MP4/MKV/ASF containers — 30-odd extensions in total.
+
+Selection follows Cog's rules: extension first, then MIME type, with several
+claimants tried in descending priority. FFmpeg registers *below* default priority,
+so a dedicated decoder always wins for formats that have one, while FFmpeg still
+picks up files those decoders reject.
+
+Every codec is checked against one asymmetric reference signal — 440 Hz in the left
+channel, 660 Hz in the right, at different levels — verifying per-channel frequency
+and amplitude. That catches swapped, duplicated and silent channels, which a
+duration or size check would miss. Adding a codec means adding a row to that table.
 
 `decode` output is byte-identical to `flac -d` with the WAV header stripped, which
 is how the decoder is regression-tested.
@@ -119,7 +137,7 @@ never confused with the expected tail.
 |---|---|---|
 | ✅ | **M0** | Toolchain, module layout, codec registration, Qt shell |
 | ✅ | **M1a** | Walking skeleton: FLAC decode → miniaudio output |
-| 🚧 | **M1b** | Transport and gapless done; FLAC, Vorbis, Opus, MP3, WavPack decode. Remaining: AAC/ALAC via FFmpeg, APE, Musepack, TagLib, containers |
+| 🚧 | **M1b** | Transport, gapless, seven decoders and M3U/PLS containers done. Remaining: TagLib tag writing, cue sheets |
 | | **M1c** | ReplayGain, LPC extrapolation, HDCD, settings |
 | | **M2** | SQLite library, playlist model, shuffle/repeat/queue |
 | | **M3** | The Qt application: playlist view, preferences, media keys |

@@ -20,6 +20,12 @@ void PluginRegistry::addDecoder(DecoderDescriptor d) {
     decoders_.push_back(d);
 }
 
+void PluginRegistry::addContainer(ContainerDescriptor d) {
+    assert(!frozen_ && "PluginRegistry::addContainer after freeze()");
+    assert(d.expand && "container descriptor needs an expand function");
+    containers_.push_back(d);
+}
+
 void PluginRegistry::freeze() {
     assert(!frozen_ && "PluginRegistry::freeze() called twice");
 
@@ -28,12 +34,14 @@ void PluginRegistry::freeze() {
     const auto unavailable = [](const auto& d) { return d.available && !d.available(); };
     std::erase_if(sources_, unavailable);
     std::erase_if(decoders_, unavailable);
+    std::erase_if(containers_, unavailable);
 
     // Stable sort by descending priority preserves registration order within a
     // priority band, matching the ordering Cog's PluginController relies on.
     const auto byPriority = [](const auto& a, const auto& b) { return a.priority > b.priority; };
     std::stable_sort(sources_.begin(), sources_.end(), byPriority);
     std::stable_sort(decoders_.begin(), decoders_.end(), byPriority);
+    std::stable_sort(containers_.begin(), containers_.end(), byPriority);
 
     allExtensions_.clear();
     for (const auto& d : decoders_) {
@@ -50,6 +58,41 @@ void PluginRegistry::freeze() {
 
 std::span<const std::string> PluginRegistry::allExtensions() const noexcept {
     return allExtensions_;
+}
+
+bool PluginRegistry::isContainer(const Url& url) const {
+    const std::string extension = url.extension();
+    if (extension.empty()) {
+        return false;
+    }
+    for (const auto& descriptor : containers_) {
+        for (const auto claimed : descriptor.extensions) {
+            if (claimed == extension) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::vector<Url> PluginRegistry::expandContainer(const Url& url) const {
+    const std::string extension = url.extension();
+
+    for (const auto& descriptor : containers_) {
+        for (const auto claimed : descriptor.extensions) {
+            if (claimed != extension) {
+                continue;
+            }
+            SourcePtr source = makeSource(url);
+            if (!source || !source->open(url)) {
+                return {};
+            }
+            return descriptor.expand(url, *source);
+        }
+    }
+
+    // Not a container: it is its own single track.
+    return {url};
 }
 
 SourcePtr PluginRegistry::makeSource(const Url& url) const {
