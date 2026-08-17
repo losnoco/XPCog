@@ -76,6 +76,17 @@ public:
     void setVolume(float gain) override {
         volume_.store(gain, std::memory_order_relaxed);
     }
+
+    void rampGain(float target, double milliseconds) override {
+        const double frames = format_.sampleRate * milliseconds / 1000.0;
+        fadeStep_.store(frames > 0.0 ? static_cast<float>(1.0 / frames) : 1.0F,
+                        std::memory_order_relaxed);
+        fadeTarget_.store(target, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] bool ramping() const override {
+        return fade_ != fadeTarget_.load(std::memory_order_relaxed);
+    }
     [[nodiscard]] float volume() const override {
         return volume_.load(std::memory_order_relaxed);
     }
@@ -96,6 +107,39 @@ public:
     }
 
 private:
+    /// Applies volume and the transport fade, then records the result. The one
+    /// place either is applied, so every path into the capture agrees.
+    void append(const float* samples, std::size_t count) {
+        const float gain   = volume_.load(std::memory_order_relaxed);
+        const float target = fadeTarget_.load(std::memory_order_relaxed);
+        const float step   = fadeStep_.load(std::memory_order_relaxed);
+        const auto  channels =
+            static_cast<std::size_t>(std::max<std::uint32_t>(format_.channels, 1));
+
+        std::lock_guard lock(mutex_);
+        if (gain == 1.0F && fade_ == 1.0F && target == 1.0F) {
+            captured_.insert(captured_.end(), samples,
+                             samples + static_cast<std::ptrdiff_t>(count));
+            return;
+        }
+
+        for (std::size_t frame = 0; frame * channels < count; ++frame) {
+            if (fade_ != target) {
+                // Per frame, as in the real callback, so a ramp does not advance
+                // at the channel count's speed.
+                fade_ = (target > fade_) ? std::min(fade_ + step, target)
+                                         : std::max(fade_ - step, target);
+            }
+            const float combined = gain * fade_;
+            for (std::size_t channel = 0; channel < channels; ++channel) {
+                const std::size_t index = (frame * channels) + channel;
+                if (index < count) {
+                    captured_.push_back(samples[index] * combined);
+                }
+            }
+        }
+    }
+
     void drainLoop() {
         std::vector<float> scratch(4096);
 
@@ -146,18 +190,7 @@ private:
                 allowance -= static_cast<double>(got / format_.channels);
             }
 
-            const float gain = volume_.load(std::memory_order_relaxed);
-            {
-                std::lock_guard lock(mutex_);
-                if (gain == 1.0F) {
-                    captured_.insert(captured_.end(), scratch.begin(),
-                                     scratch.begin() + static_cast<std::ptrdiff_t>(got));
-                } else {
-                    for (std::size_t i = 0; i < got; ++i) {
-                        captured_.push_back(scratch[i] * gain);
-                    }
-                }
-            }
+            append(scratch.data(), got);
 
             if (format_.channels > 0) {
                 framesPlayed_.fetch_add(got / format_.channels,
@@ -165,15 +198,17 @@ private:
             }
         }
 
-        // Take whatever the feeder left behind, so the capture is complete.
+        // Take whatever the feeder left behind, so the capture is complete --
+        // through the same gain path as everything else. Appending it raw was a
+        // quiet bug: neither the volume nor a transport fade reached the last
+        // fraction of a second of any capture, which is precisely where a fade
+        // out lives.
         for (;;) {
             const std::size_t got = sink_.read(scratch.data(), scratch.size());
             if (got == 0) {
                 break;
             }
-            std::lock_guard lock(mutex_);
-            captured_.insert(captured_.end(), scratch.begin(),
-                             scratch.begin() + static_cast<std::ptrdiff_t>(got));
+            append(scratch.data(), got);
         }
     }
 
@@ -187,6 +222,9 @@ private:
     std::atomic<bool>          running_{false};
     std::atomic<bool>          paused_{false};
     std::atomic<float>         volume_{1.0F};
+    float                      fade_ = 1.0F;
+    std::atomic<float>         fadeTarget_{1.0F};
+    std::atomic<float>         fadeStep_{1.0F};
     std::atomic<std::uint64_t> framesPlayed_{0};
     AudioFormat                format_{};
 };

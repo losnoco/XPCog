@@ -174,6 +174,9 @@ private:
     /// Reads the equaliser settings into the chain. DSP thread only.
     void applyDspSettings();
 
+    /// The transport fade duration, or 0 when fading is switched off.
+    [[nodiscard]] double fadeMilliseconds() const;
+
     const PluginRegistry& registry_;
     IAudioOutput&         output_;
     const Settings&       settings_;
@@ -206,6 +209,11 @@ private:
     Fader                 fader_;
     std::vector<DSPNode*> chain_;
     std::atomic<bool>     dspDirty_{true};
+
+    /// Set when pause() has started a fade out and the device still has to be
+    /// stopped once it finishes. The feeder does that, because the fade has to be
+    /// played to be heard and pause() must not block the caller for 200 ms.
+    std::atomic<bool> pendingPause_{false};
 
     /// Bumped by the feeder when it discards the pre-seek audio, so the DSP
     /// thread knows to drop its own filter state and flush downstream. A counter

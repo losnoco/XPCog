@@ -220,10 +220,15 @@ void AudioEngine::dspLoop() {
             // The feeder has dropped the pre-seek audio upstream. Two things
             // still hold the old position: the filter state, and whatever this
             // thread already handed to the device.
+            //
+            // Only the filter state is this thread's to drop. The discard itself
+            // is requested by the feeder, which is also the only place the ring's
+            // fill can be read before it happens -- see performSeek(). Asking for
+            // it again here would re-arm a flush the device may already have
+            // acknowledged, and take the *post*-seek audio with it.
             for (DSPNode* node : chain_) {
                 node->reset();
             }
-            ring_.requestFlush();
             seenEpoch = epoch;
         }
 
@@ -319,6 +324,14 @@ void AudioEngine::feederLoop() {
 
     while (running_.load(std::memory_order_acquire)) {
         publishSeams();
+
+        // A pause requested with fading on stops the device here, once the ramp
+        // has reached silence. Doing it in pause() would silence the fade instead
+        // of playing it.
+        if (pendingPause_.load(std::memory_order_acquire) && !output_.ramping()) {
+            output_.pause();
+            pendingPause_.store(false, std::memory_order_release);
+        }
 
         if (const std::int64_t requested =
                 pendingSeek_.exchange(-1, std::memory_order_acq_rel);
@@ -463,6 +476,13 @@ void AudioEngine::performSeek(std::int64_t frame) {
     // to land. The epoch is published *before* the flush flags so that a pump
     // iteration which observes either flag is guaranteed to observe the epoch as
     // well, and therefore cannot write a block through un-reset filters.
+    // Before either flush: this is the audio the device still has queued, which
+    // is exactly what the fader's fade out is made of. Once the flush is
+    // requested the count is on its way to zero.
+    if (format_.channels > 0) {
+        fader_.noteDiscardedFrames(ring_.availableToRead() / format_.channels);
+    }
+
     flushEpoch_.fetch_add(1, std::memory_order_release);
     ring_.requestFlush();
     preRing_.requestFlush();
@@ -520,6 +540,22 @@ void AudioEngine::publishSeams() {
 }
 
 void AudioEngine::stop() {
+    // Fade before tearing anything down, or the last thing heard is a step to
+    // silence. Bounded and short: stop() already blocks to join two threads, so
+    // waiting out a 200 ms ramp is in keeping -- but it must never hang, hence the
+    // deadline rather than a bare "while ramping".
+    if (status() == PlaybackStatus::Playing && fadeMilliseconds() > 0.0) {
+        const double fade = fadeMilliseconds();
+        output_.rampGain(0.0F, fade);
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(
+                                  static_cast<int>(fade) + 50);
+        while (output_.ramping() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    }
+    pendingPause_.store(false, std::memory_order_release);
+
     running_.store(false, std::memory_order_release);
     if (feeder_.joinable()) {
         feeder_.join();
@@ -538,18 +574,42 @@ void AudioEngine::stop() {
     finishedCv_.notify_all();
 }
 
+double AudioEngine::fadeMilliseconds() const {
+    return settings_.EnableFading() ? Fader::kDefaultFadeMilliseconds : 0.0;
+}
+
 void AudioEngine::pause() {
-    if (status() == PlaybackStatus::Playing) {
+    if (status() != PlaybackStatus::Playing) {
+        return;
+    }
+
+    const double fade = fadeMilliseconds();
+    if (fade <= 0.0) {
         output_.pause();
         status_.store(PlaybackStatus::Paused, std::memory_order_relaxed);
+        return;
     }
+
+    // The status changes now and the device stops later, which is the only way to
+    // have both a fade and a responsive button: the fade has to be *played* to be
+    // heard, so pausing the device here would cut the very audio being faded.
+    // The feeder stops it once the ramp has run -- see feederLoop().
+    output_.rampGain(0.0F, fade);
+    pendingPause_.store(true, std::memory_order_release);
+    status_.store(PlaybackStatus::Paused, std::memory_order_relaxed);
 }
 
 void AudioEngine::resume() {
-    if (status() == PlaybackStatus::Paused) {
-        output_.resume();
-        status_.store(PlaybackStatus::Playing, std::memory_order_relaxed);
+    if (status() != PlaybackStatus::Paused) {
+        return;
     }
+
+    // Cancel a fade out still in flight before restarting: pausing and resuming
+    // quickly must not leave the gain stuck on its way to zero.
+    pendingPause_.store(false, std::memory_order_release);
+    output_.resume();
+    output_.rampGain(1.0F, fadeMilliseconds());
+    status_.store(PlaybackStatus::Playing, std::memory_order_relaxed);
 }
 
 void AudioEngine::waitUntilFinished() {

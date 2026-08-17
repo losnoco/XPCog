@@ -1,10 +1,15 @@
 // The transport fade. Port of Cog Audio/Chain/DSP/DSPFaderNode.m plus the
 // fadeAudio() kernel and FadedBuffer in FadedBuffer.m.
 //
-// A linear 200 ms crossfade -- Cog's `fadeTimeMS`, and its ramp is linear too
-// (`vDSP_vrampmuladd`), so this keeps both the shape and the duration. Its job is
-// that a seek neither ends nor begins with a step discontinuity, which is heard
-// as a click at exactly the moment the user is listening for the jump to land.
+// A 200 ms crossfade -- Cog's `fadeTimeMS`. Its job is that a seek neither ends
+// nor begins with a step discontinuity, which is heard as a click at exactly the
+// moment the user is listening for the jump to land.
+//
+// The curve departs from Cog's, which ramps linearly (`vDSP_vrampmuladd`). A seek
+// lands somewhere unrelated, so the two sides of the crossfade are uncorrelated
+// and their *powers* add: linear complements of 0.5 each leave half the power, an
+// audible 3 dB dip through the middle of every seek. Sine and cosine legs hold the
+// sum of squares at one, which is the right curve for uncorrelated material.
 //
 // Driven by reset() rather than by its own transport API. reset() already means
 // "the signal does not flow across this point" -- it is called at track start and
@@ -21,15 +26,22 @@
 // of its last 200 ms of output is, to within the ring's fill level, the audio a
 // seek is about to discard.
 //
-// "To within the fill level" is doing real work there, so precisely: the tail
-// spans [lastEmitted - 200 ms, lastEmitted], while the audio after the splice
-// point spans [lastAudible, lastEmitted] -- and the two differ by however much of
-// the shallow ring was unplayed, so up to (200 ms - fill) of the tail is audio
-// the listener already heard, replayed. In steady playback the pump keeps that
-// ring full (~186 ms), leaving ~14 ms of replay, which is inaudible. Cog escapes
-// the approximation by capturing the exact flushed chunks; buying that here would
-// mean the rings handing discarded audio back to the chain, which is a lot of
-// machinery for 14 ms.
+// Which part of that copy to use is the whole game. The history spans
+// [lastEmitted - 200 ms, lastEmitted], but only its newest frames are still
+// queued; the rest has already been heard. Starting the tail at its oldest frame
+// therefore *replays* the difference, and a replayed 14 ms is a stutter rather
+// than a fade -- audible, and reported as such.
+//
+// So the engine tells this stage how many frames the flush is discarding
+// (noteDiscardedFrames, from the feeder, which is the only place that count can be
+// read before the discard happens), and the tail is exactly that many frames taken
+// from the newest end of the history: precisely the audio that was about to play
+// and never did. Zero discarded means nothing was queued -- track start -- and the
+// fade is a plain ramp in with no tail at all.
+//
+// The ramp then spans the tail rather than the nominal fade time, so both sides
+// finish together; a tail shorter than the fade would otherwise stop dead at
+// whatever level it had reached, which is the step being avoided.
 //
 // The cost of that is one property this class used to have. To keep the rolling
 // copy fed it must see every block, so active() stays true whenever fading is
@@ -41,6 +53,7 @@
 
 #include "xpcog/core/audio/DSPNode.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <vector>
 
@@ -63,6 +76,21 @@ public:
 
     /// True while the outgoing tail is still being mixed out.
     [[nodiscard]] bool crossfading() const noexcept { return crossfading_; }
+
+    /// How many frames of already-emitted audio the next reset() is discarding,
+    /// which is what its fade out has to consist of. Called by the feeder just
+    /// before it asks for the discard, because that is the last moment the count
+    /// is still readable.
+    ///
+    /// Consumed by that reset() and then cleared, so a reset with no preceding
+    /// note -- a track start rather than a seek -- correctly fades in from
+    /// silence instead of mixing out a tail nothing is waiting to hear.
+    ///
+    /// Atomic because the two are not the same thread: only the feeder can read
+    /// the ring's fill before it asks for the discard, while reset() belongs to
+    /// the pump. Published before the flush epoch the pump waits on, so the value
+    /// is visible by the time it acts.
+    void noteDiscardedFrames(std::size_t frames);
 
     void prepare(const AudioFormat& format) override;
     void process(float* samples, std::size_t frames) override;
@@ -98,9 +126,10 @@ private:
     /// out. Held separately from history_ so the crossfade's own output can go on
     /// filling the history without overwriting what it is still reading.
     std::vector<float> tail_;
-    std::size_t        tailFrames_ = 0;
-    std::size_t        tailRead_   = 0;
-    bool               crossfading_ = false;
+    std::size_t        tailFrames_      = 0;
+    std::size_t        tailRead_        = 0;
+    std::atomic<std::size_t> pendingDiscarded_{0};
+    bool               crossfading_     = false;
 };
 
 }  // namespace xpcog

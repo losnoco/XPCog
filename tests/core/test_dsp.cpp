@@ -769,30 +769,37 @@ TEST_CASE("a stereo source is left alone by the converter's channel fit", "[dsp]
     REQUIRE(out[1] == Approx(-0.25F).epsilon(1e-6));
 }
 
-TEST_CASE("a seek crossfades: the sum holds at unity", "[dsp]") {
-    // The equal-gain property, and the whole point of fading out as well as in.
-    // With the same constant either side of the seek, the outgoing tail and the
-    // incoming ramp are complements, so their sum must sit at the input level
-    // throughout -- a dip would be the fade audibly ducking every seek, and a
-    // bump would be the two sides double-counting.
+TEST_CASE("a seek crossfade never goes quiet in the middle", "[dsp]") {
+    // Constant-power legs are chosen for the uncorrelated case, so identical
+    // audio either side -- what a very short seek produces -- swells by up to
+    // 3 dB instead of holding flat. That is the accepted cost of not *dipping*
+    // 3 dB on every ordinary seek, and it is recorded rather than smoothed over.
+    // What must hold in both cases is that the level never sags below the input.
     Fader fader;
     fader.setEnabled(true);
     fader.prepare(formatFor(kRate, kChannels));
 
-    // Establish steady output well past the initial fade-in, so the history is
-    // full of the "old position".
-    std::vector<float> steady(static_cast<std::size_t>(kRate) * kChannels, 0.5F);
-    fader.process(steady.data(), steady.size() / kChannels);
+    // Settle the track-start fade in first, or the history -- and therefore the
+    // tail -- begins with that ramp rather than with steady audio.
+    std::vector<float> settle(static_cast<std::size_t>(kRate * 0.25) * kChannels, 0.5F);
+    fader.process(settle.data(), settle.size() / kChannels);
+    REQUIRE(fader.level() == 1.0);
 
-    fader.reset();  // the seek
+    const std::size_t span = static_cast<std::size_t>(kRate * 0.2);
+    std::vector<float> steady(span * kChannels, 0.5F);
+    fader.process(steady.data(), span);
+
+    fader.noteDiscardedFrames(span);
+    fader.reset();
     REQUIRE(fader.crossfading());
 
-    std::vector<float> after(static_cast<std::size_t>(kRate / 2) * kChannels, 0.5F);
-    fader.process(after.data(), after.size() / kChannels);
+    std::vector<float> after(span * kChannels, 0.5F);
+    fader.process(after.data(), span);
 
-    for (std::size_t frame = 0; frame < after.size() / kChannels; ++frame) {
+    for (std::size_t frame = 0; frame < span; ++frame) {
         INFO("frame " << frame);
-        REQUIRE(after[frame * kChannels] == Approx(0.5F).margin(0.002));
+        REQUIRE(after[frame * kChannels] >= Approx(0.5F).margin(0.01));
+        REQUIRE(after[frame * kChannels] <= Approx(0.5F * std::sqrt(2.0)).margin(0.01));
     }
     REQUIRE_FALSE(fader.crossfading());
 }
@@ -808,9 +815,9 @@ TEST_CASE("the old audio audibly decays across a seek", "[dsp]") {
     std::vector<float> loud(static_cast<std::size_t>(kRate) * kChannels, 0.8F);
     fader.process(loud.data(), loud.size() / kChannels);
 
-    fader.reset();
-
     const std::size_t fadeFrames = static_cast<std::size_t>(kRate * 0.2);
+    fader.noteDiscardedFrames(fadeFrames);
+    fader.reset();
     std::vector<float> silence((fadeFrames + 512) * kChannels, 0.0F);
     fader.process(silence.data(), silence.size() / kChannels);
 
@@ -837,12 +844,16 @@ TEST_CASE("a second seek cannot resurrect audio from two positions ago", "[dsp]"
     std::vector<float> first(static_cast<std::size_t>(kRate) * kChannels, 0.8F);
     fader.process(first.data(), first.size() / kChannels);
 
+    fader.noteDiscardedFrames(static_cast<std::size_t>(kRate * 0.2));
     fader.reset();  // seek one
 
     const std::size_t betweenFrames = static_cast<std::size_t>(kRate * 0.05);
     std::vector<float> between(betweenFrames * kChannels, 0.0F);
     fader.process(between.data(), betweenFrames);
 
+    // A full fade's worth is claimed to be queued, but only 50 ms has actually
+    // been emitted since the last seek, so that is all the tail can be.
+    fader.noteDiscardedFrames(static_cast<std::size_t>(kRate * 0.2));
     fader.reset();  // seek two, 50 ms later
 
     std::vector<float> after(static_cast<std::size_t>(kRate * 0.2) * kChannels, 0.0F);
@@ -868,6 +879,7 @@ TEST_CASE("disabling fading also forgets the history", "[dsp]") {
 
     fader.setEnabled(false);
     fader.setEnabled(true);
+    fader.noteDiscardedFrames(static_cast<std::size_t>(kRate * 0.2));
     fader.reset();
 
     REQUIRE_FALSE(fader.crossfading());
@@ -952,4 +964,172 @@ TEST_CASE("a back centre does not clobber a routed back pair", "[dsp]") {
 
     REQUIRE(out[4] == 0.3F);  // BL keeps the routed pair
     REQUIRE(out[5] == 0.4F);  // BR likewise
+}
+
+// ---------------------------------------------------------------------------
+// Transport fades: pause and stop, which happen at the output rather than in
+// the chain, because the audio they fade is already queued for the device.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("pause fades out instead of cutting", "[dsp]") {
+    RingBuffer ring{1U << 14};
+    auto       output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setEnableFading(true);
+
+    AudioEngine engine{dspRegistry(), *output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(toneWav())));
+
+    for (int spin = 0; spin < 400 && engine.playedSeconds() < 0.4; ++spin) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    REQUIRE(engine.playedSeconds() >= 0.4);
+
+    engine.pause();
+    // The status is immediate even though the device stops later; a transport
+    // button that waited 200 ms for its own fade would feel broken.
+    REQUIRE(engine.status() == PlaybackStatus::Paused);
+
+    // Let the ramp play out, then stop capturing.
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    engine.stop();
+
+    const std::vector<float> captured = capturedAudio(*output);
+    REQUIRE_FALSE(captured.empty());
+
+    // The tail must arrive at silence by way of a ramp. Sampling the envelope
+    // backwards: the last audio is quiet, and it was not quiet 200 ms earlier.
+    const auto frames = captured.size() / kChannels;
+    const auto window = static_cast<std::size_t>(kRate * 0.02);
+
+    const auto peakOver = [&](std::size_t from, std::size_t count) {
+        double peak = 0.0;
+        for (std::size_t frame = from; frame < from + count && frame < frames; ++frame) {
+            peak = std::max(peak, std::abs(static_cast<double>(
+                                      captured[frame * kChannels])));
+        }
+        return peak;
+    };
+
+    // Stopping flushes what the device never played, and the capture records it --
+    // as silence, because the fade had already reached zero. So the fade is found
+    // relative to the last audible frame rather than to the end of the buffer.
+    std::size_t lastAudible = 0;
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        if (std::abs(static_cast<double>(captured[frame * kChannels])) > 0.01) {
+            lastAudible = frame;
+        }
+    }
+    REQUIRE(lastAudible > window * 12);
+
+    const double atEnd  = peakOver(lastAudible - window, window);
+    const double before = peakOver(lastAudible - (window * 11), window);
+    INFO("peak 200 ms before the fade ended " << before << ", at its end " << atEnd);
+    REQUIRE(before > 0.2);          // still playing back then
+    REQUIRE(atEnd < before / 2.0);  // and well down by the end
+}
+
+TEST_CASE("pause cuts immediately when fading is off", "[dsp]") {
+    // The setting has to mean something in both directions: with fading off the
+    // device stops in pause() itself, with no ramp and no deferred stop.
+    RingBuffer ring{1U << 14};
+    auto       output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setEnableFading(false);
+
+    AudioEngine engine{dspRegistry(), *output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(toneWav())));
+    for (int spin = 0; spin < 400 && engine.playedSeconds() < 0.3; ++spin) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    engine.pause();
+    REQUIRE(engine.status() == PlaybackStatus::Paused);
+    REQUIRE_FALSE(output->ramping());
+    engine.stop();
+}
+
+TEST_CASE("the crossfade tail is the discarded audio, not what was already heard",
+          "[dsp]") {
+    // The bug this pins: taking the tail from the *oldest* end of the history
+    // replays audio the listener has already heard -- a stutter. With the
+    // discarded count noted, a tail longer than the queue cannot happen, and a
+    // shorter queue simply yields a shorter crossfade.
+    Fader fader;
+    fader.setEnabled(true);
+    fader.prepare(formatFor(kRate, kChannels));
+
+    // Let the track-start fade in land first, or the history holds the ramp
+    // multiplied by that fade and every expectation below shifts.
+    std::vector<float> settle(static_cast<std::size_t>(kRate * 0.25) * kChannels, 1.0F);
+    fader.process(settle.data(), settle.size() / kChannels);
+    REQUIRE(fader.level() == 1.0);
+
+    // 200 ms of history: a ramp of distinct values, so which slice is reused is
+    // visible rather than a matter of levels.
+    const std::size_t historyFrames = static_cast<std::size_t>(kRate * 0.2);
+    std::vector<float> feed(historyFrames * kChannels);
+    for (std::size_t frame = 0; frame < historyFrames; ++frame) {
+        const auto value = static_cast<float>(frame) / static_cast<float>(historyFrames);
+        feed[frame * kChannels]       = value;
+        feed[(frame * kChannels) + 1] = value;
+    }
+    fader.process(feed.data(), historyFrames);
+
+    // Only 50 ms is queued, so only the newest 50 ms may be faded out.
+    const std::size_t queued = static_cast<std::size_t>(kRate * 0.05);
+    fader.noteDiscardedFrames(queued);
+    fader.reset();
+    REQUIRE(fader.crossfading());
+
+    std::vector<float> after((queued + 256) * kChannels, 0.0F);
+    fader.process(after.data(), after.size() / kChannels);
+
+    // The first faded sample must come from near the *end* of that ramp -- the
+    // audio that never played -- not from its start.
+    // The queued span begins 50 ms from the end of a 200 ms ramp, so the first
+    // faded sample is the ramp at 0.75 -- not at 0, which is where the *oldest*
+    // end of the history sits.
+    const float firstOut = after[0];
+    INFO("first tail sample " << firstOut);
+    REQUIRE(firstOut == Approx(0.75F).margin(0.01));
+
+    // And the tail is spent after the queued span, not after a full 200 ms.
+    for (std::size_t frame = queued + 1; frame < after.size() / kChannels; ++frame) {
+        REQUIRE(after[frame * kChannels] == 0.0F);
+    }
+}
+
+TEST_CASE("the crossfade holds power, not amplitude", "[dsp]") {
+    // Constant-power legs, which is the departure from Cog's linear ramp: a seek
+    // lands on uncorrelated audio, so the two sides add in power. At the midpoint
+    // each leg must sit near 1/sqrt(2), giving squares that sum to one -- a linear
+    // ramp would put both at 0.5 and lose 3 dB.
+    Fader fader;
+    fader.setEnabled(true);
+    fader.prepare(formatFor(kRate, kChannels));
+
+    std::vector<float> settle(static_cast<std::size_t>(kRate * 0.25) * kChannels, 1.0F);
+    fader.process(settle.data(), settle.size() / kChannels);
+    REQUIRE(fader.level() == 1.0);
+
+    const std::size_t span = static_cast<std::size_t>(kRate * 0.1);
+    std::vector<float> feed(span * kChannels, 1.0F);
+    fader.process(feed.data(), span);
+
+    fader.noteDiscardedFrames(span);
+    fader.reset();
+
+    // Incoming silence isolates the outgoing leg: what comes out *is* cos(theta).
+    std::vector<float> after(span * kChannels, 0.0F);
+    fader.process(after.data(), span);
+
+    const std::size_t middle = span / 2;
+    const double      leg    = std::abs(static_cast<double>(after[middle * kChannels]));
+    INFO("outgoing leg at the midpoint " << leg);
+    REQUIRE(leg == Approx(1.0 / std::sqrt(2.0)).margin(0.03));
 }

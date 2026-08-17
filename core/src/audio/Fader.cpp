@@ -3,9 +3,17 @@
 #include "xpcog/core/AudioFormat.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <numbers>
 
 namespace xpcog {
+namespace {
+
+/// Spelled out rather than reaching for M_PI, which MSVC does not define.
+constexpr double xpcogPi = std::numbers::pi;
+
+}  // namespace
 
 void Fader::setEnabled(bool enabled) {
     if (enabled_ == enabled) {
@@ -24,6 +32,10 @@ void Fader::setEnabled(bool enabled) {
         historyFilled_ = 0;
         historyWrite_  = 0;
     }
+}
+
+void Fader::noteDiscardedFrames(std::size_t frames) {
+    pendingDiscarded_.store(frames, std::memory_order_release);
 }
 
 void Fader::setFadeMilliseconds(double milliseconds) {
@@ -63,15 +75,23 @@ void Fader::reset() {
         return;
     }
 
-    // Unroll the ring into chronological order. The oldest frame sits at the
-    // write cursor once the ring has wrapped, at zero before then.
+    // The tail is the *newest* frames of the history, as many as the flush is
+    // discarding. Taking the oldest instead replays audio already heard, which is
+    // a stutter rather than a fade -- the ring is normally near full, so that
+    // mistake is small enough to survive a test and still be audible.
     const auto        channels = static_cast<std::size_t>(channels_);
     const std::size_t capacity = history_.size() / channels;
-    tailFrames_                = std::min(historyFilled_, capacity);
+    const std::size_t available = std::min(historyFilled_, capacity);
+    tailFrames_ = std::min(pendingDiscarded_.exchange(0, std::memory_order_acquire),
+                           available);
+
     if (tailFrames_ > 0) {
-        const std::size_t start = (historyFilled_ < capacity) ? 0 : historyWrite_;
+        // historyWrite_ is one past the newest frame, so back up by the tail
+        // length to find where the discarded audio begins.
+        const std::size_t begin =
+            (historyWrite_ + capacity - tailFrames_) % capacity;
         for (std::size_t frame = 0; frame < tailFrames_; ++frame) {
-            const std::size_t source = (start + frame) % capacity;
+            const std::size_t source = (begin + frame) % capacity;
             for (std::size_t channel = 0; channel < channels; ++channel) {
                 tail_[(frame * channels) + channel] =
                     history_[(source * channels) + channel];
@@ -84,9 +104,14 @@ void Fader::reset() {
     // The incoming side ramps up regardless; with no tail this is the plain
     // track-start fade in. Frames, not samples: the ramp is a property of time,
     // so it must not depend on the channel count.
-    level_              = 0.0;
-    target_             = 1.0;
-    const double frames = static_cast<double>(fadeFrames());
+    //
+    // When crossfading, the ramp spans the tail rather than the nominal fade
+    // time, so the two sides finish together. Otherwise a tail shorter than the
+    // fade ends abruptly at whatever level it had reached -- a step, which is the
+    // artefact the fade exists to remove.
+    level_  = 0.0;
+    target_ = 1.0;
+    const double frames = static_cast<double>(crossfading_ ? tailFrames_ : fadeFrames());
     step_               = (frames > 0.0) ? (1.0 / frames) : 1.0;
 
     // The old history described the old position; a second seek during the
@@ -132,12 +157,19 @@ void Fader::process(float* samples, std::size_t frames) {
         }
 
         if (level_ != 1.0 || crossfading_) {
-            // Equal-gain crossfade: the outgoing tail decays with the complement
-            // of the incoming ramp. Linear complements suit correlated material
-            // -- the same track either side of a short seek -- which is the case
-            // a transport fade serves; they sum to unity, so there is no dip.
-            const auto in  = static_cast<float>(level_);
-            const auto out = static_cast<float>(1.0 - level_);
+            // Constant power, not constant amplitude, and this is a deliberate
+            // departure from Cog's linear ramp.
+            //
+            // A seek lands somewhere unrelated, so the two sides of the crossfade
+            // are uncorrelated: their powers add, and linear complements of 0.5
+            // each give 0.5 of the power -- an audible 3 dB dip in the middle of
+            // every seek. Sine and cosine legs keep the sum of squares at one,
+            // which is the right curve for uncorrelated material. (For a plain
+            // ramp in, with no tail, the curve only shapes silence-to-signal and
+            // either choice sounds like a fade.)
+            const double theta = level_ * (xpcogPi / 2.0);
+            const auto   in    = static_cast<float>(std::sin(theta));
+            const auto   out   = static_cast<float>(std::cos(theta));
 
             for (std::size_t channel = 0; channel < channels; ++channel) {
                 float mixed = current[channel] * in;

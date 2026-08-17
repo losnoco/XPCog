@@ -56,6 +56,24 @@ public:
     virtual void  setVolume(float gain) = 0;
     [[nodiscard]] virtual float volume() const = 0;
 
+    /// Ramps a second gain, independent of setVolume(), to `target` over
+    /// `milliseconds`. Safe from any thread.
+    ///
+    /// This is where the pause and stop fades have to happen, and the reason is
+    /// buffering. Those fades apply to audio that is *already queued* for the
+    /// device, so a stage upstream of the ring cannot reach it -- fading there
+    /// would take effect only once the queue had drained, by which time the
+    /// transport has long since stopped. The seek fade has no such problem: it
+    /// discards the queue, so the DSP chain's crossfade is heard immediately.
+    ///
+    /// Separate from setVolume() so a fade neither reads nor overwrites the
+    /// user's volume; the callback multiplies by both.
+    virtual void rampGain(float target, double milliseconds) = 0;
+
+    /// True while a rampGain() is still in progress, so a caller can wait for a
+    /// fade out to be audible before stopping the device.
+    [[nodiscard]] virtual bool ramping() const = 0;
+
     /// Number of times the callback found the ring empty. A rising count means
     /// the feeder is not keeping up.
     [[nodiscard]] virtual std::uint64_t underrunCount() const = 0;

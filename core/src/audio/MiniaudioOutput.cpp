@@ -10,6 +10,7 @@
 
 #include <miniaudio.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -127,6 +128,20 @@ public:
         return out;
     }
 
+    void rampGain(float target, double milliseconds) override {
+        const double rate = negotiatedFormat().sampleRate;
+        const double frames = rate * milliseconds / 1000.0;
+        // Zero-length or rate-less means snap, so a caller cannot hang waiting
+        // for a ramp that can never advance.
+        fadeStep_.store(frames > 0.0 ? static_cast<float>(1.0 / frames) : 1.0F,
+                        std::memory_order_relaxed);
+        fadeTarget_.store(target, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] bool ramping() const override {
+        return fade_ != fadeTarget_.load(std::memory_order_relaxed);
+    }
+
     void setVolume(float gain) override {
         volume_.store(gain, std::memory_order_relaxed);
     }
@@ -167,11 +182,31 @@ private:
             self->underruns_.fetch_add(1, std::memory_order_relaxed);
         }
 
-        const float gain = self->volume_.load(std::memory_order_relaxed);
-        if (gain != 1.0F) {
-            for (std::size_t i = 0; i < got; ++i) {
-                out[i] *= gain;
+        // Volume and the transport fade are separate multipliers: a fade must
+        // not read or overwrite what the user set.
+        const float gain   = self->volume_.load(std::memory_order_relaxed);
+        const float target = self->fadeTarget_.load(std::memory_order_relaxed);
+        const float step   = self->fadeStep_.load(std::memory_order_relaxed);
+        float       fade   = self->fade_;
+
+        if (fade != target || gain != 1.0F) {
+            const auto channels = static_cast<std::size_t>(device->playback.channels);
+            for (std::size_t frame = 0; frame * channels < got; ++frame) {
+                if (fade != target) {
+                    // Per frame, not per sample: a ramp that advanced per sample
+                    // would move at the channel count's speed and skew the image.
+                    fade = (target > fade) ? std::min(fade + step, target)
+                                           : std::max(fade - step, target);
+                }
+                const float combined = gain * fade;
+                for (std::size_t channel = 0; channel < channels; ++channel) {
+                    const std::size_t index = (frame * channels) + channel;
+                    if (index < got) {
+                        out[index] *= combined;
+                    }
+                }
             }
+            self->fade_ = fade;
         }
 
         // The playback clock. Track changes are announced against this, so a seam
@@ -265,6 +300,12 @@ private:
     std::function<void()> onInvalidated_;
 
     std::atomic<float>         volume_{1.0F};
+
+    /// The fade multiplier. `fade_` belongs to the callback -- no other thread
+    /// writes it -- while the target and step are published to it.
+    float              fade_ = 1.0F;
+    std::atomic<float> fadeTarget_{1.0F};
+    std::atomic<float> fadeStep_{1.0F};
     std::atomic<std::uint64_t> underruns_{0};
     std::atomic<std::uint64_t> framesPlayed_{0};
 };

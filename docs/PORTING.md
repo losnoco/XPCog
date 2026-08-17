@@ -194,20 +194,43 @@ already means "the signal does not flow across this point", which is exactly whe
 a fade in is wanted, so no engine plumbing can introduce a discontinuity without
 the fade following it.
 
-**Both directions**, now. Fading out is the interesting half, because the audio
-to fade out has already been discarded by the time the stage sees anything new.
+**Where each fade lives is the thing to understand**, because they are not all in
+the same place and cannot be.
+
+A *seek* fade belongs in the chain: the seek discards the queue, so a crossfade
+produced upstream is heard at once. *Pause* and *stop* are the opposite — the audio
+they fade is already queued for the device, so fading it upstream would only take
+effect after that queue drained, by which time the transport has stopped. Those
+two therefore ramp at the output, next to the volume multiply that was already
+there (`IAudioOutput::rampGain`). Getting this wrong is not subtle in use: pause
+and stop simply cut, which is how they shipped until it was reported.
+
+Pause also has to stay responsive. The fade must be *played* to be heard, so
+`pause()` marks its intent and returns — the status flips immediately, the feeder
+stops the device once the ramp has run. `stop()` does wait, briefly and with a
+deadline, since it already blocks to join two threads.
+
+Fading out across a seek is the interesting half, because the audio to fade out
+has already been discarded by the time the chain sees anything new.
 Cog retains it in a `FadedBuffer`; the same idea works here because the fader is
 last in the chain, so everything it emits goes straight to the shallow ring and a
 rolling copy of its last 200 ms *is* the audio a flush is about to drop.
 
-That is an approximation, and worth stating precisely: the tail spans
-`[lastEmitted - 200 ms, lastEmitted]` while the discarded audio spans
-`[lastAudible, lastEmitted]`, so they differ by whatever of the shallow ring was
-unplayed — up to `200 ms - fill` of the tail is audio already heard, replayed. In
-steady playback the pump keeps that ring full (~186 ms), leaving ~14 ms. Cog
-escapes it by capturing the exact flushed chunks; buying that here would mean the
-rings handing discarded audio back to the chain, which is a lot of machinery for
-14 ms.
+Which *part* of that copy to use turned out to matter more than the copy itself.
+The history spans `[lastEmitted - 200 ms, lastEmitted]`, but only its newest frames
+are still queued; starting the tail at the oldest frame replays the difference, and
+a replayed ~14 ms is a stutter, not a fade. It was dismissed here as inaudible and
+then reported as "doesn't sound clean". The feeder now passes the exact discarded
+frame count (`noteDiscardedFrames`, read before the flush, which is the last moment
+it exists), the tail is taken from the newest end, and the ramp spans the tail so
+both sides finish together.
+
+The curve also departs from Cog's linear ramp. A seek lands on unrelated audio, so
+the two sides are uncorrelated and their *powers* add: linear complements of 0.5
+leave half the power, a 3 dB dip through the middle of every seek. Sine and cosine
+legs hold the sum of squares at one. The cost, recorded rather than hidden, is that
+identical audio either side — a very short seek — now swells up to 3 dB instead of
+holding flat.
 
 The cost is one property the fader used to have: to keep its history fed it must
 see every block, so `active()` stays true whenever fading is enabled instead of
