@@ -197,9 +197,12 @@ int main(int argc, char** argv) {
     // is minimised is asking for the window, and a launch that appears to do
     // nothing reads as the program having failed to start.
 #ifndef Q_OS_MACOS
+    // `received`, not `arguments`: these are the *other* process's command line,
+    // and the enclosing scope already has ours. GCC's -Wshadow caught the second
+    // one of these in as many files, which is a fair sign the name is too tempting.
     QObject::connect(&instance, &xpcog::app::SingleInstance::launched, &window,
-                     [&window](const QStringList& arguments) {
-                         const QList<QUrl> urls = urlsFromArguments(arguments);
+                     [&window](const QStringList& received) {
+                         const QList<QUrl> urls = urlsFromArguments(received);
                          if (!urls.isEmpty()) {
                              window.openUrls(urls);
                          }
