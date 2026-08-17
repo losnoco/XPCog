@@ -20,6 +20,7 @@
 #include <memory>
 #include <vector>
 
+class QDockWidget;
 class QLabel;
 class QMenu;
 class QToolBar;
@@ -39,6 +40,7 @@ class SeekSlider;
 class PlaybackController;
 class PlaylistModel;
 class PlaylistProxyModel;
+class SpectrumWidget;
 class StatusPresence;
 
 class MainWindow : public QMainWindow {
@@ -134,6 +136,12 @@ private:
     /// The tray icon, or the Dock menu on macOS. Never null, but its methods do
     /// nothing where the platform has no notification area.
     StatusPresence* presence_ = nullptr;
+
+    /// The spectrum panel and the dock it lives in. The dock is held because the
+    /// View menu item and the dock's own close button both change its visibility
+    /// and have to stay in step.
+    SpectrumWidget* spectrum_     = nullptr;
+    QDockWidget*    spectrumDock_ = nullptr;
 
     QProgressBar* scanBar_    = nullptr;
     QToolButton*  scanCancel_ = nullptr;

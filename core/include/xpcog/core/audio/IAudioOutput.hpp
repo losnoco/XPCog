@@ -87,6 +87,19 @@ public:
     /// Invoked from a NON-real-time thread when the device disappears or changes.
     /// Replaces Cog's AudioObjectAddPropertyListener on the CoreAudio HAL.
     virtual void setDeviceInvalidatedCallback(std::function<void()> callback) = 0;
+
+    /// Where to publish the audio being played, for a visualiser. Null to stop.
+    ///
+    /// Here rather than upstream because this is the last point the audio exists
+    /// before the driver takes it -- post-DSP, post-volume, post-fade -- so what a
+    /// visualiser sees is what is about to be heard. Cog taps further up
+    /// (`-postVisPCM:`) and then has to read behind its own write cursor by the
+    /// device latency to undo the difference; tapping here means there is no
+    /// difference to undo. See AudioTap.
+    ///
+    /// May be called while playing: implementations hold it atomically, because the
+    /// callback reads it.
+    virtual void setTap(class AudioTap* tap) = 0;
 };
 
 /// Reads interleaved float32 from `sink`. The caller owns the ring and must keep

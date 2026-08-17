@@ -17,6 +17,7 @@
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/AudioEngine.hpp"
 #include "xpcog/core/audio/IAudioOutput.hpp"
+#include "xpcog/core/audio/AudioTap.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/library/Playlist.hpp"
 
@@ -49,6 +50,17 @@ public:
     [[nodiscard]] double duration() const;
 
     [[nodiscard]] TrackId currentTrack() const;
+
+    /// The rate the device negotiated, or zero when nothing is open. The spectrum
+    /// needs it: its band table is built against Nyquist.
+    [[nodiscard]] double sampleRate() const;
+
+    /// The audio being played, for a visualiser to look at.
+    ///
+    /// Owned here because this owns the output that fills it, and the output writes
+    /// to it from the device callback -- so its lifetime has to be at least the
+    /// output's. Borrowed by whoever draws it.
+    [[nodiscard]] AudioTap& tap() noexcept { return tap_; }
 
 public slots:
     /// Starts the playlist entry `id`, or resumes/starts the current one when
@@ -104,6 +116,7 @@ private:
     // output, and the output borrows the ring, so the ring must outlive both and
     // be destroyed last.
     RingBuffer                    ring_;
+    AudioTap                      tap_;
     std::unique_ptr<IAudioOutput> output_;
     std::unique_ptr<AudioEngine>  engine_;
 

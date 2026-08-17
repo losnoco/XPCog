@@ -8,6 +8,7 @@
 #include "PlaylistModel.hpp"
 #include "ScanTask.hpp"
 #include "SeekSlider.hpp"
+#include "SpectrumWidget.hpp"
 #include "StatusPresence.hpp"
 #include "PreferencesDialog.hpp"
 
@@ -30,6 +31,7 @@
 #include <QProgressBar>
 #include <QSaveFile>
 #include <QSettings>
+#include <QDockWidget>
 #include <QSplitter>
 #include <QSlider>
 #include <QStatusBar>
@@ -185,6 +187,18 @@ void MainWindow::buildUi() {
     split->setObjectName(QStringLiteral("mainSplitter"));
     setCentralWidget(split);
 
+    // A dock rather than a pane of the splitter: the spectrum is optional and wants
+    // the full width, and a dock is what already gets its visibility and size saved
+    // by saveState() below. (Cog puts it in a separate window; a dock is the same
+    // thing with the window management done for us, and it can still be torn off.)
+    spectrum_ = new SpectrumWidget(playback_->tap(), this);
+    auto* spectrumDock = new QDockWidget(tr("Spectrum"), this);
+    spectrumDock->setObjectName(QStringLiteral("spectrumDock"));
+    spectrumDock->setWidget(spectrum_);
+    spectrumDock->setAllowedAreas(Qt::TopDockWidgetArea | Qt::BottomDockWidgetArea);
+    addDockWidget(Qt::BottomDockWidgetArea, spectrumDock);
+    spectrumDock_ = spectrumDock;
+
     transport_ = addToolBar(tr("Transport"));
     // saveState() identifies toolbars by objectName and warns without one --
     // and, more to the point, silently fails to match them up again on
@@ -296,6 +310,15 @@ void MainWindow::wireUp() {
 
     if (QAction* command = actions_->action(ActionId::ViewFileTree); command != nullptr) {
         connect(command, &QAction::toggled, tree_, &QWidget::setVisible);
+    }
+
+    // Both directions, because a dock can also be closed by its own title bar and
+    // the menu item has to follow. No loop: setChecked only emits when the state
+    // actually changes.
+    if (QAction* command = actions_->action(ActionId::ViewSpectrum); command != nullptr) {
+        connect(command, &QAction::toggled, spectrumDock_, &QWidget::setVisible);
+        connect(spectrumDock_, &QDockWidget::visibilityChanged, command,
+                &QAction::setChecked);
     }
 
     connect(tree_, &FileTree::activated, this,
@@ -762,6 +785,15 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
     }
 
     presence_->setPlaybackState(playing, paused);
+
+    // The band table depends on Nyquist, so the rate has to arrive before the first
+    // frame is analysed -- and it is only knowable once a device is open.
+    if (playing) {
+        spectrum_->setSampleRate(playback_->sampleRate());
+    }
+    // Paused counts as inactive: the tap stops being written, so the display would
+    // otherwise sit on whatever the last window held.
+    spectrum_->setActive(playing && !paused);
 
     if (!playing) {
         media_->clear();

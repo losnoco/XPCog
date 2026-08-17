@@ -28,6 +28,8 @@ set(XPCOG_APP_SOURCES
     src/ScanTask.hpp
     src/SingleInstance.cpp
     src/SingleInstance.hpp
+    src/SpectrumWidget.cpp
+    src/SpectrumWidget.hpp
     src/StatusPresence.cpp
     src/StatusPresence.hpp
     src/windows/AboutDialog.cpp
@@ -206,8 +208,18 @@ elseif(WIN32)
     find_program(XPCOG_WINDEPLOYQT windeployqt
         HINTS "${QT_HOST_PATH}/bin" "${Qt6_DIR}/../../../bin")
     if(XPCOG_WINDEPLOYQT)
+        # --no-opengl-sw drops opengl32sw.dll, Mesa's software GL fallback, which
+        # windeployqt copies unconditionally and which is the single largest thing in
+        # the payload. It was kept deliberately for a while: if the visualisation had
+        # rendered through Qt Quick, that fallback is exactly what would keep the app
+        # working on a machine with no usable GL driver. The spectrum draws with
+        # QPainter instead (see SpectrumWidget.hpp), so nothing here needs a GL
+        # context and the fallback protects nothing.
+        #
+        # Reinstate it the moment anything in this application starts using Qt Quick
+        # or a QOpenGLWidget.
         add_custom_target(deploy
-            COMMAND "${XPCOG_WINDEPLOYQT}" --no-translations
+            COMMAND "${XPCOG_WINDEPLOYQT}" --no-translations --no-opengl-sw
                     "$<TARGET_FILE:xpcog-app>"
             DEPENDS xpcog-app
             COMMENT "Copying the Qt runtime beside XPCog.exe"

@@ -15,6 +15,7 @@
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/OfflineOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
+#include "xpcog/core/audio/AudioTap.hpp"
 #include "xpcog/core/audio/TransportGain.hpp"
 
 #include <algorithm>
@@ -100,6 +101,10 @@ public:
 
     void setDeviceInvalidatedCallback(std::function<void()>) override {}
 
+    void setTap(AudioTap* tap) override {
+        tap_.store(tap, std::memory_order_relaxed);
+    }
+
     [[nodiscard]] std::vector<float> captured() const {
         std::lock_guard lock(mutex_);
         return captured_;
@@ -123,6 +128,12 @@ private:
                          samples + static_cast<std::ptrdiff_t>(count));
         fade_.apply(captured_.data() + begin, count, channels,
                     volume_.load(std::memory_order_relaxed));
+
+        // Same point in the chain as the real output, so a test can exercise the
+        // visualiser path without a device.
+        if (AudioTap* tap = tap_.load(std::memory_order_relaxed); tap != nullptr) {
+            tap->write(captured_.data() + begin, count, channels);
+        }
     }
 
     void drainLoop() {
@@ -208,6 +219,7 @@ private:
     std::atomic<bool>          paused_{false};
     std::atomic<float>         volume_{1.0F};
     TransportGain              fade_;
+    std::atomic<AudioTap*>     tap_{nullptr};
     std::atomic<std::uint64_t> framesPlayed_{0};
     AudioFormat                format_{};
 };

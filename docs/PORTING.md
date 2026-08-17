@@ -378,10 +378,30 @@ first block after a seek, which is M4's work.
 - **The application icon**, in two shapes, because the platforms disagree about
   what an icon is. Details in `app/icons/make-icons.py`.
 
-**Still to do:** visualization (pffft + QML islands), the mini player, and the
-taskbar/Dock progress and badge that Cog's `DockIconController` draws. The
-visualization decision is entangled with deployment size — see the graphics
-runtime note under Known gaps.
+- **The spectrum analyser**, which is Cog's configuration of deadbeef's
+  `ddb_analyzer` plus the FFT stage from its `fft_pffft.c`: a 4096-sample Hamming
+  window, 2048 bins scaled by 2/2048, semitone bands on a tempered scale from
+  C0, 10 Hz–22 kHz, an 80 dB floor and a ten-frame peak hold. Every one of those
+  numbers is taken from where Cog sets it rather than from the library's defaults,
+  which differ.
+
+  Two departures from the original plan, both deliberate. **No pffft**: the analyser
+  needs one transform per displayed frame, so a dependency would buy a speed nobody
+  can measure — the FFT is written out and checked against a naive DFT on random
+  input, which is stronger evidence than trusting a library would have been. **No
+  QML**: Cog itself ships a Core Graphics spectrum view beside its SceneKit one, so
+  a 2D CPU path is Cog's own arrangement, and QPainter is very nearly a
+  one-for-one substitution for Core Graphics. That also settles the deployment
+  question — see the graphics runtime note under Known gaps.
+
+  The audio is tapped in the *device callback*, after the gain, which is where
+  XPCog differs from Cog structurally rather than incidentally. Cog posts PCM from
+  up in the chain and then has to read behind its own write cursor by the device
+  latency to undo the lead that creates; tapping at the last point before the driver
+  means there is no lead to undo. See `AudioTap`.
+
+**Still to do:** the mini player, and the taskbar/Dock progress and badge that
+Cog's `DockIconController` draws.
 
 ### Then
 
@@ -636,13 +656,20 @@ asserted a property Qt provides rather than the one the code was responsible for
   `QKeySequence::Preferences` is bound only on macOS, so `ActionRegistry` gives the
   action an empty sequence everywhere else. The menu item works; the keyboard does
   not.
-- The `deploy` target's payload is **94.8 MB**, of which **39.4 MB is graphics
-  runtime XPCog does not currently use**: `opengl32sw.dll` (Mesa's software GL
-  fallback) plus the DXC/FXC shader compilers, which `windeployqt` copies
-  unconditionally. `--no-opengl-sw` reclaims the largest piece. Deliberately not
-  done yet: if M5's visualization renders through Qt Quick, the software fallback
-  is exactly what keeps the app working on machines with no usable GL driver, and
-  the shader compilers become live dependencies.
+- The `deploy` target's payload is **74.4 MB**, down from 94.8 MB. That gap was
+  being held open on purpose until the visualisation's rendering was decided: if it
+  had gone through Qt Quick, `opengl32sw.dll` — Mesa's software GL fallback, 19.7 MB
+  of it — is exactly what keeps the application working on a machine with no usable
+  GL driver. The spectrum draws with QPainter, so nothing here needs a GL context,
+  and `--no-opengl-sw` now drops it. **Reinstate that flag's removal the moment
+  anything starts using Qt Quick or a `QOpenGLWidget`.**
+
+  What remains is **19.6 MB of shader compilers** — `dxcompiler.dll`, `dxil.dll`
+  and `d3dcompiler_47.dll` — which come with Qt6Gui's RHI and which `windeployqt`
+  has no switch to decline. A raster-only application almost certainly never loads
+  them, so they could be deleted after deployment; that is not done, because
+  "almost certainly" is doing a lot of work in that sentence and the failure mode is
+  a missing DLL at startup on someone else's machine.
 - Reducing one multichannel layout to a smaller one — 7.1 into quad — still uses a
   positional copy rather than a matrix. Cog runs every reduction through its stereo
   matrix, which would throw away a real quad device's back speakers, so the plain

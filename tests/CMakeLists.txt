@@ -3,6 +3,7 @@ find_package(Catch2 3 REQUIRED)
 add_executable(xpcog-tests
     core/test_audio.cpp
     core/test_dsp.cpp
+    core/test_fft.cpp
     core/test_gapless.cpp
     core/test_m1c.cpp
     core/test_library.cpp
@@ -12,6 +13,7 @@ add_executable(xpcog-tests
     core/test_value_types.cpp
     core/test_scanner.cpp
     core/test_seek.cpp
+    core/test_spectrum.cpp
     core/test_transportgain.cpp
     core/test_version.cpp
     codecs/test_conformance.cpp

@@ -5,15 +5,18 @@ configure_file(
 
 add_library(xpcog-core STATIC
     src/audio/AudioConverter.cpp
+    src/audio/AudioTap.cpp
     src/audio/AudioEngine.cpp
     src/audio/Downmix.cpp
     src/audio/Equalizer.cpp
     src/audio/Fader.cpp
+    src/audio/Fft.cpp
     src/audio/MiniaudioOutput.cpp
     src/audio/OfflineOutput.cpp
     src/audio/ReplayGain.cpp
     src/audio/RingBuffer.cpp
     src/audio/SampleConvert.cpp
+    src/audio/SpectrumAnalyzer.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp
     src/library/Library.cpp

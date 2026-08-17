@@ -37,6 +37,7 @@ constexpr MenuItem kMenuLayout[] = {
     {nullptr, ActionId::FileQuit, true},
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&View"), ActionId::ViewFileTree},
+    {nullptr, ActionId::ViewSpectrum},
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&Edit"), ActionId::EditUndo},
     {nullptr, ActionId::EditRedo},
@@ -84,6 +85,11 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
                         QKeySequence(Qt::CTRL | Qt::Key_B));
     tree->setCheckable(true);
     tree->setChecked(true);
+
+    QAction* spectrum = add(ActionId::ViewSpectrum, tr("&Spectrum"),
+                            QKeySequence(Qt::CTRL | Qt::Key_U));
+    spectrum->setCheckable(true);
+    spectrum->setChecked(true);
 
     // Undo and Redo are enabled by the undo stack, not here: an always-enabled
     // Undo that does nothing is worse than a greyed-out one.

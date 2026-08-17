@@ -1,0 +1,103 @@
+#include "xpcog/core/audio/Fft.hpp"
+
+#include <cassert>
+#include <cmath>
+#include <numbers>
+#include <utility>
+
+namespace xpcog {
+namespace {
+
+constexpr double kTwoPi = 2.0 * std::numbers::pi;
+
+/// The number of bits needed to index `size` elements.
+std::size_t bitsFor(std::size_t size) {
+    std::size_t bits = 0;
+    while ((std::size_t{1} << bits) < size) {
+        ++bits;
+    }
+    return bits;
+}
+
+std::size_t reverseBits(std::size_t value, std::size_t bits) {
+    std::size_t result = 0;
+    for (std::size_t bit = 0; bit < bits; ++bit) {
+        result = (result << 1U) | (value & 1U);
+        value >>= 1U;
+    }
+    return result;
+}
+
+}  // namespace
+
+Fft::Fft(std::size_t size) : size_(size) {
+    // A power of two is not a convenience here, it is what makes the decimation
+    // halve cleanly at every stage. Asserted rather than rounded: silently
+    // transforming a different number of samples than the caller asked for would
+    // shift every bin's centre frequency.
+    assert(size_ >= 2 && (size_ & (size_ - 1)) == 0);
+
+    const std::size_t bits = bitsFor(size_);
+    reversed_.resize(size_);
+    for (std::size_t index = 0; index < size_; ++index) {
+        reversed_[index] = reverseBits(index, bits);
+    }
+
+    cos_.resize(size_ / 2);
+    sin_.resize(size_ / 2);
+    for (std::size_t k = 0; k < size_ / 2; ++k) {
+        const double angle = -kTwoPi * static_cast<double>(k) /
+                             static_cast<double>(size_);
+        cos_[k] = std::cos(angle);
+        sin_[k] = std::sin(angle);
+    }
+}
+
+void Fft::forward(float* real, float* imaginary) const {
+    // Decimation in time: reorder into bit-reversed indices, after which the
+    // butterflies run in place over contiguous pairs.
+    //
+    // Guarded by `index < target` so each pair is swapped once. Without it every
+    // swap is undone by its mirror and the permutation is the identity -- which
+    // leaves an FFT that still produces plausible-looking output, just of the wrong
+    // signal. One of the things the DFT comparison in the tests exists to catch.
+    for (std::size_t index = 0; index < size_; ++index) {
+        const std::size_t target = reversed_[index];
+        if (index < target) {
+            std::swap(real[index], real[target]);
+            std::swap(imaginary[index], imaginary[target]);
+        }
+    }
+
+    for (std::size_t length = 2; length <= size_; length <<= 1U) {
+        const std::size_t half = length / 2;
+        // Which twiddle each k within a butterfly group needs: the table holds
+        // size_/2 entries for the whole transform, and a stage of this length walks
+        // it in steps of size_/length.
+        const std::size_t stride = size_ / length;
+
+        for (std::size_t base = 0; base < size_; base += length) {
+            for (std::size_t k = 0; k < half; ++k) {
+                const double twiddleReal = cos_[k * stride];
+                const double twiddleImag = sin_[k * stride];
+
+                const std::size_t lower = base + k;
+                const std::size_t upper = lower + half;
+
+                // The rotated upper half, computed before either slot is written --
+                // the lower one is still needed below.
+                const double rotatedReal = (real[upper] * twiddleReal) -
+                                           (imaginary[upper] * twiddleImag);
+                const double rotatedImag = (real[upper] * twiddleImag) +
+                                           (imaginary[upper] * twiddleReal);
+
+                real[upper]      = static_cast<float>(real[lower] - rotatedReal);
+                imaginary[upper] = static_cast<float>(imaginary[lower] - rotatedImag);
+                real[lower]      = static_cast<float>(real[lower] + rotatedReal);
+                imaginary[lower] = static_cast<float>(imaginary[lower] + rotatedImag);
+            }
+        }
+    }
+}
+
+}  // namespace xpcog

@@ -49,6 +49,7 @@ enum class ActionId {
     OrderShuffleAll,
 
     ViewFileTree,
+    ViewSpectrum,
 
     HelpAbout,
     HelpAboutQt,

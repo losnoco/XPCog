@@ -33,6 +33,12 @@ PlaybackController::PlaybackController(const PluginRegistry& registry, Playlist&
       settings_(settings),
       ring_(kRingSamples) {
     output_ = makeMiniaudioOutput(ring_);
+    // Attached for the life of the output, whether or not anything is drawing it.
+    // The cost when nothing is looking is one atomic load and a mono mixdown per
+    // callback, which is far below the cost of attaching and detaching it as a panel
+    // is shown and hidden -- and that would have to be done from the UI thread while
+    // the callback reads the pointer.
+    output_->setTap(&tap_);
     engine_ = std::make_unique<AudioEngine>(registry_, *output_, ring_, settings_);
     engine_->setDelegate(this);
     engine_->setVolume(static_cast<float>(settings_.Volume()));
@@ -138,8 +144,17 @@ void PlaybackController::reloadDsp() {
     }
 }
 
+double PlaybackController::sampleRate() const {
+    return output_ ? output_->negotiatedFormat().sampleRate : 0.0;
+}
+
 void PlaybackController::stop() {
     engine_->stop();
+    // So the visualiser goes quiet with the audio rather than holding the last
+    // window on screen. Only on an explicit stop: a gapless advance never comes
+    // through here, and clearing between tracks would blank a display watching
+    // audio that never actually stopped.
+    tap_.clear();
     paused_  = false;
     audible_ = kInvalidTrackId;
     emit currentTrackChanged(audible_);

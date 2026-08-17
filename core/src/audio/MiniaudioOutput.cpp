@@ -1,12 +1,19 @@
 // miniaudio backend for IAudioOutput.
 //
 // The data callback runs on a real-time thread. Its entire body is: read from the
-// ring, apply an atomic gain, zero any tail it could not fill. No lock, no
-// allocation, no std::function, no logging, no system call. Device lifecycle
+// ring, zero any tail it could not fill, apply the volume and transport fade, and
+// copy the result to the visualiser tap if one is attached. No lock, no allocation,
+// no std::function, no logging, no system call. Device lifecycle
 // (init/uninit/reconfigure) happens on the caller's thread, never here.
+//
+// That list is a promise, and it is kept deliberately short -- so anything added to
+// it gets named here rather than appearing quietly. The tap is the most recent
+// addition and it is the last step on purpose: it must see what the speakers get,
+// which means after the gain, not before.
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
+#include "xpcog/core/audio/AudioTap.hpp"
 #include "xpcog/core/audio/TransportGain.hpp"
 
 #include <miniaudio.h>
@@ -158,6 +165,10 @@ public:
         return framesPlayed_.load(std::memory_order_relaxed);
     }
 
+    void setTap(AudioTap* tap) override {
+        tap_.store(tap, std::memory_order_relaxed);
+    }
+
     void setDeviceInvalidatedCallback(std::function<void()> callback) override {
         std::lock_guard lock(callbackMutex_);
         onInvalidated_ = std::move(callback);
@@ -190,6 +201,14 @@ private:
         self->fade_.apply(out, got,
                           static_cast<std::size_t>(device->playback.channels),
                           self->volume_.load(std::memory_order_relaxed));
+
+        // After the gain, so the visualiser sees what the speakers get -- including
+        // a fade, which is the point of tapping here rather than upstream.
+        if (AudioTap* tap = self->tap_.load(std::memory_order_relaxed);
+            tap != nullptr) {
+            tap->write(out, got,
+                       static_cast<std::size_t>(device->playback.channels));
+        }
 
         // The playback clock. Track changes are announced against this, so a seam
         // is reported when it is audible rather than when it was decoded.
@@ -285,6 +304,9 @@ private:
 
     /// The transport fade. Owns its own ramp state; see TransportGain.hpp.
     TransportGain              fade_;
+    /// Borrowed, and read by the callback -- hence atomic, so the visualiser can be
+    /// switched on and off without stopping playback.
+    std::atomic<AudioTap*>     tap_{nullptr};
     std::atomic<std::uint64_t> underruns_{0};
     std::atomic<std::uint64_t> framesPlayed_{0};
 };
