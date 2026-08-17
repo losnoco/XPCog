@@ -22,7 +22,10 @@ constexpr MenuItem kMenuLayout[] = {
     {QT_TRANSLATE_NOOP("ActionRegistry", "&File"), ActionId::FileOpen},
     {nullptr, ActionId::FileOpenFolder},
     {nullptr, ActionId::FileSavePlaylist, true},
+    {nullptr, ActionId::FilePreferences, true},
     {nullptr, ActionId::FileQuit, true},
+
+    {QT_TRANSLATE_NOOP("ActionRegistry", "&View"), ActionId::ViewFileTree},
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&Edit"), ActionId::EditSelectAll},
     {nullptr, ActionId::EditRemove},
@@ -56,7 +59,14 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
     add(ActionId::FileOpenFolder, tr("Open &Folder…"),
         QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
     add(ActionId::FileSavePlaylist, tr("&Save Playlist…"), QKeySequence::Save);
+    // Qt moves this to the application menu on macOS, where it belongs.
+    add(ActionId::FilePreferences, tr("&Preferences…"), QKeySequence::Preferences);
     add(ActionId::FileQuit, tr("&Quit"), QKeySequence::Quit);
+
+    QAction* tree = add(ActionId::ViewFileTree, tr("&File Browser"),
+                        QKeySequence(Qt::CTRL | Qt::Key_B));
+    tree->setCheckable(true);
+    tree->setChecked(true);
 
     add(ActionId::EditSelectAll, tr("Select &All"), QKeySequence::SelectAll);
     add(ActionId::EditRemove, tr("&Remove from Playlist"), QKeySequence::Delete);

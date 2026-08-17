@@ -25,6 +25,7 @@ enum class ActionId {
     FileOpen,
     FileOpenFolder,
     FileSavePlaylist,
+    FilePreferences,
     FileQuit,
 
     EditRemove,
@@ -43,6 +44,8 @@ enum class ActionId {
     OrderShuffleOff,
     OrderShuffleAlbums,
     OrderShuffleAll,
+
+    ViewFileTree,
 };
 
 class ActionRegistry : public QObject {

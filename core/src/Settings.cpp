@@ -107,6 +107,33 @@ std::span<const Settings::Desc> Settings::all() noexcept {
     return kDescriptors;
 }
 
+std::string Settings::defaultValue(std::string_view key) {
+    for (const Desc& descriptor : all()) {
+        if (descriptor.key != key) {
+            continue;
+        }
+        std::string text{descriptor.defaultValue};
+        // Stringifying the macro argument keeps the quotes around a string
+        // literal, so "albumGainWithPeak" arrives with them attached.
+        if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
+            text = text.substr(1, text.size() - 2);
+        }
+        return text;
+    }
+    return {};
+}
+
+std::string Settings::rawValue(std::string_view key) const {
+    if (auto stored = store_.getRaw(key)) {
+        return *stored;
+    }
+    return defaultValue(key);
+}
+
+void Settings::setRawValue(std::string_view key, std::string_view value) {
+    store_.setRaw(key, value);
+}
+
 void Settings::resetAll() {
     for (const Desc& descriptor : all()) {
         store_.remove(descriptor.key);

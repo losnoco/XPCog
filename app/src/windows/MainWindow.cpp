@@ -1,10 +1,13 @@
 #include "MainWindow.hpp"
 
 #include "ActionRegistry.hpp"
+#include "FileTree.hpp"
 #include "PlaybackController.hpp"
 #include "PlaylistModel.hpp"
+#include "PreferencesDialog.hpp"
 
 #include "xpcog/core/Version.hpp"
+#include "xpcog/core/library/PlaylistFile.hpp"
 #include "xpcog/core/library/Scanner.hpp"
 #include "xpcog/platform/QSettingsStore.hpp"
 
@@ -17,7 +20,11 @@
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMimeData>
+#include <QMessageBox>
 #include <QProgressDialog>
+#include <QSaveFile>
+#include <QSettings>
+#include <QSplitter>
 #include <QSlider>
 #include <QStatusBar>
 #include <QTableView>
@@ -74,6 +81,20 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
     playlist_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
     playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
+
+    // Window geometry lives in QSettings rather than settings.def: it is this
+    // application's own UI state, not a Cog setting to stay compatible with.
+    const QSettings ui;
+    restoreGeometry(ui.value(QStringLiteral("window/geometry")).toByteArray());
+    restoreState(ui.value(QStringLiteral("window/state")).toByteArray());
+    if (auto* split = findChild<QSplitter*>(QStringLiteral("mainSplitter"));
+        split != nullptr) {
+        split->restoreState(ui.value(QStringLiteral("window/splitter")).toByteArray());
+    }
+    if (const QString root = ui.value(QStringLiteral("fileTree/root")).toString();
+        !root.isEmpty()) {
+        tree_->setRootPath(root);
+    }
 }
 
 MainWindow::~MainWindow() = default;
@@ -103,7 +124,18 @@ void MainWindow::buildUi() {
     view_->setColumnWidth(PlaylistModel::ColumnTrack, 44);
     view_->setColumnWidth(PlaylistModel::ColumnLength, 72);
 
-    setCentralWidget(view_);
+    tree_ = new FileTree(registry_, this);
+
+    // The splitter, not a dock: Cog's file tree is a fixed pane of the window
+    // and behaves as one. Its position is restored below.
+    auto* split = new QSplitter(Qt::Horizontal, this);
+    split->addWidget(tree_);
+    split->addWidget(view_);
+    split->setStretchFactor(0, 0);
+    split->setStretchFactor(1, 1);
+    split->setSizes({260, 840});
+    split->setObjectName(QStringLiteral("mainSplitter"));
+    setCentralWidget(split);
 
     auto* transport = addToolBar(tr("Transport"));
     transport->setMovable(false);
@@ -175,7 +207,18 @@ void MainWindow::wireUp() {
 
     on(ActionId::FileOpen, [this] { openFiles(); });
     on(ActionId::FileOpenFolder, [this] { openFolder(); });
+    on(ActionId::FileSavePlaylist, [this] { savePlaylistAs(); });
+    on(ActionId::FilePreferences, [this] { showPreferences(); });
     on(ActionId::FileQuit, [] { QApplication::quit(); });
+
+    if (QAction* command = actions_->action(ActionId::ViewFileTree); command != nullptr) {
+        connect(command, &QAction::toggled, tree_, &QWidget::setVisible);
+    }
+
+    connect(tree_, &FileTree::activated, this,
+            [this](const QList<QUrl>& urls) { addUrls(urls); });
+    connect(tree_, &FileTree::addRequested, this,
+            [this](const QList<QUrl>& urls) { addUrls(urls); });
     on(ActionId::EditSelectAll, [this] { view_->selectAll(); });
     on(ActionId::EditRemove, [this] { removeSelected(); });
     on(ActionId::PlaybackEnqueue, [this] { enqueueSelected(); });
@@ -254,6 +297,62 @@ void MainWindow::openFiles() {
         urls.append(QUrl::fromLocalFile(path));
     }
     addUrls(urls);
+}
+
+void MainWindow::showPreferences() {
+    PreferencesDialog dialog{settings_, this};
+    connect(&dialog, &PreferencesDialog::settingChanged, this, [this](const QString& key) {
+        // Most settings are read live by the engine. The ones the playlist owns
+        // have to be pushed across, since Playlist deliberately does not read
+        // settings itself.
+        if (key == QLatin1String("alwaysStopAfterCurrent")) {
+            playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
+        }
+    });
+    dialog.exec();
+    settings_.sync();
+}
+
+void MainWindow::savePlaylistAs() {
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("Save Playlist"), {},
+        tr("M3U playlist (*.m3u);;PLS playlist (*.pls);;XSPF playlist (*.xspf);;"
+           "Cog XML playlist (*.xml)"));
+    if (path.isEmpty()) {
+        return;
+    }
+
+    const Url destination = Url::fromLocalPath(path.toStdString());
+    const auto format = playlistFormatForExtension(destination.extension());
+    if (!format) {
+        QMessageBox::warning(this, tr("Save Playlist"),
+                             tr("Unrecognised playlist extension."));
+        return;
+    }
+
+    // Queue positions are stored as indices into the entries written, which is
+    // what the Cog XML reader expects back.
+    std::vector<std::size_t> queue;
+    for (const TrackId id : playlist_.queue()) {
+        if (const auto index = playlist_.indexOf(id)) {
+            queue.push_back(*index);
+        }
+    }
+
+    const std::string text =
+        writePlaylist(*format, playlist_.entries(), queue, destination);
+
+    // QSaveFile, so a failure part-way leaves the previous playlist intact
+    // rather than a truncated one.
+    QSaveFile file{path};
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text) ||
+        file.write(text.data(), static_cast<qint64>(text.size())) < 0 ||
+        !file.commit()) {
+        QMessageBox::warning(this, tr("Save Playlist"),
+                             tr("Could not write %1").arg(path));
+        return;
+    }
+    statusBar()->showMessage(tr("Saved %1").arg(path), 5000);
 }
 
 void MainWindow::openFolder() {
@@ -402,6 +501,15 @@ QString MainWindow::statusSummary() const {
 // --- window events ------------------------------------------------------
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    QSettings ui;
+    ui.setValue(QStringLiteral("window/geometry"), saveGeometry());
+    ui.setValue(QStringLiteral("window/state"), saveState());
+    if (auto* split = findChild<QSplitter*>(QStringLiteral("mainSplitter"));
+        split != nullptr) {
+        ui.setValue(QStringLiteral("window/splitter"), split->saveState());
+    }
+    ui.setValue(QStringLiteral("fileTree/root"), tree_->rootPath());
+
     if (library_ && !library_->savePlaylist(playlist_)) {
         // Worth saying, but not worth refusing to close over.
         statusBar()->showMessage(

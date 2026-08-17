@@ -53,6 +53,17 @@ public:
     };
     [[nodiscard]] static std::span<const Desc> all() noexcept;
 
+    /// Access by key rather than by name, for the two callers that iterate
+    /// all() and so cannot name a generated accessor: the preferences UI and
+    /// `xpcog-cli settings`. Returns the stored value, or the declared default
+    /// when nothing is stored.
+    [[nodiscard]] std::string rawValue(std::string_view key) const;
+    void setRawValue(std::string_view key, std::string_view value);
+
+    /// The declared default for `key`, with the quotes that stringifying a
+    /// string literal leaves behind already removed. Empty for an unknown key.
+    [[nodiscard]] static std::string defaultValue(std::string_view key);
+
     /// Restores every setting to its default.
     void resetAll();
 

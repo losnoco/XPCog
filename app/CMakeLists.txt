@@ -8,10 +8,14 @@ qt_add_executable(xpcog-app
     src/ActionRegistry.hpp
     src/PlaybackController.cpp
     src/PlaybackController.hpp
+    src/FileTree.cpp
+    src/FileTree.hpp
     src/PlaylistModel.cpp
     src/PlaylistModel.hpp
     src/windows/MainWindow.cpp
     src/windows/MainWindow.hpp
+    src/windows/PreferencesDialog.cpp
+    src/windows/PreferencesDialog.hpp
 )
 
 target_include_directories(xpcog-app PRIVATE src)

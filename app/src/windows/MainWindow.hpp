@@ -26,6 +26,7 @@ class QTableView;
 namespace xpcog::app {
 
 class ActionRegistry;
+class FileTree;
 class PlaybackController;
 class PlaylistModel;
 class PlaylistProxyModel;
@@ -55,6 +56,8 @@ private:
 
     void openFiles();
     void openFolder();
+    void showPreferences();
+    void savePlaylistAs();
     void addUrls(const QList<QUrl>& urls, int atRow = -1);
 
     void onPositionChanged(double seconds, double duration);
@@ -79,6 +82,7 @@ private:
     PlaylistModel*      model_   = nullptr;
     PlaylistProxyModel* proxy_   = nullptr;
 
+    FileTree*   tree_     = nullptr;
     QTableView* view_     = nullptr;
     QSlider*    seekBar_  = nullptr;
     QSlider*    volume_   = nullptr;
