@@ -7,10 +7,17 @@
 namespace xpcog::app {
 namespace {
 
-/// Cog's BUFFER_SIZE, in samples rather than bytes. Big enough that a scheduling
-/// hiccup on the feeder thread does not reach the device, small enough that a
-/// seek discards only a fraction of a second.
-constexpr std::size_t kRingSamples = 1U << 18;
+/// The ring *after* the DSP chain, so this is deliberately shallow: about 186 ms
+/// of stereo at 44.1 kHz. The depth that protects the device from a scheduling
+/// hiccup is the engine's own buffer ahead of the chain (kPreRingSamples, Cog's
+/// BUFFER_SIZE); see the AudioEngine class comment for why the two are separate.
+///
+/// This number is the latency of every DSP change. At Cog's 1<<18 it was three
+/// seconds, and moving an equaliser slider appeared to do nothing at all. It only
+/// has to be deep enough for the pump -- which runs a few hundred times faster
+/// than playback and is fed by a three-second buffer -- to keep ahead of the
+/// device across a timer tick.
+constexpr std::size_t kRingSamples = 1U << 14;
 
 /// Four updates a second. Cog's position field updates at a similar rate; going
 /// faster only spends CPU redrawing a label that has not changed.

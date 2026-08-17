@@ -33,9 +33,11 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace xpcog;
@@ -464,4 +466,70 @@ TEST_CASE("the preamp reaches the engine's output", "[dsp]") {
     REQUIRE(attenuated.size() == flat.size());
     REQUIRE(rmsOf(attenuated) / rmsOf(flat) ==
             Approx(std::pow(10.0, -6.0 / 20.0)).epsilon(0.01));
+}
+
+TEST_CASE("an equaliser change is heard promptly", "[dsp]") {
+    // The regression guard for the bug this design exists to fix. With the chain
+    // behind the deep buffer, moving a slider changed nothing audible for about
+    // three seconds; the depth now sits ahead of the chain, so the delay is
+    // bounded by the shallow ring instead.
+    //
+    // Measured in audio time rather than wall clock, which is what makes it
+    // meaningful under an offline output at all -- and paced, because an
+    // unlimited drain would consume the whole file before the change was made.
+    constexpr std::size_t kShallowSamples = 1U << 14;  // the app's post-DSP ring
+    RingBuffer            ring{kShallowSamples};
+    auto                  output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    AudioEngine engine{dspRegistry(), *output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(toneWav())));
+
+    // Let it settle into steady playback before disturbing it.
+    for (int spin = 0; spin < 400 && engine.playedSeconds() < 0.4; ++spin) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    const double changedAt = engine.playedSeconds();
+    REQUIRE(changedAt >= 0.4);
+
+    settings.setRawValue(Equalizer::bandSettingsKeys()[17], "12.0");  // 1 kHz
+    engine.reloadDsp();
+
+    engine.waitUntilFinished();
+    engine.stop();
+
+    const std::vector<float> captured = capturedAudio(*output);
+    REQUIRE_FALSE(captured.empty());
+
+    // The source peaks at about 0.366; a 12 dB boost roughly quadruples it, so
+    // twice the original peak is unambiguously past the transition.
+    constexpr double      kThreshold = 0.366 * 2.0;
+    constexpr std::size_t kWindow    = 64;
+    std::size_t           transition = 0;
+    for (std::size_t frame = 0; frame + kWindow < captured.size() / kChannels; frame += kWindow) {
+        double peak = 0.0;
+        for (std::size_t index = 0; index < kWindow; ++index) {
+            peak = std::max(peak, std::abs(static_cast<double>(
+                                      captured[((frame + index) * kChannels)])));
+        }
+        if (peak > kThreshold) {
+            transition = frame;
+            break;
+        }
+    }
+    REQUIRE(transition > 0);
+
+    const double heardAt  = static_cast<double>(transition) / kRate;
+    const double latency  = heardAt - changedAt;
+    INFO("changed at " << changedAt << " s, heard at " << heardAt << " s, latency "
+                       << latency << " s");
+
+    // Bounded well clear of the measurement, not tight against it. It comes out
+    // around 0.4 s -- the shallow ring, plus a pump block, plus the filter's own
+    // settling time and this test's polling granularity -- and the regression
+    // being guarded against is three seconds, so a 1 s bound catches it without
+    // turning scheduling noise into a failure.
+    REQUIRE(latency < 1.0);
 }

@@ -18,6 +18,16 @@ namespace {
 /// so it wakes well before the device runs dry.
 constexpr auto kFeederBackoff = std::chrono::milliseconds(2);
 
+/// The deep buffer ahead of the DSP chain -- Cog's BUFFER_SIZE, about three
+/// seconds of stereo at 44.1 kHz. This is the depth that keeps the device fed
+/// across a scheduling hiccup, and it sits before the chain so that depth does
+/// not become DSP latency.
+constexpr std::size_t kPreRingSamples = 1U << 18;
+
+/// How much the DSP thread moves per pass. Large enough that the per-call
+/// overhead is irrelevant, small enough to stay well inside the shallow ring.
+constexpr std::size_t kDspBlockSamples = 4096;
+
 }  // namespace
 
 struct AudioEngine::OpenTrack {
@@ -28,7 +38,8 @@ struct AudioEngine::OpenTrack {
 
 AudioEngine::AudioEngine(const PluginRegistry& registry, IAudioOutput& output,
                          RingBuffer& ring, const Settings& settings)
-    : registry_(registry), output_(output), settings_(settings), ring_(ring) {
+    : registry_(registry), output_(output), settings_(settings), ring_(ring),
+      preRing_(kPreRingSamples) {
     // Order is the signal path. The equaliser sits after conversion, so it
     // always runs at the device's rate and its coefficients survive a track
     // whose source rate differs.
@@ -100,9 +111,10 @@ bool AudioEngine::play(const Url& url) {
     applyDspSettings();
     dspDirty_.store(false, std::memory_order_relaxed);
 
-    // The ring is the caller's and already sized; just make sure nothing is left
-    // over from a previous track.
+    // Both stages start empty. The caller's ring is the shallow one the device
+    // drains; the deep one is ours.
     ring_.clear();
+    preRing_.clear();
 
     framesWritten_ = 0;
     {
@@ -122,30 +134,44 @@ bool AudioEngine::play(const Url& url) {
     config.sampleRate = format_.sampleRate;
     config.channels   = format_.channels;
 
-    // Fill the ring before the device starts. Otherwise the first callbacks land
-    // before the feeder has produced anything and are counted as underruns --
-    // real ones, audible as a click at the start of playback.
+    // Fill the deep buffer before the device starts. Otherwise the first
+    // callbacks land before the feeder has produced anything and are counted as
+    // underruns -- real ones, audible as a click at the start of playback.
     {
         AudioChunk        chunk;
-        const std::size_t target = ring_.capacity() / 2;
-        while (ring_.availableToRead() < target &&
+        const std::size_t target = preRing_.capacity() / 2;
+        while (preRing_.availableToRead() < target &&
                track_->decoder->readAudio(chunk)) {
             converted_.clear();
             if (!converter_.process(chunk, converted_) || converted_.empty()) {
                 continue;
             }
-            applyDsp();
-            ring_.write(converted_.data(), converted_.size());
+            preRing_.write(converted_.data(), converted_.size());
             framesWritten_ += converted_.size() / format_.channels;
         }
     }
 
+    running_.store(true, std::memory_order_release);
+    dsp_ = std::thread([this] { dspLoop(); });
+
+    // And prime the shallow one, for the same reason: the device's first callback
+    // must find audio waiting. The pump runs hundreds of times faster than
+    // playback, so this is microseconds rather than a stall -- but it is bounded,
+    // because a track shorter than the shallow ring would never reach the target.
+    for (int spin = 0; spin < 500 && ring_.availableToRead() < ring_.capacity() / 2;
+         ++spin) {
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+    }
+
     if (!output_.start(config)) {
+        running_.store(false, std::memory_order_release);
+        if (dsp_.joinable()) {
+            dsp_.join();
+        }
         closeTrack();
         return false;
     }
 
-    running_.store(true, std::memory_order_release);
     status_.store(PlaybackStatus::Playing, std::memory_order_relaxed);
     feeder_ = std::thread([this] { feederLoop(); });
 
@@ -174,14 +200,76 @@ void AudioEngine::applyDspSettings() {
     equalizer_.setBandGains(gains);
 }
 
-void AudioEngine::applyDsp() {
-    if (converted_.empty()) {
-        return;
-    }
-    const std::size_t frames = converted_.size() / format_.channels;
-    for (DSPNode* node : chain_) {
-        if (node->active()) {
-            node->process(converted_.data(), frames);
+void AudioEngine::dspLoop() {
+    std::vector<float> block(kDspBlockSamples);
+    const auto         channels = static_cast<std::size_t>(format_.channels);
+    std::uint64_t      seenEpoch = flushEpoch_.load(std::memory_order_acquire);
+
+    while (running_.load(std::memory_order_acquire)) {
+        // Settings first, so a slider moved during the wait below is already in
+        // the coefficients by the time the next block is filtered.
+        if (dspDirty_.exchange(false, std::memory_order_relaxed)) {
+            applyDspSettings();
+        }
+
+        if (const std::uint64_t epoch = flushEpoch_.load(std::memory_order_acquire);
+            epoch != seenEpoch) {
+            // The feeder has dropped the pre-seek audio upstream. Two things
+            // still hold the old position: the filter state, and whatever this
+            // thread already handed to the device.
+            for (DSPNode* node : chain_) {
+                node->reset();
+            }
+            ring_.requestFlush();
+            seenEpoch = epoch;
+        }
+
+        // A pending upstream flush is consumed here explicitly rather than as a
+        // side effect of a normal read. Only a read clears it, so leaving it to
+        // the availability check below would deadlock whenever the flush arrived
+        // with the deep ring already empty: nothing to read, so no read, so the
+        // flag never clears and the feeder waits on it forever.
+        if (preRing_.flushPending()) {
+            preRing_.read(block.data(), block.size());
+            std::this_thread::sleep_for(kFeederBackoff);
+            continue;
+        }
+
+        // Nothing new may be written until the device has acknowledged its own
+        // discard, or it would take the post-seek audio with it.
+        if (ring_.flushPending()) {
+            std::this_thread::sleep_for(kFeederBackoff);
+            continue;
+        }
+
+        // Whole frames only. read() hands back whatever is available, and a
+        // block that ended mid-frame would shift every channel by one from there
+        // on -- silent, and it would sound like the stereo image collapsing.
+        const std::size_t available = preRing_.availableToRead();
+        const std::size_t wanted    = std::min(available, block.size()) / channels * channels;
+        if (wanted == 0) {
+            std::this_thread::sleep_for(kFeederBackoff);
+            continue;
+        }
+
+        const std::size_t got = preRing_.read(block.data(), wanted);
+        if (got == 0) {
+            continue;  // a flush landed between the check and the read
+        }
+
+        const std::size_t frames = got / channels;
+        for (DSPNode* node : chain_) {
+            if (node->active()) {
+                node->process(block.data(), frames);
+            }
+        }
+
+        std::size_t written = 0;
+        while (written < got && running_.load(std::memory_order_acquire)) {
+            written += ring_.write(block.data() + written, got - written);
+            if (written < got) {
+                std::this_thread::sleep_for(kFeederBackoff);
+            }
         }
     }
 }
@@ -192,7 +280,7 @@ bool AudioEngine::writeSamples(const float* samples, std::size_t count) {
         if (!running_.load(std::memory_order_acquire)) {
             return false;
         }
-        written += ring_.write(samples + written, count - written);
+        written += preRing_.write(samples + written, count - written);
         if (written < count) {
             std::this_thread::sleep_for(kFeederBackoff);
         }
@@ -215,8 +303,6 @@ bool AudioEngine::writeToRing(const AudioChunk& chunk) {
         return true;  // the resampler is still filling its delay line
     }
 
-    applyDsp();
-
     if (!writeSamples(converted_.data(), converted_.size())) {
         return false;
     }
@@ -231,12 +317,6 @@ void AudioEngine::feederLoop() {
     while (running_.load(std::memory_order_acquire)) {
         publishSeams();
 
-        // Here rather than in reloadDsp(): this is the feeder thread, the only
-        // one that may touch the coefficients while process() is not running.
-        if (dspDirty_.exchange(false, std::memory_order_relaxed)) {
-            applyDspSettings();
-        }
-
         if (const std::int64_t requested =
                 pendingSeek_.exchange(-1, std::memory_order_acq_rel);
             requested >= 0) {
@@ -247,7 +327,11 @@ void AudioEngine::feederLoop() {
         // audio, or the discard would take the post-seek audio with it. If the
         // device is not running -- paused, or stopped for a reconfigure -- this
         // simply waits, and the first callback after it resumes does the drop.
-        if (ring_.flushPending()) {
+        // Both stages: the deep one until the pump has dropped it, the shallow
+        // one until the device has. Waiting only on the first would re-base the
+        // position while up to a shallow ring of old audio was still queued,
+        // which is the error the seek-position work exists to avoid.
+        if (preRing_.flushPending() || ring_.flushPending()) {
             std::this_thread::sleep_for(kFeederBackoff);
             continue;
         }
@@ -286,7 +370,6 @@ void AudioEngine::feederLoop() {
                     // that meet the seam.
                     converted_.clear();
                     converter_.drain(converted_);
-                    applyDsp();
                     if (!converted_.empty() &&
                         !writeSamples(converted_.data(), converted_.size())) {
                         break;
@@ -326,14 +409,14 @@ void AudioEngine::feederLoop() {
     if (running_.load(std::memory_order_acquire)) {
         converted_.clear();
         converter_.drain(converted_);
-        applyDsp();
         if (!converted_.empty()) {
             writeSamples(converted_.data(), converted_.size());
         }
     }
 
     // Let the device play out what is still buffered before declaring the end.
-    while (running_.load(std::memory_order_acquire) && ring_.availableToRead() > 0) {
+    while (running_.load(std::memory_order_acquire) &&
+           (preRing_.availableToRead() > 0 || ring_.availableToRead() > 0)) {
         publishSeams();
         std::this_thread::sleep_for(kFeederBackoff);
     }
@@ -371,14 +454,15 @@ void AudioEngine::performSeek(std::int64_t frame) {
     converter_.reset();
     converted_.clear();
 
-    // Same reasoning for the chain: a biquad holding two samples from the old
-    // position rings them into the new one, which is the click a user hears at
-    // precisely the moment they are listening for the seek to land.
-    for (DSPNode* node : chain_) {
-        node->reset();
-    }
-
+    // The chain's own state is the DSP thread's to drop -- a biquad holding two
+    // samples from the old position rings them into the new one, which is the
+    // click a user hears at precisely the moment they are listening for the seek
+    // to land. The epoch is published *before* the flush flags so that a pump
+    // iteration which observes either flag is guaranteed to observe the epoch as
+    // well, and therefore cannot write a block through un-reset filters.
+    flushEpoch_.fetch_add(1, std::memory_order_release);
     ring_.requestFlush();
+    preRing_.requestFlush();
 
     // The base cannot be taken here. Everything still in the ring is about to be
     // *discarded*, so those frames are never delivered and framesPlayed() will
@@ -436,6 +520,9 @@ void AudioEngine::stop() {
     running_.store(false, std::memory_order_release);
     if (feeder_.joinable()) {
         feeder_.join();
+    }
+    if (dsp_.joinable()) {
+        dsp_.join();
     }
     output_.stop();
     closeTrack();

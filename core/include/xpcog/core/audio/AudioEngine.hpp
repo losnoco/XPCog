@@ -11,6 +11,26 @@
 // when it is decoded -- Cog does this with -endOfInputPlayed after the output
 // drains; here the output counts frames delivered and the engine compares that
 // against recorded seam positions.
+//
+// Buffering is two-stage, and the reason is the DSP chain:
+//
+//   decoder -> converter -> preRing (deep) -> DSP chain -> ring (shallow) -> device
+//
+// The deep buffer is what absorbs a scheduling hiccup on the feeder thread
+// without the device running dry, and it is ~3 seconds. Put the chain *behind*
+// it -- the obvious arrangement, and what this engine did first -- and every DSP
+// change is inaudible until those 3 seconds have played out: moving an equaliser
+// slider appeared to do nothing for five seconds.
+//
+// So the depth goes ahead of the chain and only a shallow buffer follows it,
+// which is why Cog gives each of its DSP nodes its own small ChunkList and its
+// own thread. This is that arrangement with one thread for the whole chain
+// instead of one per stage, since the stages are synchronous (see DSPNode).
+//
+// The chain therefore belongs to the DSP thread: it is the only one that calls
+// process(), reads the settings into the coefficients, or resets the filters.
+// That also means the chain runs in exactly one place, so no future path into
+// the ring can forget to apply it.
 
 #pragma once
 
@@ -148,22 +168,10 @@ private:
     void applyReplayGain(const TrackProperties& props);
     void publishSeams();
 
-    /// Runs the DSP chain over `converted_`, in place. Feeder thread only.
-    ///
-    /// Every path that fills `converted_` calls this before handing it to the
-    /// ring -- there are four, counting the prebuffer and the two drains -- so a
-    /// new one that forgets would be the one place a stage silently stops
-    /// applying.
-    void applyDsp();
-    /// Reads the equaliser settings into the chain. Feeder thread only.
+    /// Pumps `preRing_` through the chain into `ring_`. Its own thread.
+    void dspLoop();
+    /// Reads the equaliser settings into the chain. DSP thread only.
     void applyDspSettings();
-
-    /// The chain, in order. Points at the members below rather than owning
-    /// anything: the set of stages is fixed at compile time, so a vector of
-    /// unique_ptr would buy indirection and nothing else.
-    Equalizer             equalizer_;
-    std::vector<DSPNode*> chain_;
-    std::atomic<bool>     dspDirty_{true};
 
     const PluginRegistry& registry_;
     IAudioOutput&         output_;
@@ -185,6 +193,23 @@ private:
     std::thread                 feeder_;
     std::atomic<bool>           running_{false};
     std::atomic<PlaybackStatus> status_{PlaybackStatus::Stopped};
+
+    /// The deep buffer, ahead of the chain. See the class comment.
+    RingBuffer  preRing_;
+    std::thread dsp_;
+
+    /// The chain, in order. Points at the members above rather than owning
+    /// anything: the set of stages is fixed at compile time, so a vector of
+    /// unique_ptr would buy indirection and nothing else.
+    Equalizer             equalizer_;
+    std::vector<DSPNode*> chain_;
+    std::atomic<bool>     dspDirty_{true};
+
+    /// Bumped by the feeder when it discards the pre-seek audio, so the DSP
+    /// thread knows to drop its own filter state and flush downstream. A counter
+    /// rather than a flag because two seeks in quick succession must produce two
+    /// resets, and a flag the DSP thread had not yet observed would collapse them.
+    std::atomic<std::uint64_t> flushEpoch_{0};
 
     /// Total frames handed to the ring. Feeder-only.
     std::uint64_t framesWritten_ = 0;

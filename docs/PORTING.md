@@ -137,7 +137,33 @@ and changing them changes latency behaviour.
 
 ### In progress: M4 — the DSP chain
 
-**Done:** `DSPNode` and the equaliser, wired into the engine.
+**Done:** `DSPNode` and the equaliser, wired into the engine behind a two-stage
+buffer.
+
+Buffering deserves its own note, because getting it wrong was not obvious. The
+chain first went in *behind* the ring, which is the arrangement that reads as
+correct -- decode, convert, filter, hand to the device. But the ring is Cog's
+BUFFER_SIZE, about three seconds, and its whole job is to absorb a feeder-thread
+hiccup. Filtering ahead of three seconds of already-filtered audio means every
+DSP change is inaudible for three seconds: moving an equaliser slider appeared to
+do nothing for five, and it was reported as a bug rather than noticed here.
+
+So the depth moved ahead of the chain and only a shallow ring follows it:
+
+```
+decoder -> converter -> preRing (deep, ~3 s) -> chain -> ring (~186 ms) -> device
+```
+
+Which is what Cog's per-node thread and `ChunkList` were for all along. The
+threading dismissed above as following from Cog's engine shape is *also* what
+keeps its DSP responsive, and replacing it with synchronous stages behind one deep
+buffer quietly traded that away. The fix keeps synchronous stages -- one pump
+thread for the whole chain rather than one per stage -- and measures 0.4 s from
+slider to speaker, guarded by a test so re-deepening that ring cannot silently
+undo it.
+
+A side benefit: the chain now runs in exactly one place, so the four-call-sites
+hazard below is gone -- no future path into the ring can forget to apply it.
 
 `DSPNode` is deliberately not Cog's. Cog's is a threaded node — a thread, a
 `ChunkList`, two semaphores and a recursive lock each, chained as
