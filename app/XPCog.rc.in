@@ -12,12 +12,16 @@
 // what the Details tab of the file's properties reads.
 //
 // It is *not* enough to name the app in the System Media Transport Controls
-// card, which stays captioned "Unknown app" -- verified, rather than assumed.
-// That caption comes from app identity, not from file metadata: an unpackaged
-// executable has none, and Windows resolves it through an AppUserModelID backed
-// by a Start Menu shortcut carrying System.AppUserModel.ID, or through a package
-// (MSIX or an external-location "sparse" package). Both belong to installation,
-// so docs/PORTING.md records it as a gap rather than this file faking it.
+// card, which stays captioned "Unknown app" -- verified, rather than assumed, and
+// since verified a second time against the FriendlyAppName that `--register`
+// writes. File metadata of any kind is ruled out by experiment.
+//
+// The reason is that the SMTC identifies a session by AppUserModelID
+// (GlobalSystemMediaTransportControlsSession.SourceAppUserModelId), and only a
+// *packaged* application has one that resolves to a name -- full MSIX or an
+// external-location "sparse" package, both of which belong to installation and
+// need a signing certificate. docs/PORTING.md records the whole finding rather
+// than this file pretending a version resource could do it.
 //
 // (Note: lives here rather than under src/windows/, which holds the application's
 // *windows* -- MainWindow and the dialogs -- and has nothing to do with the OS.)

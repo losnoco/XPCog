@@ -598,13 +598,36 @@ asserted a property Qt provides rather than the one the code was responsible for
   on there being an installer rather than the app writing to the Start menu
   itself.
 
-  One thing has changed since that was measured: `XPCog --register` now writes a
-  `FriendlyAppName`, which is what `AssocQueryString(ASSOCSTR_FRIENDLYAPPNAME)`
-  answers with. That is the call that previously returned `XPCog.exe`, so the
-  caption is worth **re-checking** rather than assumed unchanged. The reasoning
-  above says identity comes from the AppUserModelID and not from file metadata, and
-  that is still what the documentation says — but the last measurement was taken
-  before this key existed, and a stale measurement is not evidence.
+  **Measured twice, and neither works.** A version resource's `FileDescription`
+  does not change it, and neither does the `FriendlyAppName` that `--register` now
+  writes — even though that is the key `AssocQueryString(ASSOCSTR_FRIENDLYAPPNAME)`
+  answers with. So file metadata of any kind is ruled out, by experiment rather
+  than by inference.
+
+  What settles *why* is one API: `GlobalSystemMediaTransportControlsSession`
+  exposes **`SourceAppUserModelId`**. The SMTC identifies a session by AUMID, and
+  Microsoft's package-identity overview states that only packaged apps — full MSIX
+  or packaged-with-external-location — have identity at run time, with the AUMID
+  *derived from the package family name and the declared application ID*. An
+  unpackaged process has no AUMID that resolves to a display name, so the media UI
+  has nothing to caption the card with.
+
+  The fix is therefore **package identity**, specifically a signed
+  external-location ("sparse") package registered by the installer with
+  `Add-AppxPackage -ExternalLocation`. That needs an MSIX identity manifest whose
+  `Publisher` matches a code-signing certificate's subject, a signed `.msix`, and
+  identity metadata in the application manifest — genuine installer work requiring
+  a certificate, not something to bolt onto a build target.
+
+  Note what is deliberately *not* done in the meantime:
+  `SetCurrentProcessExplicitAppUserModelID`. It is otherwise good practice — the
+  Win32 AppUserModelID documentation strongly recommends an explicit ID — but that
+  same page requires the same ID to be assigned to every window, shortcut and file
+  association the application owns, and XPCog installs no shortcut. Setting one
+  half of that contract can leave taskbar pinning worse off than the heuristic ID
+  Windows assigns on its own, and it would not touch this caption regardless. It
+  belongs with the shortcut, in the installer, where the requirement can actually
+  be met.
 - **File associations exist but only on request.** `XPCog --register` adds XPCog to
   each supported extension's `OpenWithProgids` under `HKCU`; `--unregister` removes
   it. Never done at startup: an application that claims file types the first time
