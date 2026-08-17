@@ -6,12 +6,13 @@ A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio play
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
 
-> **Status: milestone 1c — gapless across formats *and* sample rates.**
-> `xpcog-cli play a.flac b.m4a c.mp3` plays a queue gaplessly on macOS, Linux and
-> Windows, resampling as needed so a 44.1 kHz album can run into a 48 kHz track
-> without a break. ReplayGain is applied, playlists and cue sheets expand into
-> tracks, and FLAC decoding is byte-exact against `flac -d`. The Qt application is
-> still a shell. See [the roadmap](#roadmap).
+> **Status: milestone 3 — a usable player.**
+> A Qt window with a playlist, transport, seek bar, file browser, preferences,
+> undo, drag-and-drop and a persistent library. Gapless across formats *and*
+> sample rates, ReplayGain, cue sheets, HDCD. macOS media keys and Now Playing
+> work; Windows and Linux equivalents are M5. Next is the DSP chain.
+> See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
+> full plan and the reasoning behind the structure.
 
 ## Why a port rather than a fork
 
@@ -53,16 +54,53 @@ at build time. See [`cmake/XPCogCodec.cmake`](cmake/XPCogCodec.cmake).
 
 Requires **Qt 6.5+**, **CMake 3.24+**, **Ninja**, a **C++20** compiler, and
 [**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set.
-On macOS you also need `pkg-config` (`brew install pkg-config`) for vcpkg's ports.
+
+Point `XPCOG_QT_ROOT` at your Qt installation — the directory containing `bin`
+and `lib/cmake`, as produced by the Qt installer or aqtinstall. Qt deliberately
+does not come from vcpkg, because mixing a vcpkg Qt with vcpkg's other ports is
+a known source of grief.
 
 ```sh
-cmake --preset macos-debug          # or linux-debug / windows-debug
+export XPCOG_QT_ROOT=~/Qt/6.11.1/macos      # or .../gcc_64 on Linux
+cmake --preset macos-debug                   # or linux-debug / windows-debug
 cmake --build --preset macos-debug
 ctest --preset macos-debug
 ```
 
-Presets read Qt from `$HOME/Qt/6.11.1/macos` by default; override with the
-`XPCOG_QT_ROOT` environment variable, or set `CMAKE_PREFIX_PATH` yourself.
+```bat
+:: Windows, from a Developer Command Prompt
+set XPCOG_QT_ROOT=C:\Qt\6.11.1\msvc2022_64
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+ctest --preset windows-debug
+```
+
+If you would rather manage `CMAKE_PREFIX_PATH` yourself, leave `XPCOG_QT_ROOT`
+unset and it stays out of the way.
+
+### Other prerequisites
+
+`nasm` is required on every platform for FFmpeg's assembly — vcpkg downloads it
+itself on Windows, and expects the package manager to supply it elsewhere. macOS
+also needs `pkg-config` for vcpkg's ports.
+
+```sh
+brew install ninja pkg-config nasm                              # macOS
+sudo apt install ninja-build pkg-config nasm autoconf automake libtool  # Debian/Ubuntu
+```
+
+Sixteen tests build their fixtures by shelling out to command-line **encoders**,
+and *skip silently* when those are absent — a skip is not a failure, so the suite
+still reports success while the gapless, seek and cue-span tests never run. Install
+them to get real coverage:
+
+```sh
+brew install flac vorbis-tools opus-tools lame wavpack ffmpeg    # macOS
+sudo apt install flac vorbis-tools opus-tools lame wavpack ffmpeg  # Debian/Ubuntu
+```
+
+There is no dependable Chocolatey source for these, so on Windows those sixteen
+tests skip. Watch the skip count in `ctest` output, not just the pass rate.
 
 To build the engine without Qt at all:
 
@@ -171,7 +209,7 @@ never confused with the expected tail.
 | ✅ | **M1b** | Transport, gapless, seven decoders, M3U/PLS playlists and cue sheets |
 | ✅ | **M1c** | ReplayGain, resampling, settings, HDCD |
 | ✅ | **M2** | SQLite library, playlist model, shuffle/repeat/queue, scanner, tag reading |
-| | **M3** | The Qt application: playlist view, preferences, media keys |
+| ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | | **M4** | DSP chain: equalizer, fader, downmix, time-stretch, surround |
 | | **M5** | Visualization, mini player, Windows SMTC / Linux MPRIS |
 | | **M6** | Breadth: the remaining ~27 decoders, DSD/DoP, HRTF, scrobbling |
@@ -194,6 +232,9 @@ XPCog is a derivative work and tracks Cog's behaviour closely, including quirks 
 preserving. Where it deliberately differs, the difference is documented — for example,
 Cog's shuffle and next/previous operate on the *sorted* playlist order, whereas XPCog
 keeps playback order canonical and treats sorting as display-only.
+
+The full porting plan, milestone-by-milestone progress, and the complete list of
+deliberate behaviour differences live in [`docs/PORTING.md`](docs/PORTING.md).
 
 Upstream Cog: <https://github.com/losnoco/Cog>
 

@@ -23,6 +23,9 @@ endif()
 include(XPCogOptions)
 include(XPCogWarnings)
 include(XPCogCodec)
+# Before any add_subdirectory that calls find_package(Qt6): it contributes to
+# CMAKE_PREFIX_PATH, which has to be set by then.
+include(XPCogQt)
 
 # ---------------------------------------------------------------------------
 # Layers, innermost first. See docs: core must never link Qt.
