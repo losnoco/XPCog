@@ -2,10 +2,23 @@
 # two global properties. The tail of this file turns those into a generated
 # RegisterAll.cpp with an explicit call to every registrar.
 
+add_subdirectory(common)
 add_subdirectory(filesource)
 
 if(XPCOG_WITH_FLAC)
     add_subdirectory(flac)
+endif()
+if(XPCOG_WITH_VORBIS)
+    add_subdirectory(vorbis)
+endif()
+if(XPCOG_WITH_OPUS)
+    add_subdirectory(opus)
+endif()
+if(XPCOG_WITH_MPG123)
+    add_subdirectory(mpg123)
+endif()
+if(XPCOG_WITH_WAVPACK)
+    add_subdirectory(wavpack)
 endif()
 
 # M1b onward: ffmpeg, vorbis, opus, mpg123, wavpack, ape, musepack, taglib,

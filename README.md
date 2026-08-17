@@ -6,10 +6,10 @@ A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio play
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
 
-> **Status: milestone 1a — it plays audio.** `xpcog-cli play song.flac` decodes
-> and plays through the system audio device on macOS, Linux and Windows. Decoded
-> output is byte-exact against `flac -d`. The Qt application is still a shell.
-> See [the roadmap](#roadmap).
+> **Status: milestone 1b — gapless playback, five formats.** `xpcog-cli play a.flac
+> b.ogg c.mp3` plays a queue gaplessly on macOS, Linux and Windows. FLAC decoding
+> is byte-exact against `flac -d`, and the seam between tracks is verified
+> sample-exact. The Qt application is still a shell. See [the roadmap](#roadmap).
 
 ## Why a port rather than a fork
 
@@ -72,13 +72,33 @@ cmake --preset macos-headless && cmake --build --preset macos-headless
 ## Trying it
 
 ```sh
-xpcog-cli info  song.flac        # format, duration, ReplayGain, tags
+xpcog-cli codecs                     # what this build can decode
+xpcog-cli info  song.flac            # format, duration, ReplayGain, tags
 xpcog-cli decode song.flac out.raw   # headerless native-endian PCM
-xpcog-cli play  song.flac        # to the default audio device
+xpcog-cli play  a.flac b.ogg c.mp3   # gapless across the queue
 ```
 
 `decode` output is byte-identical to `flac -d` with the WAV header stripped, which
 is how the decoder is regression-tested.
+
+### Gapless playback
+
+When a decoder reaches end of stream the engine opens the next track immediately,
+while the audio already buffered is still playing, and keeps writing into the same
+ring — so a same-format handoff needs no device reconfiguration and produces no gap.
+This is the shape of Cog's `-endOfInputReached:`. Track changes are announced when
+the seam becomes *audible*, not when it is decoded.
+
+The seam is covered by tests that run the real engine against a capturing output,
+so they are deterministic and need no audio device: sample-exactness against
+separately-decoded references, waveform continuity across the join, notification
+ordering, and a three-track case where a per-seam off-by-one accumulates rather
+than cancels. The tests were confirmed to fail when a chunk is deliberately dropped
+at each seam.
+
+A format change between tracks currently stops cleanly rather than reconfiguring
+the device mid-stream; M1c's resampler will keep the device format fixed so those
+seams are gapless too.
 
 ### Real-time audio
 
@@ -99,7 +119,7 @@ never confused with the expected tail.
 |---|---|---|
 | ✅ | **M0** | Toolchain, module layout, codec registration, Qt shell |
 | ✅ | **M1a** | Walking skeleton: FLAC decode → miniaudio output |
-| | **M1b** | Transport, gapless playback, 8 core formats, TagLib |
+| 🚧 | **M1b** | Transport and gapless done; FLAC, Vorbis, Opus, MP3, WavPack decode. Remaining: AAC/ALAC via FFmpeg, APE, Musepack, TagLib, containers |
 | | **M1c** | ReplayGain, LPC extrapolation, HDCD, settings |
 | | **M2** | SQLite library, playlist model, shuffle/repeat/queue |
 | | **M3** | The Qt application: playlist view, preferences, media keys |
