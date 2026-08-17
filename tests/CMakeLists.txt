@@ -6,6 +6,7 @@ add_executable(xpcog-tests
     core/test_m1c.cpp
     core/test_library.cpp
     core/test_playlist.cpp
+    core/test_playlistfile.cpp
     core/test_plugin_registry.cpp
     core/test_value_types.cpp
     core/test_version.cpp
