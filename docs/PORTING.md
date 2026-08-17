@@ -482,6 +482,46 @@ Milestone 1's narrow format scope was a fastest-path-to-execution choice, not th
 destination. The architecture is sized for full Cog parity throughout: if adding a
 decoder ever requires a refactor, the design has failed.
 
+### Waiting on a Mac
+
+Gathered here because the port has been written on Windows and this is the list that
+does not move until someone opens it on macOS. Every item is also recorded where it
+belongs; this is the index, not the detail.
+
+**Blocked — cannot be done anywhere else**
+
+- **FreeSurround.** The last M4 kernel. It needs golden reference output captured
+  from Cog *before* the kernel is replaced, and Cog runs nowhere else. It is blocked
+  twice over: it also changes the channel count, which `DSPNode`'s in-place,
+  fixed-frame contract cannot express, so the interface has to widen first.
+
+**Written but never seen — compiles in CI, unverified by eye**
+
+- **`app/icons/xpcog.icns`.** Structurally verified — `make-icons.py` parses the
+  container back and checks magic, lengths and a PNG signature per chunk — but no
+  one has watched macOS draw it. The failure mode is silent: a wrong chunk type for
+  a size is declined rather than reported.
+- **The Dock menu.** `QMenu::setAsDockMenu()` is Qt's own call and CI compiles it,
+  but that the items sit correctly *below* the ones AppKit appends is a thing to
+  look at.
+- **macOS Now Playing**, verified by hand once, long before the media integration
+  grew its Windows and Linux siblings.
+
+**Not written yet**
+
+- **`NSDockTile`** — the Dock half of the taskbar badge and progress bar, and the
+  surface Cog's `DockIconController` actually draws on. The interface
+  (`TaskbarIntegration`) and both call sites exist and are live on Windows; macOS
+  gets the do-nothing base class. Custom tile drawing wants a Mac to look at rather
+  than CI to compile, which is why it was left rather than guessed at.
+
+**Worth re-measuring there**
+
+- Whether closing the main window on macOS should quit at all. `closeToTray` is
+  ignored there by design — the presence is the Dock menu, not a tray — but macOS's
+  own convention is that closing a window leaves the application running, and XPCog
+  currently follows Qt's default rather than the platform's.
+
 ---
 
 ## Deliberate differences from Cog
@@ -672,8 +712,16 @@ asserted a property Qt provides rather than the one the code was responsible for
   staying up, and a failed download fails the job deliberately — a mirror that
   quietly degraded back to sixteen skips is the exact failure mode being closed.
   Two of the six come from RareWares, which is not a versioned host in the way a
-  GitHub release is; if it becomes unreliable, vendor the binaries instead of
-  making the step tolerant.
+  GitHub release is.
+
+  **That has now happened once**, so it is an observation rather than a prediction:
+  the Windows job failed with a connection timeout during the download step, on a
+  commit whose code was fine and which passed on the other three platforms. The step
+  behaved correctly — it failed loudly rather than degrading to silent skips — and a
+  re-run succeeded. But a build that goes red because a third-party web server was
+  briefly unreachable trains people to re-run reflexively, which is precisely the
+  habit that later dismisses a real failure. Vendoring those two binaries is the fix;
+  making the step tolerant is not.
 - The Windows SMTC card is captioned **"Unknown app"** above otherwise correct
   track metadata. This is app identity, not metadata: an unpackaged executable
   has none, and Windows derives the name either from an AppUserModelID backed by

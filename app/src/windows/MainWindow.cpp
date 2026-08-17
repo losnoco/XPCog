@@ -332,12 +332,17 @@ void MainWindow::wireUp() {
         connect(command, &QAction::toggled, tree_, &QWidget::setVisible);
     }
 
+    // `enabled`, not `on`: wireUp()'s helper for connecting an ActionId to a slot
+    // is called `on`, and a lambda parameter of the same name shadows it. GCC's
+    // -Wshadow catches it; MSVC does not, which is why it reached CI.
+    if (QAction* command = actions_->action(ActionId::ViewMiniPlayer); command != nullptr) {
+        connect(command, &QAction::toggled, this,
+                [this](bool enabled) { setMiniMode(enabled); });
+    }
+
     // Both directions, because a dock can also be closed by its own title bar and
     // the menu item has to follow. No loop: setChecked only emits when the state
     // actually changes.
-    if (QAction* command = actions_->action(ActionId::ViewMiniPlayer); command != nullptr) {
-        connect(command, &QAction::toggled, this, [this](bool on) { setMiniMode(on); });
-    }
 
     if (QAction* command = actions_->action(ActionId::ViewSpectrum); command != nullptr) {
         connect(command, &QAction::toggled, spectrumDock_, &QWidget::setVisible);
