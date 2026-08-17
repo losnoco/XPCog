@@ -1,0 +1,18 @@
+# Build output
+/build/
+/out/
+compile_commands.json
+.cache/
+
+# vcpkg
+/vcpkg_installed/
+/.vcpkg-cache/
+
+# Editors
+.vscode/
+.idea/
+*.user
+CMakeUserPresets.json
+
+# macOS
+.DS_Store

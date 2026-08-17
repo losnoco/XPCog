@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "xpcog",
+  "version": "0.1.0",
+  "description": "Cross-platform Qt port of the Cog audio player",
+  "homepage": "https://github.com/losnoco/Cog",
+  "license": "GPL-2.0-or-later",
+  "builtin-baseline": "17f35ad2418007a895ced8a4cece4ab34068a58d",
+  "dependencies": [
+    "sqlite3",
+    "soxr",
+    "libogg",
+    "libflac",
+    {
+      "name": "catch2",
+      "host": false
+    }
+  ],
+  "features": {
+    "codecs-full": {
+      "description": "The remaining milestone-1b codecs (adds a long ffmpeg build)",
+      "dependencies": [
+        "taglib",
+        "libvorbis",
+        "opus",
+        "opusfile",
+        "mpg123",
+        "wavpack",
+        "monkeys-audio",
+        "libmpcdec",
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": [
+            "avcodec",
+            "avformat",
+            "swresample"
+          ]
+        }
+      ]
+    },
+    "dsp": {
+      "description": "Milestone-4 DSP chain",
+      "dependencies": [
+        "rubberband"
+      ]
+    }
+  }
+}

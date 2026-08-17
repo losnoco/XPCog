@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: "1"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+            preset: macos-debug
+          - name: Linux
+            os: ubuntu-24.04
+            preset: linux-debug
+          - name: Windows
+            os: windows-2022
+            preset: windows-debug
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build pkg-config autoconf automake libtool \
+            libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev \
+            libxcb-cursor-dev libvulkan-dev
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        run: brew install ninja pkg-config autoconf automake libtool
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.*"
+          cache: true
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          runVcpkgInstall: false
+
+      # The macOS preset defaults to a developer's local Qt install; point it at the
+      # one install-qt-action just provided.
+      - name: Point presets at the CI Qt
+        shell: bash
+        run: |
+          echo "XPCOG_QT_ROOT=${QT_ROOT_DIR}" >> "$GITHUB_ENV"
+          echo "XPCOG_NINJA=$(command -v ninja)" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Smoke-test the CLI
+        shell: bash
+        run: |
+          BIN=build/${{ matrix.preset }}/bin
+          "$BIN/xpcog-cli" --version
+          "$BIN/xpcog-cli" codecs
+
+  headless:
+    # The engine, codecs, CLI and tests must build with no Qt installed at all.
+    # This is the real guarantee behind the Qt-free core rule; the CheckNoQt script
+    # only catches includes, whereas this catches a genuine link-time dependency.
+    name: Headless (no Qt)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build pkg-config autoconf automake libtool
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          runVcpkgInstall: false
+
+      - name: Configure without Qt
+        run: cmake --preset linux-debug -D XPCOG_BUILD_APP=OFF
+
+      - name: Build
+        run: cmake --build --preset linux-debug
+
+      - name: Test
+        run: ctest --preset linux-debug
+
+      - name: Smoke-test the CLI
+        run: |
+          build/linux-debug/bin/xpcog-cli --version
+          build/linux-debug/bin/xpcog-cli codecs

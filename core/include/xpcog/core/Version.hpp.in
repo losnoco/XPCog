@@ -1,0 +1,15 @@
+#pragma once
+
+#include <string_view>
+
+namespace xpcog {
+
+inline constexpr int kVersionMajor = @PROJECT_VERSION_MAJOR@;
+inline constexpr int kVersionMinor = @PROJECT_VERSION_MINOR@;
+inline constexpr int kVersionPatch = @PROJECT_VERSION_PATCH@;
+inline constexpr std::string_view kVersionString = "@PROJECT_VERSION@";
+
+/// Version string plus the build's compiled-in codec count.
+[[nodiscard]] std::string_view versionBanner();
+
+}  // namespace xpcog
