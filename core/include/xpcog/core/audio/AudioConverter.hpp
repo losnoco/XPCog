@@ -6,8 +6,9 @@
 // when the next file has a different sample rate -- without it the device has to
 // be reconfigured mid-stream, which cannot be seamless.
 //
-// Resampling is libsoxr, as in Cog. LPC edge extrapolation is not implemented;
-// see the note on prime() below.
+// Resampling is libsoxr and edge extrapolation is LPC, both as in Cog. HDCD is
+// decoded here too, because it is stateful across chunks and so cannot live in
+// the stateless sample conversion.
 
 #pragma once
 
@@ -45,9 +46,17 @@ public:
     /// the tail of the last track is lost.
     void drain(std::vector<float>& out);
 
-    /// Discards resampler state. Call after a seek so filter history from the old
-    /// position cannot bleed into the new one.
+    /// Discards resampler, HDCD and extrapolation state. Call after a seek so
+    /// history from the old position cannot bleed into the new one.
     void reset();
+
+    /// Decode HDCD control codes in 16-bit input, expanding to the full 20-bit
+    /// range the format actually carries.
+    void setHdcdEnabled(bool enabled) noexcept { hdcdEnabled_ = enabled; }
+
+    /// True once HDCD codes have actually been seen in this stream. Cog surfaces
+    /// the same thing as an indicator in the UI.
+    [[nodiscard]] bool hdcdDetected() const noexcept { return hdcdDetected_; }
 
     [[nodiscard]] double outputSampleRate() const noexcept { return outRate_; }
     [[nodiscard]] std::uint32_t outputChannels() const noexcept { return outChannels_; }
@@ -68,6 +77,17 @@ private:
     std::uint32_t inChannels_ = 0;
 
     float gain_ = 1.0F;
+
+    bool hdcdEnabled_  = true;
+    bool hdcdDetected_ = false;
+    /// Opaque so <hdcd_decode2.h> stays out of this header.
+    struct Hdcd;
+    std::unique_ptr<Hdcd> hdcd_;
+    std::vector<int>      hdcdSamples_;
+
+    /// Rolling tail of the previous block, used to extrapolate backwards into the
+    /// next one so the resampler never sees a discontinuity at a block edge.
+    std::vector<float> history_;
 
     std::vector<float> decoded_;   ///< input as float32
     std::vector<float> remapped_;  ///< after channel fitting

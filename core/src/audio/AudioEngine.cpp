@@ -78,6 +78,7 @@ bool AudioEngine::play(const Url& url) {
         return false;
     }
     converter_.reset();
+    converter_.setHdcdEnabled(settings_.EnableHDCD());
     applyReplayGain(firstProps);
 
     // The ring is the caller's and already sized; just make sure nothing is left

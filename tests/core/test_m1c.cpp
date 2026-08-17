@@ -284,6 +284,83 @@ TEST_CASE("gain is applied on the way through", "[converter]") {
     }
 }
 
+TEST_CASE("HDCD decoding is transparent for ordinary CD audio", "[converter][hdcd]") {
+    // HDCD runs on every 16-bit 44.1 kHz stereo lossless stream, which is almost
+    // all CD-sourced material and almost none of it actually HDCD. It must
+    // therefore be bit-transparent when no codes are present, or enabling it
+    // quietly alters every album the user owns.
+    AudioFormat format;
+    format.sampleRate    = 44100.0;
+    format.channels      = 2;
+    format.format        = SampleFormat::S16;
+    format.bitsPerSample = 16;
+    format.channelConfig = guessChannelConfig(2);
+
+    AudioChunk chunk;
+    chunk.setFormat(format);
+    chunk.lossless = true;
+    auto* samples  = reinterpret_cast<std::int16_t*>(chunk.allocFrames(2048));
+    for (std::size_t f = 0; f < 2048; ++f) {
+        const auto v = static_cast<std::int16_t>(
+            20000.0 * std::sin(2.0 * M_PI * 440.0 * (static_cast<double>(f) / 44100.0)));
+        samples[f * 2]     = v;
+        samples[f * 2 + 1] = static_cast<std::int16_t>(-v);
+    }
+
+    std::vector<float> withHdcd;
+    {
+        AudioConverter converter;
+        REQUIRE(converter.setOutputFormat(44100.0, 2));
+        converter.setHdcdEnabled(true);
+        REQUIRE(converter.process(chunk, withHdcd));
+        // Plain audio carries no codes, so nothing should be reported.
+        CHECK_FALSE(converter.hdcdDetected());
+    }
+
+    std::vector<float> withoutHdcd;
+    {
+        AudioConverter converter;
+        REQUIRE(converter.setOutputFormat(44100.0, 2));
+        converter.setHdcdEnabled(false);
+        REQUIRE(converter.process(chunk, withoutHdcd));
+    }
+
+    REQUIRE(withHdcd.size() == withoutHdcd.size());
+    for (std::size_t i = 0; i < withHdcd.size(); ++i) {
+        REQUIRE(withHdcd[i] == withoutHdcd[i]);
+    }
+}
+
+TEST_CASE("HDCD is not attempted on formats that cannot carry it",
+          "[converter][hdcd]") {
+    // 48 kHz is not a Red Book rate, so the codes cannot be there.
+    AudioFormat format;
+    format.sampleRate    = 48000.0;
+    format.channels      = 2;
+    format.format        = SampleFormat::S16;
+    format.bitsPerSample = 16;
+    format.channelConfig = guessChannelConfig(2);
+
+    AudioChunk chunk;
+    chunk.setFormat(format);
+    chunk.lossless = true;
+    auto* samples  = reinterpret_cast<std::int16_t*>(chunk.allocFrames(512));
+    for (std::size_t i = 0; i < 1024; ++i) {
+        samples[i] = static_cast<std::int16_t>((i % 200) * 100 - 10000);
+    }
+
+    AudioConverter converter;
+    REQUIRE(converter.setOutputFormat(48000.0, 2));
+    converter.setHdcdEnabled(true);
+
+    std::vector<float> out;
+    REQUIRE(converter.process(chunk, out));
+    CHECK_FALSE(converter.hdcdDetected());
+
+    // Values must still be the plain 16-bit conversion.
+    CHECK(out[0] == Catch::Approx(static_cast<float>(samples[0]) / 32768.0F));
+}
+
 TEST_CASE("mono is spread across every output channel", "[converter]") {
     AudioConverter converter;
     REQUIRE(converter.setOutputFormat(44100.0, 2));

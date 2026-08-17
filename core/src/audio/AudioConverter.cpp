@@ -2,6 +2,7 @@
 
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include <hdcd_decode2.h>
 #include <soxr.h>
 
 #include <algorithm>
@@ -61,6 +62,11 @@ void fitChannels(const float* in, std::size_t frames, std::uint32_t inChannels,
 
 }  // namespace
 
+struct AudioConverter::Hdcd {
+    hdcd_state_stereo_t state{};
+    bool                started = false;
+};
+
 struct AudioConverter::Soxr {
     soxr_t handle = nullptr;
     ~Soxr() {
@@ -70,7 +76,8 @@ struct AudioConverter::Soxr {
     }
 };
 
-AudioConverter::AudioConverter() : soxr_(std::make_unique<Soxr>()) {}
+AudioConverter::AudioConverter()
+    : soxr_(std::make_unique<Soxr>()), hdcd_(std::make_unique<Hdcd>()) {}
 AudioConverter::~AudioConverter() = default;
 
 bool AudioConverter::setOutputFormat(double sampleRate, std::uint32_t channels,
@@ -92,6 +99,10 @@ void AudioConverter::reset() {
     }
     inRate_     = 0.0;
     inChannels_ = 0;
+
+    hdcd_->started = false;
+    hdcdDetected_  = false;
+    history_.clear();
 }
 
 bool AudioConverter::configureFor(const AudioFormat& input) {
@@ -133,16 +144,66 @@ bool AudioConverter::process(const AudioChunk& in, std::vector<float>& out) {
         return true;
     }
 
-    // 1. decoder output -> float32
-    decoded_.resize(float32SampleCount(in));
-    if (convertToFloat32(in, decoded_) != decoded_.size()) {
-        return false;  // a layout with no float conversion (raw DSD)
+    // 1. HDCD, before anything else -- it operates on the 16-bit integers the
+    //    codes are carried in, and it is stateful across chunks, which is why it
+    //    lives here rather than in the stateless sample conversion.
+    const AudioFormat& inFormat = in.format();
+    // HDCD is a Red Book CD format: 16-bit, 44.1 kHz, stereo, and only meaningful
+    // in lossless material. Gating on all four avoids chasing false positives
+    // through content that cannot carry the codes.
+    const bool wantHdcd = hdcdEnabled_ && inFormat.format == SampleFormat::S16 &&
+                          inFormat.channels == 2 && in.lossless &&
+                          inFormat.sampleRate == 44100.0;
+
+    if (wantHdcd) {
+        if (!hdcd_->started) {
+            hdcd_reset_stereo(&hdcd_->state,
+                              static_cast<unsigned>(inFormat.sampleRate));
+            hdcd_->started = true;
+        }
+
+        const std::size_t samples = frames * 2;
+        hdcdSamples_.resize(samples);
+
+        const auto* source = reinterpret_cast<const std::int16_t*>(in.bytes().data());
+        for (std::size_t i = 0; i < samples; ++i) {
+            hdcdSamples_[i] = source[i];
+        }
+
+        hdcd_process_stereo(&hdcd_->state, hdcdSamples_.data(),
+                            static_cast<int>(frames));
+
+        if (!hdcdDetected_) {
+            // Only worth asking until the answer is yes; it never reverts.
+            hdcd_detection_data_t detect{};
+            hdcd_detect_reset(&detect);
+            hdcd_detect_recalc_stereo(&hdcd_->state, &detect);
+            hdcdDetected_ = detect.hdcd_detected != 0;
+        }
+
+        // hdcd_process_stereo scales its 16-bit input by 2^15, so full scale
+        // lands at 2^30 rather than 2^15. Measured, not assumed: -32768 comes
+        // back as exactly -2^30, which makes this dividing step bit-transparent
+        // for material carrying no HDCD codes at all. Decoded HDCD peak
+        // extension deliberately exceeds 1.0 here and is brought back by the
+        // gain adjustment the decoder already applied.
+        decoded_.resize(samples);
+        constexpr float kHdcdScale = 1.0F / 1073741824.0F;  // 2^30
+        for (std::size_t i = 0; i < samples; ++i) {
+            decoded_[i] = static_cast<float>(hdcdSamples_[i]) * kHdcdScale;
+        }
+    } else {
+        // 1b. decoder output -> float32
+        decoded_.resize(float32SampleCount(in));
+        if (convertToFloat32(in, decoded_) != decoded_.size()) {
+            return false;  // a layout with no float conversion (raw DSD)
+        }
     }
 
     // 2. fit channels
-    fitChannels(decoded_.data(), frames, in.format().channels, outChannels_, remapped_);
+    fitChannels(decoded_.data(), frames, inFormat.channels, outChannels_, remapped_);
 
-    if (!configureFor(in.format())) {
+    if (!configureFor(inFormat)) {
         return false;
     }
 
@@ -153,7 +214,7 @@ bool AudioConverter::process(const AudioChunk& in, std::vector<float>& out) {
     if (soxr_->handle != nullptr) {
         // Ratio plus a margin: soxr can emit slightly more than the nominal
         // count on any given call.
-        const double      ratio    = outRate_ / in.format().sampleRate;
+        const double      ratio    = outRate_ / inFormat.sampleRate;
         const std::size_t capacity = static_cast<std::size_t>(
                                          std::ceil(static_cast<double>(frames) * ratio)) +
                                      64;

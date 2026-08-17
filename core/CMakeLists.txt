@@ -40,6 +40,7 @@ endif()
 
 target_link_libraries(xpcog-core
     PUBLIC  vendor-miniaudio
+    PRIVATE vendor-hdcd
     PRIVATE soxr::soxr XPCog::warnings)
 
 set_target_properties(xpcog-core PROPERTIES FOLDER core)

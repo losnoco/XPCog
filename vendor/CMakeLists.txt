@@ -6,11 +6,17 @@
 # when they land in M6.
 #
 # Planned occupants:
-#   lpc/      <- Cog Audio/ThirdParty/lvqcl        (M1c)
-#   hdcd/     <- Cog Audio/ThirdParty/hdcd         (M1c)
+#   lpc/      <- Cog Audio/ThirdParty/lvqcl        -- vendored, NOT built yet.
+#             Cog uses LPC extrapolation to hide resampler edge artifacts at
+#             every block. That is not needed here: soxr keeps its delay line
+#             across calls, so chunk edges are already continuous. It earns its
+#             place at the first block after a seek or track start, where the
+#             resampler genuinely has no history -- wired up with the DSP nodes.
+#   hdcd/     <- Cog Audio/ThirdParty/hdcd         (M1c) -- done
 #   miniaudio/  vendored                           (M1a) -- done
 #   pffft/    <- Cog Audio/ThirdParty/deadbeef     (M5)
 #   dsd2pcm/  <- extracted from Cog ChunkList.m    (M6)
 #   fsurround/<- Cog Audio/ThirdParty/fsurround    (M4)
 
+add_subdirectory(hdcd)
 add_subdirectory(miniaudio)

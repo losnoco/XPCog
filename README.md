@@ -141,6 +141,14 @@ delay line — exactly the samples that meet the seam — are not lost.
 Matching rates bypass the resampler entirely, so a same-rate file is passed through
 bit-exactly rather than being needlessly recomputed.
 
+### HDCD
+
+HDCD codes are decoded when present, expanding the extra resolution the format
+carries. Because the decoder runs on *every* 16-bit 44.1 kHz stereo lossless
+stream — almost all CD-sourced material, and almost none of it actually HDCD — it
+has to be bit-transparent when no codes are found. It is, and that is asserted
+rather than assumed.
+
 ### Real-time audio
 
 The audio callback reads from a lock-free SPSC ring, applies an atomic gain, and
@@ -161,7 +169,7 @@ never confused with the expected tail.
 | ✅ | **M0** | Toolchain, module layout, codec registration, Qt shell |
 | ✅ | **M1a** | Walking skeleton: FLAC decode → miniaudio output |
 | ✅ | **M1b** | Transport, gapless, seven decoders, M3U/PLS playlists and cue sheets |
-| 🚧 | **M1c** | ReplayGain, resampling and settings done. Remaining: HDCD, LPC extrapolation |
+| ✅ | **M1c** | ReplayGain, resampling, settings, HDCD |
 | | **M2** | SQLite library, playlist model, shuffle/repeat/queue |
 | | **M3** | The Qt application: playlist view, preferences, media keys |
 | | **M4** | DSP chain: equalizer, fader, downmix, time-stretch, surround |
