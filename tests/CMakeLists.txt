@@ -2,6 +2,7 @@ find_package(Catch2 3 REQUIRED)
 
 add_executable(xpcog-tests
     core/test_audio.cpp
+    core/test_dsp.cpp
     core/test_gapless.cpp
     core/test_m1c.cpp
     core/test_library.cpp

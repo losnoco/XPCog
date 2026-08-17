@@ -1,0 +1,306 @@
+// The DSP chain: DSPNode's contract, and the equaliser kernel.
+//
+// The equaliser is the one place M4 replaces an Accelerate primitive
+// (vDSP_biquadm) with hand-written arithmetic, and a transposed-direct-form slip
+// does not announce itself -- a wrong sign on a state update still produces
+// filtered-sounding audio. So the central test computes the cascade's transfer
+// function directly from the coefficients and compares its magnitude against
+// what process() measurably does to a sine. Two independent computations of the
+// same filter: one closed-form in the complex plane, one a difference equation
+// run sample by sample.
+//
+// The rest pin down the things that are cheap to get wrong and silent when
+// wrong: that flat is bit-transparent rather than merely quiet, that a seek does
+// not smear the previous position through the filter state, and that the
+// channels do not filter each other.
+
+#include "../TestSignal.hpp"
+
+#include "xpcog/core/AudioFormat.hpp"
+#include "xpcog/core/audio/Equalizer.hpp"
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <complex>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+using namespace xpcog;
+using Catch::Approx;
+
+namespace {
+
+constexpr double kRate     = 44100.0;
+constexpr int    kChannels = 2;
+
+[[nodiscard]] AudioFormat formatFor(double rate, int channels) {
+    AudioFormat format{};
+    format.sampleRate = rate;
+    format.channels   = static_cast<std::uint32_t>(channels);
+    format.format     = SampleFormat::F32;
+    return format;
+}
+
+/// |H(e^jw)| for one section, straight from the definition.
+[[nodiscard]] double sectionMagnitude(const Equalizer::Biquad& biquad, double omega) {
+    const std::complex<double> z1 = std::polar(1.0, -omega);
+    const std::complex<double> z2 = std::polar(1.0, -2.0 * omega);
+
+    const std::complex<double> numerator   = biquad.b0 + (biquad.b1 * z1) + (biquad.b2 * z2);
+    const std::complex<double> denominator = 1.0 + (biquad.a1 * z1) + (biquad.a2 * z2);
+    return std::abs(numerator / denominator);
+}
+
+/// |H| for the whole 31-section cascade at `frequency`.
+[[nodiscard]] double cascadeMagnitude(const Equalizer& equalizer, double frequency) {
+    const double omega = 2.0 * xpcog::test::kPi * frequency / kRate;
+    double       total = 1.0;
+    for (int band = 0; band < Equalizer::kBands; ++band) {
+        total *= sectionMagnitude(equalizer.coefficients(band), omega);
+    }
+    return total;
+}
+
+/// Steady-state gain process() applies to a sine at `frequency`, measured as an
+/// RMS ratio. The leading `kSettle` frames are discarded because a filter's
+/// first output samples are its transient, not its response.
+[[nodiscard]] double measuredGain(Equalizer& equalizer, double frequency) {
+    constexpr std::size_t kSettle = 8192;
+    constexpr std::size_t kFrames = 65536;
+
+    std::vector<float> buffer(kFrames * kChannels);
+    for (std::size_t frame = 0; frame < kFrames; ++frame) {
+        const double t     = static_cast<double>(frame) / kRate;
+        const auto   value = static_cast<float>(0.25 * std::sin(xpcog::test::kTwoPi * frequency * t));
+        buffer[frame * kChannels]       = value;
+        buffer[(frame * kChannels) + 1] = value;
+    }
+    const std::vector<float> reference = buffer;
+
+    equalizer.reset();
+    equalizer.process(buffer.data(), kFrames);
+
+    const auto rms = [](const std::vector<float>& samples) {
+        double sum = 0.0;
+        for (std::size_t frame = kSettle; frame < kFrames; ++frame) {
+            const double value = samples[frame * kChannels];
+            sum += value * value;
+        }
+        return std::sqrt(sum / static_cast<double>(kFrames - kSettle));
+    };
+
+    return rms(buffer) / rms(reference);
+}
+
+}  // namespace
+
+TEST_CASE("a flat equaliser is inactive and bit-transparent", "[dsp]") {
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+
+    REQUIRE_FALSE(equalizer.active());
+
+    // Bit-exact, not merely close. A flat band is mathematically transparent --
+    // its numerator and denominator are the same polynomial -- but running 31
+    // such sections still rounds, so transparency here is a property of the
+    // chain skipping the stage, and that is what is being asserted.
+    std::vector<float> buffer;
+    buffer.reserve(512);
+    for (int index = 0; index < 512; ++index) {
+        buffer.push_back(static_cast<float>(std::sin(0.03 * index) * 0.7));
+    }
+    const std::vector<float> reference = buffer;
+
+    equalizer.process(buffer.data(), buffer.size() / kChannels);
+    REQUIRE(buffer == reference);
+}
+
+TEST_CASE("a flat band's numerator and denominator are the same polynomial", "[dsp]") {
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+
+    // This is *why* 0 dB is transparent, and it is worth stating separately from
+    // the bypass: were the coefficient formula wrong, a flat equaliser would
+    // still look transparent through active() while colouring anything that
+    // turned a single band up.
+    for (int band = 0; band < Equalizer::kBands; ++band) {
+        const Equalizer::Biquad biquad = equalizer.coefficients(band);
+        REQUIRE(biquad.b0 == Approx(1.0));
+        REQUIRE(biquad.b1 == Approx(biquad.a1));
+        REQUIRE(biquad.b2 == Approx(biquad.a2));
+    }
+}
+
+TEST_CASE("each band peaks at exactly its requested gain", "[dsp]") {
+    // This is the half the cascade test cannot cover. That test compares the
+    // difference equation against coefficients() -- both of which shift together
+    // if the *formula* is wrong, so it would happily confirm a filter that
+    // faithfully implements the wrong biquad.
+    //
+    // A peaking EQ is defined by |H(w0)| == the requested gain at its own centre,
+    // so asserting that checks the coefficients against the definition rather
+    // than against a re-derivation of themselves.
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+
+    for (const double gainDb : {-12.0, -3.0, 3.0, 9.0}) {
+        for (const int band : {5, 17, 26}) {
+            equalizer.setBandGain(band, gainDb);
+
+            const double centre = Equalizer::bandFrequencies()[static_cast<std::size_t>(band)];
+            const double omega  = 2.0 * xpcog::test::kPi * centre / kRate;
+            const double peak   = sectionMagnitude(equalizer.coefficients(band), omega);
+
+            INFO("band " << band << " at " << centre << " Hz, " << gainDb << " dB");
+            REQUIRE(20.0 * std::log10(peak) == Approx(gainDb).epsilon(0.0001));
+
+            equalizer.setBandGain(band, 0.0);
+        }
+    }
+}
+
+TEST_CASE("the band Q is the one Cog uses", "[dsp]") {
+    // The last parameter neither other test can see. Peak gain is independent of
+    // Q, and the cascade test takes its expectation from the same coefficients,
+    // so a Q of 1.0 or 2.0 would pass both while making every slider noticeably
+    // wider or narrower than Cog's.
+    //
+    // For an RBJ peaking section, Q is defined as f0 divided by the spacing of
+    // the two frequencies at which the boost is half its centre value in dB, so
+    // recovering it from the response checks both kQ and the alpha term.
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+
+    constexpr int    kBand   = 17;  // 1 kHz
+    constexpr double kGainDb = 12.0;
+    equalizer.setBandGain(kBand, kGainDb);
+
+    const double centre = Equalizer::bandFrequencies()[kBand];
+    const auto   responseDb = [&](double frequency) {
+        const double omega = 2.0 * xpcog::test::kPi * frequency / kRate;
+        return 20.0 * std::log10(sectionMagnitude(equalizer.coefficients(kBand), omega));
+    };
+
+    // Bisect for the half-gain crossing on each side of the centre.
+    const auto crossing = [&](double from, double to) {
+        for (int step = 0; step < 200; ++step) {
+            const double middle = 0.5 * (from + to);
+            if (responseDb(middle) < kGainDb / 2.0) {
+                from = middle;
+            } else {
+                to = middle;
+            }
+        }
+        return 0.5 * (from + to);
+    };
+
+    const double lower = crossing(20.0, centre);
+    const double upper = crossing(20000.0, centre);
+
+    const double recovered = centre / (upper - lower);
+    INFO("half-gain points " << lower << " and " << upper << " Hz, Q " << recovered);
+    REQUIRE(recovered == Approx(Equalizer::kQ).epsilon(0.02));
+    REQUIRE(Equalizer::kQ == 1.4);
+}
+
+TEST_CASE("the cascade matches its own transfer function", "[dsp]") {
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+
+    // An asymmetric, overlapping setting rather than one lone slider: adjacent
+    // peaking sections at Q 1.4 genuinely interact, and a cascade evaluated
+    // band-by-band would agree with a sine only if that interaction is carried
+    // through correctly.
+    equalizer.setBandGain(10, 6.0);    // 200 Hz
+    equalizer.setBandGain(11, -4.5);   // 250 Hz
+    equalizer.setBandGain(17, 9.0);    // 1 kHz
+    equalizer.setBandGain(23, -8.0);   // 4 kHz
+    REQUIRE(equalizer.active());
+
+    for (const double frequency : {200.0, 250.0, 1000.0, 4000.0, 630.0, 8000.0}) {
+        const double expected = cascadeMagnitude(equalizer, frequency);
+        const double measured = measuredGain(equalizer, frequency);
+        INFO("at " << frequency << " Hz: expected " << expected << ", measured " << measured);
+        REQUIRE(measured == Approx(expected).epsilon(0.01));
+    }
+}
+
+TEST_CASE("the preamp scales the whole band", "[dsp]") {
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+    equalizer.setPreamp(-6.0);
+
+    REQUIRE(equalizer.active());
+    // Flat bands, so the only gain is the preamp: 10^(-6/20).
+    REQUIRE(measuredGain(equalizer, 1000.0) == Approx(std::pow(10.0, -6.0 / 20.0)).epsilon(0.001));
+}
+
+TEST_CASE("reset drops the filter state, so a seek cannot smear", "[dsp]") {
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+    equalizer.setBandGain(17, 12.0);
+
+    // Something loud enough to leave the resonant sections ringing.
+    std::vector<float> loud(2048 * kChannels, 0.9F);
+    equalizer.process(loud.data(), 2048);
+
+    // Silence immediately afterwards is *not* silent -- that ringing is the
+    // filter's tail, and across a seek it is the previous position bleeding into
+    // the new one.
+    std::vector<float> tail(512 * kChannels, 0.0F);
+    equalizer.process(tail.data(), 512);
+    REQUIRE(std::ranges::any_of(tail, [](float value) { return value != 0.0F; }));
+
+    equalizer.reset();
+    std::vector<float> afterReset(512 * kChannels, 0.0F);
+    equalizer.process(afterReset.data(), 512);
+    REQUIRE(std::ranges::all_of(afterReset, [](float value) { return value == 0.0F; }));
+}
+
+TEST_CASE("the channels do not filter each other", "[dsp]") {
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+    equalizer.setBandGain(17, 12.0);
+
+    // Left driven hard, right digitally silent. Sharing one set of state values
+    // across channels -- the obvious way to write this loop -- would leak the
+    // left channel into the right and collapse the image, while still sounding
+    // like a working equaliser on mono material.
+    constexpr std::size_t kFrames = 4096;
+    std::vector<float>    buffer(kFrames * kChannels, 0.0F);
+    for (std::size_t frame = 0; frame < kFrames; ++frame) {
+        const double t = static_cast<double>(frame) / kRate;
+        buffer[frame * kChannels] =
+            static_cast<float>(0.5 * std::sin(xpcog::test::kTwoPi * 1000.0 * t));
+    }
+
+    equalizer.process(buffer.data(), kFrames);
+
+    for (std::size_t frame = 0; frame < kFrames; ++frame) {
+        REQUIRE(buffer[(frame * kChannels) + 1] == 0.0F);
+    }
+}
+
+TEST_CASE("bands above Nyquist become identity sections", "[dsp]") {
+    Equalizer equalizer;
+    // 32 kHz puts the 16 and 20 kHz centres at or past Nyquist.
+    equalizer.prepare(formatFor(32000.0, kChannels));
+    equalizer.setBandGain(29, 12.0);  // 16 kHz
+    equalizer.setBandGain(30, 12.0);  // 20 kHz
+
+    // Identity rather than dropped, so band indices mean the same thing at every
+    // sample rate and a stored setting does not shift onto a different slider.
+    for (const int band : {29, 30}) {
+        const Equalizer::Biquad biquad = equalizer.coefficients(band);
+        INFO("band " << band << " at " << Equalizer::bandFrequencies()[band] << " Hz");
+        REQUIRE(biquad.b0 == 1.0);
+        REQUIRE(biquad.b1 == 0.0);
+        REQUIRE(biquad.b2 == 0.0);
+        REQUIRE(biquad.a1 == 0.0);
+        REQUIRE(biquad.a2 == 0.0);
+    }
+}
