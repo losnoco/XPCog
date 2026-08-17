@@ -43,8 +43,8 @@ public:
 #include "xpcog/core/settings.def"
 #undef XPCOG_SETTING
 
-    /// Describes every setting, for the preferences UI, `xpcog-cli settings` and
-    /// reset-to-defaults -- so none of those has to repeat the list.
+    /// Describes every setting, for the preferences UI and reset-to-defaults -- so
+    /// neither has to repeat the list.
     struct Desc {
         std::string_view ident;
         std::string_view key;
@@ -53,10 +53,10 @@ public:
     };
     [[nodiscard]] static std::span<const Desc> all() noexcept;
 
-    /// Access by key rather than by name, for the two callers that iterate
-    /// all() and so cannot name a generated accessor: the preferences UI and
-    /// `xpcog-cli settings`. Returns the stored value, or the declared default
-    /// when nothing is stored.
+    /// Access by key rather than by name, for callers that iterate all() and so
+    /// cannot name a generated accessor -- the preferences UI, and the engine
+    /// reading the equaliser's 31 bands by their table. Returns the stored value,
+    /// or the declared default when nothing is stored.
     [[nodiscard]] std::string rawValue(std::string_view key) const;
     void setRawValue(std::string_view key, std::string_view value);
 

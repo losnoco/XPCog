@@ -6,11 +6,13 @@ A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio play
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
 
-> **Status: milestone 3 — a usable player.**
+> **Status: milestone 4 — a usable player with a DSP chain.**
 > A Qt window with a playlist, transport, seek bar, file browser, preferences,
 > undo, drag-and-drop and a persistent library. Gapless across formats *and*
-> sample rates, ReplayGain, cue sheets, HDCD. macOS media keys and Now Playing
-> work; Windows and Linux equivalents are M5. Next is the DSP chain.
+> sample rates, ReplayGain, cue sheets, HDCD. A 31-band equaliser at Cog's
+> frequencies, transport fades, and matrix downmix/upmix. Media keys and
+> Now Playing work on macOS *and* Windows; Linux MPRIS is M5. Still to come in
+> M4: the time-stretchers and FreeSurround.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
 
@@ -124,7 +126,7 @@ winget install Xiph.FLAC Gyan.FFmpeg LAME.LAME Mozilla.opus-tools
 `oggenc.exe` (renamed from `oggenc2.exe`) anywhere on `PATH`.
 
 Watch the skip count in `ctest` output, not just the pass rate — a full run is
-178 tests and **0 skipped**. Note that the encoders alone were not enough before
+215 tests and **0 skipped**. Note that the encoders alone were not enough before
 the fixture commands stopped assuming a POSIX shell: `2>/dev/null` under
 `cmd.exe` fails the whole command, which every call site read as "encoder
 missing". See `tests/TestShell.hpp`.
@@ -237,8 +239,8 @@ never confused with the expected tail.
 | ✅ | **M1c** | ReplayGain, resampling, settings, HDCD |
 | ✅ | **M2** | SQLite library, playlist model, shuffle/repeat/queue, scanner, tag reading |
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
-| | **M4** | DSP chain: equalizer, fader, downmix, time-stretch, surround |
-| | **M5** | Visualization, mini player, Windows SMTC / Linux MPRIS |
+| 🚧 | **M4** | DSP chain: equalizer, fader and downmix/upmix done; time-stretch and surround to come |
+| 🚧 | **M5** | Windows SMTC done; visualization, mini player and Linux MPRIS to come |
 | | **M6** | Breadth: the remaining ~27 decoders, DSD/DoP, HRTF, scrobbling |
 
 Milestone 1 covers FLAC, MP3, Vorbis, Opus, AAC/ALAC, WavPack, APE and Musepack. Cog

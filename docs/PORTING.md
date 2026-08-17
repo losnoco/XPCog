@@ -47,7 +47,8 @@ and the tests can exercise them headlessly in CI on all three platforms.
 
 The rule is enforced structurally rather than by review — `xpcog-cli` links no Qt at
 all, so a `QtCore` leak breaks that target immediately. `cmake/CheckNoQt.cmake`
-reports it earlier with a clearer message.
+reports it earlier with a clearer message. (The CLI is temporary; see the
+verification section for what has to take over that job when it goes.)
 
 **Consequence worth knowing:** core cannot use `emit`, `slots`, `signals` or
 `foreach` as identifiers. They are Qt macros, and although core does not include Qt,
@@ -99,12 +100,20 @@ what makes core unit-testable with per-test settings.
 ### Real-time safety is stricter than Cog
 
 Cog's callback (`Audio/Output/OutputCoreAudio.m:877`) takes an `NSLock` and enters an
-`@autoreleasepool` on the real-time thread. XPCog's does only `ring.read()`, an
-atomic gain multiply and a tail `memset`. No lock, no allocation, no `std::function`,
-no logging. A feeder thread does the decoding.
+`@autoreleasepool` on the real-time thread. XPCog's does `ring.read()`, a per-frame
+multiply by the volume and the transport-fade gain, and a tail `memset`. No lock, no
+allocation, no `std::function`, no logging. A feeder thread does the decoding.
 
-`BUFFER_SIZE = 1 MiB` and `CHUNK_SIZE = 16 KiB` keep Cog's values — they are tuned,
-and changing them changes latency behaviour.
+The fade gain is the one thing that has been added to that list since, and only
+because pause and stop cannot be faded anywhere else: the audio they fade is already
+queued for the device (see M4 below). It is a bounded per-frame ramp toward an atomic
+target, so the properties above still hold.
+
+Cog's `BUFFER_SIZE = 1 MiB` and `CHUNK_SIZE = 16 KiB` are tuned values and are kept
+— but M4 split where the buffering sits. `BUFFER_SIZE` is now the *pre*-DSP ring
+inside the engine, which is where the depth belongs; the ring between the DSP chain
+and the device is deliberately shallow (`1 << 14`, ~186 ms), because that number is
+the latency of every DSP change. See the `AudioEngine` class comment.
 
 ---
 
@@ -351,6 +360,14 @@ All of these are also documented at the call site.
 - iTunes Sound Check hex is parsed properly.
 - Cog stores ReplayGain as scalar floats defaulting to 0, so it cannot tell "no album
   gain" from "0 dB". XPCog keeps absent absent.
+- Cog's 6.1 upmix reads the side pair at interleave indexes 4–5 and back centre at 6,
+  but 6.1 in flag order is FL FR FC LFE **BC SL SR** — back centre is bit 8 and the
+  sides bits 9–10 in Cog's own `AudioChunk.h`. Upmixing 6.1 therefore rotates three
+  channels and back centre plays from a side speaker.
+- `channelIndexFromConfig` in Cog answers with the index a flag *would* occupy even
+  when the config lacks that channel, so a 7.1 layout asked for its back centre says
+  6 rather than "absent". That is the root of the bug above; XPCog's returns `~0` as
+  its comment always claimed.
 
 **Implementation**
 
@@ -359,6 +376,26 @@ All of these are also documented at the call site.
 - Metadata readers merge in priority order rather than stopping at the first.
 - `AudioChunk` is move-only and read APIs take an out-parameter so storage recycles.
   Cog's `-readAudio` allocates a fresh object every 16 KiB.
+- **DSP stages are synchronous, not threaded.** Cog's `DSPNode` owns a thread, a
+  `ChunkList`, two semaphores and a recursive lock per stage; XPCog's is an in-place
+  transform and the chain is a sequence driven by one pump thread. The buffering that
+  Cog's per-node threads provided is kept — see the two-stage ring — because dropping
+  it made every DSP change inaudible for three seconds.
+- **The equaliser keeps double biquad state** where `vDSP_biquadm` keeps single. A
+  20 Hz section's poles sit close enough to the unit circle for it to matter, and 31
+  sections cost nothing.
+- **A flat equaliser is skipped, not run.** Cog pushes every sample through 31
+  sections at 0 dB; skipping makes flat bit-transparent by construction.
+- **Downmix is not a DSP node.** Cog's nodes pass chunks carrying their own format, so
+  one can change the channel count; a `DSPNode` here works in place at a fixed format,
+  so downmix lives in `AudioConverter` where channel geometry already changes.
+- **Upmix is routing, not a per-layout ladder.** Every non-mono branch of Cog's
+  `upmix()` reduces to "send each channel to the slot with the same flag", plus one
+  real rule for splitting a back centre.
+- **The seek crossfade holds power, not amplitude.** Cog ramps linearly; a seek lands
+  on unrelated audio, so the two sides add in power and linear complements lose 3 dB
+  through the middle. Sine and cosine legs hold the sum of squares at one. The cost is
+  that identical audio either side — a very short seek — swells up to 3 dB instead.
 
 **Not ported**
 
@@ -372,8 +409,13 @@ new feature, not port work, and is deferred.
 
 ## Verification strategy
 
-The CLI is the test harness, not an afterthought: `xpcog-cli` links no Qt, so it
-exercises core headlessly in CI on all three platforms.
+`xpcog-cli` links no Qt, so it exercises core headlessly in CI on all three
+platforms — and it is **scaffolding, due to be deleted once the port lands**, so it
+is not worth extending. Note what that will cost when it goes: this document and the
+README both present its failure to link as *the* enforcement of the Qt-free rule.
+What actually survives is the `*-headless` presets, which build core and the tests
+with `XPCOG_BUILD_APP=OFF` and no Qt at all, plus `cmake/CheckNoQt.cmake`. Confirm
+those still fail on a `QtCore` leak before removing the target.
 
 - **Per-codec conformance** — one asymmetric reference signal (440 Hz left, 660 Hz
   right, different amplitudes) catches swapped, duplicated and silent channels, which
@@ -479,7 +521,29 @@ asserted a property Qt provides rather than the one the code was responsible for
 - `populateMenuBar()`'s translation lookup is not covered by a test: it needs a
   `QMenuBar`, so a `QApplication` and a platform plugin, and the test binary has
   neither.
-- The macOS Now Playing integration is verified by hand, not by test.
+- The macOS Now Playing integration is verified by hand, not by test. So are the
+  pause and stop fades against a real device: the offline output shows the ramp in
+  the capture, but that it sounds like a fade rather than a duck is a listening
+  judgement.
+- MSVC emits `C4324` for `RingBuffer`'s deliberate cache-line `alignas`, several
+  times per translation unit that includes it. Harmless, and the only warnings in
+  the tree — which is worth either suppressing narrowly or padding explicitly,
+  since "no warnings" is otherwise true and therefore useful.
+- **Preferences has no keyboard shortcut on Windows or Linux.**
+  `QKeySequence::Preferences` is bound only on macOS, so `ActionRegistry` gives the
+  action an empty sequence everywhere else. The menu item works; the keyboard does
+  not.
+- The `deploy` target's payload is **94.8 MB**, of which **39.4 MB is graphics
+  runtime XPCog does not currently use**: `opengl32sw.dll` (Mesa's software GL
+  fallback) plus the DXC/FXC shader compilers, which `windeployqt` copies
+  unconditionally. `--no-opengl-sw` reclaims the largest piece. Deliberately not
+  done yet: if M5's visualization renders through Qt Quick, the software fallback
+  is exactly what keeps the app working on machines with no usable GL driver, and
+  the shader compilers become live dependencies.
+- Reducing one multichannel layout to a smaller one — 7.1 into quad — still uses a
+  positional copy rather than a matrix. Cog runs every reduction through its stereo
+  matrix, which would throw away a real quad device's back speakers, so the plain
+  copy stays until that case has a matrix of its own.
 - Gapless playback against a **real** Windows device — both a cue sheet's spans
   and consecutive loose FLACs — is verified by hand. `OfflineOutput` establishes
   that the seam is sample-exact, which is the part that can be automated; that it
