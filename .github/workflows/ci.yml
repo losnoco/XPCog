@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**') }}
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
           restore-keys: vcpkg-${{ matrix.preset }}-
 
       # vcpkg creates this itself, but not if configure fails before it gets
@@ -147,7 +147,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-linux-debug-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**') }}
+          key: vcpkg-linux-debug-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
           restore-keys: vcpkg-linux-debug-
 
       # vcpkg creates this itself, but not if configure fails before it gets

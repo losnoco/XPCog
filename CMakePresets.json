@@ -9,11 +9,14 @@
     {
       "name": "base",
       "hidden": true,
+      "description": "FFmpeg is on here rather than left to the option default, which is OFF. Without it a fresh clone silently builds no AAC, ALAC, WMA, AC3, DTS or TAK, and CI never compiles that decoder at all. The option stays OFF by default for anyone configuring by hand who does not want the dependency.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VCPKG_MANIFEST_FEATURES": "ffmpeg",
+        "XPCOG_WITH_FFMPEG": "ON"
       },
       "environment": {
         "VCPKG_BINARY_SOURCES": "clear;files,${sourceDir}/.vcpkg-cache,readwrite"
