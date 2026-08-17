@@ -48,6 +48,18 @@ qt_add_executable(xpcog-app
     src/main.cpp
 )
 
+# Identity, so the OS can say what this program is called. The version resource
+# is the Windows counterpart of the MACOSX_BUNDLE_* properties below; see
+# XPCog.rc.in for why it is hand-written rather than left to Qt, and for what
+# breaks without it.
+if(WIN32)
+    # FILEVERSION is four comma-separated integers, not a dotted string.
+    set(XPCOG_RC_VERSION
+        "${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0")
+    configure_file(XPCog.rc.in "${CMAKE_CURRENT_BINARY_DIR}/XPCog.rc" @ONLY)
+    target_sources(xpcog-app PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/XPCog.rc")
+endif()
+
 set_target_properties(xpcog-app PROPERTIES
     OUTPUT_NAME "XPCog"
     WIN32_EXECUTABLE ON

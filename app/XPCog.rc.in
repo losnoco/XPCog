@@ -1,0 +1,57 @@
+// Windows version resource. Configured by app/CMakeLists.txt so the version
+// comes from PROJECT_VERSION rather than being maintained twice.
+//
+// This is the Windows equivalent of the Info.plist that MACOSX_BUNDLE_* fills
+// in, and it is hand-written because Qt does not supply one: the QT_TARGET_*
+// properties look like they would, but _qt_internal_generate_win32_rc_file() is
+// only ever called from Qt's own internal build helpers, never from the public
+// qt_add_executable(). Setting those properties on an application target has no
+// effect at all.
+//
+// FileDescription is what Task Manager shows in place of the raw image name, and
+// what the Details tab of the file's properties reads.
+//
+// It is *not* enough to name the app in the System Media Transport Controls
+// card, which stays captioned "Unknown app" -- verified, rather than assumed.
+// That caption comes from app identity, not from file metadata: an unpackaged
+// executable has none, and Windows resolves it through an AppUserModelID backed
+// by a Start Menu shortcut carrying System.AppUserModel.ID, or through a package
+// (MSIX or an external-location "sparse" package). Both belong to installation,
+// so docs/PORTING.md records it as a gap rather than this file faking it.
+//
+// (Note: lives here rather than under src/windows/, which holds the application's
+// *windows* -- MainWindow and the dialogs -- and has nothing to do with the OS.)
+
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+    FILEVERSION    @XPCOG_RC_VERSION@
+    PRODUCTVERSION @XPCOG_RC_VERSION@
+    FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+    FILEFLAGS VS_FF_DEBUG
+#else
+    FILEFLAGS 0x0L
+#endif
+    FILEOS      VOS_NT_WINDOWS32
+    FILETYPE    VFT_APP
+    FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        // 0409 = en-US, 04B0 = Unicode.
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription",  "XPCog"
+            VALUE "FileVersion",      "@PROJECT_VERSION@"
+            VALUE "InternalName",     "XPCog"
+            VALUE "OriginalFilename", "XPCog.exe"
+            VALUE "ProductName",      "XPCog"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 0x04B0
+    END
+END

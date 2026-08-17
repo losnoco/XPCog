@@ -3,8 +3,8 @@
 #
 # Planned occupants:
 #   Paths          per-OS config/data locations             (M2)
-#   NowPlaying     MPNowPlayingInfoCenter / SMTC / MPRIS    (M3/M5)
-#   MediaKeys      MPRemoteCommandCenter / SMTC / MPRIS     (M3/M5)
+#   NowPlaying     MPNowPlayingInfoCenter / SMTC (done) / MPRIS  (M3/M5)
+#   MediaKeys      MPRemoteCommandCenter / SMTC (done) / MPRIS   (M3/M5)
 #   FileAccess     no-op seam replacing Cog's SandboxBroker (M2)
 #   TaskbarProgress NSDockTile / ITaskbarList3              (M5)
 
@@ -30,6 +30,17 @@ if(APPLE)
         COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(xpcog-platform PRIVATE
         "-framework MediaPlayer" "-framework AppKit" "-framework Foundation")
+elseif(WIN32)
+    target_sources(xpcog-platform PRIVATE src/windows/WindowsMediaIntegration.cpp)
+    # WindowsApp.lib is the umbrella that carries the WinRT entry points
+    # (RoGetActivationFactory and friends) that C++/WinRT is built on; linking a
+    # narrower static alternative is explicitly discouraged. ShCore and Shlwapi
+    # are for the synchronous COM-stream route the artwork takes -- see the file.
+    #
+    # The C++/WinRT headers themselves come from the Windows SDK's cppwinrt
+    # include directory, which a developer environment already puts on INCLUDE,
+    # so there is no NuGet package to restore.
+    target_link_libraries(xpcog-platform PRIVATE WindowsApp.lib ShCore.lib Shlwapi.lib)
 else()
     target_sources(xpcog-platform PRIVATE src/common/NullMediaIntegration.cpp)
 endif()
