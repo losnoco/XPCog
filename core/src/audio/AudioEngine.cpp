@@ -2,6 +2,7 @@
 
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/audio/ReplayGain.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
 #include <chrono>
@@ -23,8 +24,8 @@ struct AudioEngine::OpenTrack {
 };
 
 AudioEngine::AudioEngine(const PluginRegistry& registry, IAudioOutput& output,
-                         RingBuffer& ring)
-    : registry_(registry), output_(output), ring_(ring) {}
+                         RingBuffer& ring, const Settings& settings)
+    : registry_(registry), output_(output), settings_(settings), ring_(ring) {}
 
 AudioEngine::~AudioEngine() { stop(); }
 
@@ -58,11 +59,26 @@ bool AudioEngine::play(const Url& url) {
         return false;
     }
 
-    format_ = track_->decoder->properties().format;
+    const TrackProperties firstProps = track_->decoder->properties();
+    format_ = firstProps.format;
     if (!format_.valid()) {
         closeTrack();
         return false;
     }
+
+    // The device runs at the first track's rate and channel count and then stays
+    // there; later tracks are resampled to match. Reconfiguring the device
+    // mid-stream is what would otherwise make a format change audible as a gap.
+    format_.format        = SampleFormat::F32;
+    format_.bitsPerSample = 32;
+
+    if (!converter_.setOutputFormat(format_.sampleRate, format_.channels,
+                                    settings_.Resampling())) {
+        closeTrack();
+        return false;
+    }
+    converter_.reset();
+    applyReplayGain(firstProps);
 
     // The ring is the caller's and already sized; just make sure nothing is left
     // over from a previous track.
@@ -84,6 +100,23 @@ bool AudioEngine::play(const Url& url) {
     config.sampleRate = format_.sampleRate;
     config.channels   = format_.channels;
 
+    // Fill the ring before the device starts. Otherwise the first callbacks land
+    // before the feeder has produced anything and are counted as underruns --
+    // real ones, audible as a click at the start of playback.
+    {
+        AudioChunk        chunk;
+        const std::size_t target = ring_.capacity() / 2;
+        while (ring_.availableToRead() < target &&
+               track_->decoder->readAudio(chunk)) {
+            converted_.clear();
+            if (!converter_.process(chunk, converted_) || converted_.empty()) {
+                continue;
+            }
+            ring_.write(converted_.data(), converted_.size());
+            framesWritten_ += converted_.size() / format_.channels;
+        }
+    }
+
     if (!output_.start(config)) {
         closeTrack();
         return false;
@@ -99,30 +132,44 @@ bool AudioEngine::play(const Url& url) {
     return true;
 }
 
-bool AudioEngine::writeToRing(const AudioChunk& chunk) {
-    const std::size_t samples = float32SampleCount(chunk);
-    if (samples == 0) {
-        return true;
-    }
+void AudioEngine::applyReplayGain(const TrackProperties& props) {
+    converter_.setGain(replayGainScale(props.replayGain, settings_.VolumeScaling()));
+}
 
-    static thread_local std::vector<float> scratch;
-    scratch.resize(samples);
-    if (convertToFloat32(chunk, scratch) != samples) {
-        return true;  // unsupported layout (DSD); skip rather than emit noise
-    }
-
+bool AudioEngine::writeSamples(const float* samples, std::size_t count) {
     std::size_t written = 0;
-    while (written < samples) {
+    while (written < count) {
         if (!running_.load(std::memory_order_acquire)) {
             return false;
         }
-        written += ring_.write(scratch.data() + written, samples - written);
-        if (written < samples) {
+        written += ring_.write(samples + written, count - written);
+        if (written < count) {
             std::this_thread::sleep_for(kFeederBackoff);
         }
     }
+    return true;
+}
 
-    framesWritten_ += chunk.frameCount();
+bool AudioEngine::writeToRing(const AudioChunk& chunk) {
+    if (chunk.frameCount() == 0) {
+        return true;
+    }
+
+    converted_.clear();
+    if (!converter_.process(chunk, converted_)) {
+        // A layout with no float conversion (raw DSD, M6). Skip it rather than
+        // emitting noise at the wrong scale.
+        return true;
+    }
+    if (converted_.empty()) {
+        return true;  // the resampler is still filling its delay line
+    }
+
+    if (!writeSamples(converted_.data(), converted_.size())) {
+        return false;
+    }
+
+    framesWritten_ += converted_.size() / format_.channels;
     return true;
 }
 
@@ -145,18 +192,23 @@ void AudioEngine::feederLoop() {
                 closeTrack();
 
                 if (openTrack(candidate)) {
-                    const AudioFormat nextFormat =
-                        track_->decoder->properties().format;
-
-                    // A format change would need the device reconfigured, which
-                    // cannot be gapless. M1c adds a resampler so the device format
-                    // stays fixed; until then, stop cleanly rather than emit
-                    // garbage at the wrong rate.
-                    if (nextFormat.sampleRate != format_.sampleRate ||
-                        nextFormat.channels != format_.channels) {
-                        closeTrack();
+                    // A different sample rate or channel count no longer ends
+                    // playback: the converter resamples the new track into the
+                    // device format that is already running, so the handoff stays
+                    // gapless. Only the ReplayGain scale has to be re-read.
+                    //
+                    // Flush the resampler first. Reconfiguring it for the new rate
+                    // discards its delay line, which holds the last few
+                    // milliseconds of the outgoing track -- exactly the samples
+                    // that meet the seam.
+                    converted_.clear();
+                    converter_.drain(converted_);
+                    if (!converted_.empty() &&
+                        !writeSamples(converted_.data(), converted_.size())) {
                         break;
                     }
+
+                    applyReplayGain(track_->decoder->properties());
 
                     {
                         std::lock_guard lock(seamMutex_);
@@ -182,6 +234,16 @@ void AudioEngine::feederLoop() {
 
         if (!writeToRing(chunk)) {
             break;
+        }
+    }
+
+    // Flush the resampler's delay line, or the last fraction of a second of the
+    // final track is silently dropped.
+    if (running_.load(std::memory_order_acquire)) {
+        converted_.clear();
+        converter_.drain(converted_);
+        if (!converted_.empty()) {
+            writeSamples(converted_.data(), converted_.size());
         }
     }
 

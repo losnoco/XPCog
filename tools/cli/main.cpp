@@ -6,6 +6,7 @@
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Version.hpp"
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/AudioEngine.hpp"
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
@@ -218,7 +219,9 @@ int play(const std::vector<std::string>& paths) {
         static_cast<std::size_t>(fmt.sampleRate * 0.5) * fmt.channels);
     auto output = xpcog::makeMiniaudioOutput(ring);
 
-    xpcog::AudioEngine engine(registry(), *output, ring);
+    auto             store = xpcog::makeMemorySettingsStore();
+    xpcog::Settings  settings(*store);
+    xpcog::AudioEngine engine(registry(), *output, ring, settings);
 
     Playlist playlist;
     for (std::size_t i = 1; i < paths.size(); ++i) {

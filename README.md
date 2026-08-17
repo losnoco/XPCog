@@ -6,11 +6,12 @@ A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio play
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
 
-> **Status: milestone 1b — gapless playback across 30+ formats.** `xpcog-cli play
-> a.flac b.m4a c.mp3` plays a queue gaplessly on macOS, Linux and Windows, and M3U
-> and PLS playlists expand into tracks. FLAC decoding is byte-exact against
-> `flac -d`, and the seam between tracks is verified sample-exact. The Qt
-> application is still a shell. See [the roadmap](#roadmap).
+> **Status: milestone 1c — gapless across formats *and* sample rates.**
+> `xpcog-cli play a.flac b.m4a c.mp3` plays a queue gaplessly on macOS, Linux and
+> Windows, resampling as needed so a 44.1 kHz album can run into a 48 kHz track
+> without a break. ReplayGain is applied, playlists and cue sheets expand into
+> tracks, and FLAC decoding is byte-exact against `flac -d`. The Qt application is
+> still a shell. See [the roadmap](#roadmap).
 
 ## Why a port rather than a fork
 
@@ -131,9 +132,14 @@ ordering, and a three-track case where a per-seam off-by-one accumulates rather
 than cancels. The tests were confirmed to fail when a chunk is deliberately dropped
 at each seam.
 
-A format change between tracks currently stops cleanly rather than reconfiguring
-the device mid-stream; M1c's resampler will keep the device format fixed so those
-seams are gapless too.
+A track at a **different sample rate** joins gaplessly too. The device stays at the
+first track's format and later tracks are resampled into it (libsoxr, as in Cog),
+because reconfiguring the device mid-stream cannot be seamless. The outgoing
+resampler is flushed before it is reconfigured, so the few milliseconds held in its
+delay line — exactly the samples that meet the seam — are not lost.
+
+Matching rates bypass the resampler entirely, so a same-rate file is passed through
+bit-exactly rather than being needlessly recomputed.
 
 ### Real-time audio
 
@@ -155,7 +161,7 @@ never confused with the expected tail.
 | ✅ | **M0** | Toolchain, module layout, codec registration, Qt shell |
 | ✅ | **M1a** | Walking skeleton: FLAC decode → miniaudio output |
 | ✅ | **M1b** | Transport, gapless, seven decoders, M3U/PLS playlists and cue sheets |
-| | **M1c** | ReplayGain, LPC extrapolation, HDCD, settings |
+| 🚧 | **M1c** | ReplayGain, resampling and settings done. Remaining: HDCD, LPC extrapolation |
 | | **M2** | SQLite library, playlist model, shuffle/repeat/queue |
 | | **M3** | The Qt application: playlist view, preferences, media keys |
 | | **M4** | DSP chain: equalizer, fader, downmix, time-stretch, surround |

@@ -6,6 +6,7 @@
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Url.hpp"
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/AudioEngine.hpp"
 #include "xpcog/core/audio/OfflineOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
@@ -146,7 +147,9 @@ std::vector<float> playThrough(const std::vector<std::filesystem::path>& paths,
     RingBuffer ring(static_cast<std::size_t>(kSampleRate * 0.5) * kChannels);
     auto       output = makeOfflineOutput(ring);
 
-    AudioEngine     engine(registry(), *output, ring);
+    auto        store = makeMemorySettingsStore();
+    Settings    settings(*store);
+    AudioEngine engine(registry(), *output, ring, settings);
     PlaylistDelegate delegate;
     for (std::size_t i = 1; i < paths.size(); ++i) {
         delegate.queue.push_back(Url::fromLocalPath(paths[i]));
@@ -244,6 +247,58 @@ TEST_CASE("a single track plays through unchanged", "[gapless]") {
 
     REQUIRE(played.size() == reference.size());
     CHECK(played == reference);
+}
+
+TEST_CASE("a track at a different sample rate still joins gaplessly", "[gapless]") {
+    // The case that used to end playback. The device stays at the first track's
+    // rate and later tracks are resampled into it, so a 44.1 kHz album followed
+    // by a 48 kHz track plays straight through.
+    const auto first = makeFlac("rate_a", 0, 22050);
+    if (!first) {
+        SKIP("the `flac` command-line tool is not available");
+    }
+
+    // Same tone, written at 48 kHz.
+    const auto wav48 = fixtureDir() / "rate_b.wav";
+    {
+        std::vector<std::int16_t> samples;
+        for (int i = 0; i < 48000; ++i) {
+            const auto v = static_cast<std::int16_t>(
+                20000.0 * std::sin(2.0 * M_PI * 440.0 * (i / 48000.0)));
+            samples.push_back(v);
+            samples.push_back(v);
+        }
+        const auto dataBytes = static_cast<std::uint32_t>(samples.size() * 2);
+        std::FILE* f         = std::fopen(wav48.string().c_str(), "wb");
+        REQUIRE(f != nullptr);
+        const auto u32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, f); };
+        const auto u16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, f); };
+        std::fwrite("RIFF", 1, 4, f);
+        u32(36 + dataBytes);
+        std::fwrite("WAVEfmt ", 1, 8, f);
+        u32(16); u16(1); u16(2);
+        u32(48000); u32(48000 * 4); u16(4); u16(16);
+        std::fwrite("data", 1, 4, f);
+        u32(dataBytes);
+        std::fwrite(samples.data(), 1, dataBytes, f);
+        std::fclose(f);
+    }
+    const auto flac48 = fixtureDir() / "rate_b.flac";
+    const std::string cmd = "flac -s -f --totally-silent -o \"" + flac48.string() +
+                            "\" \"" + wav48.string() + "\" 2>/dev/null";
+    if (std::system(cmd.c_str()) != 0) {
+        SKIP("could not encode the 48 kHz fixture");
+    }
+
+    std::vector<Url> began;
+    const std::vector<float> played = playThrough({*first, flac48}, &began);
+
+    // Both tracks were actually played -- previously the second was dropped.
+    REQUIRE(began.size() == 2);
+
+    // 0.5 s at 44.1 kHz plus 1 s resampled from 48 kHz to 44.1 kHz.
+    const double seconds = static_cast<double>(played.size() / kChannels) / kSampleRate;
+    CHECK(seconds == Catch::Approx(1.5).margin(0.05));
 }
 
 TEST_CASE("three tracks join without accumulating drift", "[gapless]") {

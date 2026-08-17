@@ -15,7 +15,10 @@
 #pragma once
 
 #include "xpcog/core/AudioFormat.hpp"
+#include "xpcog/core/TrackProperties.hpp"
 #include "xpcog/core/Url.hpp"
+#include "xpcog/core/Settings.hpp"
+#include "xpcog/core/audio/AudioConverter.hpp"
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 
@@ -27,6 +30,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <vector>
 
 namespace xpcog {
 
@@ -64,7 +68,10 @@ public:
     ///
     /// Passing an offline output makes the whole engine deterministic and
     /// device-free, which is how the gapless seam test runs in CI.
-    AudioEngine(const PluginRegistry& registry, IAudioOutput& output, RingBuffer& ring);
+    /// `settings` is borrowed and read live, so a change to volumeScaling takes
+    /// effect on the next track without restarting anything.
+    AudioEngine(const PluginRegistry& registry, IAudioOutput& output, RingBuffer& ring,
+                const Settings& settings);
     ~AudioEngine();
 
     AudioEngine(const AudioEngine&)            = delete;
@@ -110,11 +117,21 @@ private:
     void closeTrack();
     /// Writes `chunk` into the ring, blocking until it all fits or we stop.
     bool writeToRing(const class AudioChunk& chunk);
+    /// Writes already-converted samples, blocking until they all fit or we stop.
+    bool writeSamples(const float* samples, std::size_t count);
+    /// Applies the ReplayGain setting for the track now being decoded.
+    void applyReplayGain(const TrackProperties& props);
     void publishSeams();
 
     const PluginRegistry& registry_;
     IAudioOutput&         output_;
+    const Settings&       settings_;
     Delegate*             delegate_ = nullptr;
+
+    /// Holds the device format fixed across tracks, which is what lets a track
+    /// with a different sample rate join gaplessly.
+    AudioConverter converter_;
+    std::vector<float> converted_;
 
     RingBuffer& ring_;
     AudioFormat format_{};

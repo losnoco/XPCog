@@ -1,0 +1,54 @@
+// The single source of truth for every setting.
+//
+//   XPCOG_SETTING(Ident, Type, "cogKey", default)
+//
+// Keys are deliberately identical to Cog's NSUserDefaults keys, so an existing
+// Cog preferences plist imports verbatim rather than resetting the user's setup.
+// Cog has 126 of these; the ones the engine actually reads are listed here and
+// the rest arrive with the features that consume them.
+//
+// This file is included several times with XPCOG_SETTING defined differently --
+// an X-macro rather than a code generator, so there is no build step to keep in
+// sync and the declarations cannot drift from the definitions.
+
+// --- playback -------------------------------------------------------------
+
+/// Which ReplayGain source to apply. One of: albumGain, albumGainWithPeak,
+/// trackGain, trackGainWithPeak, soundcheck, volumeScale, none.
+XPCOG_SETTING(VolumeScaling, std::string, "volumeScaling", "albumGainWithPeak")
+
+/// Resampler quality passed to soxr: quick, low, medium, high, best.
+XPCOG_SETTING(Resampling, std::string, "resampling", "high")
+
+/// Fade on seek and stop, so transport changes do not click.
+XPCOG_SETTING(EnableFading, bool, "enableFading", true)
+
+/// Decode HDCD control codes when present.
+XPCOG_SETTING(EnableHDCD, bool, "enableHDCD", true)
+
+/// Emit DSD as DoP rather than decimating it to PCM. M6.
+XPCOG_SETTING(OutputDSDAsDoP, bool, "outputDSDAsDoP", false)
+
+/// Release the audio device while paused, so other applications can use it.
+XPCOG_SETTING(SuspendOutputOnPause, bool, "suspendOutputOnPause", true)
+
+// --- output ---------------------------------------------------------------
+
+/// Empty means the system default device.
+XPCOG_SETTING(OutputDevice, std::string, "outputDevice", "")
+
+/// Linear gain, 0.0 to 1.0. Cog stores this as a percentage; converted on import.
+XPCOG_SETTING(Volume, double, "volume", 1.0)
+
+// --- playlist -------------------------------------------------------------
+
+XPCOG_SETTING(RepeatMode, std::string, "repeat", "repeatAll")
+XPCOG_SETTING(ShuffleMode, std::string, "shuffle", "shuffleOff")
+XPCOG_SETTING(AlwaysStopAfterCurrent, bool, "alwaysStopAfterCurrent", false)
+XPCOG_SETTING(ResumePlaybackOnStartup, bool, "resumePlaybackOnStartup", false)
+XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", true)
+
+// --- bookkeeping ----------------------------------------------------------
+
+/// Bumped by SettingsMigration; see Settings::applyMigrations().
+XPCOG_SETTING(SettingsSchemaVersion, int, "settingsSchemaVersion", 0)

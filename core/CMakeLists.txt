@@ -4,9 +4,11 @@ configure_file(
     @ONLY)
 
 add_library(xpcog-core STATIC
+    src/audio/AudioConverter.cpp
     src/audio/AudioEngine.cpp
     src/audio/MiniaudioOutput.cpp
     src/audio/OfflineOutput.cpp
+    src/audio/ReplayGain.cpp
     src/audio/RingBuffer.cpp
     src/audio/SampleConvert.cpp
     src/AudioChunk.cpp
@@ -14,6 +16,7 @@ add_library(xpcog-core STATIC
     src/MetadataMap.cpp
     src/MultiDecoder.cpp
     src/PluginRegistry.cpp
+    src/Settings.cpp
     src/Url.cpp
     src/Version.cpp
 )
@@ -24,9 +27,20 @@ target_include_directories(xpcog-core
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_BINARY_DIR}/include")
 
+# soxr does the sample-rate conversion, as it does in Cog.
+find_package(soxr CONFIG QUIET)
+if(NOT soxr_FOUND)
+    find_library(SOXR_LIBRARY NAMES soxr REQUIRED)
+    find_path(SOXR_INCLUDE_DIR NAMES soxr.h REQUIRED)
+    add_library(soxr::soxr UNKNOWN IMPORTED)
+    set_target_properties(soxr::soxr PROPERTIES
+        IMPORTED_LOCATION "${SOXR_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${SOXR_INCLUDE_DIR}")
+endif()
+
 target_link_libraries(xpcog-core
     PUBLIC  vendor-miniaudio
-    PRIVATE XPCog::warnings)
+    PRIVATE soxr::soxr XPCog::warnings)
 
 set_target_properties(xpcog-core PROPERTIES FOLDER core)
 
