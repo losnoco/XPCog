@@ -82,6 +82,31 @@ public:
     [[nodiscard]] std::size_t decoderCount() const noexcept { return decoders_.size(); }
     [[nodiscard]] std::size_t sourceCount()  const noexcept { return sources_.size(); }
 
+    /// Creates a source for `url`'s scheme, or nullptr if none claims it.
+    /// The source is NOT opened.
+    [[nodiscard]] SourcePtr makeSource(const Url& url) const;
+
+    /// Reproduces Cog Audio/PluginController.mm:630-668 -- match on lowercased
+    /// extension first, then on the source's MIME type. Returns nullptr when
+    /// nothing claims the input; the SilenceDecoder fallback arrives in M1b.
+    ///
+    /// When several decoders claim the input they are returned wrapped so each is
+    /// tried in descending priority order, matching Cog's CogDecoderMulti.
+    [[nodiscard]] DecoderPtr makeDecoder(const ISource& source,
+                                         SkipCue skipCue = SkipCue::No) const;
+
+    /// Opens `url` and returns a source/decoder pair ready to read, or {nullptr,
+    /// nullptr} on failure. The decoder borrows the source, so the returned pair
+    /// must be kept together and destroyed decoder-first.
+    struct OpenResult {
+        SourcePtr  source;
+        DecoderPtr decoder;
+        [[nodiscard]] explicit operator bool() const noexcept {
+            return source != nullptr && decoder != nullptr;
+        }
+    };
+    [[nodiscard]] OpenResult open(const Url& url, SkipCue skipCue = SkipCue::No) const;
+
     /// Every extension claimed by a registered decoder, lowercase and deduplicated.
     /// Drives the app's file-open filter, replacing Cog's generated
     /// CFBundleDocumentTypes (Audio/PluginController.mm -printPluginInfo).
@@ -93,6 +118,13 @@ private:
     std::vector<std::string>       allExtensions_;
     bool                           frozen_ = false;
 };
+
+/// Wraps several candidates so each is tried in order until one opens.
+/// Port of Cog's CogDecoderMulti; see core/src/MultiDecoder.cpp.
+/// The descriptors must outlive the returned decoder, which the registry
+/// guarantees since they live in the frozen registry itself.
+[[nodiscard]] DecoderPtr makeMultiDecoder(
+    std::vector<const DecoderDescriptor*> candidates);
 
 /// Defined by the generated codecs/RegisterAll.cpp. Registers every codec compiled
 /// into this build and calls freeze().

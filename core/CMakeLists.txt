@@ -4,7 +4,12 @@ configure_file(
     @ONLY)
 
 add_library(xpcog-core STATIC
+    src/AudioChunk.cpp
+    src/AudioFormat.cpp
+    src/MetadataMap.cpp
+    src/MultiDecoder.cpp
     src/PluginRegistry.cpp
+    src/Url.cpp
     src/Version.cpp
 )
 add_library(XPCog::core ALIAS xpcog-core)

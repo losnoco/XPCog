@@ -2,6 +2,7 @@ find_package(Catch2 3 REQUIRED)
 
 add_executable(xpcog-tests
     core/test_plugin_registry.cpp
+    core/test_value_types.cpp
     core/test_version.cpp
 )
 

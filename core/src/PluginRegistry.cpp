@@ -52,4 +52,71 @@ std::span<const std::string> PluginRegistry::allExtensions() const noexcept {
     return allExtensions_;
 }
 
+SourcePtr PluginRegistry::makeSource(const Url& url) const {
+    const std::string_view scheme = url.scheme();
+
+    for (const auto& descriptor : sources_) {
+        for (const auto claimed : descriptor.schemes) {
+            if (claimed == scheme) {
+                return descriptor.create();
+            }
+        }
+    }
+    return nullptr;
+}
+
+DecoderPtr PluginRegistry::makeDecoder(const ISource& source, SkipCue skipCue) const {
+    const auto matching = [&](auto&& claims, std::string_view key) {
+        std::vector<const DecoderDescriptor*> found;
+        if (key.empty()) {
+            return found;
+        }
+        for (const auto& descriptor : decoders_) {
+            if (skipCue == SkipCue::Yes && descriptor.name == "CueSheetDecoder") {
+                continue;
+            }
+            for (const auto claimed : claims(descriptor)) {
+                if (claimed == key) {
+                    found.push_back(&descriptor);
+                    break;
+                }
+            }
+        }
+        return found;
+    };
+
+    // Extension first, then MIME type -- the order Cog uses.
+    auto candidates = matching([](const DecoderDescriptor& d) { return d.extensions; },
+                               source.url().extension());
+    if (candidates.empty()) {
+        const std::string mime = source.mimeType();
+        candidates =
+            matching([](const DecoderDescriptor& d) { return d.mimeTypes; }, mime);
+    }
+
+    if (candidates.empty()) {
+        return nullptr;
+    }
+    if (candidates.size() == 1) {
+        return candidates.front()->create();
+    }
+    return makeMultiDecoder(std::move(candidates));
+}
+
+PluginRegistry::OpenResult PluginRegistry::open(const Url& url, SkipCue skipCue) const {
+    OpenResult result;
+
+    result.source = makeSource(url);
+    if (!result.source || !result.source->open(url)) {
+        return {};
+    }
+
+    result.decoder = makeDecoder(*result.source, skipCue);
+    if (!result.decoder || !result.decoder->open(result.source.get())) {
+        return {};
+    }
+
+    return result;
+}
+
 }  // namespace xpcog

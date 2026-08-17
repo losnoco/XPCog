@@ -11,6 +11,10 @@
 # generates a RegisterAll.cpp that declares and calls every one of them in order.
 # Deterministic, greppable, breakpointable, and it scales the same at 8 codecs as at 35.
 #
+# Codecs that resolve a library with find_package() must pass GLOBAL, so the
+# imported target escapes the codec's directory scope and is visible to the
+# xpcog-codecs aggregation:  find_package(FLAC CONFIG REQUIRED GLOBAL)
+#
 #   xpcog_add_codec(
 #       NAME     flac
 #       REGISTER xpcog_register_flac

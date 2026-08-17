@@ -2,6 +2,8 @@
 # two global properties. The tail of this file turns those into a generated
 # RegisterAll.cpp with an explicit call to every registrar.
 
+add_subdirectory(filesource)
+
 if(XPCOG_WITH_FLAC)
     add_subdirectory(flac)
 endif()
