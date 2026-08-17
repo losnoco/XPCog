@@ -6,6 +6,7 @@
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Version.hpp"
+#include "xpcog/core/audio/AudioEngine.hpp"
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
@@ -28,7 +29,7 @@ int usage() {
               "  info <file>         print format and tags\n"
               "  decode <in> <out>   decode to headerless native-endian PCM\n"
               "\n"
-              "  play <file>         decode and play to the default audio device");
+              "  play <file>...      play, gaplessly across multiple files");
     return 2;
 }
 
@@ -162,95 +163,60 @@ int decode(std::string_view input, std::string_view output) {
     return 0;
 }
 
-int play(std::string_view path) {
-    auto opened = registry().open(urlFromArgument(path));
-    if (!opened) {
-        std::fprintf(stderr, "xpcog-cli: cannot open '%.*s'\n",
-                     static_cast<int>(path.size()), path.data());
-        return 1;
-    }
+/// Plays one or more files back to back through the real engine, so the CLI
+/// exercises the same gapless path the tests cover.
+int play(const std::vector<std::string>& paths) {
+    struct Playlist final : xpcog::AudioEngine::Delegate {
+        std::vector<xpcog::Url> queue;
+        std::size_t             next = 0;
 
-    const auto props = opened.decoder->properties();
-    const auto& fmt  = props.format;
-
-    // Ring holds ~0.5 s, which is generous for a CLI and leaves plenty of margin
-    // for the feeder. The engine will size this from the device period in M1b.
-    const std::size_t ringSamples =
-        static_cast<std::size_t>(fmt.sampleRate * 0.5) * fmt.channels;
-    xpcog::RingBuffer ring(ringSamples);
-
-    auto output = xpcog::makeMiniaudioOutput(ring);
-
-    xpcog::IAudioOutput::Config config;
-    config.sampleRate = fmt.sampleRate;
-    config.channels   = fmt.channels;
-
-    // Prefill before starting, so the first callbacks are not underruns.
-    std::vector<float> scratch;
-    xpcog::AudioChunk  chunk;
-    bool               endOfStream = false;
-
-    const auto pump = [&]() -> bool {
-        if (endOfStream) {
-            return false;
+        std::optional<xpcog::Url> nextTrack() override {
+            return (next < queue.size()) ? std::optional{queue[next++]} : std::nullopt;
         }
-        if (!opened.decoder->readAudio(chunk)) {
-            endOfStream = true;
-            return false;
+        void trackBegan(const xpcog::Url& url) override {
+            std::fprintf(stderr, "playing: %s\n", url.toString().c_str());
         }
-        const std::size_t samples = xpcog::float32SampleCount(chunk);
-        scratch.resize(samples);
-        xpcog::convertToFloat32(chunk, scratch);
-
-        // Spin until the ring accepts everything. The device drains it steadily,
-        // so this yields rather than burning CPU.
-        std::size_t written = 0;
-        while (written < samples) {
-            written += ring.write(scratch.data() + written, samples - written);
-            if (written < samples) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            }
+        void trackFailed(const xpcog::Url& url) override {
+            std::fprintf(stderr, "skipped (cannot open): %s\n", url.toString().c_str());
         }
-        return true;
     };
 
-    while (ring.availableToWrite() > ringSamples / 2 && pump()) {
+    // Probe the first track for a ring size. The engine and the output must share
+    // one ring, so it is built here and handed to both.
+    auto probe = registry().open(urlFromArgument(paths.front()));
+    if (!probe) {
+        std::fprintf(stderr, "xpcog-cli: cannot open '%s'\n", paths.front().c_str());
+        return 1;
     }
+    const auto fmt = probe.decoder->properties().format;
+    probe          = {};
 
-    if (!output->start(config)) {
-        std::fputs("xpcog-cli: could not open an audio device\n", stderr);
+    xpcog::RingBuffer ring(
+        static_cast<std::size_t>(fmt.sampleRate * 0.5) * fmt.channels);
+    auto output = xpcog::makeMiniaudioOutput(ring);
+
+    xpcog::AudioEngine engine(registry(), *output, ring);
+
+    Playlist playlist;
+    for (std::size_t i = 1; i < paths.size(); ++i) {
+        playlist.queue.push_back(urlFromArgument(paths[i]));
+    }
+    engine.setDelegate(&playlist);
+
+    if (!engine.play(urlFromArgument(paths.front()))) {
+        std::fprintf(stderr, "xpcog-cli: cannot play '%s'\n", paths.front().c_str());
         return 1;
     }
 
-    std::fprintf(stderr, "playing %.1f s, %u ch @ %.0f Hz (device %.0f Hz)\n",
-                 props.duration(), fmt.channels, fmt.sampleRate,
-                 output->negotiatedFormat().sampleRate);
+    engine.waitUntilFinished();
+    const auto underruns = engine.underrunCount();
+    engine.stop();
 
-    while (pump()) {
+    if (underruns > 0) {
+        std::fprintf(stderr, "%llu underrun(s)\n",
+                     static_cast<unsigned long long>(underruns));
     }
-
-    // Underruns after this point are the expected tail: the decoder is done and
-    // the device keeps asking until we stop it. Only the count taken here
-    // indicates a genuine dropout.
-    const auto underrunsWhilePlaying = output->underrunCount();
-
-    // Let the device drain what is still queued before tearing it down.
-    while (ring.availableToRead() > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(
-        static_cast<int>(output->latencySeconds() * 1000.0) + 50));
-
-    output->stop();
-
-    if (underrunsWhilePlaying > 0) {
-        std::fprintf(stderr, "WARNING: %llu underrun(s) during playback\n",
-                     static_cast<unsigned long long>(underrunsWhilePlaying));
-    } else {
-        std::fprintf(stderr, "no underruns (%llu tail callbacks after end of stream)\n",
-                     static_cast<unsigned long long>(output->underrunCount()));
-    }
-    return underrunsWhilePlaying > 0 ? 1 : 0;
+    return 0;
 }
 
 }  // namespace
@@ -281,7 +247,10 @@ int main(int argc, char** argv) {
     }
 
     if (command == "play") {
-        return (argc < 3) ? usage() : play(argv[2]);
+        if (argc < 3) {
+            return usage();
+        }
+        return play(std::vector<std::string>(argv + 2, argv + argc));
     }
 
     std::fprintf(stderr, "xpcog-cli: unknown command '%.*s'\n\n",

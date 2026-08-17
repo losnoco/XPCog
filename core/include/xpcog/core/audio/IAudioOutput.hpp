@@ -60,6 +60,12 @@ public:
     /// the feeder is not keeping up.
     [[nodiscard]] virtual std::uint64_t underrunCount() const = 0;
 
+    /// Frames handed to the device since start(). This is the playback clock:
+    /// it is what track-change notifications are timed against, so a seam is
+    /// announced when it becomes audible rather than when it was decoded.
+    /// Counts frames requested by the callback, including any silenced tail.
+    [[nodiscard]] virtual std::uint64_t framesPlayed() const = 0;
+
     /// Invoked from a NON-real-time thread when the device disappears or changes.
     /// Replaces Cog's AudioObjectAddPropertyListener on the CoreAudio HAL.
     virtual void setDeviceInvalidatedCallback(std::function<void()> callback) = 0;

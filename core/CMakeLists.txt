@@ -4,7 +4,9 @@ configure_file(
     @ONLY)
 
 add_library(xpcog-core STATIC
+    src/audio/AudioEngine.cpp
     src/audio/MiniaudioOutput.cpp
+    src/audio/OfflineOutput.cpp
     src/audio/RingBuffer.cpp
     src/audio/SampleConvert.cpp
     src/AudioChunk.cpp

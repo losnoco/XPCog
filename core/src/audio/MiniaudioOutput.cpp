@@ -61,6 +61,9 @@ public:
         format_.bitsPerSample = 32;
         format_.channelConfig = guessChannelConfig(device_.playback.channels);
 
+        framesPlayed_.store(0, std::memory_order_relaxed);
+        underruns_.store(0, std::memory_order_relaxed);
+
         if (ma_device_start(&device_) != MA_SUCCESS) {
             ma_device_uninit(&device_);
             deviceValid_ = false;
@@ -135,6 +138,10 @@ public:
         return underruns_.load(std::memory_order_relaxed);
     }
 
+    [[nodiscard]] std::uint64_t framesPlayed() const override {
+        return framesPlayed_.load(std::memory_order_relaxed);
+    }
+
     void setDeviceInvalidatedCallback(std::function<void()> callback) override {
         std::lock_guard lock(callbackMutex_);
         onInvalidated_ = std::move(callback);
@@ -165,6 +172,10 @@ private:
                 out[i] *= gain;
             }
         }
+
+        // The playback clock. Track changes are announced against this, so a seam
+        // is reported when it is audible rather than when it was decoded.
+        self->framesPlayed_.fetch_add(frameCount, std::memory_order_relaxed);
     }
 
     /// Fires on a miniaudio-internal thread, not the RT thread. It only hands the
@@ -254,6 +265,7 @@ private:
 
     std::atomic<float>         volume_{1.0F};
     std::atomic<std::uint64_t> underruns_{0};
+    std::atomic<std::uint64_t> framesPlayed_{0};
 };
 
 }  // namespace
