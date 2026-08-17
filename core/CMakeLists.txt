@@ -13,6 +13,8 @@ add_library(xpcog-core STATIC
     src/audio/SampleConvert.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp
+    src/library/Playlist.cpp
+    src/library/PlaylistEntry.cpp
     src/MetadataMap.cpp
     src/MultiDecoder.cpp
     src/PluginRegistry.cpp

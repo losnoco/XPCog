@@ -42,9 +42,13 @@ XPCOG_SETTING(Volume, double, "volume", 1.0)
 
 // --- playlist -------------------------------------------------------------
 
-XPCOG_SETTING(RepeatMode, std::string, "repeat", "repeatAll")
-XPCOG_SETTING(ShuffleMode, std::string, "shuffle", "shuffleOff")
+/// Integers, not names, because Cog stores the raw enum value and the point of
+/// matching its keys is that its plist imports without translation.
+/// RepeatMode: 0 none, 1 one, 2 album, 3 all. ShuffleMode: 0 off, 1 albums, 2 all.
+XPCOG_SETTING(RepeatMode, int, "repeat", 3)
+XPCOG_SETTING(ShuffleMode, int, "shuffle", 0)
 XPCOG_SETTING(AlwaysStopAfterCurrent, bool, "alwaysStopAfterCurrent", false)
+XPCOG_SETTING(SelectionFollowsPlayback, bool, "selectionFollowsPlayback", false)
 XPCOG_SETTING(ResumePlaybackOnStartup, bool, "resumePlaybackOnStartup", false)
 XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", true)
 
