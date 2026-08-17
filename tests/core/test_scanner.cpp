@@ -383,6 +383,100 @@ TEST_CASE("tags are read off a real file", "[scanner]") {
     REQUIRE(entry.duration() == 1.0);
 }
 
+TEST_CASE("the cache spares a second read of an unchanged file", "[scanner]") {
+    const TempDir  dir{"cache"};
+    const fs::path target = dir.file("tagged.flac");
+    if (!makeTaggedFlac(target, {"ARTIST=Pink Floyd", "TITLE=Dogs"})) {
+        SKIP("flac is not installed");
+    }
+
+    PluginCache cache;
+    Scanner     scanner{codecRegistry()};
+    scanner.setCache(&cache);
+
+    PlaylistEntry first;
+    first.url = Url::fromLocalPath(target);
+    REQUIRE(scanner.readMetadata(first));
+    REQUIRE(cache.statistics().hits == 0);
+    REQUIRE(cache.statistics().misses == 1);
+
+    PlaylistEntry second;
+    second.url = Url::fromLocalPath(target);
+    REQUIRE(scanner.readMetadata(second));
+    REQUIRE(cache.statistics().hits == 1);
+    REQUIRE(second.artist == "Pink Floyd");
+    REQUIRE(second.rawTitle == "Dogs");
+    REQUIRE(second.properties.format.sampleRate == 44100.0);
+}
+
+TEST_CASE("retagging invalidates the cache", "[scanner]") {
+    const TempDir  dir{"retag"};
+    const fs::path target = dir.file("tagged.flac");
+    if (!makeTaggedFlac(target, {"ARTIST=Pink Floyd", "TITLE=Dogs"})) {
+        SKIP("flac is not installed");
+    }
+
+    PluginCache cache;
+    Scanner     scanner{codecRegistry()};
+    scanner.setCache(&cache);
+
+    PlaylistEntry before;
+    before.url = Url::fromLocalPath(target);
+    REQUIRE(scanner.readMetadata(before));
+    REQUIRE(before.rawTitle == "Dogs");
+
+    // Rewrite the file with different tags. Cog keys its cache on the URL alone,
+    // so it would keep handing back "Dogs" for the rest of the session.
+    REQUIRE(makeTaggedFlac(target, {"ARTIST=Pink Floyd", "TITLE=Sheep",
+                                    "COMMENT=padding to change the size"}));
+
+    PlaylistEntry after;
+    after.url = Url::fromLocalPath(target);
+    REQUIRE(scanner.readMetadata(after));
+    REQUIRE(after.rawTitle == "Sheep");
+}
+
+TEST_CASE("a cached entry does not carry another row's identity", "[scanner]") {
+    PluginCache cache;
+
+    PlaylistEntry stored;
+    stored.url           = Url::fromLocalPath("/music/dogs.flac");
+    stored.id            = 42;
+    stored.queuePosition = 3;
+    stored.shuffleIndex  = 7;
+    stored.rawTitle      = "Dogs";
+
+    // A stamp the lookup will match; the file need not exist for this.
+    const PluginCache::Stamp stamp{1234, 5678};
+    cache.store(stored.url, stamp, stored);
+
+    const auto cached = cache.lookup(stored.url, stamp);
+    REQUIRE(cached.has_value());
+    REQUIRE(cached->rawTitle == "Dogs");
+    REQUIRE(cached->id == kInvalidTrackId);
+    REQUIRE(cached->queuePosition == -1);
+    REQUIRE(cached->shuffleIndex == -1);
+
+    // A different stamp for the same URL is a different file.
+    REQUIRE_FALSE(cache.lookup(stored.url, PluginCache::Stamp{1234, 9999}).has_value());
+}
+
+TEST_CASE("remote URLs are not cached", "[scanner]") {
+    PluginCache cache;
+
+    const Url stream = *Url::parse("http://example.org/stream.ogg");
+    // stampFor cannot stat a URL with no local path, so it returns a zero stamp
+    // -- which must never be a usable key, or every remote stream would collide
+    // with every other one.
+    REQUIRE(PluginCache::stampFor(stream) == PluginCache::Stamp{});
+
+    PlaylistEntry entry;
+    entry.url = stream;
+    cache.store(stream, PluginCache::stampFor(stream), entry);
+    REQUIRE(cache.size() == 0);
+    REQUIRE_FALSE(cache.lookup(stream, PluginCache::stampFor(stream)).has_value());
+}
+
 TEST_CASE("embedded artwork moves into the library", "[scanner]") {
     Library library;
     REQUIRE(library.open(":memory:"));

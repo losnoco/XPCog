@@ -170,7 +170,7 @@ never confused with the expected tail.
 | ✅ | **M1a** | Walking skeleton: FLAC decode → miniaudio output |
 | ✅ | **M1b** | Transport, gapless, seven decoders, M3U/PLS playlists and cue sheets |
 | ✅ | **M1c** | ReplayGain, resampling, settings, HDCD |
-| | **M2** | SQLite library, playlist model, shuffle/repeat/queue |
+| ✅ | **M2** | SQLite library, playlist model, shuffle/repeat/queue, scanner, tag reading |
 | | **M3** | The Qt application: playlist view, preferences, media keys |
 | | **M4** | DSP chain: equalizer, fader, downmix, time-stretch, surround |
 | | **M5** | Visualization, mini player, Windows SMTC / Linux MPRIS |

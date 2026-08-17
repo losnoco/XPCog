@@ -210,6 +210,22 @@ bool Scanner::readMetadata(PlaylistEntry& entry) const {
     entry.error = false;
     entry.errorMessage.clear();
 
+    const PluginCache::Stamp stamp =
+        (cache_ != nullptr) ? PluginCache::stampFor(entry.url) : PluginCache::Stamp{};
+
+    if (cache_ != nullptr) {
+        if (auto cached = cache_->lookup(entry.url, stamp)) {
+            // Everything except the identity, which belongs to the playlist row
+            // rather than to the file.
+            const TrackId id  = entry.id;
+            const Url     url = entry.url;
+            entry             = std::move(*cached);
+            entry.id          = id;
+            entry.url         = url;
+            return !entry.error;
+        }
+    }
+
     // Tags first, then the decoder: a decoder's own metadata() carries the
     // things that change mid-stream (ICY titles, chained Ogg), and those should
     // win over the static tags rather than the other way round.
@@ -220,6 +236,11 @@ bool Scanner::readMetadata(PlaylistEntry& entry) const {
         entry.error        = true;
         entry.errorMessage = "no decoder could open this file";
         entry.applyMetadata(tags);
+        // Cached too: a folder of a thousand JPEGs should be attempted once,
+        // and the stamp means fixing the file still invalidates the failure.
+        if (cache_ != nullptr) {
+            cache_->store(entry.url, stamp, entry);
+        }
         return false;
     }
 
@@ -228,6 +249,10 @@ bool Scanner::readMetadata(PlaylistEntry& entry) const {
 
     promoteReplayGain(tags, entry.properties);
     entry.applyMetadata(tags);
+
+    if (cache_ != nullptr) {
+        cache_->store(entry.url, stamp, entry);
+    }
     return true;
 }
 

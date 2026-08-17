@@ -13,6 +13,7 @@
 #pragma once
 
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/library/PluginCache.hpp"
 #include "xpcog/core/library/PlaylistEntry.hpp"
 
 #include <atomic>
@@ -38,6 +39,11 @@ public:
     // and its member initialisers are not usable until the class is complete.
     explicit Scanner(const PluginRegistry& registry);
     Scanner(const PluginRegistry& registry, Options options);
+
+    /// Reuses metadata across repeated reads of the same unchanged file. The
+    /// cache is borrowed, not owned, so its lifetime spans a whole session
+    /// rather than one scan. Null means no caching.
+    void setCache(PluginCache* cache) noexcept { cache_ = cache; }
 
     /// Called as each item is finished. Invoked on the calling thread.
     using ProgressFn = std::function<void(std::size_t done, std::size_t total)>;
@@ -76,6 +82,7 @@ private:
 
     const PluginRegistry& registry_;
     Options               options_;
+    PluginCache*          cache_ = nullptr;
     ProgressFn            progress_;
     mutable std::atomic<bool> cancelled_{false};
 };
