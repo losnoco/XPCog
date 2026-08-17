@@ -22,6 +22,19 @@ add_library(xpcog-platform STATIC
 # MediaIntegration: exactly one implementation is compiled, chosen here rather
 # than by #ifdef inside one file. Adding SMTC or MPRIS is a new file and a new
 # branch, with no existing code to disturb.
+if(WIN32)
+    target_sources(xpcog-platform PRIVATE
+        src/windows/Foreground.cpp
+        src/windows/FileAssociations.cpp)
+    # Shell32 for SHChangeNotify, which is how the association table's change is
+    # announced. Everything else in that file goes through QSettings.
+    target_link_libraries(xpcog-platform PRIVATE Shell32.lib)
+else()
+    target_sources(xpcog-platform PRIVATE
+        src/common/Foreground.cpp
+        src/common/FileAssociations.cpp)
+endif()
+
 if(APPLE)
     enable_language(OBJCXX)
     target_sources(xpcog-platform PRIVATE src/mac/MacMediaIntegration.mm)

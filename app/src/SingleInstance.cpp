@@ -1,5 +1,7 @@
 #include "SingleInstance.hpp"
 
+#include "xpcog/platform/Foreground.hpp"
+
 #include <QDataStream>
 #include <QDir>
 #include <QLocalServer>
@@ -75,6 +77,17 @@ bool SingleInstance::claim(const QStringList& arguments) {
             QDataStream stream(&wire, QIODevice::WriteOnly);
             stream.setVersion(QDataStream::Qt_6_0);
             stream << inner;
+
+            // Before the message, not after: the receiver acts on it the moment
+            // it arrives, and a permission granted afterwards would land too late
+            // to help the raise it was granted for.
+            //
+            // This process is the one Windows is willing to obey -- Explorer just
+            // launched it -- and the running instance is the one that needs the
+            // foreground and cannot claim it. So the claim is handed over rather
+            // than used. Without this the file appears in the playlist and the
+            // window stays where it is, with the taskbar button flashing.
+            platform::permitForegroundHandover();
 
             socket.write(wire);
             socket.waitForBytesWritten(kWriteTimeoutMs);

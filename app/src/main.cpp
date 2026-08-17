@@ -13,9 +13,11 @@
 #include "windows/MainWindow.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/platform/FileAssociations.hpp"
 #include "xpcog/platform/QSettingsStore.hpp"
 
 #include <QApplication>
+#include <QMessageBox>
 #include <QLibraryInfo>
 #include <QList>
 #include <QLocale>
@@ -45,6 +47,69 @@ QList<QUrl> urlsFromArguments(const QStringList& arguments) {
         urls.append(QUrl::fromLocalFile(arguments.at(i)));
     }
     return urls;
+}
+
+/// Whether this launch is about registration rather than about playing anything.
+bool wantsRegistration(const QStringList& arguments) {
+    return arguments.contains(QStringLiteral("--register")) ||
+           arguments.contains(QStringLiteral("--unregister"));
+}
+
+/// Adds or removes the file associations, then reports what happened.
+///
+/// Runs before the single-instance handshake on purpose: registering is about this
+/// installation, not about playback, and handing the flag to an already-running
+/// player would leave it trying to open a file called "--register". Any file
+/// arguments alongside the flag are ignored for the same reason.
+///
+/// The extension list comes from the codec registry, so it is exactly what this
+/// build accepts. A list written out by hand here, or in an installer script,
+/// would be wrong the first time a decoder was added and would stay wrong quietly.
+void performRegistration(const QStringList&           arguments,
+                         const xpcog::PluginRegistry& registry) {
+    const bool wantsUnregister = arguments.contains(QStringLiteral("--unregister"));
+
+    const auto complain = [](const QString& text) {
+        QMessageBox::warning(nullptr, QStringLiteral("XPCog"), text);
+    };
+
+    if (!xpcog::platform::fileAssociationsSupported()) {
+        complain(QObject::tr(
+            "File associations are handled by the package on this platform, "
+            "not by the application."));
+        return;
+    }
+
+    QString error;
+    if (wantsUnregister) {
+        if (!xpcog::platform::unregisterFileAssociations(&error)) {
+            complain(QObject::tr("Could not remove the file associations: %1").arg(error));
+            return;
+        }
+        QMessageBox::information(nullptr, QStringLiteral("XPCog"),
+                                 QObject::tr("XPCog is no longer offered for audio files."));
+        return;
+    }
+
+    QStringList extensions;
+    for (const std::string& extension : registry.allExtensions()) {
+        extensions.append(QString::fromStdString(extension));
+    }
+    if (!xpcog::platform::registerFileAssociations(extensions, &error)) {
+        complain(QObject::tr("Could not register the file associations: %1").arg(error));
+        return;
+    }
+
+    // Explicit about what this did and did not do. Windows will not let an
+    // application make itself the default handler, so promising that the next
+    // double-click opens XPCog would be a promise the OS breaks.
+    QMessageBox::information(
+        nullptr, QStringLiteral("XPCog"),
+        QObject::tr("XPCog is now offered for %n audio file type(s).\n\n"
+                    "Windows does not let an application make itself the default. "
+                    "To open these files by double-clicking, choose Open with → "
+                    "Choose another app → XPCog, and tick \"Always use this app\".",
+                    nullptr, static_cast<int>(extensions.size())));
 }
 
 void installTranslations() {
@@ -83,6 +148,18 @@ int main(int argc, char** argv) {
 
     installTranslations();
 
+    const QStringList arguments = QApplication::arguments();
+
+    // Registration is not playback: it runs before the single-instance handshake,
+    // and exits without ever opening a window. Its own registry, because the one
+    // below is built after the handshake and this has to happen before it.
+    if (wantsRegistration(arguments)) {
+        xpcog::PluginRegistry registrationCodecs;
+        xpcog::registerAllCodecs(registrationCodecs);
+        performRegistration(arguments, registrationCodecs);
+        return 0;
+    }
+
     // Before anything expensive is constructed. A later launch's only job is to
     // hand its files over and go, and every decoder registered or database
     // opened first is latency the user waits through for a process that is
@@ -95,7 +172,7 @@ int main(int argc, char** argv) {
     // would add a failure mode to solve a problem the platform does not have.
 #ifndef Q_OS_MACOS
     xpcog::app::SingleInstance instance;
-    if (!instance.claim(QApplication::arguments())) {
+    if (!instance.claim(arguments)) {
         return 0;
     }
 #endif
@@ -133,7 +210,7 @@ int main(int argc, char** argv) {
     // Files named on the command line, so `XPCog album.cue` works and the OS can
     // hand us documents. Done after show() so the scan's progress dialog has a
     // parent window to be modal to.
-    if (const QList<QUrl> opened = urlsFromArguments(QApplication::arguments());
+    if (const QList<QUrl> opened = urlsFromArguments(arguments);
         !opened.isEmpty()) {
         window.openUrls(opened);
     }
