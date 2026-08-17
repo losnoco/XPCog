@@ -164,6 +164,73 @@ void downmixToStereo(const float* in, std::uint32_t inChannels, std::uint32_t co
     }
 }
 
+void upmix(const float* in, std::uint32_t inChannels, std::uint32_t inConfig,
+           float* out, std::uint32_t outChannels, std::uint32_t outConfig,
+           std::size_t frames) {
+    if (in == nullptr || out == nullptr || inChannels == 0 || outChannels == 0) {
+        return;
+    }
+    if (inConfig == 0U) {
+        inConfig = guessChannelConfig(inChannels);
+    }
+    if (outConfig == 0U) {
+        outConfig = guessChannelConfig(outChannels);
+    }
+
+    std::fill_n(out, frames * outChannels, 0.0F);
+
+    const auto copyChannel = [&](std::uint32_t from, std::uint32_t to) {
+        for (std::size_t frame = 0; frame < frames; ++frame) {
+            out[(frame * outChannels) + to] = in[(frame * inChannels) + from];
+        }
+    };
+
+    // Mono into a layout with no centre slot goes to the front pair rather than
+    // vanishing -- kConfigMono is the front-centre flag, so plain routing would
+    // find it no home in stereo or quad.
+    if (inChannels == 1 && channelIndexFromConfig(outConfig, kChannelFrontCenter) == ~0U) {
+        const std::uint32_t left  = channelIndexFromConfig(outConfig, kChannelFrontLeft);
+        const std::uint32_t right = channelIndexFromConfig(outConfig, kChannelFrontRight);
+        if (left != ~0U) {
+            copyChannel(0, left);
+        }
+        if (right != ~0U) {
+            copyChannel(0, right);
+        }
+        return;
+    }
+
+    for (std::uint32_t channel = 0; channel < inChannels; ++channel) {
+        const std::uint32_t flag = extractChannelFlag(channel, inConfig);
+        if (flag == 0U) {
+            continue;
+        }
+
+        const std::uint32_t target = channelIndexFromConfig(outConfig, flag);
+        if (target != ~0U) {
+            copyChannel(channel, target);
+            continue;
+        }
+
+        // A back centre with no slot of its own splits into the back pair, so
+        // the rear image survives. Guarded on the input having no back pair of
+        // its own: if it did, that pair was already routed into these slots, and
+        // the copy below would overwrite it.
+        if (flag == kChannelBackCenter &&
+            (inConfig & (kChannelBackLeft | kChannelBackRight)) == 0U) {
+            const std::uint32_t left  = channelIndexFromConfig(outConfig, kChannelBackLeft);
+            const std::uint32_t right = channelIndexFromConfig(outConfig, kChannelBackRight);
+            if (left != ~0U) {
+                copyChannel(channel, left);
+            }
+            if (right != ~0U) {
+                copyChannel(channel, right);
+            }
+        }
+        // Anything else with no home is dropped, as in Cog's fallback.
+    }
+}
+
 void downmixToMono(const float* in, std::uint32_t inChannels, std::uint32_t config,
                    float* out, std::size_t frames) {
     if (in == nullptr || out == nullptr || inChannels == 0) {

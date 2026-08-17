@@ -48,6 +48,16 @@ std::uint32_t guessChannelConfig(std::uint32_t channelCount) noexcept {
 }
 
 std::uint32_t channelIndexFromConfig(std::uint32_t config, std::uint32_t flag) noexcept {
+    // The membership check is a deliberate divergence from Cog, whose version
+    // returns the index the flag *would* have -- the count of config bits below
+    // it -- whether or not the config contains it. That is not a helper quirk
+    // but the root of a real Cog bug: its upmix asks for the back-centre slot in
+    // a 7.1 layout, gets 6 instead of "absent", and copies back centre onto the
+    // side-left channel. This function has always documented "~0 if absent";
+    // now it means it.
+    if ((config & flag) == 0U) {
+        return ~0U;
+    }
     std::uint32_t index = 0;
     for (std::uint32_t walk = 0; walk < 32; ++walk) {
         const std::uint32_t query = 1U << walk;

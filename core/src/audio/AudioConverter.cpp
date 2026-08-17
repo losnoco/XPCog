@@ -35,9 +35,15 @@ namespace {
 /// DSPDownmixNode -- downmix changes the frame size, and a DSPNode transforms in
 /// place at a fixed format.
 ///
-/// Everything else stays deliberately simple: duplicate mono into every output,
-/// copy the channels that correspond, zero the rest. Upmixing a surround layout
-/// properly is a separate matrix Cog keeps separate too.
+/// The growing direction routes by channel flag (see upmix in Downmix.hpp), so a
+/// quad file on a 5.1 device keeps its back pair at the back instead of leaking
+/// into the centre and LFE slots, which is what positional copying did.
+///
+/// The one remaining case -- reducing to a multichannel layout, say 7.1 into
+/// quad -- keeps the positional copy below. Cog reduces through its stereo
+/// matrix regardless of the target; doing that here would discard a real quad
+/// device's back speakers, so the plain copy stays until that reduction has a
+/// matrix of its own.
 void fitChannels(const float* in, std::size_t frames, std::uint32_t inChannels,
                  std::uint32_t inConfig, std::uint32_t outChannels,
                  std::vector<float>& out) {
@@ -57,13 +63,9 @@ void fitChannels(const float* in, std::size_t frames, std::uint32_t inChannels,
         return;
     }
 
-    if (inChannels == 1) {
-        for (std::size_t f = 0; f < frames; ++f) {
-            const float sample = in[f];
-            for (std::uint32_t c = 0; c < outChannels; ++c) {
-                out[f * outChannels + c] = sample;
-            }
-        }
+    if (inChannels < outChannels) {
+        upmix(in, inChannels, inConfig, out.data(), outChannels,
+              guessChannelConfig(outChannels), frames);
         return;
     }
 

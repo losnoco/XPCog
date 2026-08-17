@@ -84,6 +84,21 @@ TEST_CASE("channel index helpers round-trip", "[format]") {
     CHECK(findChannelIndex(kChannelLFE) == 3);
 }
 
+TEST_CASE("a channel absent from a config has no index", "[format]") {
+    // Load-bearing, and a deliberate divergence from Cog. Cog's version returns
+    // the index a flag *would* occupy -- the count of config bits below it --
+    // even when the config lacks that channel, so asking a 7.1 layout for its
+    // back centre answers 6 rather than "absent". That is what makes Cog's upmix
+    // copy back centre onto side left. Callers here branch on ~0, so the helper
+    // has to mean it.
+    CHECK(channelIndexFromConfig(kConfig7Point1, kChannelBackCenter) == ~0U);
+    CHECK(channelIndexFromConfig(kConfig4Point0, kChannelFrontCenter) == ~0U);
+    CHECK(channelIndexFromConfig(kConfigStereo, kChannelLFE) == ~0U);
+
+    // Present channels still report their interleave position.
+    CHECK(channelIndexFromConfig(kConfig7Point1, kChannelSideLeft) == 6);
+}
+
 TEST_CASE("AudioFormat computes frame sizes", "[format]") {
     AudioFormat fmt;
     fmt.channels = 2;

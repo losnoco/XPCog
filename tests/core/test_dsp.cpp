@@ -584,9 +584,15 @@ TEST_CASE("a fade in ramps from silence over Cog's 200 ms", "[dsp]") {
     INFO("landed at frame " << landed << ", expected about " << expected);
     REQUIRE(landed == Approx(static_cast<double>(expected)).epsilon(0.01));
 
-    // And once landed it is transparent again, so the chain stops running it.
-    REQUIRE_FALSE(fader.active());
+    // Once landed it is transparent by value rather than by being skipped: the
+    // stage keeps running so its rolling history sees every block -- the tail a
+    // future seek fades out has to be gap-free -- but what it emits must be
+    // bit-identical to what it was given.
     REQUIRE(fader.level() == 1.0);
+    std::vector<float> steady(64 * kChannels, 0.25F);
+    const std::vector<float> untouched = steady;
+    fader.process(steady.data(), 64);
+    REQUIRE(steady == untouched);
 }
 
 TEST_CASE("both channels fade together", "[dsp]") {
@@ -761,4 +767,189 @@ TEST_CASE("a stereo source is left alone by the converter's channel fit", "[dsp]
     // fast path in fitChannels safe as well as quicker.
     REQUIRE(out[0] == Approx(0.5F).epsilon(1e-6));
     REQUIRE(out[1] == Approx(-0.25F).epsilon(1e-6));
+}
+
+TEST_CASE("a seek crossfades: the sum holds at unity", "[dsp]") {
+    // The equal-gain property, and the whole point of fading out as well as in.
+    // With the same constant either side of the seek, the outgoing tail and the
+    // incoming ramp are complements, so their sum must sit at the input level
+    // throughout -- a dip would be the fade audibly ducking every seek, and a
+    // bump would be the two sides double-counting.
+    Fader fader;
+    fader.setEnabled(true);
+    fader.prepare(formatFor(kRate, kChannels));
+
+    // Establish steady output well past the initial fade-in, so the history is
+    // full of the "old position".
+    std::vector<float> steady(static_cast<std::size_t>(kRate) * kChannels, 0.5F);
+    fader.process(steady.data(), steady.size() / kChannels);
+
+    fader.reset();  // the seek
+    REQUIRE(fader.crossfading());
+
+    std::vector<float> after(static_cast<std::size_t>(kRate / 2) * kChannels, 0.5F);
+    fader.process(after.data(), after.size() / kChannels);
+
+    for (std::size_t frame = 0; frame < after.size() / kChannels; ++frame) {
+        INFO("frame " << frame);
+        REQUIRE(after[frame * kChannels] == Approx(0.5F).margin(0.002));
+    }
+    REQUIRE_FALSE(fader.crossfading());
+}
+
+TEST_CASE("the old audio audibly decays across a seek", "[dsp]") {
+    // Feed a recognisable level, seek into silence: what comes out is the
+    // retained tail on its way down. This is the fade *out* -- without it the
+    // same sequence emits a hard step to zero.
+    Fader fader;
+    fader.setEnabled(true);
+    fader.prepare(formatFor(kRate, kChannels));
+
+    std::vector<float> loud(static_cast<std::size_t>(kRate) * kChannels, 0.8F);
+    fader.process(loud.data(), loud.size() / kChannels);
+
+    fader.reset();
+
+    const std::size_t fadeFrames = static_cast<std::size_t>(kRate * 0.2);
+    std::vector<float> silence((fadeFrames + 512) * kChannels, 0.0F);
+    fader.process(silence.data(), silence.size() / kChannels);
+
+    // Starts near the old level, decays monotonically, and is gone once the
+    // 200 ms tail is spent.
+    REQUIRE(silence[0] > 0.75F);
+    for (std::size_t frame = 1; frame < fadeFrames; ++frame) {
+        REQUIRE(silence[frame * kChannels] <= silence[(frame - 1) * kChannels]);
+    }
+    for (std::size_t frame = fadeFrames; frame < fadeFrames + 512; ++frame) {
+        REQUIRE(silence[frame * kChannels] == 0.0F);
+    }
+}
+
+TEST_CASE("a second seek cannot resurrect audio from two positions ago", "[dsp]") {
+    // reset() clears the history it just captured, so a seek made mid-crossfade
+    // fades out at most what was emitted since the previous seek -- not the
+    // position before that. Here only ~50 ms elapses between seeks, so the second
+    // tail must be exhausted by then, not run the full 200 ms of stale audio.
+    Fader fader;
+    fader.setEnabled(true);
+    fader.prepare(formatFor(kRate, kChannels));
+
+    std::vector<float> first(static_cast<std::size_t>(kRate) * kChannels, 0.8F);
+    fader.process(first.data(), first.size() / kChannels);
+
+    fader.reset();  // seek one
+
+    const std::size_t betweenFrames = static_cast<std::size_t>(kRate * 0.05);
+    std::vector<float> between(betweenFrames * kChannels, 0.0F);
+    fader.process(between.data(), betweenFrames);
+
+    fader.reset();  // seek two, 50 ms later
+
+    std::vector<float> after(static_cast<std::size_t>(kRate * 0.2) * kChannels, 0.0F);
+    fader.process(after.data(), after.size() / kChannels);
+
+    // The second tail is the ~50 ms actually emitted between the seeks; beyond
+    // it, silence in must be silence out.
+    for (std::size_t frame = betweenFrames + 1; frame < after.size() / kChannels;
+         ++frame) {
+        REQUIRE(after[frame * kChannels] == 0.0F);
+    }
+}
+
+TEST_CASE("disabling fading also forgets the history", "[dsp]") {
+    // Toggle it off and on, then seek: the tail must be empty, or a seek made
+    // minutes later would fade out audio from before the toggle.
+    Fader fader;
+    fader.setEnabled(true);
+    fader.prepare(formatFor(kRate, kChannels));
+
+    std::vector<float> loud(static_cast<std::size_t>(kRate) * kChannels, 0.8F);
+    fader.process(loud.data(), loud.size() / kChannels);
+
+    fader.setEnabled(false);
+    fader.setEnabled(true);
+    fader.reset();
+
+    REQUIRE_FALSE(fader.crossfading());
+}
+
+// ---------------------------------------------------------------------------
+// The upmix routing.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("upmix routes by flag, not by position", "[dsp]") {
+    // Quad into 5.1: the back pair must land in the back slots (4 and 5 of the
+    // 5.1 interleave), leaving centre and LFE silent. Positional copying -- what
+    // fitChannels did before -- put them in exactly those two slots, which sent
+    // the rear image to the centre speaker and the subwoofer.
+    const std::vector<float> quad{0.1F, 0.2F, 0.3F, 0.4F};  // FL FR BL BR
+    std::vector<float>       out(6, -1.0F);
+
+    upmix(quad.data(), 4, kConfig4Point0, out.data(), 6, kConfig5Point1, 1);
+
+    REQUIRE(out[0] == 0.1F);  // FL
+    REQUIRE(out[1] == 0.2F);  // FR
+    REQUIRE(out[2] == 0.0F);  // FC silent
+    REQUIRE(out[3] == 0.0F);  // LFE silent
+    REQUIRE(out[4] == 0.3F);  // BL
+    REQUIRE(out[5] == 0.4F);  // BR
+}
+
+TEST_CASE("mono goes to the centre when there is one, the front pair when not", "[dsp]") {
+    const std::vector<float> mono{0.7F};
+
+    // 5.1 has a centre: mono lives there and nowhere else.
+    std::vector<float> surround(6, -1.0F);
+    upmix(mono.data(), 1, kConfigMono, surround.data(), 6, kConfig5Point1, 1);
+    REQUIRE(surround[0] == 0.0F);
+    REQUIRE(surround[1] == 0.0F);
+    REQUIRE(surround[2] == 0.7F);
+    REQUIRE(surround[3] == 0.0F);
+
+    // Quad has no centre: the front pair carries it, or it would vanish -- mono
+    // *is* the front-centre flag, and plain routing finds it no home.
+    std::vector<float> quad(4, -1.0F);
+    upmix(mono.data(), 1, kConfigMono, quad.data(), 4, kConfig4Point0, 1);
+    REQUIRE(quad[0] == 0.7F);
+    REQUIRE(quad[1] == 0.7F);
+    REQUIRE(quad[2] == 0.0F);
+    REQUIRE(quad[3] == 0.0F);
+}
+
+TEST_CASE("6.1 upmixes with its channels in the right places", "[dsp]") {
+    // The case Cog gets wrong: its upmix reads the 6.1 side pair at interleave
+    // indexes 4-5 and back centre at 6, but flag order puts BC at 4 (bit 8) and
+    // the sides at 5-6 (bits 9-10), so Cog rotates three channels. Routing by
+    // flag cannot make that mistake; this pins the fix.
+    //
+    // 6.1 in flag order: FL FR FC LFE BC SL SR.
+    const std::vector<float> in{0.1F, 0.2F, 0.3F, 0.4F, 0.5F, 0.6F, 0.7F};
+    // 7.1 in flag order: FL FR FC LFE BL BR SL SR.
+    std::vector<float> out(8, -1.0F);
+
+    upmix(in.data(), 7, kConfig6Point1, out.data(), 8, kConfig7Point1, 1);
+
+    REQUIRE(out[0] == 0.1F);  // FL
+    REQUIRE(out[1] == 0.2F);  // FR
+    REQUIRE(out[2] == 0.3F);  // FC
+    REQUIRE(out[3] == 0.4F);  // LFE
+    REQUIRE(out[4] == 0.5F);  // BL <- BC split, 7.1 having no BC slot
+    REQUIRE(out[5] == 0.5F);  // BR <- BC split
+    REQUIRE(out[6] == 0.6F);  // SL, *not* shifted onto the back pair
+    REQUIRE(out[7] == 0.7F);  // SR
+}
+
+TEST_CASE("a back centre does not clobber a routed back pair", "[dsp]") {
+    // An input carrying both a back pair and a back centre: the pair routes to
+    // its own slots, and the centre -- having no home and no safe split -- is
+    // dropped rather than overwriting them.
+    const std::uint32_t inConfig =
+        kConfig4Point0 | kChannelBackCenter;  // FL FR BL BR + BC
+    const std::vector<float> in{0.1F, 0.2F, 0.3F, 0.4F, 0.9F};
+    std::vector<float>       out(8, -1.0F);
+
+    upmix(in.data(), 5, inConfig, out.data(), 8, kConfig7Point1, 1);
+
+    REQUIRE(out[4] == 0.3F);  // BL keeps the routed pair
+    REQUIRE(out[5] == 0.4F);  // BR likewise
 }

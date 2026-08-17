@@ -194,12 +194,26 @@ already means "the signal does not flow across this point", which is exactly whe
 a fade in is wanted, so no engine plumbing can introduce a discontinuity without
 the fade following it.
 
-**Only the fade in, though.** Cog also fades the *outgoing* audio out across a
-seek, which it can do because `DSPFaderNode` retains the discarded audio in a
-`FadedBuffer` and mixes its decaying tail over the new position. Here that audio
-is discarded by a ring flush before this stage would see it again, so a symmetric
-crossfade needs the fader to retain a tail of its own output. A seek therefore
-ramps in cleanly but still cuts the outgoing audio abruptly.
+**Both directions**, now. Fading out is the interesting half, because the audio
+to fade out has already been discarded by the time the stage sees anything new.
+Cog retains it in a `FadedBuffer`; the same idea works here because the fader is
+last in the chain, so everything it emits goes straight to the shallow ring and a
+rolling copy of its last 200 ms *is* the audio a flush is about to drop.
+
+That is an approximation, and worth stating precisely: the tail spans
+`[lastEmitted - 200 ms, lastEmitted]` while the discarded audio spans
+`[lastAudible, lastEmitted]`, so they differ by whatever of the shallow ring was
+unplayed — up to `200 ms - fill` of the tail is audio already heard, replayed. In
+steady playback the pump keeps that ring full (~186 ms), leaving ~14 ms. Cog
+escapes it by capturing the exact flushed chunks; buying that here would mean the
+rings handing discarded audio back to the chain, which is a lot of machinery for
+14 ms.
+
+The cost is one property the fader used to have: to keep its history fed it must
+see every block, so `active()` stays true whenever fading is enabled instead of
+going false once a ramp lands. `process()` still leaves the samples untouched when
+there is nothing to apply, so the output is bit-identical — what it no longer does
+is let the chain skip the stage.
 
 **And the downmix matrix**, which is *not* a `DSPNode` — a departure worth
 recording. Cog's nodes pass `AudioChunk`s carrying their own format, so one can
@@ -216,11 +230,31 @@ outcome — it is recorded rather than corrected, because quietly rescaling woul
 make XPCog disagree with Cog on every surround file. Anything downstream assuming
 samples sit in [-1, 1] should know a 5.1 source can hand it nearly double.
 
-Upmixing is deferred: it is a separate matrix in Cog too, and only matters once
-XPCog negotiates a device channel count above the source's.
+**Upmixing** is routing rather than a matrix: each input channel goes to the
+output slot carrying the same flag, silence where there is no source. Cog's
+`upmix()` is a ladder of per-layout cases, but every non-mono branch reduces to
+that routing plus one real rule — splitting a back centre into the back pair when
+the target has no BC slot — so the port keeps the rules and drops the ladder. It
+also replaces the positional copy `fitChannels` used to do, which sent a quad
+file's back pair to a 5.1 device's centre and subwoofer.
 
-**Still to do:** the fade out above, upmix, rubberband, signalsmith,
-FreeSurround.
+Two Cog bugs fixed rather than reproduced along the way:
+
+- Cog's 6.1 upmix reads the side pair at interleave indexes 4–5 and back centre
+  at 6, but 6.1 in flag order is FL FR FC LFE **BC SL SR** — back centre is bit 8,
+  the sides bits 9–10, in Cog's own `AudioChunk.h`. So upmixing 6.1 rotates three
+  channels: back centre plays from a side speaker. Routing by flag cannot express
+  the mistake.
+- The root of that is `channelIndexFromConfig`, which in Cog returns the index a
+  flag *would* occupy even when the config lacks the channel — asking a 7.1 layout
+  for its back centre answers 6, not "absent". XPCog's now returns `~0` as its
+  own comment always claimed, with a test pinning it, because the upmix branches
+  on exactly that.
+
+**Still to do:** rubberband, signalsmith, FreeSurround — and the reduction from
+one multichannel layout to a smaller one (7.1 into quad), which still uses the
+positional copy. Cog runs every reduction through its stereo matrix, which would
+throw away a real quad device's back speakers.
 
 *Verify:* the equaliser showed that one test is not enough, because each
 plausible test is blind to something. Three were needed, and the second and third
