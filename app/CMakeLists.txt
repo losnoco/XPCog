@@ -2,8 +2,11 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
-qt_add_executable(xpcog-app
-    src/main.cpp
+# Everything but main() lives in a library, so the models can be tested without
+# starting a window. A QAbstractItemModel is exactly the kind of code that
+# breaks silently -- a sort that scrambles rows looks like a redraw glitch --
+# and it is not reachable from xpcog-cli, which links no Qt.
+qt_add_library(xpcog-appcore STATIC
     src/ActionRegistry.cpp
     src/ActionRegistry.hpp
     src/PlaybackController.cpp
@@ -22,7 +25,20 @@ qt_add_executable(xpcog-app
     src/windows/PreferencesDialog.hpp
 )
 
-target_include_directories(xpcog-app PRIVATE src)
+target_include_directories(xpcog-appcore PUBLIC src)
+
+target_link_libraries(xpcog-appcore PUBLIC
+    xpcog-core
+    xpcog-codecs
+    xpcog-platform
+    Qt6::Widgets
+    PRIVATE XPCog::warnings)
+
+set_target_properties(xpcog-appcore PROPERTIES FOLDER app)
+
+qt_add_executable(xpcog-app
+    src/main.cpp
+)
 
 set_target_properties(xpcog-app PROPERTIES
     OUTPUT_NAME "XPCog"
@@ -35,10 +51,7 @@ set_target_properties(xpcog-app PROPERTIES
     FOLDER app)
 
 target_link_libraries(xpcog-app PRIVATE
-    xpcog-core
-    xpcog-codecs
-    xpcog-platform
-    Qt6::Widgets
+    xpcog-appcore
     XPCog::warnings)
 
 # ---------------------------------------------------------------------------

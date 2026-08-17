@@ -143,6 +143,11 @@ void MainWindow::buildUi() {
     view_->setColumnWidth(PlaylistModel::ColumnStatus, 28);
     view_->setColumnWidth(PlaylistModel::ColumnTrack, 44);
     view_->setColumnWidth(PlaylistModel::ColumnLength, 72);
+    // setSortingEnabled(true) sorts immediately by the header's current
+    // section, which defaults to 0 -- the status column, where every row ties.
+    // Clearing the indicator opens the window in playlist order and shows no
+    // sort arrow, which is the truth.
+    view_->horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
 
     tree_ = new FileTree(registry_, this);
 

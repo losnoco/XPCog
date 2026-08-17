@@ -350,11 +350,31 @@ bool PlaylistProxyModel::lessThan(const QModelIndex& left, const QModelIndex& ri
     // Numeric columns expose a SortRole value; text columns do not and fall
     // through to the collator, which is what makes "Track 9" precede "Track 10".
     if (a.isValid() && b.isValid()) {
-        return a.toDouble() < b.toDouble();
+        const double x = a.toDouble();
+        const double y = b.toDouble();
+        if (x != y) {
+            return x < y;
+        }
+    } else {
+        const int order =
+            collator_.compare(sourceModel()->data(left, Qt::DisplayRole).toString(),
+                              sourceModel()->data(right, Qt::DisplayRole).toString());
+        if (order != 0) {
+            return order < 0;
+        }
     }
 
-    return collator_.compare(sourceModel()->data(left, Qt::DisplayRole).toString(),
-                             sourceModel()->data(right, Qt::DisplayRole).toString()) < 0;
+    // Ties fall back to playlist order, which makes the comparison a total
+    // order rather than a partial one.
+    //
+    // Without this, sorting an album by artist -- ten rows, one artist, every
+    // comparison a tie -- leaves the relative order of those rows up to
+    // whatever the proxy's binary search happens to do. It looks stable until
+    // the filter changes, because a filter change re-inserts the surviving rows
+    // one at a time and each lands at an arbitrary point in the equal run. The
+    // symptom is that typing in the filter box and clearing it again shuffles
+    // the playlist.
+    return left.row() < right.row();
 }
 
 bool PlaylistProxyModel::filterAcceptsRow(int row, const QModelIndex& parent) const {
