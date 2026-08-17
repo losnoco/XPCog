@@ -47,6 +47,16 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja pkg-config autoconf automake libtool
 
+      # vcpkg's x64-windows triplet is MSVC-ABI, but MinGW's gcc sits earlier on the
+      # runner's PATH and the Ninja generator does not activate the MSVC environment
+      # by itself. Without this, CMake picks MinGW and the link fails on
+      # MSVC-mangled symbols in the vcpkg libraries.
+      - name: Activate MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
