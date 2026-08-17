@@ -40,6 +40,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <cmath>
 #include <vector>
 
 namespace xpcog::app {
@@ -77,6 +78,7 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
 
     playback_ = std::make_unique<PlaybackController>(registry_, playlist_, settings_, this);
     undo_     = new QUndoStack(this);
+    media_    = platform::MediaIntegration::create(this);
 
     buildUi();
     buildMenus();
@@ -179,6 +181,10 @@ void MainWindow::buildUi() {
     setCentralWidget(split);
 
     transport_ = addToolBar(tr("Transport"));
+    // saveState() identifies toolbars by objectName and warns without one --
+    // and, more to the point, silently fails to match them up again on
+    // restoreState(), so the transport's place in the layout is not restored.
+    transport_->setObjectName(QStringLiteral("transportToolBar"));
     transport_->setMovable(false);
     transport_->setFloatable(false);
     // Right-clicking the toolbar itself must not offer to hide it either.
@@ -358,6 +364,29 @@ void MainWindow::wireUp() {
     });
 
     connect(filter_, &QLineEdit::textChanged, proxy_, &PlaylistProxyModel::setFilterText);
+
+    // The media keys and the Now Playing widget drive the same commands the
+    // buttons do, rather than reaching into the engine separately.
+    connect(media_, &platform::MediaIntegration::playPauseRequested, this,
+            [this] { playback_->playPause(); });
+    connect(media_, &platform::MediaIntegration::playRequested, this, [this] {
+        if (!playback_->playing() || playback_->paused()) {
+            playback_->playPause();
+        }
+    });
+    connect(media_, &platform::MediaIntegration::pauseRequested, this, [this] {
+        if (playback_->playing() && !playback_->paused()) {
+            playback_->playPause();
+        }
+    });
+    connect(media_, &platform::MediaIntegration::stopRequested, this,
+            [this] { playback_->stop(); });
+    connect(media_, &platform::MediaIntegration::nextRequested, this,
+            [this] { playback_->next(); });
+    connect(media_, &platform::MediaIntegration::previousRequested, this,
+            [this] { playback_->previous(); });
+    connect(media_, &platform::MediaIntegration::seekRequested, this,
+            [this](double seconds) { playback_->seek(seconds); });
 
     connect(scanCancel_, &QToolButton::clicked, this, [this] {
         // Everything not yet started goes too: cancelling one folder of a
@@ -615,10 +644,50 @@ void MainWindow::onPositionChanged(double seconds, double duration) {
 
     clock_->setText(QStringLiteral("%1 / %2").arg(formatClock(seconds),
                                                   formatClock(duration)));
+
+    // Not every tick. The OS extrapolates from the rate it was given, so it is
+    // already counting correctly between updates; this only has to correct it
+    // after a seam or a seek. Also catches a seek jumping backwards.
+    constexpr double kResyncSeconds = 5.0;
+    if (mediaPosition_ < 0.0 || std::abs(seconds - mediaPosition_) >= kResyncSeconds) {
+        media_->setPlaybackState(playback_->playing(), playback_->paused(), seconds);
+        mediaPosition_ = seconds;
+    }
+}
+
+void MainWindow::publishNowPlaying(TrackId id) {
+    mediaPosition_ = -1.0;
+
+    const PlaylistEntry* entry = playlist_.find(id);
+    if (entry == nullptr) {
+        media_->clear();
+        return;
+    }
+
+    platform::NowPlayingInfo info;
+    info.title    = QString::fromStdString(entry->title());
+    info.artist   = QString::fromStdString(entry->artist);
+    info.album    = QString::fromStdString(entry->album);
+    info.duration = entry->duration();
+    info.position = playback_->position();
+
+    // Artwork is content-addressed in the library rather than carried on the
+    // entry, so this is the one place that can resolve it.
+    if (library_ && !entry->artHash.empty()) {
+        const std::vector<std::byte> data = library_->artwork(entry->artHash);
+        if (!data.empty()) {
+            info.artwork.loadFromData(
+                QByteArray(reinterpret_cast<const char*>(data.data()),
+                           static_cast<qsizetype>(data.size())));
+        }
+    }
+
+    media_->setNowPlaying(info);
 }
 
 void MainWindow::onCurrentTrackChanged(TrackId id) {
     model_->setCurrentTrack(id);
+    publishNowPlaying(id);
 
     const PlaylistEntry* entry = playlist_.find(id);
     if (entry == nullptr) {
@@ -651,6 +720,16 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
         command != nullptr) {
         command->setText((playing && !paused) ? tr("&Pause") : tr("&Play"));
     }
+
+    if (!playing) {
+        media_->clear();
+        mediaPosition_ = -1.0;
+        return;
+    }
+    // Always on a state change, and force the next tick to push as well: a
+    // pause has to reach the OS immediately, or its widget keeps counting.
+    media_->setPlaybackState(playing, paused, playback_->position());
+    mediaPosition_ = -1.0;
 }
 
 QString MainWindow::statusSummary() const {

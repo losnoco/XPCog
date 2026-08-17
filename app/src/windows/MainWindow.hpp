@@ -11,6 +11,7 @@
 #include "xpcog/core/library/Library.hpp"
 #include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/library/PluginCache.hpp"
+#include "xpcog/platform/MediaIntegration.hpp"
 
 #include <QList>
 #include <QMainWindow>
@@ -93,6 +94,10 @@ private:
     /// registry owns.
     void refreshUndoActions();
 
+    /// Tells the OS what is playing. Reads the artwork from the library, which
+    /// is why it lives here and not in PlaybackController.
+    void publishNowPlaying(TrackId id);
+
     [[nodiscard]] QString statusSummary() const;
 
     const PluginRegistry& registry_;
@@ -116,6 +121,14 @@ private:
     QLineEdit*  filter_   = nullptr;
     QLabel*     nowPlaying_ = nullptr;
     QLabel*     clock_    = nullptr;
+
+    /// The OS's Now Playing entry and media keys. Never null -- platforms
+    /// without an implementation get a base-class instance that does nothing.
+    platform::MediaIntegration* media_ = nullptr;
+    /// The position last pushed to the OS. It extrapolates from the rate, so
+    /// pushing every transport tick would be four rewrites a second for a
+    /// display that is already counting correctly on its own.
+    double mediaPosition_ = -1.0;
 
     QProgressBar* scanBar_    = nullptr;
     QToolButton*  scanCancel_ = nullptr;
