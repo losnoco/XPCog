@@ -12,6 +12,8 @@
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include "../TestSignal.hpp"
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -79,9 +81,9 @@ std::filesystem::path referenceWav() {
         for (int i = 0; i < kFrames; ++i) {
             const double t = static_cast<double>(i) / kSampleRate;
             samples.push_back(static_cast<std::int16_t>(
-                kLeftAmp * 32767.0 * std::sin(2.0 * M_PI * kLeftFreq * t)));
+                kLeftAmp * 32767.0 * std::sin(xpcog::test::kTwoPi * kLeftFreq * t)));
             samples.push_back(static_cast<std::int16_t>(
-                kRightAmp * 32767.0 * std::sin(2.0 * M_PI * kRightFreq * t)));
+                kRightAmp * 32767.0 * std::sin(xpcog::test::kTwoPi * kRightFreq * t)));
         }
 
         const auto dataBytes = static_cast<std::uint32_t>(samples.size() * 2);

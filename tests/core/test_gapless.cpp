@@ -12,6 +12,8 @@
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include "../TestSignal.hpp"
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -48,7 +50,7 @@ std::filesystem::path writeWav(const std::string& name, int startFrame, int fram
     samples.reserve(static_cast<std::size_t>(frames) * kChannels);
     for (int i = 0; i < frames; ++i) {
         const double t = static_cast<double>(startFrame + i) / kSampleRate;
-        const auto   v = static_cast<std::int16_t>(20000.0 * std::sin(2.0 * M_PI * freq * t));
+        const auto   v = static_cast<std::int16_t>(20000.0 * std::sin(xpcog::test::kTwoPi * freq * t));
         samples.push_back(v);
         samples.push_back(v);
     }
@@ -264,7 +266,7 @@ TEST_CASE("a track at a different sample rate still joins gaplessly", "[gapless]
         std::vector<std::int16_t> samples;
         for (int i = 0; i < 48000; ++i) {
             const auto v = static_cast<std::int16_t>(
-                20000.0 * std::sin(2.0 * M_PI * 440.0 * (i / 48000.0)));
+                20000.0 * std::sin(xpcog::test::kTwoPi * 440.0 * (i / 48000.0)));
             samples.push_back(v);
             samples.push_back(v);
         }

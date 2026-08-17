@@ -4,6 +4,8 @@
 #include "xpcog/core/audio/AudioConverter.hpp"
 #include "xpcog/core/audio/ReplayGain.hpp"
 
+#include "../TestSignal.hpp"
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -194,7 +196,7 @@ AudioChunk toneChunk(double rate, std::uint32_t channels, std::size_t frames,
 
     for (std::size_t f = 0; f < frames; ++f) {
         const auto v = static_cast<float>(
-            0.5 * std::sin(2.0 * M_PI * freq * (static_cast<double>(f) / rate)));
+            0.5 * std::sin(xpcog::test::kTwoPi * freq * (static_cast<double>(f) / rate)));
         for (std::uint32_t c = 0; c < channels; ++c) {
             samples[f * channels + c] = v;
         }
@@ -302,7 +304,7 @@ TEST_CASE("HDCD decoding is transparent for ordinary CD audio", "[converter][hdc
     auto* samples  = reinterpret_cast<std::int16_t*>(chunk.allocFrames(2048));
     for (std::size_t f = 0; f < 2048; ++f) {
         const auto v = static_cast<std::int16_t>(
-            20000.0 * std::sin(2.0 * M_PI * 440.0 * (static_cast<double>(f) / 44100.0)));
+            20000.0 * std::sin(xpcog::test::kTwoPi * 440.0 * (static_cast<double>(f) / 44100.0)));
         samples[f * 2]     = v;
         samples[f * 2 + 1] = static_cast<std::int16_t>(-v);
     }

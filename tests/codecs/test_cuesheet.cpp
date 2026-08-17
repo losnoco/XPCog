@@ -12,6 +12,8 @@
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include "../TestSignal.hpp"
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -69,7 +71,7 @@ std::filesystem::path albumFlac() {
             const double freq = 300.0 * (seg + 1);
             for (int i = 0; i < static_cast<int>(kRate) * kSegSecs; ++i) {
                 const auto v = static_cast<std::int16_t>(
-                    18000.0 * std::sin(2.0 * M_PI * freq * (i / kRate)));
+                    18000.0 * std::sin(xpcog::test::kTwoPi * freq * (i / kRate)));
                 samples.push_back(v);
                 samples.push_back(v);
             }
