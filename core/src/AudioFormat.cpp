@@ -19,7 +19,12 @@ constexpr std::array<std::uint32_t, 11> kChannelConfigTable = {
     kConfig6Point1,
     kConfig7Point1,
     0,
-    kConfig7Point1 | kChannelFrontCenterLeft | kChannelFrontCenterRight,
+    // Cast because these are two distinct enum types, and C++20 deprecates a
+    // bitwise operation between them. The values are Cog's 18-bit mask and must
+    // stay byte-identical, so widening the enums is not an option.
+    static_cast<std::uint32_t>(kConfig7Point1) |
+        static_cast<std::uint32_t>(kChannelFrontCenterLeft) |
+        static_cast<std::uint32_t>(kChannelFrontCenterRight),
 };
 
 }  // namespace

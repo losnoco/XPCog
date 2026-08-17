@@ -223,7 +223,7 @@ TEST_CASE("float32SampleCount accounts for channels", "[convert]") {
 
     AudioChunk chunk;
     chunk.setFormat(fmt);
-    chunk.allocFrames(100);
+    static_cast<void>(chunk.allocFrames(100));
 
     CHECK(float32SampleCount(chunk) == 200);
 }
