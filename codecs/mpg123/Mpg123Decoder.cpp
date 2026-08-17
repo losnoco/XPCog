@@ -8,7 +8,16 @@
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 
+// mpg123's default API is built on off_t and ssize_t. Neither is standard C++,
+// and MSVC does not define ssize_t at all, so the callbacks below would not even
+// parse there. MPG123_PORTABLE_API selects the int64_t API instead -- which the
+// header itself recommends ("When in doubt, use the explicit 64 bit functions
+// and avoid off_t in the API") and which is also correct for files over 2 GB on
+// Windows, where off_t is a 32-bit long.
+#define MPG123_PORTABLE_API
 #include <mpg123.h>
+
+#include <cstdint>
 
 #include <memory>
 #include <mutex>
@@ -61,11 +70,11 @@ public:
             }
         }
 
-        if (mpg123_replace_reader_handle(handle_, &Mpg123Decoder::readCb,
-                                         &Mpg123Decoder::seekCb, nullptr) != MPG123_OK) {
+        if (mpg123_reader64(handle_, &Mpg123Decoder::readCb, &Mpg123Decoder::seekCb,
+                            nullptr) != MPG123_OK) {
             return false;
         }
-        if (mpg123_open_handle(handle_, source_) != MPG123_OK) {
+        if (mpg123_open_handle64(handle_, source_) != MPG123_OK) {
             return false;
         }
         opened_ = true;
@@ -89,12 +98,12 @@ public:
 
         if (source_->seekable()) {
             mpg123_scan(handle_);
-            const off_t length = mpg123_length(handle_);
-            totalFrames_ = (length > 0) ? static_cast<std::int64_t>(length) : 0;
+            const std::int64_t length = mpg123_length64(handle_);
+            totalFrames_ = (length > 0) ? length : 0;
         }
 
-        mpg123_frameinfo info{};
-        if (mpg123_info(handle_, &info) == MPG123_OK) {
+        mpg123_frameinfo2 info{};
+        if (mpg123_info2(handle_, &info) == MPG123_OK) {
             bitrateKbps_ = info.bitrate;
         }
 
@@ -150,7 +159,7 @@ public:
         if (!opened_) {
             return -1;
         }
-        const off_t got = mpg123_seek(handle_, static_cast<off_t>(frame), SEEK_SET);
+        const std::int64_t got = mpg123_seek64(handle_, frame, SEEK_SET);
         if (got < 0) {
             return -1;
         }
@@ -189,18 +198,27 @@ public:
     }
 
 private:
-    static ssize_t readCb(void* client, void* buffer, size_t bytes) {
+    /// The int64_t reader reports the count through `done` and returns a status,
+    /// rather than returning the count, so a short read is not confused with an
+    /// error.
+    static int readCb(void* client, void* buffer, std::size_t bytes, std::size_t* done) {
         auto*              self = static_cast<ISource*>(client);
         const std::int64_t got  = self->read(buffer, static_cast<std::int64_t>(bytes));
-        return (got < 0) ? -1 : static_cast<ssize_t>(got);
+        if (got < 0) {
+            return -1;
+        }
+        if (done != nullptr) {
+            *done = static_cast<std::size_t>(got);
+        }
+        return 0;
     }
 
-    static off_t seekCb(void* client, off_t offset, int whence) {
+    static std::int64_t seekCb(void* client, std::int64_t offset, int whence) {
         auto* self = static_cast<ISource*>(client);
         if (!self->seekable() || !self->seek(offset, whence)) {
             return -1;
         }
-        return static_cast<off_t>(self->tell());
+        return self->tell();
     }
 
     mpg123_handle* handle_ = nullptr;
