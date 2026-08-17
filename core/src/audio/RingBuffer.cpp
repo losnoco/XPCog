@@ -47,8 +47,18 @@ std::size_t RingBuffer::write(const float* samples, std::size_t count) noexcept 
 }
 
 std::size_t RingBuffer::read(float* out, std::size_t count) noexcept {
-    const std::size_t readIndex  = readIndex_.load(std::memory_order_relaxed);
+    std::size_t       readIndex  = readIndex_.load(std::memory_order_relaxed);
     const std::size_t writeIndex = writeIndex_.load(std::memory_order_acquire);
+
+    // Honoured here rather than by the producer because the read index belongs
+    // to this thread. Three atomic operations and no branch that allocates or
+    // blocks, so the callback stays real-time safe.
+    if (flushRequested_.load(std::memory_order_acquire)) {
+        readIndex = writeIndex;
+        readIndex_.store(readIndex, std::memory_order_release);
+        flushRequested_.store(false, std::memory_order_release);
+        return 0;
+    }
 
     const std::size_t available = (writeIndex - readIndex) & mask_;
     const std::size_t take      = std::min(count, available);
@@ -81,6 +91,17 @@ std::size_t RingBuffer::availableToWrite() const noexcept {
 void RingBuffer::clear() noexcept {
     readIndex_.store(writeIndex_.load(std::memory_order_acquire),
                      std::memory_order_release);
+    // A stop must not leave a request outstanding, or the next play() would sit
+    // waiting for a consumer that has nothing left to acknowledge.
+    flushRequested_.store(false, std::memory_order_release);
+}
+
+void RingBuffer::requestFlush() noexcept {
+    flushRequested_.store(true, std::memory_order_release);
+}
+
+bool RingBuffer::flushPending() const noexcept {
+    return flushRequested_.load(std::memory_order_acquire);
 }
 
 }  // namespace xpcog

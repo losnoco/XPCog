@@ -86,6 +86,14 @@ public:
     void pause();
     void resume();
 
+    /// Jumps to `seconds` within the track that is currently audible.
+    ///
+    /// The request is handed to the feeder thread rather than performed here:
+    /// the decoder belongs to that thread, and seeking it from the caller's
+    /// would race with the decode in progress. Returns false when nothing is
+    /// playing or the track cannot seek.
+    bool seek(double seconds);
+
     /// Blocks until playback finishes on its own. For the CLI and tests.
     void waitUntilFinished();
 
@@ -112,6 +120,8 @@ private:
     };
 
     void feederLoop();
+    /// Applies a pending seek. Feeder thread only.
+    void performSeek(std::int64_t frame);
     /// Opens `url`, returning false if nothing could decode it.
     bool openTrack(const Url& url);
     void closeTrack();
@@ -146,6 +156,17 @@ private:
 
     /// Total frames handed to the ring. Feeder-only.
     std::uint64_t framesWritten_ = 0;
+
+    /// Frame the feeder should jump to, or -1 for none. Written by any thread,
+    /// consumed by the feeder.
+    std::atomic<std::int64_t> pendingSeek_{-1};
+
+    /// Frames the device had played when the seek landed, and where in the track
+    /// it landed. Together these re-base trackPositionSeconds(), which otherwise
+    /// keeps counting from the start of the track and would report the old
+    /// position after a jump.
+    std::uint64_t seekPlayedBase_ = 0;
+    std::uint64_t seekTrackBase_  = 0;
 
     mutable std::mutex seamMutex_;
     std::deque<Seam>   pendingSeams_;

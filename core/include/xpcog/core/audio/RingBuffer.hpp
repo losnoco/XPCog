@@ -46,6 +46,22 @@ public:
     /// (during a device reconfigure).
     void clear() noexcept;
 
+    /// Producer side. Asks the consumer to drop everything currently buffered,
+    /// which is what a seek needs: without it, up to a ring's worth of audio
+    /// from the old position keeps playing after the jump.
+    ///
+    /// The producer cannot do the dropping itself -- the read index belongs to
+    /// the consumer, and moving it from another thread is exactly the race this
+    /// class exists to avoid. So this only raises a flag, and the producer must
+    /// then wait for flushPending() to clear before writing again. Writing
+    /// sooner would push post-seek audio into the ring ahead of the discard,
+    /// and the discard would throw it away too.
+    void requestFlush() noexcept;
+
+    /// True between requestFlush() and the consumer honouring it. Also false
+    /// after clear(), so a stop does not strand a pending request.
+    [[nodiscard]] bool flushPending() const noexcept;
+
 private:
     const std::size_t  capacity_;  ///< power of two, one slot reserved
     const std::size_t  mask_;
@@ -56,6 +72,10 @@ private:
     // audio path.
     alignas(64) std::atomic<std::size_t> writeIndex_{0};
     alignas(64) std::atomic<std::size_t> readIndex_{0};
+
+    /// Set by the producer, cleared by the consumer. On its own cache line for
+    /// the same reason as the indices.
+    alignas(64) std::atomic<bool> flushRequested_{false};
 };
 
 }  // namespace xpcog

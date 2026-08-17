@@ -10,6 +10,7 @@ add_executable(xpcog-tests
     core/test_plugin_registry.cpp
     core/test_value_types.cpp
     core/test_scanner.cpp
+    core/test_seek.cpp
     core/test_version.cpp
     codecs/test_conformance.cpp
     codecs/test_containers.cpp

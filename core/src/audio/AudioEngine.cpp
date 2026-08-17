@@ -89,6 +89,8 @@ bool AudioEngine::play(const Url& url) {
     {
         std::lock_guard lock(seamMutex_);
         pendingSeams_.clear();
+        seekPlayedBase_ = 0;
+        seekTrackBase_  = 0;
         audibleUrl_        = url;
         audibleTrackStart_ = 0;
     }
@@ -180,6 +182,21 @@ void AudioEngine::feederLoop() {
     while (running_.load(std::memory_order_acquire)) {
         publishSeams();
 
+        if (const std::int64_t requested =
+                pendingSeek_.exchange(-1, std::memory_order_acq_rel);
+            requested >= 0) {
+            performSeek(requested);
+        }
+
+        // Nothing may be written until the consumer has dropped the pre-seek
+        // audio, or the discard would take the post-seek audio with it. If the
+        // device is not running -- paused, or stopped for a reconfigure -- this
+        // simply waits, and the first callback after it resumes does the drop.
+        if (ring_.flushPending()) {
+            std::this_thread::sleep_for(kFeederBackoff);
+            continue;
+        }
+
         if (!track_ || !track_->decoder->readAudio(chunk)) {
             // End of the current decoder. Ask for the next track *now*, while the
             // audio already in the ring is still playing out -- this is what makes
@@ -270,6 +287,54 @@ void AudioEngine::feederLoop() {
     finishedCv_.notify_all();
 }
 
+void AudioEngine::performSeek(std::int64_t frame) {
+    if (!track_) {
+        return;
+    }
+
+    const std::int64_t reached = track_->decoder->seek(frame);
+    if (reached < 0) {
+        return;  // the decoder declined; stay where we are
+    }
+
+    // The resampler and the HDCD decoder both carry state from the old position.
+    // Keeping it would bleed a few milliseconds of the previous location into
+    // the new one, which is audible as a click at exactly the moment a user is
+    // listening for the jump to land.
+    converter_.reset();
+    converted_.clear();
+
+    ring_.requestFlush();
+
+    // Everything already handed to the device is about to be discarded, so the
+    // position has to be measured from here rather than from the start of the
+    // track.
+    const std::uint64_t inFlight = ring_.availableToRead();
+    {
+        // Under seamMutex_ because trackPositionSeconds() reads these from
+        // whichever thread is driving the UI, and the feeder writes them.
+        std::lock_guard lock(seamMutex_);
+        seekPlayedBase_ = output_.framesPlayed() + inFlight;
+        seekTrackBase_  = static_cast<std::uint64_t>(reached);
+        framesWritten_  = seekPlayedBase_;
+    }
+}
+
+bool AudioEngine::seek(double seconds) {
+    if (status_.load(std::memory_order_relaxed) == PlaybackStatus::Stopped) {
+        return false;
+    }
+    const double rate = format_.sampleRate;
+    if (rate <= 0.0) {
+        return false;
+    }
+
+    const double clamped = (seconds > 0.0) ? seconds : 0.0;
+    pendingSeek_.store(static_cast<std::int64_t>(clamped * rate),
+                       std::memory_order_release);
+    return true;
+}
+
 void AudioEngine::publishSeams() {
     const std::uint64_t played = output_.framesPlayed();
 
@@ -285,6 +350,10 @@ void AudioEngine::publishSeams() {
             audibleUrl_        = seam.url;
             audibleTrackStart_ = seam.framePosition;
             became             = seam.url;
+            // A new track starts at zero, so any seek base from the previous one
+            // no longer applies.
+            seekPlayedBase_ = 0;
+            seekTrackBase_  = 0;
         }
         if (delegate_ != nullptr) {
             delegate_->trackBegan(became);
@@ -340,12 +409,24 @@ double AudioEngine::trackPositionSeconds() const {
     if (rate <= 0.0) {
         return 0.0;
     }
-    std::uint64_t start = 0;
+    std::uint64_t start     = 0;
+    std::uint64_t seekPlayed = 0;
+    std::uint64_t seekTrack  = 0;
     {
         std::lock_guard lock(seamMutex_);
-        start = audibleTrackStart_;
+        start      = audibleTrackStart_;
+        seekPlayed = seekPlayedBase_;
+        seekTrack  = seekTrackBase_;
     }
+
     const std::uint64_t played = output_.framesPlayed();
+
+    // After a seek the track no longer began where the device's frame counter
+    // says it did, so the offset is measured from the seek instead. A later
+    // track change moves audibleTrackStart_ past the seek base and takes over.
+    if (seekPlayed > start && played >= seekPlayed) {
+        return static_cast<double>(seekTrack + (played - seekPlayed)) / rate;
+    }
     return (played > start) ? static_cast<double>(played - start) / rate : 0.0;
 }
 
