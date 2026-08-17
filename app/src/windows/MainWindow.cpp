@@ -1,6 +1,7 @@
 #include "MainWindow.hpp"
 
 #include "ActionRegistry.hpp"
+#include "windows/AboutDialog.hpp"
 #include "FileTree.hpp"
 #include "PlaybackController.hpp"
 #include "PlaylistModel.hpp"
@@ -18,6 +19,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMimeData>
 #include <QMessageBox>
@@ -95,6 +97,23 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
         !root.isEmpty()) {
         tree_->setRootPath(root);
     }
+
+    // After restoreState(), which will happily bring back a hidden toolbar
+    // saved before it became unhideable.
+    transport_->setVisible(true);
+}
+
+QMenu* MainWindow::createPopupMenu() {
+    QMenu* menu = QMainWindow::createPopupMenu();
+    if (menu != nullptr) {
+        menu->removeAction(transport_->toggleViewAction());
+        // Nothing left to offer once the transport is out, until docks arrive.
+        if (menu->isEmpty()) {
+            delete menu;
+            return nullptr;
+        }
+    }
+    return menu;
 }
 
 MainWindow::~MainWindow() = default;
@@ -137,8 +156,15 @@ void MainWindow::buildUi() {
     split->setObjectName(QStringLiteral("mainSplitter"));
     setCentralWidget(split);
 
-    auto* transport = addToolBar(tr("Transport"));
-    transport->setMovable(false);
+    transport_ = addToolBar(tr("Transport"));
+    transport_->setMovable(false);
+    transport_->setFloatable(false);
+    // Right-clicking the toolbar itself must not offer to hide it either.
+    transport_->setContextMenuPolicy(Qt::PreventContextMenu);
+    // ...and it must not appear as a hideable item in any menu built from
+    // toggleViewAction(), which is the other route to the same dead end.
+    transport_->toggleViewAction()->setVisible(false);
+    auto* transport = transport_;
 
     seekBar_ = new QSlider(Qt::Horizontal, transport);
     seekBar_->setEnabled(false);
@@ -176,7 +202,7 @@ void MainWindow::buildMenus() {
     actions_->populateMenuBar(menuBar());
 
     // The transport buttons go at the head of the toolbar built above.
-    if (auto* transport = findChild<QToolBar*>(); transport != nullptr) {
+    if (auto* transport = transport_; transport != nullptr) {
         QAction* first = transport->actions().isEmpty() ? nullptr
                                                         : transport->actions().front();
         for (const ActionId id : {ActionId::PlaybackPrevious, ActionId::PlaybackPlayPause,
@@ -209,6 +235,11 @@ void MainWindow::wireUp() {
     on(ActionId::FileOpenFolder, [this] { openFolder(); });
     on(ActionId::FileSavePlaylist, [this] { savePlaylistAs(); });
     on(ActionId::FilePreferences, [this] { showPreferences(); });
+    on(ActionId::HelpAbout, [this] {
+        AboutDialog dialog{registry_, this};
+        dialog.exec();
+    });
+    on(ActionId::HelpAboutQt, [] { QApplication::aboutQt(); });
     on(ActionId::FileQuit, [] { QApplication::quit(); });
 
     if (QAction* command = actions_->action(ActionId::ViewFileTree); command != nullptr) {

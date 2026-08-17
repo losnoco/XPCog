@@ -43,6 +43,9 @@ constexpr MenuItem kMenuLayout[] = {
     {nullptr, ActionId::OrderShuffleOff, true},
     {nullptr, ActionId::OrderShuffleAlbums},
     {nullptr, ActionId::OrderShuffleAll},
+
+    {QT_TRANSLATE_NOOP("ActionRegistry", "&Help"), ActionId::HelpAbout},
+    {nullptr, ActionId::HelpAboutQt},
 };
 
 constexpr ActionId kToolBarLayout[] = {
@@ -90,6 +93,14 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
         item->setCheckable(true);
         repeat->addAction(item);
     }
+
+    // Menu roles rather than relying on Qt's text heuristics: on macOS both of
+    // these belong in the application menu, and the heuristic only matches
+    // English text. Naming the role keeps them there once translated.
+    QAction* about = add(ActionId::HelpAbout, tr("&About XPCog"));
+    about->setMenuRole(QAction::AboutRole);
+    QAction* aboutQt = add(ActionId::HelpAboutQt, tr("About &Qt"));
+    aboutQt->setMenuRole(QAction::AboutQtRole);
 
     auto* shuffle = new QActionGroup(this);
     for (const auto& [id, label] :

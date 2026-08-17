@@ -19,6 +19,8 @@
 #include <memory>
 
 class QLabel;
+class QMenu;
+class QToolBar;
 class QLineEdit;
 class QSlider;
 class QTableView;
@@ -45,6 +47,13 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+
+    /// The menu QMainWindow offers on a right-click, listing toolbars and docks
+    /// so they can be hidden. The transport is removed from it: hiding the only
+    /// play button leaves a window with no way to start playback and no obvious
+    /// way back, since the menu that would restore it is the one you have to
+    /// find by right-clicking exactly the right empty strip.
+    [[nodiscard]] QMenu* createPopupMenu() override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
 
@@ -82,6 +91,7 @@ private:
     PlaylistModel*      model_   = nullptr;
     PlaylistProxyModel* proxy_   = nullptr;
 
+    QToolBar*   transport_ = nullptr;
     FileTree*   tree_     = nullptr;
     QTableView* view_     = nullptr;
     QSlider*    seekBar_  = nullptr;

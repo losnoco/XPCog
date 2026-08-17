@@ -46,6 +46,9 @@ enum class ActionId {
     OrderShuffleAll,
 
     ViewFileTree,
+
+    HelpAbout,
+    HelpAboutQt,
 };
 
 class ActionRegistry : public QObject {
