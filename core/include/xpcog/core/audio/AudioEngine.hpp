@@ -168,6 +168,11 @@ private:
     std::uint64_t seekPlayedBase_ = 0;
     std::uint64_t seekTrackBase_  = 0;
 
+    /// Set by performSeek(), consumed once the flush has been acknowledged.
+    /// Feeder-thread only.
+    std::uint64_t pendingSeekTrack_ = 0;
+    bool          seekBasePending_  = false;
+
     mutable std::mutex seamMutex_;
     std::deque<Seam>   pendingSeams_;
     Url                audibleUrl_;

@@ -197,6 +197,16 @@ void AudioEngine::feederLoop() {
             continue;
         }
 
+        if (seekBasePending_) {
+            // The stale audio is gone, so what the device reports having played
+            // is now the true starting point for the new position.
+            std::lock_guard lock(seamMutex_);
+            seekPlayedBase_  = output_.framesPlayed();
+            seekTrackBase_   = pendingSeekTrack_;
+            framesWritten_   = seekPlayedBase_;
+            seekBasePending_ = false;
+        }
+
         if (!track_ || !track_->decoder->readAudio(chunk)) {
             // End of the current decoder. Ask for the next track *now*, while the
             // audio already in the ring is still playing out -- this is what makes
@@ -306,18 +316,15 @@ void AudioEngine::performSeek(std::int64_t frame) {
 
     ring_.requestFlush();
 
-    // Everything already handed to the device is about to be discarded, so the
-    // position has to be measured from here rather than from the start of the
-    // track.
-    const std::uint64_t inFlight = ring_.availableToRead();
-    {
-        // Under seamMutex_ because trackPositionSeconds() reads these from
-        // whichever thread is driving the UI, and the feeder writes them.
-        std::lock_guard lock(seamMutex_);
-        seekPlayedBase_ = output_.framesPlayed() + inFlight;
-        seekTrackBase_  = static_cast<std::uint64_t>(reached);
-        framesWritten_  = seekPlayedBase_;
-    }
+    // The base cannot be taken here. Everything still in the ring is about to be
+    // *discarded*, so those frames are never delivered and framesPlayed() will
+    // never account for them -- adding them to the base put it up to a ring
+    // ahead of reality, and with a three-second ring the clock reported the old
+    // position for three seconds after every seek. It is taken below instead,
+    // once the consumer has acknowledged the flush and framesPlayed() is
+    // truthful again.
+    pendingSeekTrack_ = static_cast<std::uint64_t>(reached);
+    seekBasePending_  = true;
 }
 
 bool AudioEngine::seek(double seconds) {

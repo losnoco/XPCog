@@ -29,6 +29,7 @@ namespace xpcog::app {
 
 class ActionRegistry;
 class FileTree;
+class SeekSlider;
 class PlaybackController;
 class PlaylistModel;
 class PlaylistProxyModel;
@@ -94,15 +95,15 @@ private:
     QToolBar*   transport_ = nullptr;
     FileTree*   tree_     = nullptr;
     QTableView* view_     = nullptr;
-    QSlider*    seekBar_  = nullptr;
+    SeekSlider* seekBar_  = nullptr;
     QSlider*    volume_   = nullptr;
     QLineEdit*  filter_   = nullptr;
     QLabel*     nowPlaying_ = nullptr;
     QLabel*     clock_    = nullptr;
 
-    /// True while the user is dragging the seek handle. Position updates are
-    /// ignored then, or the handle fights the cursor.
-    bool scrubbing_ = false;
+    /// The duration of the audible track, remembered so the clock can show the
+    /// scrubbed time against it without asking the controller mid-drag.
+    double duration_ = 0.0;
 };
 
 }  // namespace xpcog::app

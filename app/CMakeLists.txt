@@ -10,6 +10,8 @@ qt_add_executable(xpcog-app
     src/PlaybackController.hpp
     src/FileTree.cpp
     src/FileTree.hpp
+    src/SeekSlider.cpp
+    src/SeekSlider.hpp
     src/PlaylistModel.cpp
     src/PlaylistModel.hpp
     src/windows/AboutDialog.cpp

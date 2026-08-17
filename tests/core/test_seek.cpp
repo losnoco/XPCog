@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -211,6 +212,53 @@ TEST_CASE("seeking skips audio and lands cleanly", "[seek]") {
     // not.
     const std::size_t afterSeek = playAndMaybeSeek(3.0);
     REQUIRE(afterSeek < whole / 2);
+}
+
+TEST_CASE("the position reports from the new place after a seek", "[seek]") {
+    // What the seek bar reads back. The base for this must not include the
+    // frames the flush discards: they are never delivered, so framesPlayed()
+    // never accounts for them, and a base that counts them sits up to a whole
+    // ring ahead of reality. Against a real device that means the clock keeps
+    // counting from the *old* position for as long as the ring is deep --
+    // about three seconds, in the application.
+    //
+    // The offline output drains as fast as it can rather than at 1x, so it
+    // cannot reproduce that stall: the wall-clock symptom needs a real device.
+    // This checks the part that is observable here -- that the position
+    // arrives at the sought location rather than somewhere else.
+    constexpr int kFrames = static_cast<int>(kSampleRate) * 8;
+
+    const auto file = makeFlac("position", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer ring{static_cast<std::size_t>(kSampleRate * 0.5) * kChannels};
+    auto       output = makeOfflineOutput(ring);
+
+    auto        store = makeMemorySettingsStore();
+    Settings    settings{*store};
+    AudioEngine engine{registry(), *output, ring, settings};
+
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+    for (int i = 0; i < 200 && engine.trackPositionSeconds() < 0.5; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    REQUIRE(engine.trackPositionSeconds() >= 0.5);
+
+    REQUIRE(engine.seek(6.0));
+
+    bool reachedTarget = false;
+    for (int i = 0; i < 400; ++i) {
+        if (engine.trackPositionSeconds() >= 6.0) {
+            reachedTarget = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    engine.stop();
+
+    REQUIRE(reachedTarget);
 }
 
 TEST_CASE("seeking past the end does not hang", "[seek]") {

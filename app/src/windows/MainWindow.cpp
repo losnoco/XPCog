@@ -5,6 +5,7 @@
 #include "FileTree.hpp"
 #include "PlaybackController.hpp"
 #include "PlaylistModel.hpp"
+#include "SeekSlider.hpp"
 #include "PreferencesDialog.hpp"
 
 #include "xpcog/core/Version.hpp"
@@ -166,7 +167,7 @@ void MainWindow::buildUi() {
     transport_->toggleViewAction()->setVisible(false);
     auto* transport = transport_;
 
-    seekBar_ = new QSlider(Qt::Horizontal, transport);
+    seekBar_ = new SeekSlider(transport);
     seekBar_->setEnabled(false);
     seekBar_->setMinimumWidth(220);
 
@@ -289,12 +290,17 @@ void MainWindow::wireUp() {
                 statusBar()->showMessage(reason, 8000);
             });
 
-    // Scrubbing: ignore position updates while the handle is held, or it fights
-    // the cursor, and only seek on release rather than on every pixel.
-    connect(seekBar_, &QSlider::sliderPressed, this, [this] { scrubbing_ = true; });
-    connect(seekBar_, &QSlider::sliderReleased, this, [this] {
-        scrubbing_ = false;
-        playback_->seek(static_cast<double>(seekBar_->value()) / kSeekScale);
+    // Seek on release rather than on every pixel: seeking per mouse-move would
+    // ask the decoder to jump dozens of times across one drag.
+    connect(seekBar_, &SeekSlider::seekRequested, this, [this](double seconds) {
+        playback_->seek(seconds / kSeekScale);
+    });
+    // The clock follows the handle during the drag, so there is something to
+    // aim with before letting go.
+    connect(seekBar_, &SeekSlider::scrubbed, this, [this](double seconds) {
+        clock_->setText(QStringLiteral("%1 / %2")
+                            .arg(formatClock(seconds / kSeekScale),
+                                 formatClock(duration_)));
     });
 
     connect(volume_, &QSlider::valueChanged, this, [this](int value) {
@@ -476,10 +482,20 @@ void MainWindow::onRowActivated(const QModelIndex& index) {
 // --- reacting to playback -----------------------------------------------
 
 void MainWindow::onPositionChanged(double seconds, double duration) {
-    if (!scrubbing_) {
-        seekBar_->setRange(0, static_cast<int>(duration * kSeekScale));
-        seekBar_->setValue(static_cast<int>(seconds * kSeekScale));
+    duration_ = duration;
+
+    if (seekBar_->scrubbing()) {
+        return;  // the handle belongs to the cursor until it is let go
     }
+
+    // Only when it actually changes: setRange on a slider whose handle the user
+    // is about to grab causes a visible twitch, and it fires valueChanged.
+    const int span = static_cast<int>(duration * kSeekScale);
+    if (seekBar_->maximum() != span) {
+        seekBar_->setRange(0, span);
+    }
+    seekBar_->setValue(static_cast<int>(seconds * kSeekScale));
+
     clock_->setText(QStringLiteral("%1 / %2").arg(formatClock(seconds),
                                                   formatClock(duration)));
 }
