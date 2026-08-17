@@ -226,13 +226,30 @@ exercises core headlessly in CI on all three platforms.
 - **Architecture** — CI greps `core/` for `#include <Q`; `xpcog-cli` failing to link
   *is* the Qt-free test.
 
-### Two things that bite
+### Three things that bite
 
 **Tests that build fixtures skip silently when their encoder is missing.** Sixteen
 tests shell out to `flac`, `oggenc`, `opusenc`, `lame`, `wavpack` or `ffmpeg`. A skip
 is not a failure, so CI reported "100% tests passed out of 178" for months while
 gapless, seeking, cue spans and tag reading went unrun on every platform. CI now
 installs the encoders. **Check the skip count, not just the pass rate.**
+
+**Tests share a temp directory across separate processes.** `catch_discover_tests`
+runs every Catch2 case in its own process and ctest orders them *by name*, so a test
+that reads a fixture another test writes is an ordering dependency — and one that
+never shows locally, because the file survives in `$TMPDIR` from the previous run.
+`album.cue` was written by "cue tracks decode the correct span" and read by three
+tests, one of which sorts before it. It passed everywhere it had ever run and failed
+the first time CI stopped skipping it.
+
+Build every fixture through a lazily-initialised helper (`albumFlac()`, `albumCue()`)
+so each process creates what it needs. To check for this, delete the fixture
+directories and run the suite:
+
+```sh
+rm -rf "${TMPDIR:-/tmp}"/xpcog-*    # note: $TMPDIR on macOS, not /tmp
+ctest --preset macos-debug
+```
 
 **`OfflineOutput` drains at maximum speed.** Any bug whose symptom is measured in
 wall-clock seconds — a stall, a delayed position update, a buffer that takes time to
