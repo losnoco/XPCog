@@ -1,6 +1,7 @@
 #include "xpcog/core/Version.hpp"
 
 #include <string>
+#include <string_view>
 
 namespace xpcog {
 

@@ -1,7 +1,9 @@
 #include "FlacDecoder.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace xpcog {

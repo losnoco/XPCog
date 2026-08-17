@@ -1,6 +1,7 @@
 #include "xpcog/core/NaturalOrder.hpp"
 
 #include <cctype>
+#include <cstddef>
 
 namespace xpcog {
 namespace {

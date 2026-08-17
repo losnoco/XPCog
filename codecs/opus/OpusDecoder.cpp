@@ -10,6 +10,7 @@
 
 #include <opus/opusfile.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <string_view>

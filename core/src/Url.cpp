@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
+#include <system_error>
 
 namespace xpcog {
 namespace {

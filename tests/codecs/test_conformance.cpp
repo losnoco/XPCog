@@ -169,7 +169,7 @@ std::vector<ChannelStats> analyse(const std::vector<float>& interleaved,
         float         previous   = 0.0F;
         for (std::size_t i = begin; i < end; ++i) {
             const float v = interleaved[i * channels + c];
-            sumSquares += static_cast<double>(v) * v;
+            sumSquares += static_cast<double>(v) * static_cast<double>(v);
             if (i > begin && ((previous < 0.0F) != (v < 0.0F))) {
                 ++crossings;
             }
@@ -314,7 +314,8 @@ TEST_CASE("seeking lands on the right audio, not just the right frame",
 
         double worst = 0.0;
         for (std::size_t i = 0; i < compare; ++i) {
-            worst = std::max(worst, std::abs(static_cast<double>(afterSeek[i]) - expected[i]));
+            worst = std::max(worst, std::abs(static_cast<double>(afterSeek[i]) -
+                                             static_cast<double>(expected[i])));
         }
 
         if (codec.lossless) {

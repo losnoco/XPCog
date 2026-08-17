@@ -2,8 +2,10 @@
 
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <map>
 #include <mutex>
+#include <optional>
 
 namespace xpcog {
 namespace {

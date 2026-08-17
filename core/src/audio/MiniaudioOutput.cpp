@@ -13,6 +13,7 @@
 #include <atomic>
 #include <cstring>
 #include <mutex>
+#include <utility>
 
 namespace xpcog {
 namespace {

@@ -17,8 +17,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -214,7 +216,8 @@ TEST_CASE("gapless seam has no audible discontinuity", "[gapless]") {
     for (std::size_t i = seam - 20; i < seam + 20; i += kChannels) {
         maxStepNearSeam =
             std::max(maxStepNearSeam,
-                     std::abs(static_cast<double>(played[i]) - played[i - kChannels]));
+                     std::abs(static_cast<double>(played[i]) -
+                                       static_cast<double>(played[i - kChannels])));
     }
 
     // One sample of 440 Hz at 44.1 kHz advances at most ~0.0627 of full scale;

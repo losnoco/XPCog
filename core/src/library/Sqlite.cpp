@@ -1,5 +1,7 @@
 #include "Sqlite.hpp"
 
+#include <cstddef>
+
 namespace xpcog::sql {
 
 // --- Database -----------------------------------------------------------
@@ -51,7 +53,7 @@ std::string Database::lastError() const {
 
 // --- Statement ----------------------------------------------------------
 
-Statement::Statement(Database& database, std::string_view sql) : database_(&database) {
+Statement::Statement(Database& database, std::string_view sql) {
     if (!database.isOpen()) {
         return;
     }

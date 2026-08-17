@@ -12,6 +12,7 @@
 
 #include <sqlite3.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <span>
@@ -92,7 +93,6 @@ public:
     [[nodiscard]] std::vector<std::byte> columnBlob(int column) const;
 
 private:
-    Database*     database_  = nullptr;
     sqlite3_stmt* statement_ = nullptr;
 };
 
