@@ -34,6 +34,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Two groups here. The build tools proper, and then the command-line
+      # *encoders*, which the test suite shells out to for its fixtures.
+      #
+      # Without the encoders those tests skip, and a skip is not a failure: the
+      # run stays green while the gapless seam, seeking, cue spans and tag
+      # reading go untested. Sixteen tests were skipping on every platform.
+      #
       # nasm is for ffmpeg's assembly. vcpkg downloads it itself on Windows but
       # expects the package manager to supply it everywhere else, so without it
       # the ffmpeg port fails during configure rather than during the build.
@@ -44,12 +51,22 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf automake libtool nasm \
             libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev \
-            libxcb-cursor-dev libvulkan-dev
+            libxcb-cursor-dev libvulkan-dev \
+            flac vorbis-tools opus-tools lame wavpack ffmpeg
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
-        run: brew install ninja pkg-config autoconf automake libtool nasm
+        run: |
+          brew install ninja pkg-config autoconf automake libtool nasm
+          brew install flac vorbis-tools opus-tools lame wavpack ffmpeg
 
+      # Windows gets no encoders, so the sixteen fixture-building tests still
+      # skip there. Chocolatey has no dependable packages for flac, lame and
+      # friends, and the decoders they exercise are not platform-specific --
+      # what Windows is here to catch is compiling, linking and the paths, and
+      # it does that. Said out loud because a green Windows job would otherwise
+      # look like it covers the audio path.
+      #
       # vcpkg's x64-windows triplet is MSVC-ABI, but MinGW's gcc sits earlier on the
       # runner's PATH and the Ninja generator does not activate the MSVC environment
       # by itself. Without this, CMake picks MinGW and the link fails on
@@ -134,7 +151,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config autoconf automake libtool nasm
+            ninja-build pkg-config autoconf automake libtool nasm \
+            flac vorbis-tools opus-tools lame wavpack ffmpeg
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
