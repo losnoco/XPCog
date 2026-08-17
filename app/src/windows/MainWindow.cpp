@@ -2,6 +2,7 @@
 
 #include "ActionRegistry.hpp"
 #include "windows/AboutDialog.hpp"
+#include "windows/MiniWindow.hpp"
 #include "FileTree.hpp"
 #include "PlaybackController.hpp"
 #include "PlaylistCommands.hpp"
@@ -16,6 +17,7 @@
 #include "xpcog/core/library/PlaylistFile.hpp"
 #include "xpcog/core/library/Scanner.hpp"
 #include "xpcog/platform/QSettingsStore.hpp"
+#include "xpcog/platform/TaskbarIntegration.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -91,6 +93,12 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     // uses and they have to exist first.
     presence_ = new StatusPresence(*actions_, this, this);
 
+    // winId() realises the native window, which is what an overlay icon needs a
+    // handle to. Calls made before the window is shown are harmless -- the taskbar
+    // has no button to decorate yet -- and everything that drives this happens on a
+    // playback or scan change, which is necessarily later.
+    taskbar_ = platform::TaskbarIntegration::create(winId(), this);
+
     if (library_ && library_->loadPlaylist(playlist_)) {
         statusBar()->showMessage(statusSummary());
     }
@@ -120,6 +128,17 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     // After restoreState(), which will happily bring back a hidden toolbar
     // saved before it became unhideable.
     transport_->setVisible(true);
+
+    // Cog restores mini mode at launch from the same key. Through the action, so
+    // the menu tick agrees with the window that is actually on screen -- and only
+    // when it is on, because toggling a checkable action to the state it already
+    // holds emits nothing and would leave the mini window unbuilt.
+    if (settings_.MiniMode()) {
+        if (QAction* command = actions_->action(ActionId::ViewMiniPlayer);
+            command != nullptr) {
+            command->setChecked(true);
+        }
+    }
 }
 
 QMenu* MainWindow::createPopupMenu() {
@@ -316,6 +335,10 @@ void MainWindow::wireUp() {
     // Both directions, because a dock can also be closed by its own title bar and
     // the menu item has to follow. No loop: setChecked only emits when the state
     // actually changes.
+    if (QAction* command = actions_->action(ActionId::ViewMiniPlayer); command != nullptr) {
+        connect(command, &QAction::toggled, this, [this](bool on) { setMiniMode(on); });
+    }
+
     if (QAction* command = actions_->action(ActionId::ViewSpectrum); command != nullptr) {
         connect(command, &QAction::toggled, spectrumDock_, &QWidget::setVisible);
         connect(spectrumDock_, &QDockWidget::visibilityChanged, command,
@@ -613,6 +636,15 @@ void MainWindow::pumpScanQueue() {
         // while the expansion pass is still counting.
         scanBar_->setMaximum(total);
         scanBar_->setValue(done);
+
+        // And the same number on the taskbar button, which is what Cog puts on its
+        // Dock tile -- its progress bar tracks PlaylistLoader, not the seek
+        // position. Left alone while the total is still zero: a bar sitting at zero
+        // reads as stalled, where no bar reads as "not started", which is the truth.
+        if (total > 0) {
+            taskbar_->setProgress(static_cast<double>(done) /
+                                  static_cast<double>(total));
+        }
     });
 
     const int atRow = request.atRow;
@@ -625,6 +657,7 @@ void MainWindow::pumpScanQueue() {
 
                 scanBar_->hide();
                 scanCancel_->hide();
+                taskbar_->clearProgress();
                 addScannedEntries(entries, atRow, cancelled);
                 pumpScanQueue();
             });
@@ -695,6 +728,13 @@ void MainWindow::onRowActivated(const QModelIndex& index) {
 void MainWindow::onPositionChanged(double seconds, double duration) {
     duration_ = duration;
 
+    // Before the early return below: that one is about *this* window's slider
+    // being dragged, which says nothing about the mini player's. The mini window
+    // guards its own the same way.
+    if (mini_ != nullptr) {
+        mini_->setPosition(seconds, duration);
+    }
+
     if (seekBar_->scrubbing()) {
         return;  // the handle belongs to the cursor until it is let go
     }
@@ -762,6 +802,9 @@ void MainWindow::onCurrentTrackChanged(TrackId id) {
         setWindowTitle(QStringLiteral("XPCog"));
         seekBar_->setValue(0);
         presence_->clear();
+        if (mini_ != nullptr) {
+            mini_->setNowPlaying(QString{}, QString{});
+        }
         return;
     }
 
@@ -770,6 +813,10 @@ void MainWindow::onCurrentTrackChanged(TrackId id) {
     setWindowTitle(QStringLiteral("%1 — XPCog").arg(display));
     presence_->setNowPlaying(QString::fromStdString(entry->title()),
                              QString::fromStdString(entry->artist));
+    if (mini_ != nullptr) {
+        mini_->setNowPlaying(QString::fromStdString(entry->title()),
+                             QString::fromStdString(entry->artist));
+    }
 
     // Follow the playing track, but only when it is visible in the current
     // sort and filter: scrolling to a row the user has filtered out would jump
@@ -792,6 +839,10 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
     }
 
     presence_->setPlaybackState(playing, paused);
+    taskbar_->setPlaybackState(playing, paused);
+    if (mini_ != nullptr) {
+        mini_->setPlaybackState(playing, paused);
+    }
 
     // The band table depends on Nyquist, so the rate has to arrive before the first
     // frame is analysed -- and it is only knowable once a device is open.
@@ -811,6 +862,51 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
     // pause has to reach the OS immediately, or its widget keeps counting.
     media_->setPlaybackState(playing, paused, playback_->position());
     mediaPosition_ = -1.0;
+}
+
+void MainWindow::setMiniMode(bool mini) {
+    if (mini && mini_ == nullptr) {
+        mini_ = new MiniWindow(*actions_, *playback_, settings_, this);
+
+        // Closing the mini player returns to the full window rather than quitting.
+        // Routed through the action so the menu item's tick follows, which then
+        // calls back into here -- setChecked only emits on an actual change, so it
+        // settles rather than looping.
+        connect(mini_, &MiniWindow::dismissed, this, [this] {
+            if (QAction* command = actions_->action(ActionId::ViewMiniPlayer);
+                command != nullptr) {
+                command->setChecked(false);
+            }
+        });
+        connect(mini_, &MiniWindow::volumeChanged, this, [this](double linear) {
+            const QSignalBlocker blocker(volume_);
+            volume_->setValue(static_cast<int>(std::lround(linear * 100.0)));
+        });
+
+        // Seed it with what is playing, since it was not around when that was
+        // announced.
+        const PlaylistEntry* entry = playlist_.find(playback_->currentTrack());
+        if (entry != nullptr) {
+            mini_->setNowPlaying(QString::fromStdString(entry->title()),
+                                 QString::fromStdString(entry->artist));
+        }
+        mini_->setPlaybackState(playback_->playing(), playback_->paused());
+        mini_->setPosition(playback_->position(), playback_->duration());
+    }
+
+    settings_.setMiniMode(mini);
+    if (mini) {
+        mini_->refreshVolume();
+        mini_->show();
+        raiseWindow(mini_);
+        hide();
+    } else {
+        if (mini_ != nullptr) {
+            mini_->hide();
+        }
+        show();
+        raiseWindow(this);
+    }
 }
 
 QString MainWindow::statusSummary() const {

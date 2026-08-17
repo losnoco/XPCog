@@ -422,8 +422,39 @@ first block after a seek, which is M4's work.
   the note grid that motivates a tempered scale, and in Frequencies it turns an even
   log axis into steps that jump from a ratio of 1.13 to 2.08.
 
-**Still to do:** the mini player, and the taskbar/Dock progress and badge that
-Cog's `DockIconController` draws.
+- **The taskbar button**, `ITaskbarList3`: a play/pause overlay badge and a
+  progress bar. Port of Cog's `DockIconController`, with one correction to the
+  obvious guess about what the bar means. It is **not** the position within the
+  track. Cog observes an `NSProgress` published by `PlaylistLoader`, so the bar
+  fills while files are being added and is gone the rest of the time; here it
+  follows `ScanTask`. A bar tracking the seek position would be a different feature
+  that happens to look the same, and it would sit at some arbitrary fraction for the
+  whole of every track.
+
+  Two deliberate differences from the Dock. Cog badges *every* state including
+  stopped, because its badge replaces the whole 1024px tile and something has to be
+  there; a Windows overlay is a 16px corner stamp on an icon that is already
+  visible, and the convention is to show one only when there is something to say —
+  so stopped clears it. And the glyphs are drawn with QPainter rather than shipped
+  as assets, so they follow the display's scale factor instead of going soft at
+  150%.
+
+- **The mini player**, Cog's `miniWindow`. A *mode*, as in Cog: the main window
+  hides and a compact one appears, because the point is to get the playlist off the
+  screen rather than to add a second window beside it. `miniMode` and
+  `floatingMiniWindow` are Cog's keys, including restoring the mode at launch.
+
+  Not a visual copy, for a structural reason: Cog's mini window has **no content
+  view at all**. It is an NSWindow whose entire body is a unified toolbar in the
+  title bar, which is why `AppController` keeps setting its content height to zero.
+  Qt has no equivalent — the title bar belongs to the window manager on every
+  platform this targets — so the same controls sit in one compact row below a normal
+  title bar. Cog's larger `miniPlusWindow` variant is deliberately not ported.
+
+**Still to do:** the Dock half of the taskbar work — `NSDockTile`, which is the
+surface Cog actually draws on. The interface and both call sites exist; only the
+macOS implementation is missing, and it is the kind of custom tile drawing that
+wants a Mac to look at rather than CI to compile.
 
 ### Then
 

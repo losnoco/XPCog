@@ -12,6 +12,7 @@
 #include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/library/PluginCache.hpp"
 #include "xpcog/platform/MediaIntegration.hpp"
+#include "xpcog/platform/TaskbarIntegration.hpp"
 
 #include <QList>
 #include <QMainWindow>
@@ -40,6 +41,7 @@ class SeekSlider;
 class PlaybackController;
 class PlaylistModel;
 class PlaylistProxyModel;
+class MiniWindow;
 class SpectrumWidget;
 class StatusPresence;
 
@@ -86,6 +88,10 @@ private:
     void onPositionChanged(double seconds, double duration);
     void onCurrentTrackChanged(TrackId id);
     void onPlaybackStateChanged(bool playing, bool paused);
+
+    /// Switches between the full window and the mini player. A mode, as in Cog:
+    /// one is shown and the other hidden, never both.
+    void setMiniMode(bool mini);
     void onRowActivated(const QModelIndex& index);
 
     void removeSelected();
@@ -136,6 +142,15 @@ private:
     /// The tray icon, or the Dock menu on macOS. Never null, but its methods do
     /// nothing where the platform has no notification area.
     StatusPresence* presence_ = nullptr;
+
+    /// The taskbar button's overlay badge and progress bar. Never null; the base
+    /// class does nothing where the platform has no such surface.
+    platform::TaskbarIntegration* taskbar_ = nullptr;
+
+    /// The mini player, built the first time it is asked for. Null until then:
+    /// most sessions never open it, and it holds a seek slider that would
+    /// otherwise be following the position for nobody.
+    MiniWindow* mini_ = nullptr;
 
     /// The spectrum panel and the dock it lives in. The dock is held because the
     /// View menu item and the dock's own close button both change its visibility

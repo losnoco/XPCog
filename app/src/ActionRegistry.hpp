@@ -50,6 +50,7 @@ enum class ActionId {
 
     ViewFileTree,
     ViewSpectrum,
+    ViewMiniPlayer,
 
     HelpAbout,
     HelpAboutQt,

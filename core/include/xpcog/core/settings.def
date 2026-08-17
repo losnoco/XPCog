@@ -112,6 +112,16 @@ XPCOG_SETTING(Eq20kHz, double, "eq20kHz", 0.0)
 /// mapping onto the wrong style.
 XPCOG_SETTING(WidgetStyle, std::string, "widgetStyle", "")
 
+// --- mini player ----------------------------------------------------------
+
+/// Whether the mini player is showing instead of the main window. A mode, not a
+/// second window: Cog's -setMiniMode: closes one and opens the other, and restores
+/// it at launch from this key.
+XPCOG_SETTING(MiniMode, bool, "miniMode", false)
+
+/// Keep the mini player above other windows.
+XPCOG_SETTING(FloatingMiniWindow, bool, "floatingMiniWindow", false)
+
 // --- spectrum -------------------------------------------------------------
 //
 // Cog exposes five spectrum preferences. Three are ported and two are not:

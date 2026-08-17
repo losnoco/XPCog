@@ -13,8 +13,8 @@ from a single codebase.
 > frequencies, transport fades, and matrix downmix/upmix. Media keys and Now
 > Playing on all three platforms — MediaPlayer.framework, SMTC and MPRIS — plus a
 > tray icon on Windows and Linux, the Dock menu on macOS, one instance per user,
-> and a spectrum analyser on Cog's own band frequencies. Still to come in M5: the
-> mini player.
+> a spectrum analyser on Cog's own band frequencies, a mini player, and a taskbar
+> badge and progress bar.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
 
@@ -242,7 +242,7 @@ never confused with the expected tail.
 | ✅ | **M2** | SQLite library, playlist model, shuffle/repeat/queue, scanner, tag reading |
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix. Time-stretch dropped by decision; FreeSurround deferred |
-| 🚧 | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum analyser done; mini player to come |
+| 🚧 | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge; NSDockTile to come |
 | | **M6** | Breadth: the remaining ~27 decoders, DSD/DoP, HRTF, scrobbling |
 
 Milestone 1 covers FLAC, MP3, Vorbis, Opus, AAC/ALAC, WavPack, APE and Musepack. Cog

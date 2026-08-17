@@ -6,7 +6,7 @@
 #   NowPlaying     MPNowPlayingInfoCenter / SMTC / MPRIS    (all done)
 #   MediaKeys      MPRemoteCommandCenter / SMTC / MPRIS     (all done)
 #   FileAccess     no-op seam replacing Cog's SandboxBroker (M2)
-#   TaskbarProgress NSDockTile / ITaskbarList3              (M5, outstanding)
+#   TaskbarProgress ITaskbarList3 done; NSDockTile          (M5, half outstanding)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 
@@ -17,6 +17,7 @@ add_library(xpcog-platform STATIC
     # -- the implementation is chosen per platform below -- and AUTOMOC only
     # looks at headers whose base name matches a listed source.
     include/xpcog/platform/MediaIntegration.hpp
+    include/xpcog/platform/TaskbarIntegration.hpp
 )
 
 # MediaIntegration: exactly one implementation is compiled, chosen here rather
@@ -25,14 +26,16 @@ add_library(xpcog-platform STATIC
 if(WIN32)
     target_sources(xpcog-platform PRIVATE
         src/windows/Foreground.cpp
-        src/windows/FileAssociations.cpp)
+        src/windows/FileAssociations.cpp
+        src/windows/WindowsTaskbarIntegration.cpp)
     # Shell32 for SHChangeNotify, which is how the association table's change is
     # announced. Everything else in that file goes through QSettings.
     target_link_libraries(xpcog-platform PRIVATE Shell32.lib)
 else()
     target_sources(xpcog-platform PRIVATE
         src/common/Foreground.cpp
-        src/common/FileAssociations.cpp)
+        src/common/FileAssociations.cpp
+        src/common/NullTaskbarIntegration.cpp)
 endif()
 
 if(APPLE)
