@@ -4,6 +4,8 @@
 // `flac` and skip if it is not installed, matching the conformance harness --
 // the suite still runs on a machine with no encoders.
 
+#include "../TestShell.hpp"
+
 #include "xpcog/core/NaturalOrder.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/library/Library.hpp"
@@ -58,10 +60,7 @@ private:
     fs::path path_;
 };
 
-[[nodiscard]] bool haveTool(const char* name) {
-    const std::string probe = std::string{"command -v "} + name + " > /dev/null 2>&1";
-    return std::system(probe.c_str()) == 0;
-}
+using xpcog::test::haveTool;
 
 const PluginRegistry& codecRegistry() {
     // Built once: freeze() is one-shot, and the descriptors it sorts must
@@ -120,7 +119,8 @@ bool makeTaggedFlac(const fs::path& target, const std::vector<std::string>& tags
     for (const std::string& tag : tags) {
         command += " --tag=\"" + tag + "\"";
     }
-    command += " -o \"" + target.string() + "\" \"" + wav.string() + "\" 2>/dev/null";
+    command += " -o \"" + target.string() + "\" \"" + wav.string() + "\"";
+    command += xpcog::test::kSilenceStderr;
 
     const bool ok = std::system(command.c_str()) == 0;
     std::error_code error;

@@ -12,6 +12,7 @@
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include "../TestShell.hpp"
 #include "../TestSignal.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -94,7 +95,8 @@ std::optional<std::filesystem::path> makeFlac(const std::string& name, int start
     const auto flac = fixtureDir() / (name + ".flac");
 
     const std::string command = "flac -s -f --totally-silent -o \"" + flac.string() +
-                                "\" \"" + wav.string() + "\" 2>/dev/null";
+                                "\" \"" + wav.string() + "\"" +
+                                xpcog::test::kSilenceStderr;
     if (std::system(command.c_str()) != 0) {
         return std::nullopt;
     }
@@ -290,7 +292,8 @@ TEST_CASE("a track at a different sample rate still joins gaplessly", "[gapless]
     }
     const auto flac48 = fixtureDir() / "rate_b.flac";
     const std::string cmd = "flac -s -f --totally-silent -o \"" + flac48.string() +
-                            "\" \"" + wav48.string() + "\" 2>/dev/null";
+                            "\" \"" + wav48.string() + "\"" +
+                            xpcog::test::kSilenceStderr;
     if (std::system(cmd.c_str()) != 0) {
         SKIP("could not encode the 48 kHz fixture");
     }

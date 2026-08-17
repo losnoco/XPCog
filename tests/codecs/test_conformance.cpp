@@ -12,6 +12,7 @@
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include "../TestShell.hpp"
 #include "../TestSignal.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -125,7 +126,7 @@ std::optional<std::filesystem::path> encode(const Codec& codec) {
     };
     replace("{in}", referenceWav().string());
     replace("{out}", out.string());
-    command += " 2>/dev/null";
+    command += xpcog::test::kSilenceStderr;
 
     if (std::system(command.c_str()) != 0 || !std::filesystem::exists(out)) {
         return std::nullopt;

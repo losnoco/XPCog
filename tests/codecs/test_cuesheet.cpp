@@ -12,6 +12,7 @@
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include "../TestShell.hpp"
 #include "../TestSignal.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -95,7 +96,8 @@ std::filesystem::path albumFlac() {
 
         const auto flac = fixtureDir() / "album.flac";
         const std::string cmd = "flac -s -f --totally-silent -o \"" + flac.string() +
-                                "\" \"" + wav.string() + "\" 2>/dev/null";
+                                "\" \"" + wav.string() + "\"" +
+                                xpcog::test::kSilenceStderr;
         if (std::system(cmd.c_str()) != 0) {
             return std::filesystem::path{};
         }

@@ -5,6 +5,7 @@
 // that, a seek is followed by up to a ring's worth of audio from the old
 // position, which is exactly the artefact a user notices.
 
+#include "../TestShell.hpp"
 #include "../TestSignal.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
@@ -159,7 +160,8 @@ std::optional<std::filesystem::path> makeFlac(const std::string& name, int frame
     std::fclose(f);
 
     const std::string command = "flac -s -f --totally-silent -o \"" + flac.string() +
-                                "\" \"" + wav.string() + "\" 2>/dev/null";
+                                "\" \"" + wav.string() + "\"" +
+                                xpcog::test::kSilenceStderr;
     if (std::system(command.c_str()) != 0) {
         return std::nullopt;
     }
@@ -234,7 +236,14 @@ TEST_CASE("the position reports from the new place after a seek", "[seek]") {
     }
 
     RingBuffer ring{static_cast<std::size_t>(kSampleRate * 0.5) * kChannels};
-    auto       output = makeOfflineOutput(ring);
+
+    // Paced, because this test has to seek while the track is still playing.
+    // Unlimited, the eight seconds are consumed in about the time it takes to
+    // decode them -- tens of milliseconds -- so the first position poll already
+    // read 8.0, the track had ended, and seek() correctly refused. At 8x, the
+    // seek target arrives in well under a second and the poll loops below have
+    // room to observe it.
+    auto output = makeOfflineOutput(ring, 8.0);
 
     auto        store = makeMemorySettingsStore();
     Settings    settings{*store};

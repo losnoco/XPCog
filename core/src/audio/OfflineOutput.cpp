@@ -2,13 +2,21 @@
 //
 // This exists so the gapless seam test can run in CI, where there is no audio
 // device, and so that a seam can be inspected sample by sample rather than
-// listened to. It drains the ring as fast as the feeder fills it, which makes
-// the whole engine run at full speed with no real-time behaviour to flake on.
+// listened to. By default it drains the ring as fast as the feeder fills it,
+// which makes the whole engine run at full speed with no real-time behaviour to
+// flake on.
+//
+// That default cannot be observed *during* playback, though: a short file is
+// gone in the time it takes to decode, so a test that plays one and then looks
+// at the engine is racing this thread. An optional pacing multiple slows the
+// drain to a chosen multiple of real time for those tests, which turns the race
+// into a window wide enough to act in.
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/OfflineOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -20,7 +28,8 @@ namespace {
 
 class OfflineOutput final : public IAudioOutput {
 public:
-    explicit OfflineOutput(RingBuffer& sink) : sink_(sink) {}
+    OfflineOutput(RingBuffer& sink, double speedMultiple)
+        : sink_(sink), speedMultiple_(speedMultiple) {}
 
     ~OfflineOutput() override { OfflineOutput::stop(); }
 
@@ -90,16 +99,51 @@ private:
     void drainLoop() {
         std::vector<float> scratch(4096);
 
+        // Frames this loop is currently entitled to consume, when pacing. It
+        // accrues with elapsed time rather than being derived from a fixed start
+        // instant, so pausing simply stops it accruing and no catch-up burst is
+        // owed on resume.
+        double     allowance = 0.0;
+        auto       lastTick  = std::chrono::steady_clock::now();
+        const bool paced =
+            speedMultiple_ > 0.0 && format_.sampleRate > 0 && format_.channels > 0;
+
         while (running_.load(std::memory_order_acquire)) {
             if (paused_.load(std::memory_order_relaxed)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                lastTick = std::chrono::steady_clock::now();
                 continue;
             }
 
-            const std::size_t got = sink_.read(scratch.data(), scratch.size());
+            std::size_t limit = scratch.size();
+            if (paced) {
+                const auto now = std::chrono::steady_clock::now();
+                allowance += std::chrono::duration<double>(now - lastTick).count() *
+                             static_cast<double>(format_.sampleRate) * speedMultiple_;
+                lastTick = now;
+
+                // Capped at one read. Entitlement otherwise accrues while the
+                // ring is empty -- which it is for as long as the feeder takes
+                // to open the first decoder -- and is then spent in a single
+                // burst, which is the unpaced behaviour this exists to avoid.
+                allowance = std::min(allowance,
+                                     static_cast<double>(scratch.size() / format_.channels));
+
+                const auto frames = static_cast<std::size_t>(allowance);
+                if (frames == 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
+                limit = std::min(limit, frames * format_.channels);
+            }
+
+            const std::size_t got = sink_.read(scratch.data(), limit);
             if (got == 0) {
                 std::this_thread::yield();
                 continue;
+            }
+            if (paced) {
+                allowance -= static_cast<double>(got / format_.channels);
             }
 
             const float gain = volume_.load(std::memory_order_relaxed);
@@ -134,6 +178,7 @@ private:
     }
 
     RingBuffer& sink_;
+    const double speedMultiple_;
 
     mutable std::mutex mutex_;
     std::vector<float> captured_;
@@ -148,8 +193,8 @@ private:
 
 }  // namespace
 
-std::unique_ptr<IAudioOutput> makeOfflineOutput(RingBuffer& sink) {
-    return std::make_unique<OfflineOutput>(sink);
+std::unique_ptr<IAudioOutput> makeOfflineOutput(RingBuffer& sink, double speedMultiple) {
+    return std::make_unique<OfflineOutput>(sink, speedMultiple);
 }
 
 std::vector<float> capturedAudio(const IAudioOutput& output) {

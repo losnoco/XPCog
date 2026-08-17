@@ -60,5 +60,23 @@ if(XPCOG_BUILD_APP)
     endforeach()
     add_dependencies(xpcog-app-tests release_translations)
 
-    catch_discover_tests(xpcog-app-tests)
+    # Windows resolves DLLs from PATH, having no RPATH equivalent. Test
+    # discovery *runs* this executable to enumerate its cases, and it cannot
+    # start without Qt's DLLs reachable -- the build failed at that step with
+    # 0xc0000135 (STATUS_DLL_NOT_FOUND) rather than at link time, which makes it
+    # look like a Catch2 fault instead of a missing library. vcpkg's applocal
+    # step copies the vcpkg DLLs next to the binary, but Qt deliberately does
+    # not come from vcpkg, so nothing copies Qt's.
+    #
+    # DL_PATHS is Catch2's hook for precisely this: it prepends to PATH both
+    # when listing the tests and when ctest runs them. macOS and Linux need
+    # nothing here, where the RPATH baked into the binary already resolves Qt.
+    if(WIN32)
+        # Qt6_DIR is <prefix>/lib/cmake/Qt6; the same relative walk the
+        # windeployqt lookup in app/CMakeLists.txt uses.
+        get_filename_component(_xpcog_qt_bin "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        catch_discover_tests(xpcog-app-tests DL_PATHS "${_xpcog_qt_bin}")
+    else()
+        catch_discover_tests(xpcog-app-tests)
+    endif()
 endif()
