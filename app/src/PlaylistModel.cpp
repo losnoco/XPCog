@@ -1,6 +1,7 @@
 #include "PlaylistModel.hpp"
 
 #include <QDataStream>
+#include <QtGlobal>
 #include <QIODevice>
 #include <QMimeData>
 #include <QUrl>
@@ -329,12 +330,17 @@ void PlaylistProxyModel::setFilterText(const QString& text) {
     if (filter_ == text) {
         return;
     }
-    // begin/endFilterChange rather than invalidateFilter(), which Qt 6.13
-    // deprecates: the pair lets the proxy keep the selection across the change
-    // instead of resetting it.
+    // begin/endFilterChange is the Qt 6.9 replacement for invalidateFilter(),
+    // which 6.13 deprecates. Guarded rather than simply requiring 6.9: the
+    // project builds against 6.5 and up, and CI pins 6.8.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
     beginFilterChange();
     filter_ = text;
     endFilterChange();
+#else
+    filter_ = text;
+    invalidateFilter();
+#endif
 }
 
 bool PlaylistProxyModel::lessThan(const QModelIndex& left, const QModelIndex& right) const {
