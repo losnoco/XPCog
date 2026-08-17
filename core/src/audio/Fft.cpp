@@ -84,17 +84,27 @@ void Fft::forward(float* real, float* imaginary) const {
                 const std::size_t lower = base + k;
                 const std::size_t upper = lower + half;
 
+                // Widened explicitly, all four of them, rather than letting each
+                // expression promote where it meets a double twiddle. The arithmetic
+                // is identical; what changes is that the widening is stated once and
+                // visibly, instead of happening eight times implicitly -- which is
+                // what -Wdouble-promotion objects to, and it is right to.
+                const double lowerReal = static_cast<double>(real[lower]);
+                const double lowerImag = static_cast<double>(imaginary[lower]);
+                const double upperReal = static_cast<double>(real[upper]);
+                const double upperImag = static_cast<double>(imaginary[upper]);
+
                 // The rotated upper half, computed before either slot is written --
                 // the lower one is still needed below.
-                const double rotatedReal = (real[upper] * twiddleReal) -
-                                           (imaginary[upper] * twiddleImag);
-                const double rotatedImag = (real[upper] * twiddleImag) +
-                                           (imaginary[upper] * twiddleReal);
+                const double rotatedReal =
+                    (upperReal * twiddleReal) - (upperImag * twiddleImag);
+                const double rotatedImag =
+                    (upperReal * twiddleImag) + (upperImag * twiddleReal);
 
-                real[upper]      = static_cast<float>(real[lower] - rotatedReal);
-                imaginary[upper] = static_cast<float>(imaginary[lower] - rotatedImag);
-                real[lower]      = static_cast<float>(real[lower] + rotatedReal);
-                imaginary[lower] = static_cast<float>(imaginary[lower] + rotatedImag);
+                real[upper]      = static_cast<float>(lowerReal - rotatedReal);
+                imaginary[upper] = static_cast<float>(lowerImag - rotatedImag);
+                real[lower]      = static_cast<float>(lowerReal + rotatedReal);
+                imaginary[lower] = static_cast<float>(lowerImag + rotatedImag);
             }
         }
     }

@@ -118,7 +118,7 @@ void SpectrumWidget::paintEvent(QPaintEvent* event) {
     painter.setPen(Qt::NoPen);
 
     for (std::size_t band = 0; band < bands.size(); ++band) {
-        const double level = bands[band];
+        const double level = static_cast<double>(bands[band]);
         if (level <= 0.0) {
             continue;
         }
@@ -131,7 +131,7 @@ void SpectrumWidget::paintEvent(QPaintEvent* event) {
     // its own colour; the same idea, in a colour that reads on the gradient.
     painter.setPen(QColor(255, 255, 255, 190));
     for (std::size_t band = 0; band < peaks.size(); ++band) {
-        const double peak = peaks[band];
+        const double peak = static_cast<double>(peaks[band]);
         if (peak <= 0.0) {
             continue;
         }
