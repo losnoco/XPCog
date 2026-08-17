@@ -36,12 +36,6 @@
           ]
         }
       ]
-    },
-    "dsp": {
-      "description": "Milestone-4 DSP chain",
-      "dependencies": [
-        "rubberband"
-      ]
     }
   }
 }

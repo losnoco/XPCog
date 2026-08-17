@@ -3,10 +3,10 @@
 #
 # Planned occupants:
 #   Paths          per-OS config/data locations             (M2)
-#   NowPlaying     MPNowPlayingInfoCenter / SMTC (done) / MPRIS  (M3/M5)
-#   MediaKeys      MPRemoteCommandCenter / SMTC (done) / MPRIS   (M3/M5)
+#   NowPlaying     MPNowPlayingInfoCenter / SMTC / MPRIS    (all done)
+#   MediaKeys      MPRemoteCommandCenter / SMTC / MPRIS     (all done)
 #   FileAccess     no-op seam replacing Cog's SandboxBroker (M2)
-#   TaskbarProgress NSDockTile / ITaskbarList3              (M5)
+#   TaskbarProgress NSDockTile / ITaskbarList3              (M5, outstanding)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 
@@ -41,6 +41,15 @@ elseif(WIN32)
     # include directory, which a developer environment already puts on INCLUDE,
     # so there is no NuGet package to restore.
     target_link_libraries(xpcog-platform PRIVATE WindowsApp.lib ShCore.lib Shlwapi.lib)
+elseif(UNIX)
+    # MPRIS is D-Bus, and Qt's D-Bus support is a separate module. REQUIRED
+    # rather than optional: a Linux desktop without a session bus is possible,
+    # which the code handles at run time, but a Qt build without QtDBus is a
+    # broken development environment and should say so at configure time rather
+    # than produce a player with no remote control and no explanation.
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+    target_sources(xpcog-platform PRIVATE src/linux/LinuxMediaIntegration.cpp)
+    target_link_libraries(xpcog-platform PRIVATE Qt6::DBus)
 else()
     target_sources(xpcog-platform PRIVATE src/common/NullMediaIntegration.cpp)
 endif()

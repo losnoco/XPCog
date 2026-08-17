@@ -11,15 +11,24 @@
 // object: you cannot claim the keys without also saying what is playing, and a
 // now-playing entry with no working controls is worse than none.
 //
-// Windows (SMTC) and Linux (MPRIS) are M5. Until then those platforms get the
-// base class, which does nothing -- so the window wires up identically
-// everywhere and gaining a platform is one subclass, not a new call site.
+// All three platforms are implemented: MediaPlayer.framework on macOS, SMTC on
+// Windows, MPRIS on Linux. Anything else gets the base class, which does nothing
+// -- so the window wires up identically everywhere and gaining a platform is one
+// subclass, not a new call site.
+//
+// The interface is the union of what the three can do, and the parts only one of
+// them supports are the ones to be careful with. MPRIS is much the richest: it
+// is a general remote-control protocol, so it asks to raise the window, to quit
+// the application and to set the volume, none of which SMTC or macOS can
+// express. Those arrive as signals like any other command, and the two
+// implementations that cannot produce them simply never emit them.
 
 #pragma once
 
 #include <QImage>
 #include <QObject>
 #include <QString>
+#include <QUrl>
 
 namespace xpcog::platform {
 
@@ -63,6 +72,14 @@ public:
     /// Nothing is playing. Removes the entry rather than leaving a stale one.
     virtual void clear() {}
 
+    /// The output gain, 0..1.
+    ///
+    /// Only MPRIS uses this: it publishes the volume as a property a desktop
+    /// environment both reads and writes, so the value has to be pushed here or
+    /// the panel's slider sits at whatever it last set while the audio does
+    /// something else. SMTC and macOS have no equivalent and ignore it.
+    virtual void setVolume(float gain) { (void)gain; }
+
 signals:
     void playRequested();
     void pauseRequested();
@@ -71,6 +88,18 @@ signals:
     void nextRequested();
     void previousRequested();
     void seekRequested(double seconds);
+
+    /// Bring the window forward. MPRIS only -- it is how clicking a desktop
+    /// panel's media widget is meant to reach the player.
+    void raiseRequested();
+    /// Quit the application. MPRIS only.
+    void quitRequested();
+    /// Set the output gain, 0..1. MPRIS only.
+    void volumeRequested(float gain);
+    /// Add and play this URL. MPRIS only -- it is the OpenUri method, which the
+    /// protocol pairs with the list of schemes the player claims to support, so
+    /// this exists rather than that list being a promise nothing keeps.
+    void openUrlRequested(const QUrl& url);
 };
 
 }  // namespace xpcog::platform

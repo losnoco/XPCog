@@ -366,6 +366,14 @@ void MainWindow::wireUp() {
 
     connect(volume_, &QSlider::valueChanged, this, [this](int value) {
         playback_->setVolume(static_cast<double>(value) / 100.0);
+        // Also to the OS, which on Linux publishes the volume as a property a
+        // desktop panel shows its own slider for. Without this the panel's slider
+        // sits wherever it last put it while the audio does something else.
+        //
+        // No loop: an MPRIS write arrives as volumeRequested, which moves this
+        // slider, which lands here -- and setVolume only stores the value and
+        // announces it, so the round trip stops.
+        media_->setVolume(static_cast<float>(value) / 100.0F);
     });
 
     connect(filter_, &QLineEdit::textChanged, proxy_, &PlaylistProxyModel::setFilterText);
@@ -392,6 +400,22 @@ void MainWindow::wireUp() {
             [this] { playback_->previous(); });
     connect(media_, &platform::MediaIntegration::seekRequested, this,
             [this](double seconds) { playback_->seek(seconds); });
+
+    // MPRIS only, on Linux. The other two platforms never emit these, so there
+    // is nothing to guard: a signal that is never sent costs a connection.
+    connect(media_, &platform::MediaIntegration::raiseRequested, this,
+            [this] { raiseWindow(this); });
+    connect(media_, &platform::MediaIntegration::quitRequested, this,
+            [] { QApplication::quit(); });
+    connect(media_, &platform::MediaIntegration::volumeRequested, this,
+            [this](float gain) {
+                // Through the slider rather than straight to the engine, so the
+                // panel and the window cannot end up showing different volumes.
+                // The slider's own signal is what then reaches playback_.
+                volume_->setValue(static_cast<int>(std::lround(gain * 100.0F)));
+            });
+    connect(media_, &platform::MediaIntegration::openUrlRequested, this,
+            [this](const QUrl& url) { openUrls({url}); });
 
     connect(scanCancel_, &QToolButton::clicked, this, [this] {
         // Everything not yet started goes too: cancelling one folder of a

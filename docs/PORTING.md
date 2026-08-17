@@ -144,7 +144,7 @@ the latency of every DSP change. See the `AudioEngine` class comment.
   worker thread, macOS media keys and Now Playing, i18n scaffolding, and a `deploy`
   target producing a signed self-contained bundle.
 
-### In progress: M4 — the DSP chain
+### M4 — the DSP chain (complete bar FreeSurround)
 
 **Done:** `DSPNode` and the equaliser, wired into the engine behind a two-stage
 buffer.
@@ -283,10 +283,27 @@ Two Cog bugs fixed rather than reproduced along the way:
   own comment always claimed, with a test pinning it, because the upmix branches
   on exactly that.
 
-**Still to do:** rubberband, signalsmith, FreeSurround — and the reduction from
-one multichannel layout to a smaller one (7.1 into quad), which still uses the
-positional copy. Cog runs every reduction through its stereo matrix, which would
-throw away a real quad device's back speakers.
+**The time-stretchers are dropped, by decision rather than deferral.** Cog uses
+rubberband and signalsmith for its tempo and pitch controls. Neither can be a
+`DSPNode` as the contract stands: `process()` is in place with a fixed frame
+count, and a time-stretcher returns a different number of frames than it was
+given. So adding one was never "write a node" — it was "widen the interface every
+other stage depends on", to gain a control a music player is not primarily for.
+Skipping avoids that change rather than postponing it. `Rate`, `MinimumRate` and
+`MaximumRate` are reported as a fixed 1 over MPRIS, which is how that protocol
+says "not adjustable", and the `dsp` vcpkg feature that pulled in rubberband is
+gone.
+
+**FreeSurround is deferred, and blocked twice over.** It is not a time-stretcher
+— it is a matrix surround decoder, stereo to 5.1 — so the paragraph above does
+not cover it. It changes the *channel* count, which the node contract cannot
+express either, and it is one of the kernels that needs a golden capture from Cog
+before being replaced, which needs a Mac.
+
+**Still to do:** the reduction from one multichannel layout to a smaller one (7.1
+into quad), which still uses the positional copy. Cog runs every reduction
+through its stereo matrix, which would throw away a real quad device's back
+speakers.
 
 *Verify:* the equaliser showed that one test is not enough, because each
 plausible test is blind to something. Three were needed, and the second and third
@@ -307,20 +324,52 @@ three of them passes every kernel test while dropping audio past the filter at a
 seam. Deleting the prebuffer call moves the measured gain by 6%, which that test
 catches.
 
-For rubberband, signalsmith and FreeSurround, capture golden reference output
-from Cog **before** replacing each kernel — numeric drift from removing vDSP is
-silent otherwise, and unlike the equaliser those are not pinned down by a
-closed-form response. Note this needs a macOS machine: Cog does not run
-elsewhere, so on Windows or Linux that verification is simply unavailable.
+For FreeSurround, capture golden reference output from Cog **before** replacing
+the kernel — numeric drift from removing vDSP is silent otherwise, and unlike the
+equaliser it is not pinned down by a closed-form response. Note this needs a
+macOS machine: Cog does not run elsewhere, so on Windows or Linux that
+verification is simply unavailable.
 
 LPC extrapolation is already vendored but deliberately not built: the converter keeps
 soxr's delay line continuous, so chunk edges already are. It earns its place at the
 first block after a seek, which is M4's work.
 
+### In progress: M5 — the platform's idea of a player
+
+**Done:**
+
+- **Windows SMTC** (C++/WinRT), and with it all three media integrations:
+  MediaPlayer.framework on macOS, SMTC on Windows, MPRIS on Linux. The interface
+  is the union of what they can do, and MPRIS is much the widest of the three —
+  it is a general remote-control protocol, so it asks to raise the window, quit
+  the application, set the volume and open a URL, none of which the other two can
+  express. Those arrive as ordinary signals and the other two simply never emit
+  them.
+- **MPRIS** is the one integration written from a specification rather than
+  translated from Objective-C, because Cog has nothing to port here. That removes
+  the usual check — "does it do what Cog does" — so the reasoning is at the call
+  site instead, particularly the four parts of the spec that are silent when got
+  wrong: properties never announce themselves, times are microseconds, trackid is
+  an object path, and `Position` must *not* be announced.
+- **The presence outside the window**, which is deliberately two different objects.
+  Windows and Linux get a `QSystemTrayIcon`; macOS gets the Dock menu, through
+  `QMenu::setAsDockMenu()`. That is not a shortcut — Cog contains no `NSStatusItem`
+  anywhere in its tree and hangs its transport off the Dock instead. The two do not
+  carry the same items, because AppKit appends Quit and the window list to a Dock
+  menu itself.
+- **Single instance**, `QLocalServer`, off macOS only: LaunchServices already turns
+  a second open into an event rather than a second process. The handover is framed
+  by a length prefix, which a test forced — see the note below.
+- **The application icon**, in two shapes, because the platforms disagree about
+  what an icon is. Details in `app/icons/make-icons.py`.
+
+**Still to do:** visualization (pffft + QML islands), the mini player, and the
+taskbar/Dock progress and badge that Cog's `DockIconController` draws. The
+visualization decision is entangled with deployment size — see the graphics
+runtime note under Known gaps.
+
 ### Then
 
-- **M5** — Visualization (pffft + QML islands), mini player, Windows SMTC (C++/WinRT),
-  Linux MPRIS (QtDBus), `QLocalServer` single-instance, tray icon.
 - **M6** — Breadth: archive/HTTP sources (libcurl, to keep sources Qt-free), DSD/DoP,
   the remaining ~27 decoders and ~32 vendored libraries (one `xpcog_add_codec()` plus
   one vcpkg overlay port each), `cogimport`, HRTF, Last.fm, global hotkeys.
@@ -560,3 +609,18 @@ asserted a property Qt provides rather than the one the code was responsible for
 - The **Dock menu** on macOS is likewise unrendered here. It compiles in CI, and
   `QMenu::setAsDockMenu()` is Qt's own call, but that the menu carries the right
   items *below* the ones AppKit appends is a thing to look at rather than assert.
+- **MPRIS is compiled but not exercised.** CI's Linux job builds it; nothing on
+  any of the three hosts has run `playerctl` against it or clicked a panel's media
+  widget. Compilation is a weak check for a D-Bus contract, where the failures are
+  a wrong variant type or a missing `PropertiesChanged` — both of which produce a
+  player that appears on the bus and then quietly does not update.
+- MPRIS reports **no `DesktopEntry`**, because XPCog installs no `.desktop` file.
+  A panel therefore shows the transport with no application icon or localised
+  name. Naming a file that does not exist would not improve that, so this waits on
+  Linux packaging existing at all — the same gap as there being no `deploy` target
+  for Linux.
+- MPRIS omits the optional **`LoopStatus` and `Shuffle`** properties, so a panel
+  cannot see or change the repeat and shuffle modes even though the playlist has
+  both. They map onto `RepeatMode` and `ShuffleMode`, which have three and four
+  values against MPRIS's two and one — a mapping worth designing rather than
+  guessing at.
