@@ -15,6 +15,7 @@
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/OfflineOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
+#include "xpcog/core/audio/TransportGain.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -47,6 +48,9 @@ public:
             captured_.clear();
         }
         framesPlayed_.store(0, std::memory_order_relaxed);
+        // As in the real output: a faded stop leaves the level at zero, and the
+        // engine's play() stops before it starts.
+        fade_.reset();
 
         running_.store(true, std::memory_order_release);
         drain_ = std::thread([this] { drainLoop(); });
@@ -78,15 +82,10 @@ public:
     }
 
     void rampGain(float target, double milliseconds) override {
-        const double frames = format_.sampleRate * milliseconds / 1000.0;
-        fadeStep_.store(frames > 0.0 ? static_cast<float>(1.0 / frames) : 1.0F,
-                        std::memory_order_relaxed);
-        fadeTarget_.store(target, std::memory_order_relaxed);
+        fade_.rampTo(target, milliseconds, format_.sampleRate);
     }
 
-    [[nodiscard]] bool ramping() const override {
-        return fade_ != fadeTarget_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] bool ramping() const override { return fade_.ramping(); }
     [[nodiscard]] float volume() const override {
         return volume_.load(std::memory_order_relaxed);
     }
@@ -109,35 +108,21 @@ public:
 private:
     /// Applies volume and the transport fade, then records the result. The one
     /// place either is applied, so every path into the capture agrees.
+    ///
+    /// Through the same TransportGain the real device uses. It used to be a second
+    /// hand-written copy of that arithmetic, and the two drifted: this one was
+    /// right and the device's was not, so the bug it hid could not be reproduced
+    /// offline no matter what the test asked for.
     void append(const float* samples, std::size_t count) {
-        const float gain   = volume_.load(std::memory_order_relaxed);
-        const float target = fadeTarget_.load(std::memory_order_relaxed);
-        const float step   = fadeStep_.load(std::memory_order_relaxed);
-        const auto  channels =
+        const auto channels =
             static_cast<std::size_t>(std::max<std::uint32_t>(format_.channels, 1));
 
         std::lock_guard lock(mutex_);
-        if (gain == 1.0F && fade_ == 1.0F && target == 1.0F) {
-            captured_.insert(captured_.end(), samples,
-                             samples + static_cast<std::ptrdiff_t>(count));
-            return;
-        }
-
-        for (std::size_t frame = 0; frame * channels < count; ++frame) {
-            if (fade_ != target) {
-                // Per frame, as in the real callback, so a ramp does not advance
-                // at the channel count's speed.
-                fade_ = (target > fade_) ? std::min(fade_ + step, target)
-                                         : std::max(fade_ - step, target);
-            }
-            const float combined = gain * fade_;
-            for (std::size_t channel = 0; channel < channels; ++channel) {
-                const std::size_t index = (frame * channels) + channel;
-                if (index < count) {
-                    captured_.push_back(samples[index] * combined);
-                }
-            }
-        }
+        const std::size_t begin = captured_.size();
+        captured_.insert(captured_.end(), samples,
+                         samples + static_cast<std::ptrdiff_t>(count));
+        fade_.apply(captured_.data() + begin, count, channels,
+                    volume_.load(std::memory_order_relaxed));
     }
 
     void drainLoop() {
@@ -222,9 +207,7 @@ private:
     std::atomic<bool>          running_{false};
     std::atomic<bool>          paused_{false};
     std::atomic<float>         volume_{1.0F};
-    float                      fade_ = 1.0F;
-    std::atomic<float>         fadeTarget_{1.0F};
-    std::atomic<float>         fadeStep_{1.0F};
+    TransportGain              fade_;
     std::atomic<std::uint64_t> framesPlayed_{0};
     AudioFormat                format_{};
 };

@@ -1155,3 +1155,50 @@ TEST_CASE("the crossfade holds power, not amplitude", "[dsp]") {
     INFO("outgoing leg at the midpoint " << leg);
     REQUIRE(leg == Approx(1.0 / std::sqrt(2.0)).margin(0.03));
 }
+
+TEST_CASE("a track played after a faded stop is not silent", "[dsp]") {
+    // The engine's play() begins with stop(), and a faded stop ramps the output to
+    // zero. The ramp state used to survive into the next start(), so from the
+    // second track onwards the output multiplied everything by zero.
+    //
+    // It went unnoticed because the callback of the day skipped its multiply once
+    // the ramp had settled -- so the two bugs cancelled into an audible glitch
+    // rather than into silence. Fixing either alone is worse than fixing neither,
+    // which is why this test exists next to the TransportGain ones.
+    RingBuffer ring{1U << 14};
+    auto       output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setEnableFading(true);
+
+    AudioEngine engine{dspRegistry(), *output, ring, settings};
+
+    // First track, stopped mid-play so the stop actually fades.
+    REQUIRE(engine.play(Url::fromLocalPath(toneWav())));
+    for (int spin = 0; spin < 400 && engine.playedSeconds() < 0.3; ++spin) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    REQUIRE(engine.playedSeconds() >= 0.3);
+    engine.stop();
+
+    // Second track, all the way through. play() stops again internally, so this
+    // covers the play-while-playing path too.
+    REQUIRE(engine.play(Url::fromLocalPath(toneWav())));
+    engine.waitUntilFinished();
+    engine.stop();
+
+    const std::vector<float> captured = capturedAudio(*output);
+    REQUIRE_FALSE(captured.empty());
+
+    // Measured past the fade in, and well before any fade out, so this is the
+    // steady state rather than an envelope. The tone is at 12000/32768, so a
+    // working output lands near 0.26 and a zeroed one at exactly nothing.
+    const auto begin = static_cast<std::size_t>(kRate * 0.5) * kChannels;
+    REQUIRE(captured.size() > begin);
+    const std::vector<float> body(captured.begin() +
+                                      static_cast<std::ptrdiff_t>(begin),
+                                  captured.end());
+    INFO("steady-state RMS " << rmsOf(body));
+    REQUIRE(rmsOf(body) > 0.1);
+}

@@ -7,6 +7,7 @@
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
+#include "xpcog/core/audio/TransportGain.hpp"
 
 #include <miniaudio.h>
 
@@ -65,6 +66,13 @@ public:
 
         framesPlayed_.store(0, std::memory_order_relaxed);
         underruns_.store(0, std::memory_order_relaxed);
+
+        // Before the device runs, and this is not housekeeping. A faded stop
+        // leaves the level at zero, and the engine's play() calls stop() first --
+        // so without this, every track after the first played to a gain of zero.
+        // The old code got away with it only because its callback skipped the
+        // multiply once the ramp had settled, which is the bug next door.
+        fade_.reset();
 
         if (ma_device_start(&device_) != MA_SUCCESS) {
             ma_device_uninit(&device_);
@@ -129,18 +137,10 @@ public:
     }
 
     void rampGain(float target, double milliseconds) override {
-        const double rate = negotiatedFormat().sampleRate;
-        const double frames = rate * milliseconds / 1000.0;
-        // Zero-length or rate-less means snap, so a caller cannot hang waiting
-        // for a ramp that can never advance.
-        fadeStep_.store(frames > 0.0 ? static_cast<float>(1.0 / frames) : 1.0F,
-                        std::memory_order_relaxed);
-        fadeTarget_.store(target, std::memory_order_relaxed);
+        fade_.rampTo(target, milliseconds, negotiatedFormat().sampleRate);
     }
 
-    [[nodiscard]] bool ramping() const override {
-        return fade_ != fadeTarget_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] bool ramping() const override { return fade_.ramping(); }
 
     void setVolume(float gain) override {
         volume_.store(gain, std::memory_order_relaxed);
@@ -182,32 +182,14 @@ private:
             self->underruns_.fetch_add(1, std::memory_order_relaxed);
         }
 
-        // Volume and the transport fade are separate multipliers: a fade must
-        // not read or overwrite what the user set.
-        const float gain   = self->volume_.load(std::memory_order_relaxed);
-        const float target = self->fadeTarget_.load(std::memory_order_relaxed);
-        const float step   = self->fadeStep_.load(std::memory_order_relaxed);
-        float       fade   = self->fade_;
-
-        if (fade != target || gain != 1.0F) {
-            const auto channels = static_cast<std::size_t>(device->playback.channels);
-            for (std::size_t frame = 0; frame * channels < got; ++frame) {
-                if (fade != target) {
-                    // Per frame, not per sample: a ramp that advanced per sample
-                    // would move at the channel count's speed and skew the image.
-                    fade = (target > fade) ? std::min(fade + step, target)
-                                           : std::max(fade - step, target);
-                }
-                const float combined = gain * fade;
-                for (std::size_t channel = 0; channel < channels; ++channel) {
-                    const std::size_t index = (frame * channels) + channel;
-                    if (index < got) {
-                        out[index] *= combined;
-                    }
-                }
-            }
-            self->fade_ = fade;
-        }
+        // Volume and the transport fade are separate multipliers -- a fade must not
+        // read or overwrite what the user set -- and both are applied by
+        // TransportGain, which is shared with OfflineOutput. It used to be written
+        // out here, and having a second copy of it in the test double is how the
+        // two came to disagree; see TransportGain.hpp.
+        self->fade_.apply(out, got,
+                          static_cast<std::size_t>(device->playback.channels),
+                          self->volume_.load(std::memory_order_relaxed));
 
         // The playback clock. Track changes are announced against this, so a seam
         // is reported when it is audible rather than when it was decoded.
@@ -301,11 +283,8 @@ private:
 
     std::atomic<float>         volume_{1.0F};
 
-    /// The fade multiplier. `fade_` belongs to the callback -- no other thread
-    /// writes it -- while the target and step are published to it.
-    float              fade_ = 1.0F;
-    std::atomic<float> fadeTarget_{1.0F};
-    std::atomic<float> fadeStep_{1.0F};
+    /// The transport fade. Owns its own ramp state; see TransportGain.hpp.
+    TransportGain              fade_;
     std::atomic<std::uint64_t> underruns_{0};
     std::atomic<std::uint64_t> framesPlayed_{0};
 };

@@ -109,6 +109,21 @@ because pause and stop cannot be faded anywhere else: the audio they fade is alr
 queued for the device (see M4 below). It is a bounded per-frame ramp toward an atomic
 target, so the properties above still hold.
 
+Both the volume and that ramp live in `TransportGain`, and that class exists because
+they used to be written out twice — once in the device callback and once in
+`OfflineOutput` — where the two copies disagreed. The device's skipped its multiply
+whenever the ramp had *settled*, which is correct at unity and silent-turned-loud at
+zero: a faded pause left level and target both at zero, so the next buffer went out
+untouched, at full volume, and only started fading once `rampGain` made the two
+differ again. The offline copy had the condition right, which is why no test could
+reach the bug — the only implementation a test could see was the correct one.
+
+Two lessons, both cheap to state and expensive to relearn. A real-time routine
+duplicated for a test double is not a test double, it is a second implementation; and
+an early-out on "nothing has changed" is not the same predicate as "nothing needs
+doing". `TransportGain` is header-only for the inlining and has its own tests,
+including one that pins the exact case that broke.
+
 Cog's `BUFFER_SIZE = 1 MiB` and `CHUNK_SIZE = 16 KiB` are tuned values and are kept
 — but M4 split where the buffering sits. `BUFFER_SIZE` is now the *pre*-DSP ring
 inside the engine, which is where the depth belongs; the ring between the DSP chain
@@ -562,6 +577,25 @@ asserted a property Qt provides rather than the one the code was responsible for
   Microsoft's guidance is that the shortcut is the installer's job, so this waits
   on there being an installer rather than the app writing to the Start menu
   itself.
+
+  One thing has changed since that was measured: `XPCog --register` now writes a
+  `FriendlyAppName`, which is what `AssocQueryString(ASSOCSTR_FRIENDLYAPPNAME)`
+  answers with. That is the call that previously returned `XPCog.exe`, so the
+  caption is worth **re-checking** rather than assumed unchanged. The reasoning
+  above says identity comes from the AppUserModelID and not from file metadata, and
+  that is still what the documentation says — but the last measurement was taken
+  before this key existed, and a stale measurement is not evidence.
+- **File associations exist but only on request.** `XPCog --register` adds XPCog to
+  each supported extension's `OpenWithProgids` under `HKCU`; `--unregister` removes
+  it. Never done at startup: an application that claims file types the first time
+  it runs has taken them from whatever held them before without asking.
+
+  It cannot make itself the *default*, and that is a fact about Windows rather than
+  a gap — since Windows 8 the effective default lives in a hash-protected
+  `UserChoice` key that only the Settings UI can write. So the registration makes
+  XPCog available to choose, and choosing it is the user's step. The extension list
+  comes from `PluginRegistry::allExtensions()` rather than being written out
+  anywhere, so it cannot fall behind the codecs.
 - `windeployqt` is invoked with `--no-translations`, so a deployed Windows build
   carries no Qt catalogues and Qt's own dialog strings stay English even in
   Spanish. XPCog's strings are unaffected — they are compiled into the executable

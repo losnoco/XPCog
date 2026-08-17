@@ -631,8 +631,14 @@ void AudioEngine::resume() {
     // Cancel a fade out still in flight before restarting: pausing and resuming
     // quickly must not leave the gain stuck on its way to zero.
     pendingPause_.store(false, std::memory_order_release);
-    output_.resume();
+
+    // The ramp is armed *before* the device restarts, not after. Between a
+    // resume() and a rampGain() the callback is already running at whatever gain
+    // the pause left behind, and every frame it emits in that window is emitted at
+    // the wrong one -- at the start of a fade in, that means audible before the
+    // fade it is supposed to begin with.
     output_.rampGain(1.0F, fadeMilliseconds());
+    output_.resume();
     status_.store(PlaybackStatus::Playing, std::memory_order_relaxed);
 }
 
