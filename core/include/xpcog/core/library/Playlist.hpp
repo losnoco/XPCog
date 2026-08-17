@@ -205,7 +205,7 @@ private:
 
     void reindex();
     void renumberQueue();
-    void notify(Change change) const { changed_.emit(change); }
+    void notify(Change change) const { changed_.publish(change); }
 
     std::vector<PlaylistEntry>                 entries_;
     std::unordered_map<TrackId, std::size_t>   index_;

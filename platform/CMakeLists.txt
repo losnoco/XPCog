@@ -10,7 +10,12 @@
 
 find_package(Qt6 REQUIRED COMPONENTS Core)
 
-add_library(xpcog-platform STATIC src/common/Placeholder.cpp)
+add_library(xpcog-platform STATIC
+    src/common/Placeholder.cpp
+    src/common/QSettingsStore.cpp
+)
+
+set_target_properties(xpcog-platform PROPERTIES AUTOMOC ON)
 add_library(XPCog::platform ALIAS xpcog-platform)
 
 target_include_directories(xpcog-platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")

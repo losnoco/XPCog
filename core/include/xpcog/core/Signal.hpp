@@ -7,6 +7,12 @@
 //
 // Deliberately small. This is not a signal/slot framework; the app layer has Qt's
 // for that. It exists so core can notify without depending on one.
+//
+// One consequence of coexisting with Qt: `emit`, `slots`, `signals` and
+// `foreach` are all Qt *macros*. Core does not include Qt, but the application
+// includes both, so a member named after any of them fails to compile the
+// moment the two headers meet. Hence `publish()` and `handlers` below, where
+// `emit()` and `slots` would read more naturally.
 
 #pragma once
 
@@ -88,33 +94,41 @@ public:
 
     [[nodiscard]] Subscription connect(Slot slot) {
         const std::uint64_t id = impl_->nextId++;
-        impl_->slots.emplace_back(id, std::move(slot));
+        impl_->handlers.emplace_back(id, std::move(slot));
         return Subscription{impl_, id};
     }
 
+    /// Delivers to every connected slot.
+    ///
+    /// Named `publish` rather than the obvious `emit` because Qt defines `emit`
+    /// as a macro. Core does not depend on Qt and never will, but the
+    /// application includes both, and a member function named after a
+    /// function-like macro fails to compile the moment they meet.
+    ///
     /// Slots may connect or disconnect from inside a slot, so the list is copied
     /// before dispatch. Emission is not reentrant-safe beyond that -- a slot that
-    /// emits the same signal recursively is a caller bug, not something to guard.
-    void emit(const Args&... args) const {
-        const auto slots = impl_->slots;
-        for (const auto& [id, slot] : slots) {
+    /// publishes the same signal recursively is a caller bug, not something to
+    /// guard against here.
+    void publish(const Args&... args) const {
+        const auto handlers = impl_->handlers;
+        for (const auto& [id, slot] : handlers) {
             if (slot) {
                 slot(args...);
             }
         }
     }
 
-    [[nodiscard]] bool empty() const noexcept { return impl_->slots.empty(); }
+    [[nodiscard]] bool empty() const noexcept { return impl_->handlers.empty(); }
 
 private:
     struct Impl final : detail::SignalBase {
-        std::vector<std::pair<std::uint64_t, Slot>> slots;
+        std::vector<std::pair<std::uint64_t, Slot>> handlers;
         std::uint64_t                               nextId = 1;
 
         void disconnect(std::uint64_t id) noexcept override {
-            for (auto it = slots.begin(); it != slots.end(); ++it) {
+            for (auto it = handlers.begin(); it != handlers.end(); ++it) {
                 if (it->first == id) {
-                    slots.erase(it);
+                    handlers.erase(it);
                     return;
                 }
             }

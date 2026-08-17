@@ -56,6 +56,10 @@ public:
     /// Restores every setting to its default.
     void resetAll();
 
+    /// Flushes to the backing store. QSettings writes lazily, so without this a
+    /// setting changed just before quitting can be lost.
+    void sync() { store_.sync(); }
+
     /// Runs any pending versioned migrations, then records the new version.
     /// Replaces Cog's ad-hoc renaming block in AppController.m:775-855.
     void applyMigrations();

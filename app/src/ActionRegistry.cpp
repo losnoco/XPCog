@@ -1,0 +1,135 @@
+#include "ActionRegistry.hpp"
+
+#include <QAction>
+#include <QActionGroup>
+#include <QKeySequence>
+#include <QMenu>
+#include <QMenuBar>
+#include <QToolBar>
+
+namespace xpcog::app {
+namespace {
+
+/// The menu structure, declaratively. Adding a command is one row here plus one
+/// row in the constructor, rather than an edit to a XIB whose diff is unreadable.
+struct MenuItem {
+    const char* menu;  ///< nullptr continues the previous menu
+    ActionId    id;
+    bool        separatorBefore = false;
+};
+
+constexpr MenuItem kMenuLayout[] = {
+    {QT_TRANSLATE_NOOP("ActionRegistry", "&File"), ActionId::FileOpen},
+    {nullptr, ActionId::FileOpenFolder},
+    {nullptr, ActionId::FileSavePlaylist, true},
+    {nullptr, ActionId::FileQuit, true},
+
+    {QT_TRANSLATE_NOOP("ActionRegistry", "&Edit"), ActionId::EditSelectAll},
+    {nullptr, ActionId::EditRemove},
+
+    {QT_TRANSLATE_NOOP("ActionRegistry", "&Playback"), ActionId::PlaybackPlayPause},
+    {nullptr, ActionId::PlaybackStop},
+    {nullptr, ActionId::PlaybackPrevious, true},
+    {nullptr, ActionId::PlaybackNext},
+    {nullptr, ActionId::PlaybackEnqueue, true},
+
+    {QT_TRANSLATE_NOOP("ActionRegistry", "&Order"), ActionId::OrderRepeatNone},
+    {nullptr, ActionId::OrderRepeatOne},
+    {nullptr, ActionId::OrderRepeatAlbum},
+    {nullptr, ActionId::OrderRepeatAll},
+    {nullptr, ActionId::OrderShuffleOff, true},
+    {nullptr, ActionId::OrderShuffleAlbums},
+    {nullptr, ActionId::OrderShuffleAll},
+};
+
+constexpr ActionId kToolBarLayout[] = {
+    ActionId::PlaybackPrevious,
+    ActionId::PlaybackPlayPause,
+    ActionId::PlaybackStop,
+    ActionId::PlaybackNext,
+};
+
+}  // namespace
+
+ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
+    add(ActionId::FileOpen, tr("&Open Files…"), QKeySequence::Open);
+    add(ActionId::FileOpenFolder, tr("Open &Folder…"),
+        QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
+    add(ActionId::FileSavePlaylist, tr("&Save Playlist…"), QKeySequence::Save);
+    add(ActionId::FileQuit, tr("&Quit"), QKeySequence::Quit);
+
+    add(ActionId::EditSelectAll, tr("Select &All"), QKeySequence::SelectAll);
+    add(ActionId::EditRemove, tr("&Remove from Playlist"), QKeySequence::Delete);
+
+    add(ActionId::PlaybackPlayPause, tr("&Play/Pause"), QKeySequence(Qt::Key_Space));
+    add(ActionId::PlaybackStop, tr("&Stop"), QKeySequence(Qt::CTRL | Qt::Key_Period));
+    add(ActionId::PlaybackNext, tr("&Next"), QKeySequence(Qt::CTRL | Qt::Key_Right));
+    add(ActionId::PlaybackPrevious, tr("Pre&vious"), QKeySequence(Qt::CTRL | Qt::Key_Left));
+    add(ActionId::PlaybackEnqueue, tr("Add to &Queue"), QKeySequence(Qt::Key_Q));
+
+    // Repeat and shuffle are exclusive sets, so they are checkable and grouped.
+    // Cog drives these from an NSPopUpButton plus four NSValueTransformers; a
+    // QActionGroup is the same idea with the transformers deleted.
+    auto* repeat = new QActionGroup(this);
+    for (const auto& [id, label] :
+         {std::pair{ActionId::OrderRepeatNone, tr("Repeat: &Off")},
+          std::pair{ActionId::OrderRepeatOne, tr("Repeat: &One")},
+          std::pair{ActionId::OrderRepeatAlbum, tr("Repeat: &Album")},
+          std::pair{ActionId::OrderRepeatAll, tr("Repeat: A&ll")}}) {
+        QAction* item = add(id, label);
+        item->setCheckable(true);
+        repeat->addAction(item);
+    }
+
+    auto* shuffle = new QActionGroup(this);
+    for (const auto& [id, label] :
+         {std::pair{ActionId::OrderShuffleOff, tr("Shuffle: O&ff")},
+          std::pair{ActionId::OrderShuffleAlbums, tr("Shuffle: Al&bums")},
+          std::pair{ActionId::OrderShuffleAll, tr("Shuffle: A&ll Tracks")}}) {
+        QAction* item = add(id, label);
+        item->setCheckable(true);
+        shuffle->addAction(item);
+    }
+}
+
+QAction* ActionRegistry::add(ActionId id, const QString& text,
+                             const QKeySequence& shortcut) {
+    auto* item = new QAction(text, this);
+    if (!shortcut.isEmpty()) {
+        item->setShortcut(shortcut);
+    }
+    actions_.insert(static_cast<int>(id), item);
+    return item;
+}
+
+QAction* ActionRegistry::action(ActionId id) const {
+    return actions_.value(static_cast<int>(id), nullptr);
+}
+
+void ActionRegistry::populateMenuBar(QMenuBar* bar) const {
+    QMenu* current = nullptr;
+    for (const MenuItem& item : kMenuLayout) {
+        if (item.menu != nullptr) {
+            current = bar->addMenu(tr(item.menu));
+        }
+        if (current == nullptr) {
+            continue;
+        }
+        if (item.separatorBefore) {
+            current->addSeparator();
+        }
+        if (QAction* command = action(item.id); command != nullptr) {
+            current->addAction(command);
+        }
+    }
+}
+
+void ActionRegistry::populateToolBar(QToolBar* bar) const {
+    for (const ActionId id : kToolBarLayout) {
+        if (QAction* command = action(id); command != nullptr) {
+            bar->addAction(command);
+        }
+    }
+}
+
+}  // namespace xpcog::app

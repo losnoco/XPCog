@@ -4,9 +4,17 @@ qt_standard_project_setup(REQUIRES 6.5)
 
 qt_add_executable(xpcog-app
     src/main.cpp
+    src/ActionRegistry.cpp
+    src/ActionRegistry.hpp
+    src/PlaybackController.cpp
+    src/PlaybackController.hpp
+    src/PlaylistModel.cpp
+    src/PlaylistModel.hpp
     src/windows/MainWindow.cpp
     src/windows/MainWindow.hpp
 )
+
+target_include_directories(xpcog-app PRIVATE src)
 
 set_target_properties(xpcog-app PROPERTIES
     OUTPUT_NAME "XPCog"
