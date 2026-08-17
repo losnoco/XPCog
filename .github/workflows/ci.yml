@@ -97,13 +97,17 @@ jobs:
       # those are what change which packages are wanted. The restore-key prefix
       # means adding one dependency reuses the archives for all the others: the
       # cache is per-package, not per-manifest.
+      #
+      # The `-v2-` is a salt. GitHub caches are write-once per key, so a bad
+      # entry cannot be overwritten -- only outlived. Bump it to abandon a
+      # poisoned key.
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
-          restore-keys: vcpkg-${{ matrix.preset }}-
+          key: vcpkg-v2-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          restore-keys: vcpkg-v2-${{ matrix.preset }}-
 
       # vcpkg creates this itself, but not if configure fails before it gets
       # that far -- and then the save step warns about a missing path.
@@ -112,6 +116,7 @@ jobs:
         run: mkdir -p .vcpkg-cache
 
       - name: Configure
+        id: configure
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
@@ -127,12 +132,22 @@ jobs:
           "$BIN/xpcog-cli" --version
           "$BIN/xpcog-cli" codecs
 
-      # Deliberately `always()`: a compile error should not also cost a full
-      # dependency rebuild on the next attempt. Several of the last runs failed
-      # on one bad file, and paying 3m25s of vcpkg each time to find that out is
-      # the difference between a fast fix and a slow one.
+      # Gated on Configure rather than on the job, and this distinction cost a
+      # day of rebuilt ffmpeg.
+      #
+      # vcpkg installs the ports *during* configure, so that is when the cache
+      # becomes complete. `always()` alone also fires when configure itself
+      # failed -- and because GitHub caches are write-once per key, the partial
+      # directory it stored then became permanent: every later run got an exact
+      # hit on it, skipped the save, and rebuilt ffmpeg from source for nothing.
+      #
+      # `always()` is still wanted so that a compile or test failure does not
+      # additionally cost a dependency rebuild; the cache is complete by then.
+      # The added condition is only that configure got far enough to fill it.
       - name: Save vcpkg binary cache
-        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        if: >-
+          always() && steps.configure.outcome == 'success'
+          && steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .vcpkg-cache
@@ -168,8 +183,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-linux-debug-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
-          restore-keys: vcpkg-linux-debug-
+          key: vcpkg-v2-linux-debug-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          restore-keys: vcpkg-v2-linux-debug-
 
       # vcpkg creates this itself, but not if configure fails before it gets
       # that far -- and then the save step warns about a missing path.
@@ -178,6 +193,7 @@ jobs:
         run: mkdir -p .vcpkg-cache
 
       - name: Configure without Qt
+        id: configure
         run: cmake --preset linux-debug -D XPCOG_BUILD_APP=OFF
 
       - name: Build
@@ -191,8 +207,11 @@ jobs:
           build/linux-debug/bin/xpcog-cli --version
           build/linux-debug/bin/xpcog-cli codecs
 
+      # See the matrix job: gated on configure, not on the job as a whole.
       - name: Save vcpkg binary cache
-        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        if: >-
+          always() && steps.configure.outcome == 'success'
+          && steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .vcpkg-cache
