@@ -34,18 +34,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # nasm is for ffmpeg's assembly. vcpkg downloads it itself on Windows but
+      # expects the package manager to supply it everywhere else, so without it
+      # the ffmpeg port fails during configure rather than during the build.
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config autoconf automake libtool \
+            ninja-build pkg-config autoconf automake libtool nasm \
             libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev \
             libxcb-cursor-dev libvulkan-dev
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
-        run: brew install ninja pkg-config autoconf automake libtool
+        run: brew install ninja pkg-config autoconf automake libtool nasm
 
       # vcpkg's x64-windows triplet is MSVC-ABI, but MinGW's gcc sits earlier on the
       # runner's PATH and the Ninja generator does not activate the MSVC environment
@@ -131,7 +134,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config autoconf automake libtool
+            ninja-build pkg-config autoconf automake libtool nasm
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
