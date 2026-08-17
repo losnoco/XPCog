@@ -7,20 +7,32 @@
 
 #pragma once
 
+#include "xpcog/core/Plugin.hpp"
+
 #include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace xpcog {
 
-class ISource;
-class IDecoder;
-
+// Plugin.hpp is included rather than forward-declaring ISource/IDecoder:
+// std::unique_ptr's default deleter needs a complete type.
 using SourcePtr  = std::unique_ptr<ISource>;
 using DecoderPtr = std::unique_ptr<IDecoder>;
+
+// libc++ accepts an incomplete type here in contexts where libstdc++ and MinGW
+// reject it, so a forward declaration compiles on macOS and then breaks the Linux
+// and Windows builds. These assertions fail identically on every compiler.
+static_assert(sizeof(ISource) > 0, "ISource must be a complete type for SourcePtr");
+static_assert(sizeof(IDecoder) > 0, "IDecoder must be a complete type for DecoderPtr");
+static_assert(std::has_virtual_destructor_v<ISource>,
+              "ISource is deleted through a base pointer");
+static_assert(std::has_virtual_destructor_v<IDecoder>,
+              "IDecoder is deleted through a base pointer");
 
 /// Mirrors Cog's `+priority` (Audio/Plugin.h): higher wins, 1.0 is the default.
 /// Candidates are tried in descending priority, ties broken by registration order.

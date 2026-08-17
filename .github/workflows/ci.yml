@@ -58,14 +58,6 @@ jobs:
         with:
           runVcpkgInstall: false
 
-      # The macOS preset defaults to a developer's local Qt install; point it at the
-      # one install-qt-action just provided.
-      - name: Point presets at the CI Qt
-        shell: bash
-        run: |
-          echo "XPCOG_QT_ROOT=${QT_ROOT_DIR}" >> "$GITHUB_ENV"
-          echo "XPCOG_NINJA=$(command -v ninja)" >> "$GITHUB_ENV"
-
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
 

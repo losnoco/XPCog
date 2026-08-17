@@ -43,13 +43,7 @@
         "rhs": "Darwin"
       },
       "cacheVariables": {
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0",
-        "CMAKE_PREFIX_PATH": "$env{XPCOG_QT_ROOT}",
-        "CMAKE_MAKE_PROGRAM": "$env{XPCOG_NINJA}"
-      },
-      "environment": {
-        "XPCOG_QT_ROOT": "$env{HOME}/Qt/6.11.1/macos",
-        "XPCOG_NINJA": "$env{HOME}/Qt/Tools/Ninja/ninja"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0"
       }
     },
     {
