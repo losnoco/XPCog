@@ -7,6 +7,8 @@ qt_standard_project_setup(REQUIRES 6.5)
 set(XPCOG_APP_SOURCES
     src/ActionRegistry.cpp
     src/ActionRegistry.hpp
+    src/Appearance.cpp
+    src/Appearance.hpp
     src/PlaybackController.cpp
     src/PlaybackController.hpp
     src/FileTree.cpp

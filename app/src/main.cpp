@@ -6,6 +6,7 @@
 // NSUserDefaults) from anywhere; keeping ownership visible at the top is what
 // lets the same objects be swapped for test doubles below it.
 
+#include "Appearance.hpp"
 #include "windows/MainWindow.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
@@ -68,6 +69,11 @@ int main(int argc, char** argv) {
     xpcog::platform::QSettingsStore store;
     xpcog::Settings                 settings{store};
     settings.applyMigrations();
+
+    // Before the first window exists, so the chosen style is what gets painted
+    // rather than something that visibly re-styles itself a moment after launch.
+    xpcog::app::appearance::applyStyle(
+        QString::fromStdString(settings.WidgetStyle()));
 
     xpcog::app::MainWindow window{registry, settings};
     window.show();

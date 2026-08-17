@@ -52,6 +52,19 @@ XPCOG_SETTING(SelectionFollowsPlayback, bool, "selectionFollowsPlayback", false)
 XPCOG_SETTING(ResumePlaybackOnStartup, bool, "resumePlaybackOnStartup", false)
 XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", true)
 
+// --- appearance -----------------------------------------------------------
+
+/// Which Qt widget style to use. Empty means whatever the platform picks for
+/// itself, which is the right default everywhere: windows11 on Windows 11, the
+/// macOS style on macOS, Fusion on Linux where Qt ships no native style.
+///
+/// The one setting here with **no Cog counterpart** -- Cog is macOS-only and has
+/// exactly one look, so there was nothing to key against. Stored as the style
+/// name QStyleFactory uses ("windows11", "windowsvista", "Fusion", ...) rather
+/// than an enum, so a name this build does not have is simply ignored instead of
+/// mapping onto the wrong style.
+XPCOG_SETTING(WidgetStyle, std::string, "widgetStyle", "")
+
 // --- bookkeeping ----------------------------------------------------------
 
 /// Bumped by SettingsMigration; see Settings::applyMigrations().

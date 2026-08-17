@@ -33,6 +33,7 @@ signals:
 
 private:
     [[nodiscard]] QWidget* buildPlaybackPane();
+    [[nodiscard]] QWidget* buildAppearancePane();
     [[nodiscard]] QWidget* buildAdvancedPane();
 
     Settings& settings_;
