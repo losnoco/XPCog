@@ -16,6 +16,9 @@
 
 #include <QDialog>
 
+#include <functional>
+#include <string>
+
 class QWidget;
 
 namespace xpcog::app {
@@ -35,6 +38,16 @@ private:
     [[nodiscard]] QWidget* buildPlaybackPane();
     [[nodiscard]] QWidget* buildEqualizerPane();
     [[nodiscard]] QWidget* buildAppearancePane();
+    [[nodiscard]] QWidget* buildSpectrumPane();
+
+    /// A labelled swatch button that opens a colour picker and reports the choice
+    /// back as "#rrggbb".
+    ///
+    /// A helper because there are two of these and they must behave identically --
+    /// the interesting part is what happens to an unparseable stored value, and
+    /// having that answered once is the point.
+    [[nodiscard]] QWidget* colorRow(const QString& label, const std::string& stored,
+                                    std::function<void(const std::string&)> store);
     [[nodiscard]] QWidget* buildAdvancedPane();
 
     Settings& settings_;

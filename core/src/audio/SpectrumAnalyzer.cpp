@@ -53,18 +53,102 @@ void SpectrumAnalyzer::prepare(double sampleRate) {
         return;
     }
     sampleRate_ = sampleRate;
-    buildBands(sampleRate);
+    buildBands();
     reset();
 }
 
-void SpectrumAnalyzer::buildBands(double sampleRate) {
+void SpectrumAnalyzer::setMode(Mode mode) {
+    if (mode == mode_) {
+        return;
+    }
+    mode_ = mode;
+    buildBands();
+    reset();
+}
+
+void SpectrumAnalyzer::setFrequencyBandCount(std::size_t bars) {
+    // At least a handful, and never more bars than there are bins to fill them --
+    // past that the extra bars are duplicates of their neighbours, which is the
+    // thing NoteBands mode has a good reason for and this mode does not.
+    const std::size_t clamped = std::clamp(bars, std::size_t{8}, kBins);
+    if (clamped == frequencyBandCount_) {
+        return;
+    }
+    frequencyBandCount_ = clamped;
+    if (mode_ == Mode::Frequencies) {
+        buildBands();
+        reset();
+    }
+}
+
+void SpectrumAnalyzer::setFloorDb(double decibels) {
+    if (decibels >= 0.0 || decibels == floorDb_) {
+        return;
+    }
+    // No rebuild: the floor only scales the dB-to-level mapping, and the bands
+    // themselves are unchanged. Takes effect on the next analyze().
+    floorDb_ = decibels;
+}
+
+void SpectrumAnalyzer::buildBands() {
     edges_.clear();
     frequencies_.clear();
 
-    const double binWidth = sampleRate / static_cast<double>(kWindowFrames);
-    // Nothing above Nyquist, and nothing above Cog's ceiling either.
-    const double ceiling = std::min(kMaxFrequency, sampleRate / 2.0);
+    if (sampleRate_ <= 0.0) {
+        return;
+    }
 
+    const double binWidth = sampleRate_ / static_cast<double>(kWindowFrames);
+    // Nothing above Nyquist, and nothing above Cog's ceiling either.
+    const double ceiling = std::min(kMaxFrequency, sampleRate_ / 2.0);
+
+    if (mode_ == Mode::Frequencies) {
+        buildFrequencyBands(binWidth, ceiling);
+    } else {
+        buildNoteBands(binWidth, ceiling);
+    }
+
+    // The sentinel, so band i owns [edges_[i], edges_[i + 1]).
+    edges_.push_back(kBins);
+    resizeBands();
+}
+
+void SpectrumAnalyzer::resizeBands() {
+    bands_.assign(frequencies_.size(), 0.0F);
+    peaks_.assign(frequencies_.size(), 0.0F);
+    holds_.assign(frequencies_.size(), 0);
+}
+
+void SpectrumAnalyzer::buildFrequencyBands(double binWidth, double ceiling) {
+    // Evenly spaced in log frequency across the same range the note bands use, so
+    // switching modes does not also change what part of the spectrum is on screen.
+    //
+    // Repeated bins are kept, exactly as in NoteBands mode. Dropping them was the
+    // first attempt here too, on the argument that these positions carry no meaning
+    // beyond "evenly spread" -- which gets it backwards: even spread *is* the
+    // meaning of this mode, and at the bottom of the range, where a dozen requested
+    // frequencies fall inside one 10.8 Hz bin, dropping the duplicates leaves an
+    // axis whose steps jump from a ratio of 1.13 to 2.08. A test caught that. The
+    // rule turns out to be the same in both modes: the band table describes where
+    // the bars are, and the resolution of the window is not its business.
+    const double lowest  = std::log10(kMinFrequency);
+    const double highest = std::log10(ceiling);
+    const auto   count   = static_cast<double>(frequencyBandCount_);
+
+    for (std::size_t index = 0; index < frequencyBandCount_; ++index) {
+        const double position  = static_cast<double>(index) / (count - 1.0);
+        const double frequency = std::pow(10.0, lowest + (position * (highest - lowest)));
+
+        const auto bin = static_cast<std::size_t>(frequency / binWidth);
+        if (bin >= kBins) {
+            break;
+        }
+        edges_.push_back(bin);
+        frequencies_.push_back(frequency);
+    }
+}
+
+void SpectrumAnalyzer::buildNoteBands(double binWidth, double ceiling) {
     for (int step = 0; step < kOctaves * kSteps; step += kBandStep) {
         const double frequency = kC0 * std::pow(kRoot24, step);
         if (frequency < kMinFrequency || frequency > ceiling) {
@@ -91,13 +175,6 @@ void SpectrumAnalyzer::buildBands(double sampleRate) {
         edges_.push_back(bin);
         frequencies_.push_back(frequency);
     }
-
-    // The sentinel, so band i owns [edges_[i], edges_[i + 1]).
-    edges_.push_back(kBins);
-
-    bands_.assign(frequencies_.size(), 0.0F);
-    peaks_.assign(frequencies_.size(), 0.0F);
-    holds_.assign(frequencies_.size(), 0);
 }
 
 void SpectrumAnalyzer::analyze(const float* mono, std::size_t frames) {
@@ -146,9 +223,9 @@ void SpectrumAnalyzer::analyze(const float* mono, std::size_t frames) {
         const double decibels =
             (loudest > 0.0F)
                 ? 20.0 * std::log10(static_cast<double>(loudest))
-                : kFloorDb;
+                : floorDb_;
         const auto level = static_cast<float>(
-            std::clamp((decibels - kFloorDb) / -kFloorDb, 0.0, 1.0));
+            std::clamp((decibels - floorDb_) / -floorDb_, 0.0, 1.0));
 
         bands_[band] = level;
 

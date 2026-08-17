@@ -6,7 +6,9 @@
 #include "xpcog/core/audio/ReplayGain.hpp"
 
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QComboBox>
+#include <QIcon>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -15,6 +17,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
@@ -73,6 +76,8 @@ constexpr std::array kCuratedKeys = {
     "volumeScaling",   "resampling",             "enableHDCD",
     "enableFading",    "suspendOutputOnPause",   "alwaysStopAfterCurrent",
     "readCueSheetsInFolders", "widgetStyle",
+    "spectrumBarColor", "spectrumDotColor",     "spectrumFreqMode",
+    "spectrumFloorDb",  "spectrumShowPeaks",
 };
 
 /// Not settings at all, but internal state that happens to live in the same
@@ -128,6 +133,7 @@ PreferencesDialog::PreferencesDialog(Settings& settings, QWidget* parent)
     addPane(tr("Playback"), buildPlaybackPane());
     addPane(tr("Equalizer"), buildEqualizerPane());
     addPane(tr("Appearance"), buildAppearancePane());
+    addPane(tr("Spectrum"), buildSpectrumPane());
     addPane(tr("Advanced"), buildAdvancedPane());
 
     connect(sidebar, &QListWidget::currentRowChanged, panes,
@@ -329,6 +335,119 @@ QWidget* PreferencesDialog::buildAppearancePane() {
         tr("The list is what this build of Qt offers. On Windows, \"Windows 11\" "
            "is the WinUI-style chrome and \"Windows Vista\" the older Win32 look; "
            "\"Fusion\" is Qt's own, and identical on every platform."),
+        pane);
+    note->setWordWrap(true);
+    note->setEnabled(false);
+    layout->addRow(note);
+
+    return pane;
+}
+
+QWidget* PreferencesDialog::colorRow(const QString& label, const std::string& stored,
+                                     std::function<void(const std::string&)> store) {
+    auto* row    = new QWidget(this);
+    auto* layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+
+    // An unparseable stored value -- notably an imported Cog colour, which is an
+    // archived NSColor rather than a string -- shows as the setting's own default
+    // rather than as black. Falling back to a default-constructed QColor would put a
+    // black bar on a near-black background, which looks like the display is broken.
+    QColor initial(QString::fromStdString(stored));
+    if (!initial.isValid()) {
+        initial = QColor(QStringLiteral("#ff8000"));
+    }
+
+    auto* button = new QPushButton(row);
+    auto* swatch = new QLabel(label, row);
+
+    const auto show = [button](const QColor& colour) {
+        QPixmap pixmap(14, 14);
+        pixmap.fill(colour);
+        button->setIcon(QIcon(pixmap));
+        button->setText(colour.name());
+    };
+    show(initial);
+
+    connect(button, &QPushButton::clicked, this,
+            [this, button, show, store = std::move(store)] {
+                const QColor current(button->text());
+                const QColor chosen =
+                    QColorDialog::getColor(current, this, tr("Choose a colour"));
+                if (!chosen.isValid()) {
+                    return;  // cancelled
+                }
+                show(chosen);
+                // Lower case and six digits, which is the form the setting
+                // documents and what QColor::name() produces.
+                store(chosen.name().toStdString());
+            });
+
+    layout->addWidget(swatch);
+    layout->addStretch(1);
+    layout->addWidget(button);
+    return row;
+}
+
+QWidget* PreferencesDialog::buildSpectrumPane() {
+    auto* pane   = new QWidget(this);
+    auto* layout = new QFormLayout(pane);
+
+    // Bands. Cog's two analyser modes, stored in its own key: false is the note
+    // scale, true the even spacing. A combo rather than a checkbox because
+    // "Frequency mode: off" says nothing about what you get instead.
+    auto* bands = new QComboBox;
+    bands->addItem(tr("Musical notes (one bar per semitone)"), false);
+    bands->addItem(tr("Even frequency spacing"), true);
+    bands->setCurrentIndex(settings_.SpectrumFreqMode() ? 1 : 0);
+    connect(bands, &QComboBox::currentIndexChanged, this, [this, bands](int) {
+        settings_.setSpectrumFreqMode(bands->currentData().toBool());
+        emit settingChanged(QStringLiteral("spectrumFreqMode"));
+    });
+    layout->addRow(tr("Bands"), bands);
+
+    layout->addRow(colorRow(tr("Bar colour"), settings_.SpectrumBarColor(),
+                            [this](const std::string& hex) {
+                                settings_.setSpectrumBarColor(hex);
+                                emit settingChanged(
+                                    QStringLiteral("spectrumBarColor"));
+                            }));
+    layout->addRow(colorRow(tr("Peak colour"), settings_.SpectrumDotColor(),
+                            [this](const std::string& hex) {
+                                settings_.setSpectrumDotColor(hex);
+                                emit settingChanged(
+                                    QStringLiteral("spectrumDotColor"));
+                            }));
+
+    auto* peaks = new QCheckBox(tr("Show peak markers"));
+    peaks->setChecked(settings_.SpectrumShowPeaks());
+    connect(peaks, &QCheckBox::toggled, this, [this](bool on) {
+        settings_.setSpectrumShowPeaks(on);
+        emit settingChanged(QStringLiteral("spectrumShowPeaks"));
+    });
+    layout->addRow(QString{}, peaks);
+
+    // The floor. Cog fixes this at -80; the range here is wide enough to be useful
+    // at both ends and stops short of zero, where there would be nothing to draw.
+    auto* floorDb = new QSpinBox;
+    floorDb->setRange(-120, -20);
+    floorDb->setSingleStep(5);
+    floorDb->setSuffix(tr(" dB"));
+    floorDb->setValue(static_cast<int>(std::lround(settings_.SpectrumFloorDb())));
+    connect(floorDb, &QSpinBox::valueChanged, this, [this](int value) {
+        settings_.setSpectrumFloorDb(static_cast<double>(value));
+        emit settingChanged(QStringLiteral("spectrumFloorDb"));
+    });
+    layout->addRow(tr("Quietest level shown"), floorDb);
+
+    auto* note = new QLabel(
+        tr("The note scale is Cog's own: bars sit on semitones from C0, so a "
+           "spectrum of music lines up with the notes being played. Below a few "
+           "hundred hertz several bars share one analysis bin and move together — "
+           "that is the resolution of the window, not a fault.\n\n"
+           "Colours import from a Cog preferences file by key but not by value: "
+           "Cog stores them in an archived Mac format, so an import leaves these "
+           "at Cog's own defaults."),
         pane);
     note->setWordWrap(true);
     note->setEnabled(false);

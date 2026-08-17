@@ -112,6 +112,49 @@ XPCOG_SETTING(Eq20kHz, double, "eq20kHz", 0.0)
 /// mapping onto the wrong style.
 XPCOG_SETTING(WidgetStyle, std::string, "widgetStyle", "")
 
+// --- spectrum -------------------------------------------------------------
+//
+// Cog exposes five spectrum preferences. Three are ported and two are not:
+// `spectrumSceneKit` ("Use 3D rendered spectrum") and `spectrumProjectionMode`
+// ("Use flat perspective") both configure SpectrumViewSK, the SceneKit renderer.
+// XPCog ports SpectrumViewCG, the Core Graphics one, so those two keys would
+// describe a renderer that does not exist here -- carried but ignored is worse
+// than absent, because a user who finds the checkbox expects it to do something.
+
+/// Bar colour, as #RRGGBB. Cog's default is sRGB(1.0, 0.5, 0.0).
+///
+/// The key matches Cog's, but the *value* does not: Cog stores colours as
+/// NSKeyedArchiver blobs through its ColorToValueTransformer, so an imported Cog
+/// plist has an archived NSColor here rather than a string. That fails to parse
+/// and falls back to this default, which is the same colour Cog defaults to -- so
+/// the visible result of an import is correct for anyone who never changed it, and
+/// a reset to orange for anyone who did. Decoding a keyed archive to do better is
+/// not worth it for two colours.
+XPCOG_SETTING(SpectrumBarColor, std::string, "spectrumBarColor", "#ff8000")
+
+/// Peak marker colour, as #RRGGBB. Cog's default is the system red.
+XPCOG_SETTING(SpectrumDotColor, std::string, "spectrumDotColor", "#ff3b30")
+
+/// false: bands on musical notes, one bar per semitone (Cog's
+/// DDB_ANALYZER_MODE_OCTAVE_NOTE_BANDS, and its default).
+/// true: bars spaced evenly in log frequency (DDB_ANALYZER_MODE_FREQUENCIES).
+XPCOG_SETTING(SpectrumFreqMode, bool, "spectrumFreqMode", false)
+
+/// The quietest level drawn, in dB below full scale. Cog fixes this at -80
+/// (LOWER_BOUND in SpectrumViewCG.m) with no way to change it.
+///
+/// **No Cog counterpart.** Exposed because the right value depends on the
+/// material: -80 dB suits mastered pop, and buries the detail in something quiet
+/// enough that the whole display sits in the bottom fifth of the range.
+XPCOG_SETTING(SpectrumFloorDb, double, "spectrumFloorDb", -80.0)
+
+/// Draw the held-peak markers above the bars.
+///
+/// **No Cog counterpart** -- Cog always draws them. A toggle because they are the
+/// element most likely to be unwanted: they are what makes the display busy, and
+/// the bars alone read as calmer.
+XPCOG_SETTING(SpectrumShowPeaks, bool, "spectrumShowPeaks", true)
+
 // --- bookkeeping ----------------------------------------------------------
 
 /// Bumped by SettingsMigration; see Settings::applyMigrations().

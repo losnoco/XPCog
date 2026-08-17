@@ -5,6 +5,7 @@
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QResizeEvent>
 #include <QTimer>
 
 #include <algorithm>
@@ -41,6 +42,45 @@ SpectrumWidget::SpectrumWidget(AudioTap& tap, QWidget* parent)
 }
 
 void SpectrumWidget::setSampleRate(double rate) { analyzer_.prepare(rate); }
+
+void SpectrumWidget::applySettings(const Settings& settings) {
+    // Invalid colour text keeps whatever was there, rather than falling back to a
+    // default QColor -- which is black, and a black bar on a near-black background
+    // is indistinguishable from the spectrum having stopped working. QColor accepts
+    // "#rgb", "#rrggbb" and the SVG colour names, so a hand-edited settings file has
+    // a fair chance of meaning what it says.
+    if (const QColor bar(QString::fromStdString(settings.SpectrumBarColor()));
+        bar.isValid()) {
+        barColor_ = bar;
+    }
+    if (const QColor peak(QString::fromStdString(settings.SpectrumDotColor()));
+        peak.isValid()) {
+        peakColor_ = peak;
+    }
+    showPeaks_ = settings.SpectrumShowPeaks();
+
+    analyzer_.setFloorDb(settings.SpectrumFloorDb());
+    analyzer_.setMode(settings.SpectrumFreqMode()
+                          ? SpectrumAnalyzer::Mode::Frequencies
+                          : SpectrumAnalyzer::Mode::NoteBands);
+    updateFrequencyBandCount();
+    update();
+}
+
+void SpectrumWidget::updateFrequencyBandCount() {
+    if (analyzer_.mode() != SpectrumAnalyzer::Mode::Frequencies) {
+        return;
+    }
+    analyzer_.setFrequencyBandCount(
+        static_cast<std::size_t>(std::max(1, width() / kFrequencyBarPitch)));
+}
+
+void SpectrumWidget::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    // Only matters in Frequencies mode, where the bar count follows the width.
+    // NoteBands has a fixed series and ignores it.
+    updateFrequencyBandCount();
+}
 
 void SpectrumWidget::setActive(bool active) {
     playing_ = active;
@@ -95,11 +135,16 @@ void SpectrumWidget::paintEvent(QPaintEvent* event) {
 
     // The dB grid, behind everything. Positioned by the same normalisation the bars
     // use, so a line labelled -40 dB really is where a -40 dB bar reaches.
+    // It has to follow the *configured* floor rather than a fixed -80, or the grid
+    // would quietly start lying the moment anyone changed it.
+    const double floorDb = analyzer_.floorDb();
     painter.setPen(QColor(255, 255, 255, 22));
     for (const int decibels : kGridLinesDb) {
-        const double level = (decibels - SpectrumAnalyzer::kFloorDb) /
-                             -SpectrumAnalyzer::kFloorDb;
-        const auto y = static_cast<int>(std::lround(height - (level * height)));
+        if (static_cast<double>(decibels) <= floorDb) {
+            continue;  // below the floor, so off the bottom of the display
+        }
+        const double level = (static_cast<double>(decibels) - floorDb) / -floorDb;
+        const auto   y     = static_cast<int>(std::lround(height - (level * height)));
         painter.drawLine(0, y, this->width(), y);
     }
 
@@ -110,10 +155,13 @@ void SpectrumWidget::paintEvent(QPaintEvent* event) {
     // Bottom-to-top gradient over the whole height rather than per bar, so a tall bar
     // and a short one agree about what a given height means -- per-bar gradients make
     // every bar look equally loud at its own tip.
+    // Derived from the chosen bar colour rather than a fixed ramp: the colour is a
+    // setting now, so anything hard-coded here would ignore it. Darker at the bottom
+    // and lighter at the top keeps the shape readable without inventing hues nobody
+    // picked.
     QLinearGradient gradient(0, static_cast<int>(height), 0, 0);
-    gradient.setColorAt(0.0, QColor(64, 160, 255));
-    gradient.setColorAt(0.6, QColor(96, 220, 160));
-    gradient.setColorAt(1.0, QColor(255, 208, 64));
+    gradient.setColorAt(0.0, barColor_.darker(160));
+    gradient.setColorAt(1.0, barColor_.lighter(125));
     painter.setBrush(gradient);
     painter.setPen(Qt::NoPen);
 
@@ -128,8 +176,11 @@ void SpectrumWidget::paintEvent(QPaintEvent* event) {
     }
 
     // The peak markers last, over the bars. Cog draws these as a one-pixel line in
-    // its own colour; the same idea, in a colour that reads on the gradient.
-    painter.setPen(QColor(255, 255, 255, 190));
+    // its own colour -- spectrumDotColor -- and so does this.
+    if (!showPeaks_) {
+        return;
+    }
+    painter.setPen(peakColor_);
     for (std::size_t band = 0; band < peaks.size(); ++band) {
         const double peak = static_cast<double>(peaks[band]);
         if (peak <= 0.0) {

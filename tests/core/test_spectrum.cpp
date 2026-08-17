@@ -248,3 +248,117 @@ TEST_CASE("clear makes the tap look untouched", "[audio][spectrum]") {
     float latest = -1.0F;
     REQUIRE_FALSE(tap.readLatest(&latest, 1));
 }
+
+TEST_CASE("the floor rescales the display without moving the bands",
+          "[audio][spectrum]") {
+    // Cog fixes its floor at -80; this is settable, so the mapping from dB to bar
+    // height has to follow it. A -40 dB tone sits halfway up an 80 dB scale and
+    // three-quarters of the way up a 160 dB one -- and the band it lands in must not
+    // change, because the floor is a display choice and the bands are not.
+    SpectrumAnalyzer analyzer;
+    analyzer.prepare(kRate);
+
+    const std::vector<float>  window = sineWindow(1000.0, 0.01);  // -40 dBFS
+    const std::vector<double> before = analyzer.frequencies();
+
+    analyzer.analyze(window.data(), window.size());
+    const std::size_t band = loudestBand(analyzer);
+    REQUIRE(analyzer.bands()[band] == Approx(0.5).margin(0.03));
+
+    analyzer.setFloorDb(-160.0);
+    analyzer.analyze(window.data(), window.size());
+    REQUIRE(analyzer.floorDb() == -160.0);
+    REQUIRE(analyzer.bands()[band] == Approx(0.75).margin(0.03));
+    REQUIRE(analyzer.frequencies() == before);
+
+    // A floor at or above full scale would leave nothing to draw, so it is refused
+    // rather than clamped -- clamping silently would answer a different question
+    // than the caller asked.
+    analyzer.setFloorDb(0.0);
+    REQUIRE(analyzer.floorDb() == -160.0);
+    analyzer.setFloorDb(12.0);
+    REQUIRE(analyzer.floorDb() == -160.0);
+}
+
+TEST_CASE("frequency mode spreads bars evenly in log frequency",
+          "[audio][spectrum]") {
+    // Cog's other analyser mode. The property that distinguishes it from the note
+    // scale is the *ratio* between neighbours: constant, as in the note scale, but
+    // set by the requested bar count rather than by the tempered scale -- so asking
+    // for a different count changes the spacing, which it cannot do for notes.
+    SpectrumAnalyzer analyzer;
+    analyzer.prepare(kRate);
+    analyzer.setMode(SpectrumAnalyzer::Mode::Frequencies);
+    analyzer.setFrequencyBandCount(64);
+
+    const std::vector<double>& frequencies = analyzer.frequencies();
+    REQUIRE(frequencies.size() > 8);
+    REQUIRE(frequencies.back() <= kRate / 2.0);
+
+    for (std::size_t index = 1; index < frequencies.size(); ++index) {
+        INFO("band " << index << " at " << frequencies[index]);
+        REQUIRE(frequencies[index] > frequencies[index - 1]);
+    }
+
+    // Evenly spaced in the log domain: every step is the same ratio. Compared
+    // against the first step rather than against a formula, so this checks the
+    // spacing is uniform without restating how it was computed.
+    const double step = frequencies[1] / frequencies[0];
+    for (std::size_t index = 2; index < frequencies.size(); ++index) {
+        INFO("band " << index);
+        REQUIRE(frequencies[index] / frequencies[index - 1] ==
+                Approx(step).epsilon(0.02));
+    }
+
+    // Not the note scale: a semitone is about 1.0595, and 64 bars across eleven
+    // octaves are much further apart than that.
+    REQUIRE(step > std::pow(2.0, 1.0 / 12.0));
+}
+
+TEST_CASE("a tone still lands in the right place in frequency mode",
+          "[audio][spectrum]") {
+    SpectrumAnalyzer analyzer;
+    analyzer.prepare(kRate);
+    analyzer.setMode(SpectrumAnalyzer::Mode::Frequencies);
+    analyzer.setFrequencyBandCount(128);
+
+    const std::vector<float> window = sineWindow(1000.0);
+    analyzer.analyze(window.data(), window.size());
+
+    const double centre = analyzer.frequencies()[loudestBand(analyzer)];
+    // Within one band's width of 1 kHz. The bands are wider than semitones here, so
+    // the tolerance is the spacing rather than a fixed ratio.
+    const double spacing = analyzer.frequencies()[1] / analyzer.frequencies()[0];
+    INFO("peaked at " << centre << " Hz with spacing " << spacing);
+    REQUIRE(std::max(centre / 1000.0, 1000.0 / centre) < spacing);
+}
+
+TEST_CASE("switching modes keeps the band table consistent", "[audio][spectrum]") {
+    // The bug this rules out: band data sized for one mode read after switching to
+    // the other. bands(), peaks() and frequencies() must always agree in length,
+    // whatever order the setters are called in.
+    SpectrumAnalyzer analyzer;
+    analyzer.prepare(kRate);
+
+    const auto consistent = [&analyzer] {
+        REQUIRE(analyzer.bands().size() == analyzer.frequencies().size());
+        REQUIRE(analyzer.peaks().size() == analyzer.frequencies().size());
+    };
+    consistent();
+
+    analyzer.setMode(SpectrumAnalyzer::Mode::Frequencies);
+    consistent();
+    analyzer.setFrequencyBandCount(200);
+    consistent();
+    analyzer.setMode(SpectrumAnalyzer::Mode::NoteBands);
+    consistent();
+
+    // And a rate change after a mode change still rebuilds against the new mode.
+    analyzer.setMode(SpectrumAnalyzer::Mode::Frequencies);
+    analyzer.prepare(96000.0);
+    consistent();
+
+    const std::vector<float> window = sineWindow(1000.0);
+    analyzer.analyze(window.data(), window.size());
+    consistent();
+}

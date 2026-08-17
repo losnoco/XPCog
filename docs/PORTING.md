@@ -400,6 +400,28 @@ first block after a seek, which is M4's work.
   latency to undo the lead that creates; tapping at the last point before the driver
   means there is no lead to undo. See `AudioTap`.
 
+  Customisation follows Cog's own preference keys where they exist:
+  `spectrumBarColor`, `spectrumDotColor` and `spectrumFreqMode`. Two of Cog's five
+  are deliberately absent -- `spectrumSceneKit` and `spectrumProjectionMode` both
+  configure the SceneKit renderer, and a checkbox for a renderer that does not
+  exist is worse than no checkbox. Two are new (`spectrumFloorDb`,
+  `spectrumShowPeaks`) and labelled as such in `settings.def`.
+
+  The colour keys match Cog's but their *values* do not: Cog archives NSColor
+  through a value transformer, so an imported plist holds a keyed archive where a
+  `#rrggbb` string is expected. That fails to parse and falls back to the same
+  colour Cog defaults to, which makes the import correct for anyone who never
+  changed it and a reset for anyone who did.
+
+  One lesson learned twice, which is why it is here rather than only at the call
+  site: **the band table says where the bars are, and the window's resolution is
+  not its business.** Bands whose bins collide -- which happens below a few hundred
+  hertz, where a semitone is under a fifth of a bin -- are kept and repeat the bin.
+  Dropping them was the first attempt in *both* modes, with a different
+  justification each time, and a test caught it each time: in NoteBands it breaks
+  the note grid that motivates a tempered scale, and in Frequencies it turns an even
+  log axis into steps that jump from a ratio of 1.13 to 2.08.
+
 **Still to do:** the mini player, and the taskbar/Dock progress and badge that
 Cog's `DockIconController` draws.
 

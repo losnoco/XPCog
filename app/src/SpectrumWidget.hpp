@@ -19,8 +19,10 @@
 
 #pragma once
 
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/SpectrumAnalyzer.hpp"
 
+#include <QColor>
 #include <QWidget>
 
 #include <vector>
@@ -45,6 +47,13 @@ public:
     /// depends on it and the widget has no other way to learn it.
     void setSampleRate(double rate);
 
+    /// Re-reads every spectrum setting: colours, band mode, floor, peak markers.
+    ///
+    /// One function rather than a setter each, because these are read from exactly
+    /// two places -- construction and a change in Preferences -- and the failure
+    /// worth avoiding is those two disagreeing about which settings exist.
+    void applySettings(const Settings& settings);
+
     /// Starts and stops the repaint clock. Called when playback starts or stops, and
     /// when the panel is shown or hidden -- an invisible widget must not be running a
     /// 4096-point FFT sixty times a second.
@@ -57,9 +66,12 @@ protected:
     void paintEvent(QPaintEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
     void tick();
+    /// Derives the bar count from the widget's width. Frequencies mode only.
+    void updateFrequencyBandCount();
 
     AudioTap&        tap_;
     SpectrumAnalyzer analyzer_;
@@ -73,6 +85,19 @@ private:
     /// Whether playback is running. Separate from the timer, because the timer also
     /// stops when the widget is hidden and the two reasons must not be confused.
     bool playing_ = false;
+
+    /// Cog's spectrumBarColor and spectrumDotColor, and its defaults for them.
+    QColor barColor_{QStringLiteral("#ff8000")};
+    QColor peakColor_{QStringLiteral("#ff3b30")};
+    bool   showPeaks_ = true;
+
+    /// Pixels per bar when the bands are evenly spaced.
+    ///
+    /// Frequencies mode only, where the count is ours to choose. Cog picks one band
+    /// per pixel column, which at any real window width is finer than the eye
+    /// resolves; this aims for a bar every few pixels and hands the resulting count
+    /// to the analyser.
+    static constexpr int kFrequencyBarPitch = 5;
 };
 
 }  // namespace xpcog::app

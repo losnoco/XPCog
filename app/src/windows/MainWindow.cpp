@@ -198,6 +198,7 @@ void MainWindow::buildUi() {
     spectrumDock->setAllowedAreas(Qt::TopDockWidgetArea | Qt::BottomDockWidgetArea);
     addDockWidget(Qt::BottomDockWidgetArea, spectrumDock);
     spectrumDock_ = spectrumDock;
+    spectrum_->applySettings(settings_);
 
     transport_ = addToolBar(tr("Transport"));
     // saveState() identifies toolbars by objectName and warns without one --
@@ -511,6 +512,12 @@ void MainWindow::showPreferences() {
         // those keys begins "eq".
         if (key.startsWith(QLatin1String("eq"))) {
             playback_->reloadDsp();
+        }
+        // Push for the same reason, and immediate for a better one: every setting
+        // here is about what the display *looks* like, and a colour you have to
+        // restart to see is not a colour picker, it is a form.
+        if (key.startsWith(QLatin1String("spectrum"))) {
+            spectrum_->applySettings(settings_);
         }
     });
     dialog.exec();

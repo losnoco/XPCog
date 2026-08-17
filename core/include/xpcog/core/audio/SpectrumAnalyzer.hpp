@@ -37,6 +37,7 @@
 #include "xpcog/core/audio/Fft.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -49,10 +50,43 @@ public:
     /// Usable bins: the lower half of the transform.
     static constexpr std::size_t kBins = kWindowFrames / 2;
 
-    /// Cog's LOWER_BOUND. Anything quieter is drawn as nothing.
-    static constexpr double kFloorDb = -80.0;
+    /// Cog's LOWER_BOUND, and the default here. Anything quieter reads as nothing.
+    static constexpr double kDefaultFloorDb = -80.0;
+
+    /// How the bands are laid out. Cog's two analyser modes, minus the three it
+    /// never selects.
+    enum class Mode : std::uint8_t {
+        /// One bar per semitone, on a tempered scale from C0. Cog's default, and
+        /// the reason a spectrum of music lines up with the notes being played.
+        NoteBands,
+        /// Bars spaced evenly in log frequency. Cog's DDB_ANALYZER_MODE_FREQUENCIES:
+        /// no musical meaning, but an even spread across the range and a bar count
+        /// that does not collapse at the bottom.
+        Frequencies,
+    };
 
     SpectrumAnalyzer();
+
+    /// Both of these rebuild the band table, so they take effect on the next
+    /// analyze() rather than mid-frame. Cheap enough to call from a settings
+    /// change; not to be called per frame.
+    void setMode(Mode mode);
+
+    /// How many bars Frequencies mode draws. Ignored in NoteBands mode, where the
+    /// count is whatever the scale and the sample rate allow.
+    ///
+    /// Cog derives this from the view width in pixels -- one accumulated band per
+    /// column -- which would make a core class depend on a widget's geometry. The
+    /// caller passes a count instead and can derive it from its own width if it
+    /// wants to; the effect is the same and the dependency points the right way.
+    void setFrequencyBandCount(std::size_t bars);
+
+    /// The quietest level drawn, in dB. Values at or above zero are ignored, since
+    /// a floor at full scale would leave nothing to draw.
+    void setFloorDb(double decibels);
+
+    [[nodiscard]] double floorDb() const noexcept { return floorDb_; }
+    [[nodiscard]] Mode   mode() const noexcept { return mode_; }
 
     /// Sizes the band table for `sampleRate`. Bands above Nyquist are dropped
     /// rather than folded, so a 44.1 kHz track shows fewer bars than a 96 kHz one --
@@ -87,10 +121,17 @@ public:
     }
 
 private:
-    void buildBands(double sampleRate);
+    void buildBands();
+    void buildNoteBands(double binWidth, double ceiling);
+    void buildFrequencyBands(double binWidth, double ceiling);
+    void resizeBands();
 
     std::unique_ptr<Fft> fft_;
     double               sampleRate_ = 0.0;
+
+    Mode        mode_               = Mode::NoteBands;
+    std::size_t frequencyBandCount_ = 96;
+    double      floorDb_            = kDefaultFloorDb;
 
     std::vector<float> window_;      ///< Hamming, kWindowFrames long
     std::vector<float> real_;        ///< transform scratch

@@ -128,7 +128,7 @@ winget install Xiph.FLAC Gyan.FFmpeg LAME.LAME Mozilla.opus-tools
 `oggenc.exe` (renamed from `oggenc2.exe`) anywhere on `PATH`.
 
 Watch the skip count in `ctest` output, not just the pass rate — a full run is
-240 tests and **0 skipped**. Note that the encoders alone were not enough before
+244 tests and **0 skipped**. Note that the encoders alone were not enough before
 the fixture commands stopped assuming a POSIX shell: `2>/dev/null` under
 `cmd.exe` fails the whole command, which every call site read as "encoder
 missing". See `tests/TestShell.hpp`.
