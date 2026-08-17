@@ -201,7 +201,25 @@ is discarded by a ring flush before this stage would see it again, so a symmetri
 crossfade needs the fader to retain a tail of its own output. A seek therefore
 ramps in cleanly but still cuts the outgoing audio abruptly.
 
-**Still to do:** the fade out above, downmix, rubberband, signalsmith,
+**And the downmix matrix**, which is *not* a `DSPNode` — a departure worth
+recording. Cog's nodes pass `AudioChunk`s carrying their own format, so one can
+change the channel count; a `DSPNode` here transforms a buffer in place at a fixed
+format, and downmix changes the frame size by definition. So it lives where
+channel geometry already changes, in `AudioConverter`, replacing the `fitChannels`
+placeholder whose own comment had expected a `DSPDownmixNode`. The ratios are
+Cog's constant for constant, including the ones that are magic numbers there too.
+
+One thing that came out of testing it: **Cog's matrix has no headroom guarantee.**
+Six correlated channels at full scale sum to 1.968 per side, not something ≤ 1.
+The test was written asserting the opposite and failed, which is the more useful
+outcome — it is recorded rather than corrected, because quietly rescaling would
+make XPCog disagree with Cog on every surround file. Anything downstream assuming
+samples sit in [-1, 1] should know a 5.1 source can hand it nearly double.
+
+Upmixing is deferred: it is a separate matrix in Cog too, and only matters once
+XPCog negotiates a device channel count above the source's.
+
+**Still to do:** the fade out above, upmix, rubberband, signalsmith,
 FreeSurround.
 
 *Verify:* the equaliser showed that one test is not enough, because each

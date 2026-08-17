@@ -22,6 +22,7 @@
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/AudioEngine.hpp"
 #include "xpcog/core/audio/Equalizer.hpp"
+#include "xpcog/core/audio/Downmix.hpp"
 #include "xpcog/core/audio/Fader.hpp"
 #include "xpcog/core/audio/OfflineOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
@@ -624,4 +625,140 @@ TEST_CASE("a seek fades in, and only when fading is enabled", "[dsp]") {
     fader.setEnabled(false);
     REQUIRE(fader.level() == 1.0);
     REQUIRE_FALSE(fader.active());
+}
+
+// ---------------------------------------------------------------------------
+// The downmix matrix.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// One frame of 5.1, with `value` on the channel at canonical index `index` and
+/// silence everywhere else. 5.1 order is FL FR FC LFE BL BR.
+std::vector<float> only(std::uint32_t channel, std::uint32_t channels, float value) {
+    std::vector<float> frame(channels, 0.0F);
+    frame[channel] = value;
+    return frame;
+}
+
+}  // namespace
+
+TEST_CASE("front left and right stay on their own side", "[dsp]") {
+    // The pair must not cross-mix: Cog mirrors the front ratios so the second
+    // entry (zero) is what the opposite channel gets. Getting this wrong collapses
+    // the image to mono while still looking like a plausible downmix.
+    std::vector<float> out(2, 0.0F);
+
+    auto left = only(0, 6, 1.0F);
+    downmixToStereo(left.data(), 6, kConfig5Point1, out.data(), 1);
+    REQUIRE(out[0] > 0.0F);
+    REQUIRE(out[1] == 0.0F);
+
+    auto right = only(1, 6, 1.0F);
+    downmixToStereo(right.data(), 6, kConfig5Point1, out.data(), 1);
+    REQUIRE(out[0] == 0.0F);
+    REQUIRE(out[1] > 0.0F);
+}
+
+TEST_CASE("centre and LFE go equally to both sides", "[dsp]") {
+    std::vector<float> out(2, 0.0F);
+
+    for (const std::uint32_t channel : {2U, 3U}) {  // front centre, LFE
+        auto frame = only(channel, 6, 1.0F);
+        downmixToStereo(frame.data(), 6, kConfig5Point1, out.data(), 1);
+        INFO("channel " << channel);
+        REQUIRE(out[0] > 0.0F);
+        REQUIRE(out[0] == out[1]);
+    }
+}
+
+TEST_CASE("the 5.1 ratios are Cog's", "[dsp]") {
+    // Pinned to the constants rather than to a property, because the whole point
+    // of reproducing Cog's ladder is that a 5.1 file mixes to the same thing. The
+    // expected values follow Cog's order of operations: front and centre are set
+    // by the back-channel branch, then both scaled by 0.8 for the LFE.
+    std::vector<float> out(2, 0.0F);
+
+    auto frontLeft = only(0, 6, 1.0F);
+    downmixToStereo(frontLeft.data(), 6, kConfig5Point1, out.data(), 1);
+    REQUIRE(out[0] == Approx(0.651F * 0.8F).epsilon(1e-5));
+
+    auto centre = only(2, 6, 1.0F);
+    downmixToStereo(centre.data(), 6, kConfig5Point1, out.data(), 1);
+    REQUIRE(out[0] == Approx(0.46F * 0.8F).epsilon(1e-5));
+
+    // LFE takes the centre ratio *after* that attenuation, which is Cog's
+    // ordering rather than an independent constant.
+    auto lfe = only(3, 6, 1.0F);
+    downmixToStereo(lfe.data(), 6, kConfig5Point1, out.data(), 1);
+    REQUIRE(out[0] == Approx(0.46F * 0.8F).epsilon(1e-5));
+
+    // Back left is asymmetric on purpose: mostly its own side, a little across.
+    auto backLeft = only(4, 6, 1.0F);
+    downmixToStereo(backLeft.data(), 6, kConfig5Point1, out.data(), 1);
+    REQUIRE(out[0] == Approx(0.5636F * 0.8F).epsilon(1e-5));
+    REQUIRE(out[1] == Approx(0.3254F * 0.8F).epsilon(1e-5));
+}
+
+TEST_CASE("Cog's matrix can exceed full scale, and does", "[dsp]") {
+    // Written expecting the ratios to keep a downmix inside unity. They do not:
+    // six correlated channels at full scale sum to 1.968 on each side, so the
+    // matrix has no headroom guarantee at all. Recorded rather than corrected,
+    // because the ratios are Cog's and quietly scaling them would make XPCog
+    // disagree with Cog on every surround file.
+    //
+    // It survives contact with real material because six channels are never
+    // identical and at full scale; the constants are a listening compromise, not
+    // a bound. Anything downstream that assumes samples are in [-1, 1] needs to
+    // know that a 5.1 source can hand it nearly double.
+    std::vector<float> frame(6, 1.0F);
+    std::vector<float> out(2, 0.0F);
+    downmixToStereo(frame.data(), 6, kConfig5Point1, out.data(), 1);
+
+    const float expected = (0.651F * 0.8F)      // front left
+                           + (0.46F * 0.8F)     // front centre
+                           + (0.46F * 0.8F)     // LFE, which takes the centre ratio
+                           + (0.5636F * 0.8F)   // back left
+                           + (0.3254F * 0.8F);  // back right, crossing over
+    REQUIRE(out[0] == Approx(expected).epsilon(1e-5));
+    REQUIRE(out[0] > 1.0F);
+
+    // Symmetric, which is the part that would matter if it were ever clamped.
+    REQUIRE(out[0] == Approx(out[1]).epsilon(1e-5));
+}
+
+TEST_CASE("mono is the average of the stereo downmix", "[dsp]") {
+    std::vector<float> frame{0.4F, -0.2F, 0.1F, 0.0F, 0.3F, 0.05F};
+    std::vector<float> stereo(2, 0.0F);
+    std::vector<float> mono(1, 0.0F);
+
+    downmixToStereo(frame.data(), 6, kConfig5Point1, stereo.data(), 1);
+    downmixToMono(frame.data(), 6, kConfig5Point1, mono.data(), 1);
+
+    REQUIRE(mono[0] == Approx(0.5F * (stereo[0] + stereo[1])).epsilon(1e-6));
+}
+
+TEST_CASE("channels the matrix has no place for are dropped", "[dsp]") {
+    // Front centre left and right, and everything from the top layer up, fall
+    // through Cog's switch to a zero ratio. Reproduced rather than improved on.
+    const std::uint32_t config = kConfig5Point1 | kChannelFrontCenterLeft;
+    std::vector<float>  out(2, 0.0F);
+
+    // Index 6 within this config is the front-centre-left flag.
+    auto frame = only(6, 7, 1.0F);
+    downmixToStereo(frame.data(), 7, config, out.data(), 1);
+    REQUIRE(out[0] == 0.0F);
+    REQUIRE(out[1] == 0.0F);
+}
+
+TEST_CASE("a stereo source is left alone by the converter's channel fit", "[dsp]") {
+    // Guards the path rather than the matrix: equal counts must not be routed
+    // through a downmix at all, or stereo would be scaled by front ratios.
+    std::vector<float> out(4, 0.0F);
+    std::vector<float> frame{0.5F, -0.25F, 0.5F, -0.25F};
+    downmixToStereo(frame.data(), 2, kConfigStereo, out.data(), 2);
+    // 2 -> 2 through the matrix *would* be unity here, which is what makes the
+    // fast path in fitChannels safe as well as quicker.
+    REQUIRE(out[0] == Approx(0.5F).epsilon(1e-6));
+    REQUIRE(out[1] == Approx(-0.25F).epsilon(1e-6));
 }

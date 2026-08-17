@@ -1,5 +1,7 @@
 #include "xpcog/core/audio/AudioConverter.hpp"
 
+#include "xpcog/core/audio/Downmix.hpp"
+
 #include "xpcog/core/audio/SampleConvert.hpp"
 
 #include <hdcd_decode2.h>
@@ -28,15 +30,30 @@ namespace {
 
 /// Fits `inChannels` into `outChannels`.
 ///
-/// Deliberately simple: copy matching channels, duplicate mono into every output,
-/// and drop or zero the rest. A proper matrix downmix is DSPDownmixNode's job in
-/// M4 -- doing it badly here would be worse than doing it plainly.
+/// Reducing to stereo or mono goes through the real matrix (see Downmix.hpp),
+/// which is where M4 put what an earlier comment here expected to become a
+/// DSPDownmixNode -- downmix changes the frame size, and a DSPNode transforms in
+/// place at a fixed format.
+///
+/// Everything else stays deliberately simple: duplicate mono into every output,
+/// copy the channels that correspond, zero the rest. Upmixing a surround layout
+/// properly is a separate matrix Cog keeps separate too.
 void fitChannels(const float* in, std::size_t frames, std::uint32_t inChannels,
-                 std::uint32_t outChannels, std::vector<float>& out) {
+                 std::uint32_t inConfig, std::uint32_t outChannels,
+                 std::vector<float>& out) {
     out.resize(frames * outChannels);
 
     if (inChannels == outChannels) {
         std::copy_n(in, frames * outChannels, out.begin());
+        return;
+    }
+
+    if (inChannels > outChannels && outChannels == 2) {
+        downmixToStereo(in, inChannels, inConfig, out.data(), frames);
+        return;
+    }
+    if (inChannels > outChannels && outChannels == 1) {
+        downmixToMono(in, inChannels, inConfig, out.data(), frames);
         return;
     }
 
@@ -202,7 +219,8 @@ bool AudioConverter::process(const AudioChunk& in, std::vector<float>& out) {
     }
 
     // 2. fit channels
-    fitChannels(decoded_.data(), frames, inFormat.channels, outChannels_, remapped_);
+    fitChannels(decoded_.data(), frames, inFormat.channels, inFormat.channelConfig,
+                outChannels_, remapped_);
 
     if (!configureFor(inFormat)) {
         return false;
