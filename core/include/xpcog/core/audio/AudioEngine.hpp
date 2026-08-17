@@ -202,6 +202,18 @@ private:
     RingBuffer  preRing_;
     std::thread dsp_;
 
+    /// True while the DSP thread holds a block that has left `preRing_` and not
+    /// yet reached `ring_`.
+    ///
+    /// Without it, "has everything been played out" is answered by looking at the
+    /// two rings -- and a block in flight between them is counted by neither. The
+    /// end of a track was therefore declared while up to one block was still on
+    /// its way to the device, which stop() then discarded. Small (a few
+    /// milliseconds) and completely silent: it took comparing two renders of the
+    /// same tone for it to show up at all, as one capture short by exactly one
+    /// block.
+    std::atomic<bool> dspBusy_{false};
+
     /// The chain, in order. Points at the members above rather than owning
     /// anything: the set of stages is fixed at compile time, so a vector of
     /// unique_ptr would buy indirection and nothing else.

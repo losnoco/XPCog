@@ -408,7 +408,21 @@ std::vector<float> renderWith(double preampDb, int band, double bandDb) {
     REQUIRE(engine.play(Url::fromLocalPath(toneWav())));
     engine.waitUntilFinished();
     engine.stop();
-    return capturedAudio(*output);
+
+    std::vector<float> captured = capturedAudio(*output);
+
+    // The whole tone, to the sample, and checked here so every caller gets it.
+    //
+    // The tests below compare two renders against each other, and that turned out
+    // to be a weaker check than it looks: both can be short by a block and still
+    // agree, so a dropped tail is invisible until the two runs happen to lose
+    // different amounts -- which is what eventually failed, on Linux only, having
+    // passed on Windows every time. An absolute length cannot hide it.
+    constexpr std::size_t kToneSamples =
+        static_cast<std::size_t>(kRate) * 2 * static_cast<std::size_t>(kChannels);
+    REQUIRE(captured.size() == kToneSamples);
+
+    return captured;
 }
 
 [[nodiscard]] double rmsOf(const std::vector<float>& samples) {

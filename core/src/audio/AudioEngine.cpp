@@ -253,15 +253,25 @@ void AudioEngine::dspLoop() {
         // Whole frames only. read() hands back whatever is available, and a
         // block that ended mid-frame would shift every channel by one from there
         // on -- silent, and it would sound like the stereo image collapsing.
+        // Claimed *before* the ring is even measured, and released only once the
+        // block has been handed downstream. The order is the whole point: what
+        // makes it safe is that this store is sequenced before the read's own
+        // release store, so a feeder that sees the samples gone from preRing_ is
+        // guaranteed to see this flag set. See the declaration for what the
+        // feeder does with it.
+        dspBusy_.store(true, std::memory_order_relaxed);
+
         const std::size_t available = preRing_.availableToRead();
         const std::size_t wanted    = std::min(available, block.size()) / channels * channels;
         if (wanted == 0) {
+            dspBusy_.store(false, std::memory_order_release);
             std::this_thread::sleep_for(kFeederBackoff);
             continue;
         }
 
         const std::size_t got = preRing_.read(block.data(), wanted);
         if (got == 0) {
+            dspBusy_.store(false, std::memory_order_release);
             continue;  // a flush landed between the check and the read
         }
 
@@ -279,6 +289,10 @@ void AudioEngine::dspLoop() {
                 std::this_thread::sleep_for(kFeederBackoff);
             }
         }
+
+        // Released only here, after the write. A release store, so a feeder that
+        // observes this as false also observes everything written to ring_ above.
+        dspBusy_.store(false, std::memory_order_release);
     }
 }
 
@@ -431,8 +445,18 @@ void AudioEngine::feederLoop() {
     }
 
     // Let the device play out what is still buffered before declaring the end.
+    //
+    // Three places hold audio, not two. Between the rings sits the DSP thread's
+    // own block, and a block in flight is counted by neither -- so the obvious
+    // condition declares the end while up to one block is still on its way to the
+    // device, and stop() then tears down before it arrives. That lost the last
+    // few milliseconds of every track: inaudible enough to survive listening
+    // tests, and caught by a test that renders the same tone twice and compares
+    // the lengths, where it showed up as a capture short by exactly one block.
     while (running_.load(std::memory_order_acquire) &&
-           (preRing_.availableToRead() > 0 || ring_.availableToRead() > 0)) {
+           (preRing_.availableToRead() > 0 ||
+            dspBusy_.load(std::memory_order_acquire) ||
+            ring_.availableToRead() > 0)) {
         publishSeams();
         std::this_thread::sleep_for(kFeederBackoff);
     }
