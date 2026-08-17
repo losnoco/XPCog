@@ -40,7 +40,9 @@ constexpr auto kInternalMime = "application/x-xpcog-playlist-rows";
 // --- PlaylistModel ------------------------------------------------------
 
 PlaylistModel::PlaylistModel(Playlist& playlist, QObject* parent)
-    : QAbstractTableModel(parent), playlist_(playlist) {
+    : QAbstractTableModel(parent),
+      playlist_(playlist),
+      rows_(static_cast<int>(playlist.size())) {
     subscription_ = playlist_.observe(
         [this](const Playlist::Change& change) { onPlaylistChanged(change); });
 }
@@ -51,14 +53,22 @@ void PlaylistModel::onPlaylistChanged(const Playlist::Change& change) {
     const auto first = static_cast<int>(change.index);
     const auto last  = static_cast<int>(change.index + change.count) - 1;
 
+    // The playlist has already changed by the time this runs, so `rows_` still
+    // holds the count Qt must see inside the begin call, and is advanced to the new
+    // one before the matching end. See the declaration for what goes wrong if this
+    // reads the playlist live instead.
+    const auto updated = static_cast<int>(playlist_.size());
+
     switch (change.kind) {
         case Kind::Inserted:
             beginInsertRows({}, first, last);
+            rows_ = updated;
             endInsertRows();
             break;
 
         case Kind::Removed:
             beginRemoveRows({}, first, last);
+            rows_ = updated;
             endRemoveRows();
             break;
 
@@ -74,6 +84,7 @@ void PlaylistModel::onPlaylistChanged(const Playlist::Change& change) {
             // Playlist::move allows both. A reset is correct in every case and
             // a playlist edit is not a hot path.
             beginResetModel();
+            rows_ = updated;
             endResetModel();
             break;
 
@@ -89,7 +100,7 @@ void PlaylistModel::onPlaylistChanged(const Playlist::Change& change) {
 }
 
 int PlaylistModel::rowCount(const QModelIndex& parent) const {
-    return parent.isValid() ? 0 : static_cast<int>(playlist_.size());
+    return parent.isValid() ? 0 : rows_;
 }
 
 int PlaylistModel::columnCount(const QModelIndex& parent) const {
@@ -97,7 +108,12 @@ int PlaylistModel::columnCount(const QModelIndex& parent) const {
 }
 
 QVariant PlaylistModel::data(const QModelIndex& index, int role) const {
-    if (!index.isValid() || index.row() >= rowCount()) {
+    // Against the playlist, not rowCount(). The two disagree for the moment
+    // between beginRemoveRows() and endRemoveRows(), where rowCount() deliberately
+    // still reports the pre-removal count -- and this indexes into the playlist,
+    // which has already shrunk.
+    if (!index.isValid() || index.row() < 0 ||
+        static_cast<std::size_t>(index.row()) >= playlist_.size()) {
         return {};
     }
     const PlaylistEntry& entry = playlist_.at(static_cast<std::size_t>(index.row()));
@@ -279,7 +295,8 @@ bool PlaylistModel::dropMimeData(const QMimeData* data, Qt::DropAction action, i
 }
 
 TrackId PlaylistModel::trackIdAt(int row) const {
-    if (row < 0 || row >= rowCount()) {
+    // The playlist's bounds, for the same reason as data().
+    if (row < 0 || static_cast<std::size_t>(row) >= playlist_.size()) {
         return kInvalidTrackId;
     }
     return playlist_.at(static_cast<std::size_t>(row)).id;

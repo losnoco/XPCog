@@ -565,7 +565,26 @@ those still fail on a `QtCore` leak before removing the target.
 - **Architecture** — CI greps `core/` for `#include <Q`; `xpcog-cli` failing to link
   *is* the Qt-free test.
 
-### Four things that bite
+### Five things that bite
+
+**Playlist notifies after the fact; Qt wants to be told before.** `Playlist`
+mutates, reindexes, and *then* calls its observers. Qt's model protocol is the
+opposite: inside `beginRemoveRows()` the rows must still be there and `rowCount()`
+must still report the old total. Reading the playlist live from `rowCount()` looks
+obviously right and satisfies the assertion for every removal except one — the row
+being removed has to be *less than* the new count, so removing the final row fails.
+
+`Playlist::remove` works descending, so "select all and delete" erases the last row
+first and aborts on the very first step. It shipped, and no test caught it, because
+every existing test removed from the middle. `PlaylistModel` now keeps the count Qt
+expects to see and advances it between begin and end, and its accessors bounds-check
+against the *playlist* rather than against that count, since the two disagree for
+exactly the width of that window.
+
+The general lesson is worth more than the fix: an adapter between two change
+protocols has to hold whichever state the stricter one requires. Reaching through to
+the source of truth is what feels natural and is precisely what breaks.
+
 
 **Tests that build fixtures skip silently when their encoder is missing.** Sixteen
 tests shell out to `flac`, `oggenc`, `opusenc`, `lame`, `wavpack` or `ffmpeg`. A skip

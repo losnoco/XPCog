@@ -85,6 +85,21 @@ private:
     Playlist&    playlist_;
     Subscription subscription_;
     TrackId      current_ = kInvalidTrackId;
+
+    /// The row count this model reports, which is *not* always what the playlist
+    /// currently holds.
+    ///
+    /// Playlist notifies after the fact: `removeAt` erases, reindexes and only then
+    /// calls its observers. Qt's protocol is the other way round -- inside
+    /// beginRemoveRows() the rows must still exist, and rowCount() must still
+    /// return the count from before. Reading the playlist live therefore fails
+    /// `ASSERT: "last < rowCount(parent)"` for any removal that includes the final
+    /// row, which is every "select all and delete".
+    ///
+    /// So this adapter keeps the number Qt expects to see and advances it between
+    /// begin and end. Every path that changes the count must maintain it, which is
+    /// the cost of bridging two protocols that disagree about when to speak.
+    int rows_ = 0;
 };
 
 /// Sorting and filtering, display-only.

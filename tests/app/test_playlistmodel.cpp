@@ -111,3 +111,90 @@ TEST_CASE("track numbers sort numerically, not as text", "[app][playlist]") {
     // Lexicographically "10" precedes "2". Track 10 must still come last.
     CHECK(visibleTitles(proxy).last() == QStringLiteral("Track 10"));
 }
+
+// --- removal ------------------------------------------------------------
+//
+// Playlist notifies its observers *after* it has changed; Qt's model protocol
+// wants the opposite, with the rows still present inside beginRemoveRows() and
+// rowCount() still reporting the old total. PlaylistModel bridges the two, and
+// these are the cases where getting it wrong is not subtle -- Qt asserts.
+//
+// The crash this was found by: selecting everything and pressing Delete, which
+// aborted with `ASSERT: "last < rowCount(parent)"`. The general form is *any*
+// removal that includes the final row, so removing the last track alone did it too;
+// nothing exercised that, because every existing test removed from the middle.
+
+TEST_CASE("removing the last row does not break the model's row count",
+          "[app][playlist]") {
+    Playlist      playlist = makeAlbum();
+    PlaylistModel model(playlist, nullptr);
+    REQUIRE(model.rowCount() == 10);
+
+    // The minimal reproduction. In a debug Qt this aborts rather than fails when
+    // the model reads its row count live from the playlist.
+    playlist.removeAt(9, 1);
+    REQUIRE(model.rowCount() == 9);
+    REQUIRE(visibleTitles(model).last() == QStringLiteral("Track 9"));
+}
+
+TEST_CASE("removing every row leaves an empty model", "[app][playlist]") {
+    // What the bug report was: select all, Delete. Playlist::remove works
+    // descending, so the very first erase is the final row -- which is why deleting
+    // the whole playlist hit this and deleting most of it did not.
+    Playlist      playlist = makeAlbum();
+    PlaylistModel model(playlist, nullptr);
+
+    std::vector<TrackId> everything;
+    for (const PlaylistEntry& entry : playlist.entries()) {
+        everything.push_back(entry.id);
+    }
+    playlist.remove(everything);
+
+    REQUIRE(model.rowCount() == 0);
+    REQUIRE(visibleTitles(model).isEmpty());
+    // And the model must stay usable rather than merely surviving the removal.
+    REQUIRE_FALSE(
+        model.data(model.index(0, PlaylistModel::ColumnTitle), Qt::DisplayRole)
+            .isValid());
+    REQUIRE(model.trackIdAt(0) == kInvalidTrackId);
+}
+
+TEST_CASE("the model's row count tracks the playlist through every edit",
+          "[app][playlist]") {
+    // The cached count is the price of bridging two protocols that disagree about
+    // when to speak, and the risk it carries is drift: one change kind that forgets
+    // to advance it and the model reports a stale size for the rest of the session.
+    // So this walks one of each.
+    Playlist      playlist;
+    PlaylistModel model(playlist, nullptr);
+    REQUIRE(model.rowCount() == 0);
+
+    playlist = makeAlbum();
+    PlaylistModel fresh(playlist, nullptr);
+    REQUIRE(fresh.rowCount() == 10);
+
+    // Insert.
+    std::vector<PlaylistEntry> extra(1);
+    extra[0].url      = *Url::parse("file:///music/extra.flac");
+    extra[0].rawTitle = "Extra";
+    playlist.insert(playlist.size(), std::move(extra));
+    REQUIRE(fresh.rowCount() == 11);
+
+    // Remove from the middle, then from the end.
+    playlist.removeAt(0, 1);
+    REQUIRE(fresh.rowCount() == 10);
+    playlist.removeAt(playlist.size() - 1, 1);
+    REQUIRE(fresh.rowCount() == 9);
+
+    // A reordering, which the model answers with a reset.
+    playlist.move(0, 1, 5);
+    REQUIRE(fresh.rowCount() == 9);
+
+    // And empty again.
+    std::vector<TrackId> rest;
+    for (const PlaylistEntry& entry : playlist.entries()) {
+        rest.push_back(entry.id);
+    }
+    playlist.remove(rest);
+    REQUIRE(fresh.rowCount() == 0);
+}
