@@ -104,6 +104,29 @@ std::filesystem::path albumFlac() {
     return path;
 }
 
+/// The sheet describing albumFlac(), written once per process.
+///
+/// Built here rather than inside whichever test happens to need it first.
+/// catch_discover_tests runs every test case in its own process and ctest
+/// orders them by name, so a test that only *reads* this file silently depends
+/// on a different test having run before it -- and "a cue track reports its own
+/// duration" sorts before "cue tracks decode the correct span", which was the
+/// only writer. That passed everywhere it had ever run, because the file was
+/// already sitting in the temp directory from an earlier run. On a clean
+/// machine it failed, which is exactly what CI found the first time these tests
+/// were not being skipped.
+std::filesystem::path albumCue() {
+    static const std::filesystem::path path = writeText(
+        "album.cue",
+        "PERFORMER \"Artist\"\n"
+        "TITLE \"Album\"\n"
+        "FILE \"album.flac\" WAVE\n"
+        "  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n"
+        "  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:02:00\n"
+        "  TRACK 03 AUDIO\n    TITLE \"Three\"\n    INDEX 01 00:04:00\n");
+    return path;
+}
+
 std::vector<float> decodeAll(const Url& url) {
     auto opened = registry().open(url);
     REQUIRE(opened);
@@ -234,15 +257,7 @@ TEST_CASE("cue tracks decode the correct span of the audio file", "[cue]") {
     const auto flac = albumFlac();
     if (flac.empty()) SKIP("the `flac` command-line tool is not available");
 
-    writeText("album.cue",
-              "PERFORMER \"Artist\"\n"
-              "TITLE \"Album\"\n"
-              "FILE \"album.flac\" WAVE\n"
-              "  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n"
-              "  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:02:00\n"
-              "  TRACK 03 AUDIO\n    TITLE \"Three\"\n    INDEX 01 00:04:00\n");
-
-    const Url cue     = Url::fromLocalPath(fixtureDir() / "album.cue");
+    const Url cue     = Url::fromLocalPath(albumCue());
     const auto entries = registry().expandContainer(cue);
     REQUIRE(entries.size() == 3);
 
@@ -276,7 +291,7 @@ TEST_CASE("a cue track reports its own duration, not the file's", "[cue]") {
     if (!kHaveCue) SKIP("cue sheet support not built");
     if (albumFlac().empty()) SKIP("the `flac` command-line tool is not available");
 
-    const Url cue = Url::fromLocalPath(fixtureDir() / "album.cue");
+    const Url cue = Url::fromLocalPath(albumCue());
     auto      opened = registry().open(cue.withFragment("02"));
     REQUIRE(opened);
 
@@ -290,7 +305,7 @@ TEST_CASE("seeking within a cue track stays inside the track", "[cue]") {
     if (!kHaveCue) SKIP("cue sheet support not built");
     if (albumFlac().empty()) SKIP("the `flac` command-line tool is not available");
 
-    const Url cue    = Url::fromLocalPath(fixtureDir() / "album.cue");
+    const Url cue    = Url::fromLocalPath(albumCue());
     auto      opened = registry().open(cue.withFragment("02"));
     REQUIRE(opened);
 
@@ -323,6 +338,6 @@ TEST_CASE("a cue URL without a fragment does not decode", "[cue]") {
 
     // Nothing identifies which track to play, so this must fail rather than
     // silently decode the whole album as one track.
-    const Url cue = Url::fromLocalPath(fixtureDir() / "album.cue");
+    const Url cue = Url::fromLocalPath(albumCue());
     CHECK_FALSE(registry().open(cue));
 }
