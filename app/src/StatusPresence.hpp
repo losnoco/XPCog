@@ -77,6 +77,19 @@ public:
     /// does nothing" rather than wondering why its updates go nowhere.
     [[nodiscard]] bool isVisible() const { return tray_ != nullptr || menu_ != nullptr; }
 
+    /// Whether there is a real tray icon -- not merely *some* presence.
+    ///
+    /// The distinction matters, and it is not pedantry: on macOS isVisible() is true
+    /// because the Dock menu exists, while tray_ is null. Anything that hides the
+    /// window and relies on getting it back has to ask this one, or it will hide the
+    /// window on macOS and leave nothing to click.
+    [[nodiscard]] bool hasTrayIcon() const { return tray_ != nullptr; }
+
+    /// A transient notification from the tray icon, or nothing where there is no
+    /// tray. Used once, to say the application is still running after its window
+    /// disappeared.
+    void showMessage(const QString& title, const QString& body);
+
 private:
     void refreshTooltip();
 

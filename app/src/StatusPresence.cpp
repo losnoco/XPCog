@@ -147,6 +147,13 @@ void StatusPresence::clear() {
     setNowPlaying(QString{}, QString{});
 }
 
+void StatusPresence::showMessage(const QString& title, const QString& body) {
+    if (tray_ == nullptr) {
+        return;
+    }
+    tray_->showMessage(title, body, applicationIcon());
+}
+
 void StatusPresence::refreshTooltip() {
     if (tray_ == nullptr) {
         return;

@@ -92,6 +92,18 @@ private:
     /// Switches between the full window and the mini player. A mode, as in Cog:
     /// one is shown and the other hidden, never both.
     void setMiniMode(bool mini);
+
+    /// Saves everything that has to outlive the session: window geometry, the
+    /// splitter, the file tree's root, the playlist, and the settings store.
+    ///
+    /// Split out of closeEvent() because there are now two ways to stop being on
+    /// screen -- closing and hiding to the tray -- and only one of them used to
+    /// save. It is also what Quit needs, which used to skip it entirely.
+    void persistState();
+
+    /// Ends the session properly. Sets the flag that lets closeEvent() know this is
+    /// a real quit rather than a close to be intercepted, then exits.
+    void requestQuit();
     void onRowActivated(const QModelIndex& index);
 
     void removeSelected();
@@ -146,6 +158,14 @@ private:
     /// The taskbar button's overlay badge and progress bar. Never null; the base
     /// class does nothing where the platform has no such surface.
     platform::TaskbarIntegration* taskbar_ = nullptr;
+
+    /// Set while shutting down, so closeEvent() knows not to treat the close as
+    /// something to intercept. Without it, "close to tray" would make Quit hide the
+    /// window and leave the application running with no way to stop it.
+    bool quitting_ = false;
+
+    /// So the "still running" notification appears once, not on every close.
+    bool announcedTrayHide_ = false;
 
     /// The mini player, built the first time it is asked for. Null until then:
     /// most sessions never open it, and it holds a seek slider that would

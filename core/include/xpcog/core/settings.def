@@ -112,6 +112,20 @@ XPCOG_SETTING(Eq20kHz, double, "eq20kHz", 0.0)
 /// mapping onto the wrong style.
 XPCOG_SETTING(WidgetStyle, std::string, "widgetStyle", "")
 
+/// Closing the window leaves XPCog running in the notification area instead of
+/// quitting. Off by default: changing what a close button does without being asked
+/// is how an application gets a reputation for not closing.
+///
+/// **No Cog counterpart**, and it could not have one -- Cog is macOS-only, where
+/// closing a window has never meant quitting the application. What this really
+/// does is offer that same behaviour on the platforms whose convention is the
+/// opposite.
+///
+/// Honoured only when a tray icon actually exists. Without one there is no way
+/// back to a hidden window, so the setting is ignored rather than trapping the
+/// application somewhere unreachable -- see StatusPresence::hasTrayIcon().
+XPCOG_SETTING(CloseToTray, bool, "closeToTray", false)
+
 // --- mini player ----------------------------------------------------------
 
 /// Whether the mini player is showing instead of the main window. A mode, not a

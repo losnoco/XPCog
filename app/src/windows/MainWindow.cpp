@@ -326,7 +326,7 @@ void MainWindow::wireUp() {
         dialog.exec();
     });
     on(ActionId::HelpAboutQt, [] { QApplication::aboutQt(); });
-    on(ActionId::FileQuit, [] { QApplication::quit(); });
+    on(ActionId::FileQuit, [this] { requestQuit(); });
 
     if (QAction* command = actions_->action(ActionId::ViewFileTree); command != nullptr) {
         connect(command, &QAction::toggled, tree_, &QWidget::setVisible);
@@ -920,7 +920,7 @@ QString MainWindow::statusSummary() const {
 
 // --- window events ------------------------------------------------------
 
-void MainWindow::closeEvent(QCloseEvent* event) {
+void MainWindow::persistState() {
     QSettings ui;
     ui.setValue(QStringLiteral("window/geometry"), saveGeometry());
     ui.setValue(QStringLiteral("window/state"), saveState());
@@ -937,6 +937,49 @@ void MainWindow::closeEvent(QCloseEvent* event) {
                 .arg(QString::fromStdString(library_->lastError())));
     }
     settings_.sync();
+}
+
+void MainWindow::requestQuit() {
+    // Through close() rather than straight to QApplication::quit(), which exits the
+    // event loop *without* closing any window -- so closeEvent never ran and nothing
+    // was saved. Quitting from the menu or the tray has therefore always discarded
+    // the playlist and the window geometry; only closing with the title bar's button
+    // saved them. Nobody noticed because that is how most sessions end.
+    //
+    // Close to tray makes it impossible to miss: with the close button intercepted,
+    // Quit becomes the only way out, so the leak would go from occasional to always.
+    quitting_ = true;
+    close();
+    QApplication::quit();
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    // Hidden rather than closed, when asked to be and when there is somewhere to
+    // hide *to*. hasTrayIcon() rather than isVisible(): on macOS the presence is the
+    // Dock menu and there is no tray icon, so honouring this there would hide the
+    // window and leave nothing to click.
+    if (!quitting_ && settings_.CloseToTray() && presence_->hasTrayIcon()) {
+        // Saved anyway. The session continues, so this is not strictly required --
+        // but the user has just made a deliberate gesture, and a machine that goes
+        // down while XPCog sits in the tray should not cost them the playlist.
+        persistState();
+        event->ignore();
+        hide();
+
+        // Once per session. A window that vanishes with no explanation is
+        // indistinguishable from a crash, and this is the only moment where saying
+        // so is useful rather than noise.
+        if (!announcedTrayHide_) {
+            announcedTrayHide_ = true;
+            presence_->showMessage(
+                tr("XPCog is still playing"),
+                tr("The window is closed, not the player. Click the tray icon to "
+                   "bring it back."));
+        }
+        return;
+    }
+
+    persistState();
     QMainWindow::closeEvent(event);
 }
 

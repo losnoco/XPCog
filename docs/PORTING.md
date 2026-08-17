@@ -451,6 +451,22 @@ first block after a seek, which is M4's work.
   platform this targets — so the same controls sit in one compact row below a normal
   title bar. Cog's larger `miniPlusWindow` variant is deliberately not ported.
 
+- **Close to tray**, off by default, and the one setting here with no Cog
+  counterpart that could not have had one: Cog is macOS-only, where closing a window
+  has never meant quitting. What the option really does is offer that behaviour on
+  the platforms whose convention is the opposite. Honoured only when a tray icon
+  actually exists — `hasTrayIcon()`, not `isVisible()`, since on macOS the presence
+  is the Dock menu and hiding the window there would leave nothing to click.
+
+  It also uncovered a bug older than itself. `File → Quit` called
+  `QApplication::quit()`, which exits the event loop *without* closing any window —
+  so `closeEvent` never ran and **the playlist and window geometry were saved only
+  when the title bar's close button was used**. Quitting from the menu or the tray
+  silently discarded both. Nobody noticed because most sessions end the other way.
+  Close to tray would have made it the normal case, since it intercepts exactly the
+  path that did work. Quit now closes the window properly first, and the saving is a
+  `persistState()` both paths call.
+
 **Still to do:** the Dock half of the taskbar work — `NSDockTile`, which is the
 surface Cog actually draws on. The interface and both call sites exist; only the
 macOS implementation is missing, and it is the kind of custom tile drawing that

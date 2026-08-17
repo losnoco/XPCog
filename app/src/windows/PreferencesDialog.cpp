@@ -23,6 +23,7 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QSystemTrayIcon>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -75,7 +76,7 @@ constexpr std::array kResamplingChoices = {
 constexpr std::array kCuratedKeys = {
     "volumeScaling",   "resampling",             "enableHDCD",
     "enableFading",    "suspendOutputOnPause",   "alwaysStopAfterCurrent",
-    "readCueSheetsInFolders", "widgetStyle",
+    "readCueSheetsInFolders", "widgetStyle",           "closeToTray",
     "spectrumBarColor", "spectrumDotColor",     "spectrumFreqMode",
     "spectrumFloorDb",  "spectrumShowPeaks",
 };
@@ -330,6 +331,23 @@ QWidget* PreferencesDialog::buildAppearancePane() {
         emit settingChanged(QStringLiteral("widgetStyle"));
     });
     layout->addRow(tr("Style"), box);
+
+    auto* closeToTray = new QCheckBox(tr("Closing the window keeps XPCog running"));
+    closeToTray->setChecked(settings_.CloseToTray());
+    // Offered only where there is somewhere to hide to. Without a notification area
+    // this would hide the window with no way to bring it back, so the setting is
+    // ignored at the call site *and* disabled here -- a checkbox that does nothing
+    // is worse than an absent one, and this at least says why.
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+        closeToTray->setEnabled(false);
+        closeToTray->setToolTip(
+            tr("This session has no notification area to keep XPCog in."));
+    }
+    connect(closeToTray, &QCheckBox::toggled, this, [this](bool on) {
+        settings_.setCloseToTray(on);
+        emit settingChanged(QStringLiteral("closeToTray"));
+    });
+    layout->addRow(QString{}, closeToTray);
 
     auto* note = new QLabel(
         tr("The list is what this build of Qt offers. On Windows, \"Windows 11\" "
