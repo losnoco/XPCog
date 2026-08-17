@@ -65,8 +65,8 @@ public:
     /// than leaving a blank one, which is what Cog does by removing the item.
     void setNowPlaying(const QString& title, const QString& artist);
 
-    /// Drives the tray icon's glyph. Cog badges its Dock tile with play, pause
-    /// or stop; a tray icon is the same idea with the only image the app has.
+    /// Playing, paused or stopped. Reaches the tooltip, not the icon -- see
+    /// refreshTooltip() for why the image stays the application's.
     void setPlaybackState(bool playing, bool paused);
 
     /// Nothing is playing: drop the track rows and go back to the stopped glyph.
@@ -78,7 +78,7 @@ public:
     [[nodiscard]] bool isVisible() const { return tray_ != nullptr || menu_ != nullptr; }
 
 private:
-    void refreshIcon();
+    void refreshTooltip();
 
     QWidget* window_ = nullptr;
     QMenu*   menu_   = nullptr;
@@ -91,6 +91,11 @@ private:
     QAction* artistRow_ = nullptr;
     QAction* titleRow_  = nullptr;
     QAction* infoSplit_ = nullptr;
+
+    /// The track, kept because the tooltip is rebuilt from scratch whenever
+    /// either the track or the state changes and the two arrive separately.
+    QString title_;
+    QString artist_;
 
     bool playing_ = false;
     bool paused_  = false;

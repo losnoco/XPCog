@@ -548,3 +548,15 @@ asserted a property Qt provides rather than the one the code was responsible for
   and consecutive loose FLACs — is verified by hand. `OfflineOutput` establishes
   that the seam is sample-exact, which is the part that can be automated; that it
   is also inaudible through WASAPI is not.
+- `app/icons/xpcog.icns` is **structurally verified but never rendered**. The
+  standard ImageMagick Windows build ships no ICNS coder (`IM_MOD_RL_ICNS_.dll`
+  is absent) and `iconutil` is macOS-only, so `make-icons.py` emits the container
+  itself and parses it back — magic, total length, chunk lengths, and a PNG
+  signature per chunk. That rules out a packing slip, not a wrong chunk type for
+  a given size: macOS declines to draw an icon it dislikes rather than reporting
+  it, so the first real check is a Finder window on a Mac. The Windows `.ico` and
+  the Qt resource are verified on this host, the `.ico` by extracting it back out
+  of the linked executable.
+- The **Dock menu** on macOS is likewise unrendered here. It compiles in CI, and
+  `QMenu::setAsDockMenu()` is Qt's own call, but that the menu carries the right
+  items *below* the ones AppKit appends is a thing to look at rather than assert.

@@ -1,13 +1,13 @@
 #include "StatusPresence.hpp"
 
 #include "ActionRegistry.hpp"
+#include "AppIcon.hpp"
 
 #include <QAction>
-#include <QApplication>
 #include <QFontMetrics>
 #include <QIcon>
 #include <QMenu>
-#include <QStyle>
+#include <QStringList>
 #include <QSystemTrayIcon>
 #include <QWidget>
 
@@ -112,7 +112,8 @@ StatusPresence::StatusPresence(const ActionRegistry& actions, QWidget* window,
                     raiseWindow(window_);
                 }
             });
-    refreshIcon();
+    tray_->setIcon(applicationIcon());
+    refreshTooltip();
     tray_->show();
 #endif
 }
@@ -129,43 +130,59 @@ void StatusPresence::setNowPlaying(const QString& title, const QString& artist) 
     artistRow_->setVisible(!artist.isEmpty());
     infoSplit_->setVisible(!title.isEmpty() || !artist.isEmpty());
 
-    if (tray_ != nullptr) {
-        // The tooltip is the only thing visible without opening the menu, so it
-        // carries the whole track rather than the elided rows.
-        const QString what = artist.isEmpty() ? title
-                             : title.isEmpty()
-                                 ? artist
-                                 : QStringLiteral("%1 — %2").arg(artist, title);
-        tray_->setToolTip(what.isEmpty() ? QStringLiteral("XPCog")
-                                         : QStringLiteral("XPCog — %1").arg(what));
-    }
+    title_  = title;
+    artist_ = artist;
+    refreshTooltip();
 }
 
 void StatusPresence::setPlaybackState(bool playing, bool paused) {
     playing_ = playing;
     paused_  = paused;
-    refreshIcon();
+    refreshTooltip();
 }
 
 void StatusPresence::clear() {
     playing_ = false;
     paused_  = false;
     setNowPlaying(QString{}, QString{});
-    refreshIcon();
 }
 
-void StatusPresence::refreshIcon() {
+void StatusPresence::refreshTooltip() {
     if (tray_ == nullptr) {
         return;
     }
 
-    // XPCog has no application icon yet, so the tray shows the playback state
-    // instead of a logo -- which is what Cog's Dock badge shows anyway. When
-    // there is an icon, this becomes a badge over it rather than a replacement.
-    const QStyle::StandardPixmap glyph = !playing_ ? QStyle::SP_MediaStop
-                                         : paused_ ? QStyle::SP_MediaPause
-                                                   : QStyle::SP_MediaPlay;
-    tray_->setIcon(QApplication::style()->standardIcon(glyph));
+    // The tray keeps the application icon and puts the state in the tooltip,
+    // rather than swapping the image for a play or pause glyph.
+    //
+    // Cog does swap -- it badges the Dock tile -- but a Dock tile is 128px and a
+    // tray icon is 16, where a corner badge is three or four pixels and reads as
+    // dirt. It also costs the only thing the tray is actually for, which is
+    // being recognisable at a glance among a row of other icons.
+    //
+    // Badging belongs to the taskbar/Dock progress work (NSDockTile,
+    // ITaskbarList3), which has a real API for it at a size that can carry it.
+    const QString what = artist_.isEmpty() ? title_
+                         : title_.isEmpty()
+                             ? artist_
+                             : QStringLiteral("%1 — %2").arg(artist_, title_);
+
+    QString state;
+    if (playing_ && paused_) {
+        state = tr("Paused");
+    } else if (playing_) {
+        state = tr("Playing");
+    }
+
+    QStringList lines;
+    lines.append(QStringLiteral("XPCog"));
+    if (!state.isEmpty()) {
+        lines.append(state);
+    }
+    if (!what.isEmpty()) {
+        lines.append(what);
+    }
+    tray_->setToolTip(lines.join(QStringLiteral(" — ")));
 }
 
 }  // namespace xpcog::app

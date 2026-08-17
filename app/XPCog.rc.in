@@ -24,6 +24,17 @@
 
 #include <winver.h>
 
+// The application icon. Resource id 1 by convention: Explorer, the taskbar and
+// Alt-Tab all take the *numerically lowest* icon resource in the executable, so
+// this being 1 is what makes it the one they show rather than a coin toss
+// between whatever resources happen to be linked in.
+//
+// This is the free-form artwork, not the rounded tile the macOS bundle uses.
+// Windows draws an app icon on its own background -- the taskbar, a dark title
+// bar, a Start tile -- so a light tile of our own would read as a pale box
+// pasted onto whatever is behind it.
+1 ICON "@XPCOG_RC_ICON@"
+
 VS_VERSION_INFO VERSIONINFO
     FILEVERSION    @XPCOG_RC_VERSION@
     PRODUCTVERSION @XPCOG_RC_VERSION@

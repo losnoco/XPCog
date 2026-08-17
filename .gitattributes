@@ -1,0 +1,9 @@
+# Git detects binary files by looking for a NUL byte near the start, which works
+# for all of these -- but core.autocrlf is on for this repository, so the cost of
+# being wrong is a checkout that silently rewrites bytes inside an image. A
+# corrupted .icns does not fail to build; it produces a macOS bundle whose icon
+# the Finder declines to draw, on a machine none of the developers are using.
+# Cheap to state, so state it.
+*.png binary
+*.ico binary
+*.icns binary

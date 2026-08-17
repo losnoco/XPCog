@@ -10,6 +10,8 @@ qt_standard_project_setup(REQUIRES 6.5)
 set(XPCOG_APP_SOURCES
     src/ActionRegistry.cpp
     src/ActionRegistry.hpp
+    src/AppIcon.cpp
+    src/AppIcon.hpp
     src/Appearance.cpp
     src/Appearance.hpp
     src/PlaybackController.cpp
@@ -54,6 +56,32 @@ target_link_libraries(xpcog-appcore PUBLIC
 
 set_target_properties(xpcog-appcore PROPERTIES FOLDER app)
 
+# ---------------------------------------------------------------------------
+# The icon.
+#
+# Attached to the library rather than to the executable -- unlike the
+# translations below -- because AppIcon.cpp reads it and the tests link the
+# library. Without that, a test could only check that the sizes list is
+# well-formed, never that the files behind it exist, which is the failure that
+# actually happens: a renamed PNG degrades the icon silently, since Qt answers a
+# request for 16px with a scaled 256px and reports no error.
+#
+# The PNG set is the free-form artwork. The .ico and .icns are not here; they go
+# to the platforms' own icon slots further down.
+# ---------------------------------------------------------------------------
+qt_add_resources(xpcog-appcore "icons"
+    PREFIX "/icons"
+    BASE icons
+    FILES
+        icons/xpcog-16.png
+        icons/xpcog-24.png
+        icons/xpcog-32.png
+        icons/xpcog-48.png
+        icons/xpcog-64.png
+        icons/xpcog-128.png
+        icons/xpcog-256.png
+)
+
 qt_add_executable(xpcog-app
     src/main.cpp
 )
@@ -66,8 +94,23 @@ if(WIN32)
     # FILEVERSION is four comma-separated integers, not a dotted string.
     set(XPCOG_RC_VERSION
         "${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0")
+    # Absolute, and forward slashes doubled for the resource compiler, which
+    # treats a backslash in a string as an escape.
+    file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/icons/xpcog.ico" XPCOG_RC_ICON)
     configure_file(XPCog.rc.in "${CMAKE_CURRENT_BINARY_DIR}/XPCog.rc" @ONLY)
     target_sources(xpcog-app PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/XPCog.rc")
+    # So the resource is rebuilt when the artwork changes, which it would not be
+    # otherwise: the .rc only names the file.
+    set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/XPCog.rc"
+        APPEND PROPERTY OBJECT_DEPENDS "${XPCOG_RC_ICON}")
+elseif(APPLE)
+    # The tile artwork, as the bundle's icon. Named without its extension in the
+    # Info.plist and copied into Contents/Resources, which is where CFBundle
+    # looks; MACOSX_PACKAGE_LOCATION is what puts it there.
+    set(XPCOG_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/icons/xpcog.icns")
+    target_sources(xpcog-app PRIVATE "${XPCOG_ICNS}")
+    set_source_files_properties("${XPCOG_ICNS}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
 endif()
 
 set_target_properties(xpcog-app PROPERTIES
@@ -78,6 +121,7 @@ set_target_properties(xpcog-app PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER "co.losno.xpcog"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_ICON_FILE "xpcog"
     FOLDER app)
 
 target_link_libraries(xpcog-app PRIVATE

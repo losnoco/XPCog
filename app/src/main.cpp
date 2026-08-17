@@ -6,6 +6,7 @@
 // NSUserDefaults) from anywhere; keeping ownership visible at the top is what
 // lets the same objects be swapped for test doubles below it.
 
+#include "AppIcon.hpp"
 #include "Appearance.hpp"
 #include "SingleInstance.hpp"
 #include "StatusPresence.hpp"
@@ -73,6 +74,12 @@ int main(int argc, char** argv) {
     QCoreApplication::setOrganizationName(QStringLiteral("LoSnoCo"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("losno.co"));
     QCoreApplication::setApplicationName(QStringLiteral("XPCog"));
+
+    // Once, on the application: every window and dialog inherits it, so none of
+    // them has to remember. Windows and macOS take their taskbar and Dock icon
+    // from the executable's own resource instead -- this is what reaches window
+    // title bars, Alt-Tab on some Linux shells, and the About box.
+    QApplication::setWindowIcon(xpcog::app::applicationIcon());
 
     installTranslations();
 
