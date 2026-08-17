@@ -293,12 +293,13 @@ asserted a property Qt provides rather than the one the code was responsible for
 
 ## Known gaps
 
-- Windows CI installs no encoders, so those sixteen tests still skip there.
-  Chocolatey has no dependable packages for them, and the decoders they exercise are
-  not platform-specific — what the Windows job catches is compiling, linking and path
-  handling. A Windows *workstation* can run them all: winget supplies `flac`,
-  `ffmpeg`, `lame` and `opusenc`, and `oggenc` and `wavpack` come from their
-  upstream builds. See the README.
+- Windows CI now installs all six encoders from pinned upstream releases, so the
+  suite runs the same sixteen tests on every platform. It depends on those URLs
+  staying up, and a failed download fails the job deliberately — a mirror that
+  quietly degraded back to sixteen skips is the exact failure mode being closed.
+  Two of the six come from RareWares, which is not a versioned host in the way a
+  GitHub release is; if it becomes unreliable, vendor the binaries instead of
+  making the step tolerant.
 - The Windows SMTC card is captioned **"Unknown app"** above otherwise correct
   track metadata. This is app identity, not metadata: an unpackaged executable
   has none, and Windows derives the name either from an AppUserModelID backed by
