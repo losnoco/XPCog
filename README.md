@@ -1,5 +1,7 @@
 # XPCog
 
+[![CI](https://github.com/losnoco/XPCog/actions/workflows/ci.yml/badge.svg)](https://github.com/losnoco/XPCog/actions/workflows/ci.yml)
+
 A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio player by
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
