@@ -16,7 +16,7 @@ option(XPCOG_WITH_MPG123    "MP3 decoder (libmpg123)"      ON)
 option(XPCOG_WITH_WAVPACK   "WavPack decoder"              ON)
 option(XPCOG_WITH_APE       "Monkey's Audio decoder (M1b)" OFF)
 option(XPCOG_WITH_MUSEPACK  "Musepack decoder (M1b)"       OFF)
-option(XPCOG_WITH_TAGLIB    "TagLib metadata (M1b)"        OFF)
+option(XPCOG_WITH_TAGLIB    "TagLib tag reading"           ON)
 option(XPCOG_WITH_DSD       "DSD / DoP support (M6)"       OFF)
 
 # Sanitizers are opt-in; the RT-safety work in M1a wants them available early.

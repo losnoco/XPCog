@@ -94,6 +94,14 @@ public:
 
     [[nodiscard]] std::vector<std::byte> artwork(std::string_view hash) const;
 
+    /// Moves the image a metadata reader left in `entry.metadata["albumart"]`
+    /// into the artwork table and replaces it with a hash. Returns false when
+    /// there was nothing to move.
+    ///
+    /// Kept out of the Scanner because the Scanner has no database, and out of
+    /// storeArtwork() because a caller may well have artwork with no entry.
+    bool adoptArtwork(PlaylistEntry& entry);
+
     /// Deletes artwork no playlist entry references. Cog does this at startup
     /// (AppController.m:589).
     [[nodiscard]] std::int64_t pruneArtwork();

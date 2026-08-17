@@ -11,6 +11,7 @@
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
+#include "xpcog/core/library/Scanner.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -31,6 +32,7 @@ int usage() {
               "  codecs              list compiled-in codecs and claimed extensions\n"
               "  info <file>         print format and tags\n"
               "  expand <playlist>   list the tracks a playlist or container holds\n"
+              "  scan <path>...      walk folders and playlists, reading tags\n"
               "  decode <in> <out>   decode to headerless native-endian PCM\n"
               "\n"
               "  play <file>...      play, gaplessly across multiple files");
@@ -103,15 +105,22 @@ int listCodecs() {
 }
 
 int info(std::string_view path) {
-    auto opened = registry().open(urlFromArgument(path));
-    if (!opened) {
-        std::fprintf(stderr, "xpcog-cli: cannot open '%.*s'\n",
-                     static_cast<int>(path.size()), path.data());
+    // Through the Scanner rather than the decoder alone, so what is printed is
+    // exactly what a scan would put in the library -- tags from the metadata
+    // readers included, not just the ones a decoder happens to expose.
+    xpcog::PlaylistEntry entry;
+    entry.url = urlFromArgument(path);
+
+    const xpcog::Scanner scanner{registry()};
+    if (!scanner.readMetadata(entry)) {
+        std::fprintf(stderr, "xpcog-cli: cannot open '%.*s': %s\n",
+                     static_cast<int>(path.size()), path.data(),
+                     entry.errorMessage.c_str());
         return 1;
     }
 
-    const auto props = opened.decoder->properties();
-    const auto& fmt  = props.format;
+    const auto& props = entry.properties;
+    const auto& fmt   = props.format;
 
     std::printf("codec:        %s (%s)\n", props.codec.c_str(), props.encoding.c_str());
     std::printf("sample rate:  %.0f Hz\n", fmt.sampleRate);
@@ -130,23 +139,68 @@ int info(std::string_view path) {
         std::putchar('\n');
     }
 
-    const auto tags = opened.decoder->metadata();
-    if (!tags.empty()) {
-        std::puts("tags:");
-        for (const auto& entry : tags) {
-            if (const auto* strings =
-                    std::get_if<std::vector<std::string>>(&entry.value)) {
-                for (const auto& value : *strings) {
-                    std::printf("  %-20s %s\n", entry.key.c_str(), value.c_str());
-                }
-            } else if (const auto* bytes =
-                           std::get_if<std::vector<std::byte>>(&entry.value)) {
-                std::printf("  %-20s <%zu bytes>\n", entry.key.c_str(), bytes->size());
+    std::puts("tags:");
+    const auto tagLine = [](const char* key, const std::string& value) {
+        if (!value.empty()) {
+            std::printf("  %-20s %s\n", key, value.c_str());
+        }
+    };
+    tagLine("artist", entry.artist);
+    tagLine("albumartist", entry.albumArtist);
+    tagLine("album", entry.album);
+    tagLine("title", entry.rawTitle);
+    tagLine("genre", entry.genre);
+    tagLine("composer", entry.composer);
+    tagLine("date", entry.date);
+    if (entry.track != 0) {
+        std::printf("  %-20s %d\n", "track", entry.track);
+    }
+    if (entry.disc != 0) {
+        std::printf("  %-20s %d\n", "disc", entry.disc);
+    }
+
+    for (const auto& tag : entry.metadata) {
+        if (const auto* strings = std::get_if<std::vector<std::string>>(&tag.value)) {
+            for (const auto& value : *strings) {
+                std::printf("  %-20s %s\n", tag.key.c_str(), value.c_str());
             }
+        } else if (const auto* bytes =
+                       std::get_if<std::vector<std::byte>>(&tag.value)) {
+            std::printf("  %-20s <%zu bytes>\n", tag.key.c_str(), bytes->size());
         }
     }
 
     return 0;
+}
+
+int scan(const std::vector<std::string>& arguments) {
+    std::vector<xpcog::Url> inputs;
+    inputs.reserve(arguments.size());
+    for (const std::string& argument : arguments) {
+        inputs.push_back(urlFromArgument(argument));
+    }
+
+    const xpcog::Scanner scanner{registry()};
+    const auto           entries = scanner.scan(inputs);
+
+    int failures = 0;
+    for (const xpcog::PlaylistEntry& entry : entries) {
+        if (entry.error) {
+            ++failures;
+            std::printf("  !! %s (%s)\n", entry.filename().c_str(),
+                        entry.errorMessage.c_str());
+            continue;
+        }
+        std::printf("%3d. %-44.44s %6.1f s  %s\n", entry.track, entry.display().c_str(),
+                    entry.duration(), entry.properties.codec.c_str());
+    }
+
+    std::printf("\n%zu entries", entries.size());
+    if (failures > 0) {
+        std::printf(", %d unreadable", failures);
+    }
+    std::putchar('\n');
+    return failures == 0 ? 0 : 1;
 }
 
 int decode(std::string_view input, std::string_view output) {
@@ -272,6 +326,13 @@ int main(int argc, char** argv) {
             std::printf("%s\n", entry.toString().c_str());
         }
         return 0;
+    }
+
+    if (command == "scan") {
+        if (argc < 3) {
+            return usage();
+        }
+        return scan(std::vector<std::string>(argv + 2, argv + argc));
     }
 
     if (command == "info") {

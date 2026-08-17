@@ -677,6 +677,21 @@ std::vector<std::byte> Library::artwork(std::string_view hash) const {
     return query.columnBlob(0);
 }
 
+bool Library::adoptArtwork(PlaylistEntry& entry) {
+    const std::vector<std::byte>* image = entry.metadata.bytes("albumart");
+    if (image == nullptr || image->empty()) {
+        return false;
+    }
+
+    const std::string hash = storeArtwork(*image);
+    if (hash.empty()) {
+        return false;
+    }
+    entry.artHash = hash;
+    entry.metadata.remove("albumart");
+    return true;
+}
+
 std::int64_t Library::pruneArtwork() {
     if (!isOpen()) {
         return 0;

@@ -26,6 +26,12 @@ void PluginRegistry::addContainer(ContainerDescriptor d) {
     containers_.push_back(d);
 }
 
+void PluginRegistry::addMetadataReader(MetadataReaderDescriptor d) {
+    assert(!frozen_ && "PluginRegistry::addMetadataReader after freeze()");
+    assert(d.read && "metadata reader descriptor needs a read function");
+    metadataReaders_.push_back(d);
+}
+
 void PluginRegistry::freeze() {
     assert(!frozen_ && "PluginRegistry::freeze() called twice");
 
@@ -35,6 +41,7 @@ void PluginRegistry::freeze() {
     std::erase_if(sources_, unavailable);
     std::erase_if(decoders_, unavailable);
     std::erase_if(containers_, unavailable);
+    std::erase_if(metadataReaders_, unavailable);
 
     // Stable sort by descending priority preserves registration order within a
     // priority band, matching the ordering Cog's PluginController relies on.
@@ -42,6 +49,7 @@ void PluginRegistry::freeze() {
     std::stable_sort(sources_.begin(), sources_.end(), byPriority);
     std::stable_sort(decoders_.begin(), decoders_.end(), byPriority);
     std::stable_sort(containers_.begin(), containers_.end(), byPriority);
+    std::stable_sort(metadataReaders_.begin(), metadataReaders_.end(), byPriority);
 
     allExtensions_.clear();
     for (const auto& d : decoders_) {
@@ -58,6 +66,26 @@ void PluginRegistry::freeze() {
 
 std::span<const std::string> PluginRegistry::allExtensions() const noexcept {
     return allExtensions_;
+}
+
+MetadataMap PluginRegistry::readMetadata(const Url& url) const {
+    const std::string extension = url.extension();
+
+    // Ascending priority, because mergeFrom() overwrites: the last reader to
+    // speak wins, and that should be the one with the most authority.
+    MetadataMap merged;
+    for (auto it = metadataReaders_.rbegin(); it != metadataReaders_.rend(); ++it) {
+        const bool claims =
+            it->extensions.empty() ||
+            std::any_of(it->extensions.begin(), it->extensions.end(),
+                        [&extension](std::string_view claimed) {
+                            return claimed == extension;
+                        });
+        if (claims) {
+            merged.mergeFrom(it->read(url));
+        }
+    }
+    return merged;
 }
 
 bool PluginRegistry::isContainer(const Url& url) const {

@@ -68,6 +68,26 @@ struct ContainerDescriptor {
     bool (*available)()            = nullptr;
 };
 
+/// Reads static tags from a file. Replaces Cog's CogMetadataReader protocol
+/// (`+metadataForURL:`), which is likewise a stateless class method.
+///
+/// Takes a URL rather than an ISource because the tag libraries want to open the
+/// container themselves -- TagLib picks its parser from the extension and then
+/// seeks freely. An ISource-backed reader is what archive and HTTP sources will
+/// need in M6; the descriptor shape does not change when that arrives, only the
+/// implementation behind it.
+using MetadataReadFn = MetadataMap (*)(const Url& url);
+
+struct MetadataReaderDescriptor {
+    std::string_view                  name;
+    Priority                          priority = kDefaultPriority;
+    /// Empty means "offer this reader for anything", which is what a
+    /// format-agnostic library like TagLib wants.
+    std::span<const std::string_view> extensions;
+    MetadataReadFn                    read      = nullptr;
+    bool (*available)()                         = nullptr;
+};
+
 struct SourceDescriptor {
     std::string_view name;
     Priority         priority = kDefaultPriority;
@@ -92,6 +112,7 @@ public:
     void addSource(SourceDescriptor);
     void addDecoder(DecoderDescriptor);
     void addContainer(ContainerDescriptor);
+    void addMetadataReader(MetadataReaderDescriptor);
 
     /// Builds the extension/MIME lookup buckets and sorts each by descending
     /// priority. Must be called once after registration; mutators assert afterwards.
@@ -134,6 +155,12 @@ public:
     };
     [[nodiscard]] OpenResult open(const Url& url, SkipCue skipCue = SkipCue::No) const;
 
+    /// Tags for `url`, merged across every reader that claims it in ascending
+    /// priority, so a higher-priority reader's values win. Cog stops at the
+    /// first reader (PluginController.mm -metadataForURL:); merging means a
+    /// format-specific reader can supplement TagLib rather than replace it.
+    [[nodiscard]] MetadataMap readMetadata(const Url& url) const;
+
     /// Every extension claimed by a registered decoder, lowercase and deduplicated.
     /// Drives the app's file-open filter, replacing Cog's generated
     /// CFBundleDocumentTypes (Audio/PluginController.mm -printPluginInfo).
@@ -142,9 +169,10 @@ public:
 private:
     std::vector<SourceDescriptor>    sources_;
     std::vector<DecoderDescriptor>   decoders_;
-    std::vector<ContainerDescriptor> containers_;
-    std::vector<std::string>       allExtensions_;
-    bool                           frozen_ = false;
+    std::vector<ContainerDescriptor>      containers_;
+    std::vector<MetadataReaderDescriptor> metadataReaders_;
+    std::vector<std::string>              allExtensions_;
+    bool                                  frozen_ = false;
 };
 
 /// Wraps several candidates so each is tried in order until one opens.

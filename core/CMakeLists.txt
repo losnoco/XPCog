@@ -18,8 +18,10 @@ add_library(xpcog-core STATIC
     src/library/PlaylistEntry.cpp
     src/library/PlaylistFile.cpp
     src/library/PropertyList.cpp
+    src/library/Scanner.cpp
     src/library/Sqlite.cpp
     src/MetadataMap.cpp
+    src/NaturalOrder.cpp
     src/Sha256.cpp
     src/MultiDecoder.cpp
     src/PluginRegistry.cpp
