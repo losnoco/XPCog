@@ -1,12 +1,10 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
-# Everything but main() lives in a library, so the models can be tested without
-# starting a window. A QAbstractItemModel is exactly the kind of code that
-# breaks silently -- a sort that scrambles rows looks like a redraw glitch --
-# and it is not reachable from xpcog-cli, which links no Qt.
-qt_add_library(xpcog-appcore STATIC
+# Named so both the library and the translation extraction can use them: the
+# strings live here, but the .qm resource has to link into the executable.
+set(XPCOG_APP_SOURCES
     src/ActionRegistry.cpp
     src/ActionRegistry.hpp
     src/PlaybackController.cpp
@@ -28,6 +26,12 @@ qt_add_library(xpcog-appcore STATIC
     src/windows/PreferencesDialog.cpp
     src/windows/PreferencesDialog.hpp
 )
+
+# Everything but main() lives in a library, so the models can be tested without
+# starting a window. A QAbstractItemModel is exactly the kind of code that
+# breaks silently -- a sort that scrambles rows looks like a redraw glitch --
+# and it is not reachable from xpcog-cli, which links no Qt.
+qt_add_library(xpcog-appcore STATIC ${XPCOG_APP_SOURCES})
 
 target_include_directories(xpcog-appcore PUBLIC src)
 
@@ -57,6 +61,42 @@ set_target_properties(xpcog-app PROPERTIES
 target_link_libraries(xpcog-app PRIVATE
     xpcog-appcore
     XPCog::warnings)
+
+# ---------------------------------------------------------------------------
+# Translations.
+#
+# The .qm files are compiled in as a resource under :/i18n and picked up by
+# installTranslations() in main.cpp. Attached to the executable rather than to
+# xpcog-appcore because that is where the resource has to end up; SOURCES
+# points lupdate at the library's files, which is where the strings are.
+#
+# Two build targets come out of this:
+#   update_translations   rescan the sources into the .ts files
+#   release_translations  compile the .ts files to .qm
+#
+# Spanish because that is the one language Cog ships beyond English
+# (Localizable.xcstrings, 284 keys plus 65 in the preferences bundle), so a
+# Cog user changing over does not lose their interface language.
+# ---------------------------------------------------------------------------
+qt_add_translations(xpcog-app
+    TS_FILES
+        i18n/xpcog_en.ts
+        i18n/xpcog_es.ts
+    SOURCES ${XPCOG_APP_SOURCES} src/main.cpp
+    QM_FILES_OUTPUT_VARIABLE XPCOG_QM_FILES
+)
+
+# QM_FILES_OUTPUT_VARIABLE turns the automatic resource embedding off, so build
+# it here instead. Doing it by hand is what makes the compiled .qm paths
+# available to the tests, which have no resource of their own to read.
+qt_add_resources(xpcog-app "translations"
+    PREFIX "/i18n"
+    BASE "${CMAKE_CURRENT_BINARY_DIR}"
+    FILES ${XPCOG_QM_FILES}
+)
+
+# Exported so tests/app can load a real .qm rather than assert against the .ts.
+set(XPCOG_QM_FILES "${XPCOG_QM_FILES}" PARENT_SCOPE)
 
 # ---------------------------------------------------------------------------
 # `cmake --build <dir> --target deploy` produces a self-contained bundle.

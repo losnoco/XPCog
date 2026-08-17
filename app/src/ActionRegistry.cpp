@@ -1,6 +1,7 @@
 #include "ActionRegistry.hpp"
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QActionGroup>
 #include <QKeySequence>
 #include <QMenu>
@@ -9,6 +10,16 @@
 
 namespace xpcog::app {
 namespace {
+
+/// The context the menu titles below are recorded under.
+///
+/// It has to be named, because the table is at namespace scope where there is
+/// no class for tr() to take a context from -- and it must be used on the
+/// lookup side too. Calling tr() there instead would look in
+/// "xpcog::app::ActionRegistry", which is a different context and always a
+/// miss, so the menu bar would stay English in every language while every menu
+/// *item* translated.
+constexpr auto kMenuContext = "ActionRegistry";
 
 /// The menu structure, declaratively. Adding a command is one row here plus one
 /// row in the constructor, rather than an edit to a XIB whose diff is unreadable.
@@ -139,7 +150,7 @@ void ActionRegistry::populateMenuBar(QMenuBar* bar) const {
     QMenu* current = nullptr;
     for (const MenuItem& item : kMenuLayout) {
         if (item.menu != nullptr) {
-            current = bar->addMenu(tr(item.menu));
+            current = bar->addMenu(QCoreApplication::translate(kMenuContext, item.menu));
         }
         if (current == nullptr) {
             continue;

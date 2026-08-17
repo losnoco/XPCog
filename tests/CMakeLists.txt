@@ -39,6 +39,7 @@ if(XPCOG_BUILD_APP)
         app/test_playlistcommands.cpp
         app/test_playlistmodel.cpp
         app/test_scantask.cpp
+        app/test_translations.cpp
     )
 
     target_link_libraries(xpcog-app-tests PRIVATE
@@ -49,6 +50,15 @@ if(XPCOG_BUILD_APP)
     set_target_properties(xpcog-app-tests PROPERTIES
         AUTOMOC ON
         FOLDER tests)
+
+    # The compiled Spanish catalogue, so the i18n tests read a real .qm rather
+    # than re-parsing the .ts they are meant to be checking the output of.
+    foreach(_qm IN LISTS XPCOG_QM_FILES)
+        if(_qm MATCHES "_es\\.qm$")
+            target_compile_definitions(xpcog-app-tests PRIVATE "XPCOG_QM_ES=\"${_qm}\"")
+        endif()
+    endforeach()
+    add_dependencies(xpcog-app-tests release_translations)
 
     catch_discover_tests(xpcog-app-tests)
 endif()
