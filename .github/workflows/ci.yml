@@ -68,6 +68,29 @@ jobs:
         with:
           runVcpkgInstall: false
 
+      # The presets already point VCPKG_BINARY_SOURCES at .vcpkg-cache; this is
+      # what makes that directory survive between runs. Without it every job
+      # rebuilds every port from source, which is 3m25s of a 4m51s job -- the
+      # compile of our own code is 22 seconds of it.
+      #
+      # Keyed on the manifest, the pinned baseline and the overlay ports, since
+      # those are what change which packages are wanted. The restore-key prefix
+      # means adding one dependency reuses the archives for all the others: the
+      # cache is per-package, not per-manifest.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**') }}
+          restore-keys: vcpkg-${{ matrix.preset }}-
+
+      # vcpkg creates this itself, but not if configure fails before it gets
+      # that far -- and then the save step warns about a missing path.
+      - name: Prepare the binary cache directory
+        shell: bash
+        run: mkdir -p .vcpkg-cache
+
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
 
@@ -83,6 +106,17 @@ jobs:
           BIN=build/${{ matrix.preset }}/bin
           "$BIN/xpcog-cli" --version
           "$BIN/xpcog-cli" codecs
+
+      # Deliberately `always()`: a compile error should not also cost a full
+      # dependency rebuild on the next attempt. Several of the last runs failed
+      # on one bad file, and paying 3m25s of vcpkg each time to find that out is
+      # the difference between a fast fix and a slow one.
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
   headless:
     # The engine, codecs, CLI and tests must build with no Qt installed at all.
@@ -104,6 +138,24 @@ jobs:
         with:
           runVcpkgInstall: false
 
+      # Shares the Linux job's key on purpose: same triplet, same dependencies.
+      # Dropping Qt changes what we build, not what vcpkg builds. On the very
+      # first run both jobs miss and one loses the race to save, which is a
+      # warning and nothing more.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-linux-debug-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**') }}
+          restore-keys: vcpkg-linux-debug-
+
+      # vcpkg creates this itself, but not if configure fails before it gets
+      # that far -- and then the save step warns about a missing path.
+      - name: Prepare the binary cache directory
+        shell: bash
+        run: mkdir -p .vcpkg-cache
+
       - name: Configure without Qt
         run: cmake --preset linux-debug -D XPCOG_BUILD_APP=OFF
 
@@ -117,3 +169,10 @@ jobs:
         run: |
           build/linux-debug/bin/xpcog-cli --version
           build/linux-debug/bin/xpcog-cli codecs
+
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
