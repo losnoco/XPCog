@@ -1,6 +1,7 @@
 #include "xpcog/core/library/Library.hpp"
 
 #include "Sqlite.hpp"
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/Sha256.hpp"
 
 #include <algorithm>
@@ -211,7 +212,7 @@ Library& Library::operator=(Library&&) noexcept = default;
 
 bool Library::open(const std::filesystem::path& path) {
     if (!impl_->database.open(path)) {
-        return impl_->fail("cannot open " + path.string());
+        return impl_->fail("cannot open " + pathToUtf8(path));
     }
     return impl_->migrate();
 }

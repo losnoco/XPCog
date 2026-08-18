@@ -45,7 +45,7 @@ public:
     TempDir(const TempDir&)            = delete;
     TempDir& operator=(const TempDir&) = delete;
 
-    [[nodiscard]] Url url() const { return Url::fromLocalPath(path_.string()); }
+    [[nodiscard]] Url url() const { return Url::fromLocalPath(path_); }
 
     void write(const std::string& name, std::string_view text) const {
         std::ofstream out{path_ / name, std::ios::binary};

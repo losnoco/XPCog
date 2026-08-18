@@ -16,6 +16,7 @@
 #include "StatusPresence.hpp"
 #include "PreferencesDialog.hpp"
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/Version.hpp"
 #include "xpcog/core/library/PlaylistFile.hpp"
 #include "xpcog/core/library/Scanner.hpp"
@@ -675,7 +676,9 @@ void MainWindow::savePlaylistAs() {
         return;
     }
 
-    const Url destination = Url::fromLocalPath(path.toStdString());
+    // pathFromUtf8, not the implicit std::string conversion: QString hands out
+    // UTF-8 and std::filesystem::path would read it as the active code page.
+    const Url destination = Url::fromLocalPath(pathFromUtf8(path.toStdString()));
     const auto format = playlistFormatForExtension(destination.extension());
     if (!format) {
         QMessageBox::warning(this, tr("Save Playlist"),
@@ -727,7 +730,8 @@ void MainWindow::addUrls(const QList<QUrl>& urls, int atRow) {
     inputs.reserve(static_cast<std::size_t>(urls.size()));
     for (const QUrl& url : urls) {
         if (url.isLocalFile()) {
-            inputs.push_back(Url::fromLocalPath(url.toLocalFile().toStdString()));
+            inputs.push_back(
+                Url::fromLocalPath(pathFromUtf8(url.toLocalFile().toStdString())));
         } else if (auto parsed = Url::parse(url.toString().toStdString())) {
             inputs.push_back(*parsed);
         }

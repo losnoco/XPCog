@@ -27,13 +27,20 @@ constexpr std::size_t kBlockSize = 64U * 1024U;
 
 }  // namespace
 
-ArchivePtr openArchiveFile(const std::string& path) {
+ArchivePtr openArchiveFile(const std::filesystem::path& path) {
     ArchivePtr handle = newReader();
     if (!handle) {
         return {nullptr, &archive_read_free};
     }
-    if (archive_read_open_filename(handle.get(), path.c_str(), kBlockSize) !=
-        ARCHIVE_OK) {
+
+#ifdef _WIN32
+    const int status =
+        archive_read_open_filename_w(handle.get(), path.c_str(), kBlockSize);
+#else
+    const int status =
+        archive_read_open_filename(handle.get(), path.c_str(), kBlockSize);
+#endif
+    if (status != ARCHIVE_OK) {
         return {nullptr, &archive_read_free};
     }
     return handle;

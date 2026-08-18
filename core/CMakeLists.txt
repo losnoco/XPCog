@@ -35,7 +35,9 @@ add_library(xpcog-core STATIC
     src/MultiDecoder.cpp
     src/PluginRegistry.cpp
     src/Settings.cpp
+    src/FilePath.cpp
     src/Url.cpp
+    src/Utf8.cpp
     src/Version.cpp
 )
 add_library(XPCog::core ALIAS xpcog-core)

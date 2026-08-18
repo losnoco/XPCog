@@ -25,6 +25,23 @@ public:
     /// Builds a file:// URL. The path is made absolute and lexically normal.
     [[nodiscard]] static Url fromLocalPath(const std::filesystem::path& path);
 
+    /// The same from UTF-8 text. Sources here are compiled as UTF-8 on every
+    /// platform, so a literal is UTF-8 too.
+    [[nodiscard]] static Url fromLocalPath(const char* utf8);
+
+    /// Deleted, because they would have compiled and been wrong.
+    ///
+    /// Everything above this layer keeps paths as UTF-8 in a std::string --
+    /// QString::toStdString(), a playlist file's lines, a URL body. Handing one
+    /// to std::filesystem::path lets it read those bytes in the platform's
+    /// *narrow* encoding, which on Windows is the active code page, and the
+    /// implicit conversion made that silent: a folder named "Björk - Post"
+    /// reached the scanner as "BjÃ¶rk - Post" and every track in it read as
+    /// unopenable. Say which it is -- fromLocalPath(pathFromUtf8(text)) -- so
+    /// the next person reading the call knows without checking.
+    static Url fromLocalPath(const std::string&) = delete;
+    static Url fromLocalPath(std::string_view)   = delete;
+
     /// Lowercase, no trailing colon: "file", "http", "zip".
     [[nodiscard]] std::string_view scheme() const noexcept { return scheme_; }
 

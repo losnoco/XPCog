@@ -2,6 +2,7 @@
 // PlaylistController: repeat, shuffle, the queue and what happens when the
 // playing entry is deleted out from under playback.
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/library/Playlist.hpp"
 
@@ -18,7 +19,7 @@ namespace {
 
 PlaylistEntry makeEntry(std::string title, std::string album = {}, int track = 0) {
     PlaylistEntry entry;
-    entry.url      = Url::fromLocalPath("/music/" + title + ".flac");
+    entry.url      = Url::fromLocalPath(pathFromUtf8("/music/" + title + ".flac"));
     entry.rawTitle = std::move(title);
     entry.album    = std::move(album);
     entry.track    = track;

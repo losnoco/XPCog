@@ -1,5 +1,7 @@
 #include "PlaylistText.hpp"
 
+#include "xpcog/core/FilePath.hpp"
+
 #include "common/TextEncoding.hpp"
 
 #include <algorithm>
@@ -88,7 +90,10 @@ Url resolveEntry(const std::string& entry, const Url& playlistUrl) {
     // Playlists written on Windows use backslashes.
     std::replace(path.begin(), path.end(), '\\', '/');
 
-    std::filesystem::path resolved{path};
+    // From UTF-8: the playlist's text has already been decoded to it, and
+    // std::filesystem::path would otherwise read those bytes in the platform's
+    // narrow encoding. See xpcog/core/FilePath.hpp.
+    std::filesystem::path resolved = pathFromUtf8(path);
     if (resolved.is_relative()) {
         if (const auto base = playlistUrl.localPath()) {
             resolved = base->parent_path() / resolved;

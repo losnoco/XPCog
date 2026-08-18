@@ -25,6 +25,7 @@
 
 #include "common/BlobSource.hpp"
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 
@@ -59,7 +60,8 @@ public:
             return false;
         }
 
-        const codecs::ArchivePtr handle = codecs::openArchiveFile(target->archive);
+        const codecs::ArchivePtr handle =
+            codecs::openArchiveFile(pathFromUtf8(target->archive));
         if (!handle) {
             return false;
         }
@@ -106,7 +108,7 @@ std::vector<Url> expandArchive(const Url& url, ISource& /*source*/,
         return {url};
     }
 
-    const codecs::ArchivePtr handle = codecs::openArchiveFile(path->string());
+    const codecs::ArchivePtr handle = codecs::openArchiveFile(*path);
     if (!handle) {
         return {url};
     }

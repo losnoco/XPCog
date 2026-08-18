@@ -1,5 +1,7 @@
 #include "xpcog/core/library/PlaylistFile.hpp"
 
+#include "xpcog/core/FilePath.hpp"
+
 #include "PropertyList.hpp"
 
 #include <algorithm>
@@ -58,7 +60,7 @@ namespace {
     if (!path) {
         return {};
     }
-    std::string directory = path->parent_path().generic_string();
+    std::string directory = pathToUtf8Generic(path->parent_path());
     if (!directory.empty() && directory.back() != '/') {
         directory.push_back('/');
     }
@@ -99,7 +101,7 @@ namespace {
         path.insert(0, baseDirectoryOf(playlist));
     }
 
-    Url url = Url::fromLocalPath(std::filesystem::path{path});
+    Url url = Url::fromLocalPath(pathFromUtf8(path));
     return fragment.empty() ? url : url.withFragment(fragment);
 }
 
@@ -678,7 +680,7 @@ std::string relativePathFor(const Url& entry, const Url& destination) {
         return entry.toString();  // remote entries stay absolute
     }
 
-    std::string path = entryPath->generic_string();
+    std::string path = pathToUtf8Generic(*entryPath);
 
     // Cog strips an exact, case-insensitive directory prefix and nothing more
     // (PlaylistLoader.m:98) -- it never walks up with "..". Reproduced: a

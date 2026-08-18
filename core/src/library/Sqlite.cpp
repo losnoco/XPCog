@@ -1,5 +1,7 @@
 #include "Sqlite.hpp"
 
+#include "xpcog/core/FilePath.hpp"
+
 #include <cstddef>
 
 namespace xpcog::sql {
@@ -9,7 +11,9 @@ namespace xpcog::sql {
 bool Database::open(const std::filesystem::path& path) {
     close();
 
-    const std::string text = path.string();
+    // sqlite3 takes UTF-8 filenames on every platform, including Windows where
+    // path.string() would hand it the active code page instead.
+    const std::string text = pathToUtf8(path);
     const int         status =
         sqlite3_open_v2(text.c_str(), &handle_,
                         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);

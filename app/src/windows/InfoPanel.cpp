@@ -1,5 +1,6 @@
 #include "InfoPanel.hpp"
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/library/Library.hpp"
 
 #include <QCoreApplication>
@@ -252,7 +253,7 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
     // this panel is resizable where Cog's fixed HUD was not, and because a path
     // you can select and copy is a large part of why an info panel gets opened.
     const auto local = entry->url.localPath();
-    set(Filename, local ? QString::fromStdString(local->string())
+    set(Filename, local ? QString::fromStdString(pathToUtf8(*local))
                         : fromStd(entry->url.toString()));
 
     const TrackProperties& properties = entry->properties;

@@ -3,6 +3,7 @@
 // The Cog XML tests are interop tests. The format is not ours, so the fixtures
 // are shaped the way Foundation writes them rather than the way our writer does.
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/library/PlaylistFile.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -18,7 +19,7 @@ const Url kDestination = Url::fromLocalPath("/music/Pink Floyd/Animals/list.m3u"
 
 PlaylistEntry entryAt(std::string path) {
     PlaylistEntry entry;
-    entry.url = Url::fromLocalPath(std::move(path));
+    entry.url = Url::fromLocalPath(pathFromUtf8(path));
     return entry;
 }
 

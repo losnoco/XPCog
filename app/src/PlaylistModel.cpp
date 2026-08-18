@@ -1,5 +1,7 @@
 #include "PlaylistModel.hpp"
 
+#include "xpcog/core/FilePath.hpp"
+
 #include "PlaylistCommands.hpp"
 
 #include <QDataStream>
@@ -230,7 +232,8 @@ QMimeData* PlaylistModel::mimeData(const QModelIndexList& indexes) const {
     for (const int row : rows) {
         stream << row;
         if (const auto path = playlist_.at(static_cast<std::size_t>(row)).url.localPath()) {
-            urls.append(QUrl::fromLocalFile(QString::fromStdString(path->string())));
+            urls.append(
+                QUrl::fromLocalFile(QString::fromStdString(pathToUtf8(*path))));
         }
     }
 

@@ -1,5 +1,7 @@
 #include "UnpackUrl.hpp"
 
+#include "xpcog/core/FilePath.hpp"
+
 #include <charconv>
 
 namespace xpcog::codecs {
@@ -78,7 +80,7 @@ Url makeUnpackUrl(const std::filesystem::path& archive, std::string_view member)
     // Forward slashes throughout: the URL is stored in the library and read back
     // on whatever platform opens it next, and a backslash is a path separator on
     // exactly one of them.
-    std::string archivePath = archive.generic_string();
+    std::string archivePath = pathToUtf8Generic(archive);
 
     std::string plain;
     plain += kExtractor;

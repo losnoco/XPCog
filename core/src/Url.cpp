@@ -1,5 +1,8 @@
 #include "xpcog/core/Url.hpp"
 
+#include "xpcog/core/FilePath.hpp"
+#include "xpcog/core/Utf8.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
@@ -121,8 +124,11 @@ Url Url::fromLocalPath(const std::filesystem::path& path) {
     }
     absolute = absolute.lexically_normal();
 
-    // Always use forward slashes in the URL, including on Windows.
-    std::string generic = absolute.generic_string();
+    // Always use forward slashes in the URL, including on Windows -- and always
+    // UTF-8, which generic_string() would not give on Windows. The stored form
+    // has to be readable on the next machine and after a regional settings
+    // change; percent-encoded code-page bytes are neither.
+    std::string generic = pathToUtf8Generic(absolute);
 
     Url url;
     url.scheme_ = "file";
@@ -131,6 +137,11 @@ Url Url::fromLocalPath(const std::filesystem::path& path) {
     url.body_ = generic.starts_with('/') ? "//" + percentEncodePath(generic)
                                          : "///" + percentEncodePath(generic);
     return url;
+}
+
+Url Url::fromLocalPath(const char* utf8) {
+    return fromLocalPath(pathFromUtf8(utf8 == nullptr ? std::string_view{}
+                                                      : std::string_view{utf8}));
 }
 
 std::string Url::extension() const {
@@ -176,6 +187,22 @@ std::optional<std::filesystem::path> Url::localPath() const {
     }
 #endif
 
+    // From UTF-8 explicitly. std::filesystem::path{std::string} would read the
+    // active code page on Windows, which is how "Björk" became "BjÃ¶rk" and named
+    // a folder nobody has.
+    if (isValidUtf8(decoded)) {
+        return pathFromUtf8(decoded);
+    }
+
+    // A URL written before this was UTF-8. Builds up to and including the one
+    // that stored these percent-encoded the platform's *narrow* form, so a
+    // library scanned on Windows holds "Hasta Ma%F1ana" where it now writes
+    // "Hasta Ma%C3%B1ana". Reading them back the old way is what keeps those rows
+    // playable instead of turning them into a screenful of missing files.
+    //
+    // Safe because valid UTF-8 is self-identifying: this branch cannot be reached
+    // by anything this build wrote, so there is no ambiguity to resolve, and the
+    // row corrects itself the next time it is rescanned.
     return std::filesystem::path{decoded};
 }
 

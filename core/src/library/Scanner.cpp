@@ -1,5 +1,7 @@
 #include "xpcog/core/library/Scanner.hpp"
 
+#include "xpcog/core/FilePath.hpp"
+
 #include "xpcog/core/NaturalOrder.hpp"
 
 #include <algorithm>
@@ -132,7 +134,7 @@ void Scanner::collectFiles(const Url& directory, std::vector<Url>& out) const {
     // is what puts track 9 before track 10 in the playlist.
     std::sort(found.begin(), found.end(),
               [](const std::filesystem::path& a, const std::filesystem::path& b) {
-                  return naturalLess(a.generic_string(), b.generic_string());
+                  return naturalLess(pathToUtf8Generic(a), pathToUtf8Generic(b));
               });
 
     for (const auto& path : found) {

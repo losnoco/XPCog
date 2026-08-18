@@ -1,5 +1,7 @@
 #include "xpcog/core/library/PlaylistEntry.hpp"
 
+#include "xpcog/core/FilePath.hpp"
+
 #include <array>
 #include <charconv>
 #include <initializer_list>
@@ -117,7 +119,7 @@ std::string PlaylistEntry::display() const {
 std::string PlaylistEntry::filename() const {
     std::string name;
     if (const auto path = url.localPath()) {
-        name = path->filename().string();
+        name = pathToUtf8(path->filename());
     } else {
         const std::string text = url.withoutFragment().toString();
         const std::size_t slash = text.find_last_of('/');

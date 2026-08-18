@@ -10,6 +10,7 @@
 #include <archive.h>
 
 #include <cstddef>
+#include <filesystem>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -27,10 +28,15 @@ using ArchivePtr = std::unique_ptr<struct archive, decltype(&archive_read_free)>
 
 /// Opens an archive on disk. Null if it cannot be read as one.
 ///
+/// Takes a path rather than a string so the name reaches libarchive in the
+/// platform's own form. On Windows that means the wide entry point: the narrow
+/// one goes through the active code page, and an album folder is exactly where
+/// a name it cannot spell turns up.
+///
 /// Every format and every compression filter the build supports is enabled: the
 /// extension is a hint from the file's name, and `rsn` (a RAR of SPC rips) and
 /// `vgm7z` are proof that the name can be anything at all.
-[[nodiscard]] ArchivePtr openArchiveFile(const std::string& path);
+[[nodiscard]] ArchivePtr openArchiveFile(const std::filesystem::path& path);
 
 /// The same, over bytes already in memory. `bytes` must outlive the handle --
 /// libarchive reads from the caller's buffer rather than copying it.

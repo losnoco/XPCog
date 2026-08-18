@@ -915,6 +915,44 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   the dialog and the dock rather than living inside the dialog, since the dock is
   the one where forgetting it would mean a slider that does nothing.
 
+- **Paths are UTF-8 across every seam**, which they were not, and it showed as
+  `D:\LegacyMusic\Björk - Post` adding as eleven unreadable rows.
+
+  `std::filesystem::path` stores the platform's native form -- bytes on POSIX,
+  UTF-16 on Windows -- and its conversions to and from `std::string` go through
+  the *narrow* encoding, which on Windows is the active code page. Everything
+  above core speaks UTF-8: `QString::toStdString()` produces it, playlist files
+  and the library store it. So `Url::fromLocalPath(qurl.toLocalFile().toStdString())`
+  handed a UTF-8 string to a `path` that read it as CP-1252, "Björk" became
+  "BjÃ¶rk", and the scanner walked a folder nobody has.
+
+  It was invisible because the implicit conversion is silent and the round trip
+  usually survives: the same wrong decode happened on the way back out, so the
+  URL *looked* right in the playlist and only failed when something tried to open
+  it. Reproduced first as a failing test -- a real file with an awkward name, in
+  through the call the app actually makes -- rather than reasoned about.
+
+  `xpcog/core/FilePath.hpp` now holds `pathToUtf8` / `pathFromUtf8` and every
+  crossing says which it means. `Url::fromLocalPath(const std::string&)` and its
+  `string_view` sibling are **deleted**, so the trap is a compile error rather
+  than a silent mangle; a `const char*` overload treats literals as UTF-8, which
+  they are, since the sources are compiled as UTF-8 on every platform.
+
+  The same class of bug was in eight other places, all fixed with it: playlist
+  relative-path resolution, the scanner's sort key, the SQLite filename (sqlite3
+  takes UTF-8 on Windows too), archive member paths, and the two spots that
+  handed `path.string()` to `QString::fromStdString`, which is code-page bytes
+  read as UTF-8 -- wrong twice over. libarchive now gets the wide entry point on
+  Windows, since an album folder is exactly where a name the code page cannot
+  spell turns up.
+
+  **Older libraries keep working.** Builds up to this one stored the narrow form,
+  so a library scanned on Windows holds `Hasta Ma%F1ana` where this one writes
+  `Hasta Ma%C3%B1ana` -- four such rows in the author's own database. `localPath()`
+  falls back to reading invalid-UTF-8 escapes the old way, which is unambiguous
+  because valid UTF-8 is self-identifying: the fallback cannot be reached by
+  anything this build wrote, and a row corrects itself when rescanned.
+
 - **The info panel is a dock too**, and for the same reason the equaliser is
   one. Port of Cog's `InfoInspector` (`InfoWindowController` plus its XIB), all
   twenty fields in Cog's order and under Cog's labels, grouped where Cog's own

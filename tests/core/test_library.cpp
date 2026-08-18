@@ -1,6 +1,7 @@
 // Persistence tests: what Core Data used to do, and what the port must not lose
 // on the way to SQLite.
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/Sha256.hpp"
 #include "xpcog/core/library/Library.hpp"
 #include "xpcog/core/library/Playlist.hpp"
@@ -189,7 +190,7 @@ TEST_CASE("the shuffle order survives a restart", "[library]") {
     saved.seedShuffle(1234);
     for (int i = 0; i < 8; ++i) {
         PlaylistEntry entry;
-        entry.url      = Url::fromLocalPath("/music/" + std::to_string(i) + ".flac");
+        entry.url      = Url::fromLocalPath(pathFromUtf8("/music/" + std::to_string(i) + ".flac"));
         entry.rawTitle = std::to_string(i);
         saved.add(std::move(entry));
     }
@@ -309,7 +310,7 @@ TEST_CASE("a large playlist saves in one transaction", "[library]") {
     entries.reserve(50000);
     for (int i = 0; i < 50000; ++i) {
         PlaylistEntry entry;
-        entry.url      = Url::fromLocalPath("/music/" + std::to_string(i) + ".flac");
+        entry.url      = Url::fromLocalPath(pathFromUtf8("/music/" + std::to_string(i) + ".flac"));
         entry.rawTitle = "Track " + std::to_string(i);
         entry.album    = "Album " + std::to_string(i / 12);
         entry.track    = (i % 12) + 1;
