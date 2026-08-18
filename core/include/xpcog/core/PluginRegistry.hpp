@@ -101,6 +101,8 @@ struct SourceDescriptor {
 /// Mirrors the `skipCue:` argument threaded through Cog's PluginController.
 enum class SkipCue : std::uint8_t { No, Yes };
 
+class Settings;
+
 class PluginRegistry {
 public:
     PluginRegistry();
@@ -108,6 +110,15 @@ public:
 
     PluginRegistry(const PluginRegistry&)            = delete;
     PluginRegistry& operator=(const PluginRegistry&) = delete;
+
+    /// The settings every codec this registry builds will be handed. Borrowed;
+    /// must outlive the registry. Set once at startup by whoever owns both.
+    ///
+    /// On the registry rather than on each create() because a descriptor is a
+    /// plain aggregate of function pointers -- widening create() would touch
+    /// every codec to give almost none of them anything they want.
+    void setSettings(const Settings* settings) { settings_ = settings; }
+    [[nodiscard]] const Settings* settings() const noexcept { return settings_; }
 
     void addSource(SourceDescriptor);
     void addDecoder(DecoderDescriptor);
@@ -171,6 +182,7 @@ public:
     [[nodiscard]] std::span<const std::string> allExtensions() const noexcept;
 
 private:
+    const Settings*                  settings_ = nullptr;
     std::vector<SourceDescriptor>    sources_;
     std::vector<DecoderDescriptor>   decoders_;
     std::vector<ContainerDescriptor>      containers_;

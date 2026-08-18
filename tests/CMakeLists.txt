@@ -19,6 +19,7 @@ add_executable(xpcog-tests
     core/test_stream_metadata.cpp
     core/test_transportgain.cpp
     core/test_version.cpp
+    codecs/test_codec_settings.cpp
     codecs/test_conformance.cpp
     codecs/test_containers.cpp
     codecs/test_cuesheet.cpp

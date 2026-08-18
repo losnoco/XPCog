@@ -28,6 +28,7 @@
 #include "common/TextEncoding.hpp"
 
 #include "xpcog/core/Plugin.hpp"
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 
 #include <gme/gme.h>
@@ -55,17 +56,19 @@
 namespace xpcog {
 namespace {
 
-/// Cog's synthSampleRate default; unreachable from a codec here, as for every
-/// other synthesised format.
-constexpr int kSampleRate = 44100;
+/// What Cog falls back to when synthSampleRate is unset or out of range, and
+/// the clamp it applies.
+constexpr int kDefaultRate = 44100;
+constexpr int kMinRate     = 8000;
+constexpr int kMaxRate     = 192000;
 
-/// The SPC700 runs at 32 kHz and resampling it to 44.1 buys nothing but error.
-/// Cog special-cases the same two types.
+/// The SPC700 runs at 32 kHz and resampling it to 44.1 buys nothing but error,
+/// so it overrides the preference rather than being clamped by it. Cog
+/// special-cases the same type.
 constexpr int kSpcSampleRate = 32000;
 
-/// Game_Music_Emu fades over eight seconds from wherever the fade is started.
-/// Cog's synthDefaultFadeSeconds is 8.0 for that reason, so the two agree.
-constexpr int kFadeMs = 8000;
+/// Cog's clamp on synthDefaultLoopCount.
+constexpr int kMaxLoopCount = 10;
 
 constexpr std::uint32_t kChannels      = 2;
 constexpr std::size_t   kFramesPerRead = 1024;
@@ -150,7 +153,15 @@ using EmuPtr = std::unique_ptr<Music_Emu, decltype(&gme_delete)>;
     return EmuPtr{gme_new_emu(type, sampleRate), &gme_delete};
 }
 
-[[nodiscard]] int rateForType(gme_type_t type) {
+[[nodiscard]] int preferredRate(const Settings* settings) {
+    if (settings == nullptr) {
+        return kDefaultRate;
+    }
+    const int rate = settings->SynthSampleRate();
+    return (rate < kMinRate || rate > kMaxRate) ? kDefaultRate : rate;
+}
+
+[[nodiscard]] int rateForType(gme_type_t type, const Settings* settings) {
     // Compared by name rather than against gme_spc_type. That constant is
     // exported *data*, and data symbols do not cross a DLL boundary on Windows
     // without __declspec(dllimport) -- which this header deliberately does not
@@ -160,12 +171,12 @@ using EmuPtr = std::unique_ptr<Music_Emu, decltype(&gme_delete)>;
     // Case-insensitively: gme_type_extension() answers "SPC", not "spc".
     const char* extension = gme_type_extension(type);
     if (extension == nullptr) {
-        return kSampleRate;
+        return preferredRate(settings);
     }
     std::string lowered{extension};
     std::transform(lowered.begin(), lowered.end(), lowered.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return (lowered == "spc") ? kSpcSampleRate : kSampleRate;
+    return (lowered == "spc") ? kSpcSampleRate : preferredRate(settings);
 }
 
 /// The subsong a fragment names, or 0 -- Cog's `[[url fragment] intValue]`,
@@ -221,11 +232,41 @@ void loadSidecar(Music_Emu* emu, const Url& url, const PluginRegistry* registry)
     }
 }
 
+/// Cog's length chain, which gme_info_t::play_length also implements -- but with
+/// the loop count and the default fixed at 2 and 150 s. Written out here because
+/// both are now settings, and a rip that states a loop is exactly the case where
+/// someone who wants three passes instead of two has to be able to say so.
+[[nodiscard]] int playLengthMs(const gme_info_t& info, const Settings* settings) {
+    if (info.length > 0) {
+        return info.length;
+    }
+
+    if (info.loop_length > 0) {
+        int loops = (settings != nullptr) ? settings->SynthDefaultLoopCount() : 2;
+        loops     = std::clamp(loops, 0, kMaxLoopCount);
+        const int intro = (info.intro_length > 0) ? info.intro_length : 0;
+        return intro + loops * info.loop_length;
+    }
+
+    const double seconds =
+        (settings != nullptr) ? settings->SynthDefaultSeconds() : 150.0;
+    return static_cast<int>(std::ceil(std::max(0.0, seconds) * 1000.0));
+}
+
+/// Game_Music_Emu fades over eight seconds unless told otherwise, which is why
+/// Cog's synthDefaultFadeSeconds is 8.0 -- the two were chosen to agree.
+[[nodiscard]] int fadeLengthMs(const Settings* settings) {
+    const double seconds =
+        (settings != nullptr) ? settings->SynthDefaultFadeSeconds() : 8.0;
+    return static_cast<int>(std::ceil(std::max(0.0, seconds) * 1000.0));
+}
+
 class GmeDecoder final : public IDecoder {
 public:
     ~GmeDecoder() override { GmeDecoder::close(); }
 
     void setRegistry(const PluginRegistry* registry) override { registry_ = registry; }
+    void setSettings(const Settings* settings) override { settings_ = settings; }
 
     bool open(ISource* source) override {
         close();
@@ -245,7 +286,7 @@ public:
             return false;
         }
 
-        rate_ = rateForType(type);
+        rate_ = rateForType(type, settings_);
         emu_  = makeEmu(type, rate_);
         if (!emu_) {
             return false;
@@ -267,7 +308,7 @@ public:
             return false;
         }
         readTags(*info, url);
-        const int playMs = (info->play_length > 0) ? info->play_length : 150000;
+        const int playMs = playLengthMs(*info, settings_);
         gme_free_info(info);
 
         if (gme_start_track(emu_.get(), track_) != nullptr) {
@@ -278,8 +319,9 @@ public:
         // Chiptunes do not end; they loop. The fade is what turns "for ever"
         // into a track with a length, so the reported duration has to include
         // the fade tail or playback would be cut off mid-fade.
+        const int fadeMs = fadeLengthMs(settings_);
         gme_set_fade(emu_.get(), playMs);
-        durationMs_ = playMs + kFadeMs;
+        durationMs_ = playMs + fadeMs;
 
         format_.sampleRate    = static_cast<double>(rate_);
         format_.channels      = kChannels;
@@ -382,10 +424,11 @@ private:
     }
 
     const PluginRegistry* registry_ = nullptr;
+    const Settings*       settings_ = nullptr;
 
     EmuPtr       emu_{nullptr, &gme_delete};
     AudioFormat  format_{};
-    int          rate_       = kSampleRate;
+    int          rate_       = kDefaultRate;
     int          track_      = 0;
     int          durationMs_ = 0;
     std::int64_t framePos_   = 0;

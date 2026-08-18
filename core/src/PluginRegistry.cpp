@@ -154,7 +154,11 @@ SourcePtr PluginRegistry::makeSource(const Url& url) const {
     for (const auto& descriptor : sources_) {
         for (const auto claimed : descriptor.schemes) {
             if (claimed == scheme) {
-                return descriptor.create();
+                SourcePtr source = descriptor.create();
+                if (source) {
+                    source->setSettings(settings_);
+                }
+                return source;
             }
         }
     }
@@ -197,12 +201,14 @@ DecoderPtr PluginRegistry::makeDecoder(const ISource& source, SkipCue skipCue) c
         DecoderPtr decoder = candidates.front()->create();
         if (decoder) {
             decoder->setRegistry(this);
+            decoder->setSettings(settings_);
         }
         return decoder;
     }
     DecoderPtr multi = makeMultiDecoder(std::move(candidates));
     if (multi) {
         multi->setRegistry(this);
+        multi->setSettings(settings_);
     }
     return multi;
 }

@@ -192,12 +192,16 @@ int main(int argc, char** argv) {
     }
 #endif
 
-    xpcog::PluginRegistry registry;
-    xpcog::registerAllCodecs(registry);
-
     xpcog::platform::QSettingsStore store;
     xpcog::Settings                 settings{store};
     settings.applyMigrations();
+
+    // Settings before codecs are built from it: a decoder is handed these on
+    // construction, so the registry has to be holding them by the time anything
+    // asks it to open a file. Declared in this order so it cannot be otherwise.
+    xpcog::PluginRegistry registry;
+    registry.setSettings(&settings);
+    xpcog::registerAllCodecs(registry);
 
     // Before the first window exists, so the chosen style is what gets painted
     // rather than something that visibly re-styles itself a moment after launch.

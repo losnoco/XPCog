@@ -28,6 +28,7 @@ public:
 
             decoder->setChangeCallback(onChange_);
             decoder->setRegistry(registry_);
+            decoder->setSettings(settings_);
             if (decoder->open(source)) {
                 active_ = std::move(decoder);
                 return true;
@@ -76,6 +77,13 @@ public:
         return active_ && active_->isSilence();
     }
 
+    void setSettings(const Settings* settings) override {
+        settings_ = settings;
+        if (active_) {
+            active_->setSettings(settings_);
+        }
+    }
+
     void setChangeCallback(ChangeCallback callback) override {
         onChange_ = std::move(callback);
         if (active_) {
@@ -95,6 +103,7 @@ private:
     DecoderPtr                            active_;
     ChangeCallback                        onChange_;
     const PluginRegistry*                 registry_ = nullptr;
+    const Settings*                       settings_ = nullptr;
 };
 
 }  // namespace

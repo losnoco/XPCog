@@ -841,6 +841,34 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   test that matters is the negative one -- `::` also being how an IPv6 host is
   written, so matching on it alone would discard a real stream entry.
 
+- **Codecs read Settings.** The gap that had been worked around three times --
+  the HTTP ring size, OpenMPT's rate and interpolation, GME's length, loop count
+  and fade -- each pinned to Cog's own default because a codec had no route to a
+  preference. `PluginRegistry` now holds a borrowed `const Settings*` and hands
+  it to every source and decoder it builds, through `setSettings()` on both
+  interfaces.
+
+  On the registry rather than on `create()`. A descriptor is a plain aggregate of
+  function pointers, so widening `create()` would have touched every codec in the
+  tree to give almost none of them anything they wanted; the seam that already
+  existed for the same problem is `setRegistry()`, and this is its twin. The
+  path that would have rotted silently is `MultiDecoder`, which builds its
+  candidates lazily inside `open()` where the registry never sees them -- so
+  that is the case the test pins down.
+
+  Everything tolerates a null: tests and the headless tools set none, and a codec
+  handed nothing falls back to exactly the constants it used before. The failure
+  mode being guarded against is quiet rather than loud -- a codec that never
+  receives settings plays perfectly well, just deaf to whatever was changed.
+
+  One collision worth recording. Cog's `resampling` key names *algorithms* (zoh,
+  blep, linear, blam, cubic, sinc) because that is what its own resampler
+  offers, and XPCog had already taken the same key for soxr's quality tiers
+  (quick..best) back in M1c. Rather than invent a second key and have someone set
+  the same idea twice, libopenmpt's interpolation filter is chosen from the tier.
+  It lands on the same filter Cog would for anyone who never touched the setting:
+  Cog defaults to sinc, XPCog to high, and both mean eight taps.
+
 **Then:**
 
 - The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32
@@ -973,17 +1001,6 @@ All of these are also documented at the call site.
 - A failing HTTP reconnect backs off and eventually gives up. Cog retries
   immediately and forever, which against a server that is simply down is a hot
   loop rather than a reconnect.
-- **Codecs cannot read Settings, and it is now costing something.** Core takes
-  settings by injection and `SourceDescriptor::create()` / `DecoderDescriptor::create()`
-  take no arguments, so a codec has no route to them. That has now been worked
-  around three times: `httpStreamingBufferSize` in the HTTP source, `synthSampleRate`
-  and `resampling` in OpenMPT, and `synthSampleRate`, `synthDefaultSeconds`,
-  `synthDefaultLoopCount` and `synthDefaultFadeSeconds` in GME. Every one is
-  pinned to Cog's own default, so nothing is *wrong*; but the synth settings are
-  ones a user would reasonably want, and Cog exposes all of them. Threading a
-  `const Settings&` into codec construction is a registry change rather than a
-  codec one, which is why it keeps being deferred -- worth doing before the
-  remaining synthesised formats arrive and make it seven or eight.
 - **Starting and stopping playback are off the GUI thread.** `AudioEngine::play()`
   opens the source and primes about 1.5 s of audio before returning; for a file
   that is microseconds, for a URL it is a network round trip, and against a host

@@ -8,6 +8,7 @@
 // entries that cannot open.
 
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/Settings.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

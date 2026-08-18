@@ -21,6 +21,7 @@
 namespace xpcog {
 
 class PluginRegistry;
+class Settings;
 
 /// Byte-oriented input, mirroring Cog's CogSource protocol.
 /// Implementations: FileSource (M1a); HTTPSource and ArchiveSource (M6).
@@ -69,6 +70,15 @@ public:
     /// Unblocks an in-flight read when playback is stopping. Teardown still
     /// happens in close(), on the reader's own thread.
     virtual void interrupt() {}
+
+    /// Called by the registry immediately after construction, before open().
+    /// Borrowed and read live; never null once the registry has been given one.
+    ///
+    /// Settings reach a codec by injection like everything else in core, but a
+    /// level up: a descriptor's create() takes no arguments, so the registry
+    /// hands them over afterwards. Same shape as setRegistry() below on the
+    /// decoder side, and for the same reason.
+    virtual void setSettings(const Settings* /*settings*/) {}
 };
 
 using SourcePtr = std::unique_ptr<ISource>;
@@ -117,6 +127,10 @@ public:
     /// the registry keeps that dependency explicit and testable.
     /// Every other decoder ignores this.
     virtual void setRegistry(const PluginRegistry* /*registry*/) {}
+
+    /// Called by the registry immediately after construction, before open().
+    /// Borrowed and read live. See ISource::setSettings.
+    virtual void setSettings(const Settings* /*settings*/) {}
 
     /// Replaces the KVO on @"properties"/@"metadata" that Cog's InputNode
     /// registers (Audio/Chain/InputNode.m). Called from the decode thread.

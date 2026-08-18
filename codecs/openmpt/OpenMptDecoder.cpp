@@ -20,6 +20,7 @@
 #include "common/TextEncoding.hpp"
 
 #include "xpcog/core/Plugin.hpp"
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 
 #include <libopenmpt/libopenmpt.hpp>
@@ -38,18 +39,48 @@
 namespace xpcog {
 namespace {
 
-/// Cog reads `synthSampleRate` and clamps it to 8000..192000. A codec here
-/// cannot reach Settings -- core takes them by injection and a decoder is
-/// constructed with no arguments -- so this is Cog's fallback, which is also
-/// what Cog uses whenever that default is unset or out of range.
-constexpr std::int32_t kRenderRate = 44100;
-constexpr double       kSampleRate = static_cast<double>(kRenderRate);
+/// What Cog falls back to when synthSampleRate is unset or out of range, and
+/// the clamp it applies.
+constexpr std::int32_t kDefaultRate = 44100;
+constexpr std::int32_t kMinRate     = 8000;
+constexpr std::int32_t kMaxRate     = 192000;
 
-/// Cog maps its `resampling` preference onto this; 8 is the sinc filter, which
-/// is what that preference defaults to. Same settings-reachability reason.
-constexpr std::int32_t kInterpolationFilter = 8;
+[[nodiscard]] std::int32_t renderRate(const Settings* settings) {
+    if (settings == nullptr) {
+        return kDefaultRate;
+    }
+    const auto rate = static_cast<std::int32_t>(settings->SynthSampleRate());
+    return (rate < kMinRate || rate > kMaxRate) ? kDefaultRate : rate;
+}
 
-constexpr std::uint32_t kChannels = 2;
+/// libopenmpt's interpolation filter length, from the shared `resampling`
+/// quality tier.
+///
+/// Cog maps this preference by *algorithm* name -- zoh and blep to 1, linear and
+/// blam to 2, cubic to 4, sinc to 8 -- because those are the names its own
+/// resampler uses. XPCog's resampler is soxr, whose vocabulary is quality tiers,
+/// and the key is shared rather than duplicated (see settings.def). So the tier
+/// picks the filter, which lands on the same filter Cog would for anyone who
+/// never changed the setting: Cog defaults to sinc, XPCog to high, and both mean
+/// 8 taps here.
+[[nodiscard]] std::int32_t interpolationFilter(const Settings* settings) {
+    if (settings == nullptr) {
+        return 8;
+    }
+    const std::string quality = settings->Resampling();
+    if (quality == "quick") {
+        return 1;  // nearest-neighbour, as zoh is for Cog
+    }
+    if (quality == "low") {
+        return 2;  // linear
+    }
+    if (quality == "medium") {
+        return 4;  // cubic
+    }
+    return 8;  // high and best, and anything unrecognised: sinc
+}
+
+constexpr std::uint32_t kChannels       = 2;
 constexpr std::size_t   kFramesPerRead = 1024;
 
 /// Every extension libopenmpt claims, lowercase, built once.
@@ -88,9 +119,9 @@ constexpr std::size_t   kFramesPerRead = 1024;
 constexpr std::string_view kMimeTypes[] = {"audio/x-it", "audio/x-xm",
                                            "audio/x-s3m", "audio/x-mod"};
 
-/// Builds a module from a source, or nullptr. Shared by the decoder, the
-/// container and the metadata reader, all three of which do the same thing:
-/// read the file whole and hand it to libopenmpt.
+/// Builds a module from a source, or nullptr. Shared by the decoder and the
+/// container, both of which do the same thing: read the file whole and hand it
+/// to libopenmpt.
 [[nodiscard]] std::unique_ptr<openmpt::module> loadModule(ISource& source) {
     const auto data = codecs::readAllBytes(source);
     if (!data || data->empty()) {
@@ -120,13 +151,11 @@ constexpr std::string_view kMimeTypes[] = {"audio/x-it", "audio/x-xm",
         return 0;
     }
     std::int32_t value = 0;
-    const auto*  begin = fragment.data();
-    const auto*  end   = begin + fragment.size();
-    for (const char* at = begin; at != end; ++at) {
-        if (*at < '0' || *at > '9') {
+    for (const char c : fragment) {
+        if (c < '0' || c > '9') {
             return 0;
         }
-        value = value * 10 + (*at - '0');
+        value = value * 10 + (c - '0');
     }
     return value;
 }
@@ -134,6 +163,8 @@ constexpr std::string_view kMimeTypes[] = {"audio/x-it", "audio/x-xm",
 class OpenMptDecoder final : public IDecoder {
 public:
     ~OpenMptDecoder() override { OpenMptDecoder::close(); }
+
+    void setSettings(const Settings* settings) override { settings_ = settings; }
 
     bool open(ISource* source) override {
         close();
@@ -145,6 +176,8 @@ public:
         if (!module_) {
             return false;
         }
+
+        renderRate_ = renderRate(settings_);
 
         try {
             module_->select_subsong(subsongFromFragment(source->url()));
@@ -163,7 +196,7 @@ public:
                 openmpt::module::RENDER_STEREOSEPARATION_PERCENT, 100);
             module_->set_render_param(
                 openmpt::module::RENDER_INTERPOLATIONFILTER_LENGTH,
-                kInterpolationFilter);
+                interpolationFilter(settings_));
             module_->set_render_param(
                 openmpt::module::RENDER_VOLUMERAMPING_STRENGTH, -1);
             // Amiga modules were written against that hardware's filter, and
@@ -177,7 +210,7 @@ public:
             return false;
         }
 
-        format_.sampleRate    = kSampleRate;
+        format_.sampleRate    = static_cast<double>(renderRate_);
         format_.channels      = kChannels;
         format_.channelConfig = 0x3;  // FL | FR
         format_.format        = SampleFormat::F32;
@@ -190,7 +223,8 @@ public:
     [[nodiscard]] TrackProperties properties() const override {
         TrackProperties props;
         props.format      = format_;
-        props.totalFrames = static_cast<std::int64_t>(duration_ * kSampleRate);
+        props.totalFrames =
+            static_cast<std::int64_t>(duration_ * static_cast<double>(renderRate_));
         props.seekable    = true;
         props.lossless    = false;
         props.codec       = codec_;
@@ -209,7 +243,7 @@ public:
         std::size_t rendered = 0;
         try {
             rendered = module_->read_interleaved_stereo(
-                kRenderRate, kFramesPerRead, scratch_.data());
+                renderRate_, kFramesPerRead, scratch_.data());
         } catch (const std::exception&) {
             return false;
         }
@@ -221,7 +255,8 @@ public:
         out.clear();
         out.setFormat(format_);
         out.lossless        = false;
-        out.streamTimestamp = static_cast<double>(framePos_) / kSampleRate;
+        out.streamTimestamp =
+            static_cast<double>(framePos_) / static_cast<double>(renderRate_);
         out.streamTimeRatio = 1.0;
 
         std::byte* dst = out.allocFrames(rendered);
@@ -237,7 +272,8 @@ public:
             return -1;
         }
         try {
-            module_->set_position_seconds(static_cast<double>(frame) / kSampleRate);
+            module_->set_position_seconds(static_cast<double>(frame) /
+                                          static_cast<double>(renderRate_));
         } catch (const std::exception&) {
             return -1;
         }
@@ -266,6 +302,8 @@ private:
         }
     }
 
+    const Settings*                  settings_   = nullptr;
+    std::int32_t                     renderRate_ = kDefaultRate;
     std::unique_ptr<openmpt::module> module_;
     AudioFormat                      format_{};
     double                           duration_ = 0.0;

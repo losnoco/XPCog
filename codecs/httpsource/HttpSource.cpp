@@ -35,6 +35,7 @@
 
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Version.hpp"
 
 #include <curl/curl.h>
@@ -55,13 +56,25 @@ namespace {
 
 using namespace std::chrono_literals;
 
-/// Cog's HTTP_STREAMING_BUFFER_SIZE_DEFAULT. Cog makes it configurable through
-/// the httpStreamingBufferSize default; XPCog does not, because a codec cannot
-/// reach Settings -- core takes them by injection (see "Settings are generated
-/// from one file" in docs/PORTING.md) and SourceDescriptor::create() takes no
-/// arguments. Exposing it means threading Settings through PluginRegistry into
-/// source construction, which is a registry change rather than a source one.
-constexpr std::size_t kBufferSize = 0x40000;
+/// Cog's HTTP_STREAMING_BUFFER_SIZE_DEFAULT and the bounds it accepts.
+constexpr std::size_t kBufferSize    = 0x40000;
+constexpr std::size_t kMinBufferSize = 0x10000;
+constexpr std::size_t kMaxBufferSize = 0x8000000;
+
+/// Cog's rule exactly: out of range, or not a power of two, falls back to the
+/// default rather than being clamped. The power-of-two requirement is not
+/// fussiness -- StreamBuffer indexes the ring with a mask.
+[[nodiscard]] std::size_t bufferSizeFrom(const Settings* settings) {
+    if (settings == nullptr) {
+        return kBufferSize;
+    }
+    const auto requested = static_cast<std::size_t>(settings->HttpStreamingBufferSize());
+    if (requested < kMinBufferSize || requested > kMaxBufferSize ||
+        (requested & (requested - 1)) != 0) {
+        return kBufferSize;
+    }
+    return requested;
+}
 
 /// Cog's TIMEOUT: seconds without a byte before the connection is assumed dead.
 constexpr auto kStallTimeout = 10s;
@@ -90,10 +103,16 @@ class HttpSource final : public ISource {
 public:
     ~HttpSource() override { HttpSource::close(); }
 
+    void setSettings(const Settings* settings) override { settings_ = settings; }
+
     bool open(const Url& url) override {
         close();
 
         ensureCurlInitialised();
+
+        // Sized here rather than at construction: the registry hands settings
+        // over after the source exists, and the ring is cheap to rebuild.
+        buffer_ = codecs::StreamBuffer{bufferSizeFrom(settings_)};
 
         url_       = url;
         requestUrl_ = url.withoutFragment().toString();
@@ -504,8 +523,9 @@ private:
     std::condition_variable headersKnown_;
     std::condition_variable stopping_;
 
+    const Settings*      settings_ = nullptr;
     codecs::StreamBuffer buffer_{kBufferSize};
-    codecs::IcyDemux demux_;
+    codecs::IcyDemux     demux_;
 
     Url         url_;
     std::string requestUrl_;

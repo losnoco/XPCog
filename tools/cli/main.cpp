@@ -44,6 +44,15 @@ xpcog::PluginRegistry& registry() {
     // decoders it hands out reference descriptors stored inside it.
     static xpcog::PluginRegistry instance;
     static const bool            once = [] {
+        // Defaults, held for the life of the process: the CLI has no settings
+        // file, and codecs read these live. Without them every synthesised
+        // format would fall back internally to the same numbers by a longer
+        // route, so this is about the CLI agreeing with the app rather than
+        // about behaviour.
+        static auto            store    = xpcog::makeMemorySettingsStore();
+        static xpcog::Settings defaults{*store};
+        instance.setSettings(&defaults);
+
         xpcog::registerAllCodecs(instance);
         return true;
     }();

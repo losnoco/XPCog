@@ -18,6 +18,13 @@
 XPCOG_SETTING(VolumeScaling, std::string, "volumeScaling", "albumGainWithPeak")
 
 /// Resampler quality passed to soxr: quick, low, medium, high, best.
+///
+/// Cog's key, deliberately with a different vocabulary. Cog's values name
+/// *algorithms* (zoh, blep, linear, blam, cubic, sinc) because that is what its
+/// own resampler offers; soxr has quality tiers instead, and inventing a second
+/// key so both could coexist would leave a user setting the same idea twice.
+/// libopenmpt's interpolation filter is chosen from these tiers -- see
+/// codecs/openmpt.
 XPCOG_SETTING(Resampling, std::string, "resampling", "high")
 
 /// Fade on seek and stop, so transport changes do not click.
@@ -184,6 +191,31 @@ XPCOG_SETTING(SpectrumFloorDb, double, "spectrumFloorDb", -80.0)
 /// element most likely to be unwanted: they are what makes the display busy, and
 /// the bars alone read as calmer.
 XPCOG_SETTING(SpectrumShowPeaks, bool, "spectrumShowPeaks", true)
+
+// --- synthesised formats --------------------------------------------------
+//
+// Modules and game-music rips are emulated rather than decoded, so they have no
+// inherent sample rate and often no inherent length. Cog's keys and defaults,
+// shared across every such decoder exactly as they are there.
+
+/// Rendering rate for synthesised formats. Cog clamps to 8000..192000.
+XPCOG_SETTING(SynthSampleRate, int, "synthSampleRate", 44100)
+
+/// How long to play a rip that states no length and no loop. Cog's 2.5 minutes.
+XPCOG_SETTING(SynthDefaultSeconds, double, "synthDefaultSeconds", 150.0)
+
+/// Fade at the end of a synthesised track, which is what turns "loops for ever"
+/// into something with a duration.
+XPCOG_SETTING(SynthDefaultFadeSeconds, double, "synthDefaultFadeSeconds", 8.0)
+
+/// How many times to play a rip's looping section when it states a loop but no
+/// total length. Cog clamps to 0..10.
+XPCOG_SETTING(SynthDefaultLoopCount, int, "synthDefaultLoopCount", 2)
+
+/// Ring size for the HTTP source, in bytes. Must be a power of two between
+/// 64 KiB and 128 MiB; anything else falls back to the default. A slow or
+/// distant station is the reason to raise it.
+XPCOG_SETTING(HttpStreamingBufferSize, int, "httpStreamingBufferSize", 0x40000)
 
 /// Recently opened URLs, newest last, newline-separated and capped at fifteen.
 ///
