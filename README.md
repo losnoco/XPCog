@@ -278,6 +278,9 @@ keeps playback order canonical and treats sorting as display-only.
 
 The full porting plan, milestone-by-milestone progress, and the complete list of
 deliberate behaviour differences live in [`docs/PORTING.md`](docs/PORTING.md).
+Work that spans several commits gets its own plan beside it —
+[`docs/HIGHLYCOMPLETE.md`](docs/HIGHLYCOMPLETE.md) stages the eight emulator
+cores behind the PSF formats.
 
 Upstream Cog: <https://github.com/losnoco/Cog>
 

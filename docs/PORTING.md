@@ -1225,6 +1225,11 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   in the corpus while the chain itself was resolving perfectly -- a good
   reminder that a test failing does not mean the thing under test is broken.
 
+  The staging plan for the eight cores -- what each needs, which section holds
+  its program, where Cog keeps it, and what a core must implement -- is
+  [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be picked up
+  on another machine.
+
   Tests run against the same opt-in corpus mechanism vgmstream introduced
   (`-DXPCOG_PSF_CORPUS=<path>`): chains resolve, tags parse, the tags-only path
   does not inflate a multi-megabyte library, and a mini-PSF copied away from its
