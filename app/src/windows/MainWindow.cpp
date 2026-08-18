@@ -920,6 +920,43 @@ void MainWindow::publishNowPlaying(TrackId id) {
     media_->setNowPlaying(info);
 }
 
+void MainWindow::changeEvent(QEvent* event) {
+    QMainWindow::changeEvent(event);
+    if (event == nullptr) {
+        return;
+    }
+    // StyleChange covers the preferences dialog switching style; the palette
+    // events cover the system flipping to dark while the app is running, which
+    // the styles that honour it pass straight through.
+    switch (event->type()) {
+        case QEvent::StyleChange:
+        case QEvent::PaletteChange:
+        case QEvent::ApplicationPaletteChange: refreshIcons(); break;
+        default: break;
+    }
+}
+
+void MainWindow::refreshIcons() {
+    if (actions_ == nullptr) {
+        return;  // a change event can arrive before wireUp()
+    }
+    actions_->applyIcons();
+
+    // applyIcons() puts "play" on the toggle, so the current state has to be
+    // restored over the top of it or a pause turns back into a play button by
+    // the act of changing theme.
+    if (QAction* command = actions_->action(ActionId::PlaybackPlayPause);
+        command != nullptr && playback_) {
+        const bool running = playback_->playing() && !playback_->paused();
+        command->setIcon(lucideIcon(running ? QStringLiteral("pause")
+                                            : QStringLiteral("play")));
+    }
+
+    if (scanCancel_ != nullptr) {
+        scanCancel_->setIcon(lucideIcon(QStringLiteral("x")));
+    }
+}
+
 void MainWindow::refreshInfo() {
     // Hidden is the normal state, and this is called from dataChanged, which a
     // scan emits per file. Leaving early is what keeps that free.

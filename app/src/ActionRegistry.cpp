@@ -70,6 +70,30 @@ constexpr MenuItem kMenuLayout[] = {
     {nullptr, ActionId::HelpAboutQt},
 };
 
+/// Which Lucide glyph each command wears. A table rather than a setIcon() beside
+/// each add(), because these have to be re-applied whenever the style changes --
+/// and a refresh that walks a list cannot forget one, where a refresh that
+/// repeats eleven scattered calls eventually will.
+struct IconBinding {
+    ActionId    id;
+    const char* icon;
+};
+
+constexpr IconBinding kIcons[] = {
+    // Play/Pause wears "play" here and is swapped to "pause" by MainWindow when
+    // the state changes, the same way its label already is.
+    {ActionId::PlaybackPlayPause, "play"},
+    {ActionId::PlaybackStop, "square"},
+    {ActionId::PlaybackNext, "skip-forward"},
+    {ActionId::PlaybackPrevious, "skip-back"},
+
+    {ActionId::ViewFileTree, "panel-left"},
+    {ActionId::ViewFileTreeRoot, "folder-open"},
+    {ActionId::ViewInfo, "info"},
+    {ActionId::ViewSpectrum, "audio-lines"},
+    {ActionId::ViewEqualizer, "sliders-vertical"},
+};
+
 constexpr ActionId kToolBarLayout[] = {
     ActionId::PlaybackPrevious,
     ActionId::PlaybackPlayPause,
@@ -96,26 +120,22 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
 
     QAction* tree = add(ActionId::ViewFileTree, tr("&File Browser"),
                         QKeySequence(Qt::CTRL | Qt::Key_B));
-    tree->setIcon(lucideIcon(QStringLiteral("panel-left")));
     tree->setCheckable(true);
     tree->setChecked(true);
 
     // Not checkable: it opens a dialog rather than showing or hiding anything.
     // Directly under the browser it belongs to, because a root you cannot find
     // is a browser stuck wherever it was left.
-    add(ActionId::ViewFileTreeRoot, tr("Choose &Root Folder…"))
-        ->setIcon(lucideIcon(QStringLiteral("folder-open")));
+    add(ActionId::ViewFileTreeRoot, tr("Choose &Root Folder…"));
 
     // Cog's Info Inspector, on Cog's shortcut.
     QAction* info = add(ActionId::ViewInfo, tr("&Info"),
                         QKeySequence(Qt::CTRL | Qt::Key_I));
-    info->setIcon(lucideIcon(QStringLiteral("info")));
     info->setCheckable(true);
     info->setChecked(false);
 
     QAction* spectrum = add(ActionId::ViewSpectrum, tr("&Spectrum"),
                             QKeySequence(Qt::CTRL | Qt::Key_U));
-    spectrum->setIcon(lucideIcon(QStringLiteral("audio-lines")));
     spectrum->setCheckable(true);
     spectrum->setChecked(true);
 
@@ -123,7 +143,6 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
     // preferences, and so does this. Ctrl-E, which nothing else claims.
     QAction* equalizer = add(ActionId::ViewEqualizer, tr("&Equalizer"),
                              QKeySequence(Qt::CTRL | Qt::Key_E));
-    equalizer->setIcon(lucideIcon(QStringLiteral("sliders-vertical")));
     equalizer->setCheckable(true);
     equalizer->setChecked(false);
 
@@ -139,16 +158,10 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
     add(ActionId::EditRemove, tr("&Remove from Playlist"), QKeySequence::Delete);
     add(ActionId::EditRandomize, tr("Randomi&ze Playlist"));
 
-    // Play/Pause starts as play and is swapped by MainWindow when the state
-    // changes, the same way its label already is.
-    add(ActionId::PlaybackPlayPause, tr("&Play/Pause"), QKeySequence(Qt::Key_Space))
-        ->setIcon(lucideIcon(QStringLiteral("play")));
-    add(ActionId::PlaybackStop, tr("&Stop"), QKeySequence(Qt::CTRL | Qt::Key_Period))
-        ->setIcon(lucideIcon(QStringLiteral("square")));
-    add(ActionId::PlaybackNext, tr("&Next"), QKeySequence(Qt::CTRL | Qt::Key_Right))
-        ->setIcon(lucideIcon(QStringLiteral("skip-forward")));
-    add(ActionId::PlaybackPrevious, tr("Pre&vious"), QKeySequence(Qt::CTRL | Qt::Key_Left))
-        ->setIcon(lucideIcon(QStringLiteral("skip-back")));
+    add(ActionId::PlaybackPlayPause, tr("&Play/Pause"), QKeySequence(Qt::Key_Space));
+    add(ActionId::PlaybackStop, tr("&Stop"), QKeySequence(Qt::CTRL | Qt::Key_Period));
+    add(ActionId::PlaybackNext, tr("&Next"), QKeySequence(Qt::CTRL | Qt::Key_Right));
+    add(ActionId::PlaybackPrevious, tr("Pre&vious"), QKeySequence(Qt::CTRL | Qt::Key_Left));
     add(ActionId::PlaybackEnqueue, tr("Add to &Queue"), QKeySequence(Qt::Key_Q));
 
     // Repeat and shuffle are exclusive sets, so they are checkable and grouped.
@@ -182,6 +195,8 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
         item->setCheckable(true);
         shuffle->addAction(item);
     }
+
+    applyIcons();
 }
 
 QAction* ActionRegistry::add(ActionId id, const QString& text,
@@ -192,6 +207,14 @@ QAction* ActionRegistry::add(ActionId id, const QString& text,
     }
     actions_.insert(static_cast<int>(id), item);
     return item;
+}
+
+void ActionRegistry::applyIcons() {
+    for (const auto& [id, name] : kIcons) {
+        if (QAction* command = action(id); command != nullptr) {
+            command->setIcon(lucideIcon(QLatin1StringView{name}));
+        }
+    }
 }
 
 QAction* ActionRegistry::action(ActionId id) const {

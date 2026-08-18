@@ -3,6 +3,7 @@
 #include "LucideIcon.hpp"
 
 #include <QAction>
+#include <QEvent>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileSystemModel>
@@ -91,6 +92,21 @@ void FileTree::setRootPath(const QString& path) {
     root_->setText(name.isEmpty() ? QDir::toNativeSeparators(target) : name);
     root_->setToolTip(tr("Browsing %1 — click to choose another folder")
                           .arg(QDir::toNativeSeparators(target)));
+}
+
+void FileTree::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event == nullptr || root_ == nullptr) {
+        return;
+    }
+    switch (event->type()) {
+        case QEvent::StyleChange:
+        case QEvent::PaletteChange:
+        case QEvent::ApplicationPaletteChange:
+            root_->setIcon(lucideIcon(QStringLiteral("folder-open")));
+            break;
+        default: break;
+    }
 }
 
 void FileTree::chooseRootPath() {

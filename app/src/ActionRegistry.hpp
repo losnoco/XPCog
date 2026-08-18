@@ -68,6 +68,16 @@ public:
 
     [[nodiscard]] QAction* action(ActionId id) const;
 
+    /// Re-renders every command's icon in the current palette's colour.
+    ///
+    /// Called at construction and again whenever the style changes.
+    /// QApplication::setStyle() re-polishes every widget and resets the palette,
+    /// so icons rendered for the previous one are left stroked in a colour that
+    /// may now be the colour of the surface behind them -- which is how switching
+    /// to windowsvista, whose chrome stays light, made a dark theme's near-white
+    /// icons invisible.
+    void applyIcons();
+
     /// Builds the menu bar from a declarative table. ~250 lines of table
     /// replacing 158 hand-maintained menu items of XML.
     void populateMenuBar(QMenuBar* bar) const;

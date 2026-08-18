@@ -88,6 +88,15 @@ QIcon lucideIcon(const QString& name) {
     // ButtonText rather than WindowText: almost every one of these is on a
     // toolbar button or a menu item, and on the styles that distinguish them it
     // is the one that matches the label beside it.
+    //
+    // The *application* palette, deliberately, and not the palette of whatever
+    // widget is asking. These are rebuilt from QWidget::changeEvent on
+    // QEvent::StyleChange, and at that moment the application palette already
+    // holds the incoming style's colours while a widget's own palette has not
+    // been re-resolved yet -- measured, on a switch into windowsvista, as
+    // app=#000000 while the widget still said #ffffff. Asking the widget would
+    // rebuild every icon in the colour being replaced, which is the exact bug
+    // this refresh exists to fix.
     return lucideIcon(name, QApplication::palette().color(QPalette::ButtonText));
 }
 

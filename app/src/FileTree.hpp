@@ -45,6 +45,12 @@ signals:
     /// The context menu's "Add to Playlist".
     void addRequested(const QList<QUrl>& urls);
 
+protected:
+    /// Re-renders the root button's icon when the style or palette changes. See
+    /// MainWindow::changeEvent -- the icon is stroked in a colour taken from the
+    /// palette, and switching style resets it.
+    void changeEvent(QEvent* event) override;
+
 private:
     [[nodiscard]] QList<QUrl> selectedUrls() const;
 

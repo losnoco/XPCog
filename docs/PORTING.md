@@ -969,6 +969,29 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   rather than being fixed at build time; the cache is keyed on the colour for
   exactly that reason.
 
+  **Icons are re-rendered whenever the style changes**, which they were not at
+  first, and the omission was invisible until someone switched style. Setting an
+  icon on a QAction stores the pixmaps it had at that moment;
+  `QApplication::setStyle()` re-polishes every widget and resets the palette, but
+  nothing re-asks for the icons. Switching from a dark style to `windowsvista` --
+  whose chrome is light whatever the system says -- therefore left near-white
+  glyphs on `#f0f0f0`, a contrast ratio of 1.1:1. The palette itself was never
+  wrong: measured, `windowsvista` reports black on `#f0f0f0` at 18.4:1 and every
+  other style at least 11:1.
+
+  The refresh hangs off `QWidget::changeEvent`, and two measurements shaped it.
+  A style switch delivers `QEvent::StyleChange` but **no** palette event, so
+  listening only for `PaletteChange` would have caught nothing. And within that
+  event the *application* palette already holds the incoming style's colours
+  while the *widget's* palette has not been re-resolved -- `app=#000000` against
+  `widget=#ffffff` on a switch into `windowsvista`. `lucideIcon()` reads the
+  application palette for exactly that reason; reading the widget's would rebuild
+  every icon in the colour being replaced.
+
+  The bindings moved into one table for the same reason. A refresh that walks a
+  list cannot forget an icon; a refresh that repeats eleven scattered `setIcon()`
+  calls eventually will.
+
   Two things that were wrong on the first pass and are worth remembering. The
   disabled variant first encoded its alpha in the colour, via
   `QColor::name(QColor::HexArgb)` -- which spells it `#AARRGGBB`, where SVG's

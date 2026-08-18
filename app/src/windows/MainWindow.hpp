@@ -62,6 +62,15 @@ public:
 protected:
     void closeEvent(QCloseEvent* event) override;
 
+    /// Re-renders the Lucide icons when the style or palette changes.
+    ///
+    /// They are stroked in a colour taken from the palette at the moment they
+    /// are built, and QApplication::setStyle() resets that palette -- so without
+    /// this, switching style leaves every icon in the old theme's colour. On
+    /// windowsvista, whose chrome ignores dark mode, that meant near-white icons
+    /// on light grey.
+    void changeEvent(QEvent* event) override;
+
 #ifdef Q_OS_MACOS
     /// Watches the application for the Dock's "reopen" gesture. See the
     /// implementation for why that arrives as a state change rather than as
@@ -142,6 +151,10 @@ private:
     /// which is most of the time, and matters because metadata arriving during a
     /// scan would otherwise redraw twenty labels per file.
     void refreshInfo();
+
+    /// Re-applies every icon this window owns, including the two on plain
+    /// buttons that no QAction covers.
+    void refreshIcons();
 
     [[nodiscard]] QString statusSummary() const;
 
