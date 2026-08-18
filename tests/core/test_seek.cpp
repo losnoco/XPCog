@@ -190,7 +190,14 @@ TEST_CASE("seeking skips audio and lands cleanly", "[seek]") {
 
     const auto playAndMaybeSeek = [&url](double seekTo) {
         RingBuffer ring{static_cast<std::size_t>(kSampleRate * 0.25) * kChannels};
-        auto       output = makeOfflineOutput(ring);
+        // Paced, because this test acts on playback while it is still under way.
+        // Unpaced, a four-second file drains in the time it takes to decode it,
+        // and on a fast enough machine the whole thing reaches the capture
+        // before the seek is serviced -- so the seek skips nothing and the
+        // measurement is of scheduling rather than of seeking. That is not
+        // hypothetical: it passed here fifteen times out of fifteen and failed
+        // on a macOS runner. See makeOfflineOutput's own note.
+        auto output = makeOfflineOutput(ring, 8.0);
 
         auto        store = makeMemorySettingsStore();
         Settings    settings{*store};
@@ -209,9 +216,9 @@ TEST_CASE("seeking skips audio and lands cleanly", "[seek]") {
     REQUIRE(whole > 0);
 
     // Seeking three seconds into a four-second file must leave materially less
-    // to play. The bound is loose because how much was already in flight when
-    // the seek landed depends on scheduling -- but "skipped most of it" does
-    // not.
+    // to play. The bound stays loose because how much was already in flight when
+    // the seek landed still depends on scheduling -- pacing bounds that window
+    // rather than removing it -- but "skipped most of it" does not.
     const std::size_t afterSeek = playAndMaybeSeek(3.0);
     REQUIRE(afterSeek < whole / 2);
 }
