@@ -24,6 +24,34 @@ namespace {
     return out;
 }
 
+/// True for a Game_Music_Emu sidecar line: `rip.nsf::NSF,1,Track 1,0:00:14,,`.
+///
+/// These sit beside a multi-track rip carrying its per-track names and lengths,
+/// and they wear the .m3u extension without being playlists -- the GME decoder
+/// hands the whole file to gme_load_m3u_data() instead. Read as a playlist each
+/// line becomes a path that cannot exist, so a folder of rips fills the playlist
+/// with dead entries. Cog has the same collision and the same result.
+///
+/// Matched on the shape rather than on `::` alone, because `::` is also how an
+/// IPv6 host is written: `http://[::1]/x.mp3` is a real entry. A GME line always
+/// names its emulator type between the `::` and the first comma, and that token
+/// is plain alphanumerics.
+[[nodiscard]] bool isGameMusicSidecarLine(std::string_view line) {
+    const std::size_t marker = line.find("::");
+    if (marker == std::string_view::npos) {
+        return false;
+    }
+    const std::string_view rest = line.substr(marker + 2);
+    const std::size_t      comma = rest.find(',');
+    if (comma == std::string_view::npos || comma == 0) {
+        return false;
+    }
+    const std::string_view type = rest.substr(0, comma);
+    return type.size() <= 8 &&
+           std::all_of(type.begin(), type.end(),
+                       [](unsigned char c) { return std::isalnum(c) != 0; });
+}
+
 std::vector<Url> expandM3u(const Url& url, ISource& source) {
     const std::string text = codecs::readAllText(source);
 
@@ -38,6 +66,11 @@ std::vector<Url> expandM3u(const Url& url, ISource& source) {
         }
         if (line.starts_with('#')) {
             continue;  // #EXTINF and friends carry only display metadata
+        }
+        if (isGameMusicSidecarLine(line)) {
+            // Not a playlist at all. Returning nothing leaves the rip beside it
+            // as the entry, which is the one that actually plays.
+            return {};
         }
         entries.push_back(codecs::resolveEntry(line, url));
     }

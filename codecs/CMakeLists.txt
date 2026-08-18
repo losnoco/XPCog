@@ -38,6 +38,9 @@ endif()
 if(XPCOG_WITH_OPENMPT)
     add_subdirectory(openmpt)
 endif()
+if(XPCOG_WITH_GME)
+    add_subdirectory(gme)
+endif()
 
 # M1b onward: ffmpeg, vorbis, opus, mpg123, wavpack, ape, musepack, taglib,
 # cuesheet, m3u, pls, xmlplaylist. M6: the remaining ~27 Cog decoders.

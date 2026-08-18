@@ -794,6 +794,53 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   is the playlist's job here, and a track that reports no duration and never ends
   is a poor default.
 
+- **Game music rips**, through Game_Music_Emu: SPC, NSF, NSFE, GBS, AY, HES,
+  KSS, SAP, VGM, VGZ, GYM. Port of Cog's GME plugin. These are not audio files --
+  an NSF is 6502 code and a sound-chip program -- so there is no bitrate, no
+  source format, and no natural length, which is what most of the awkwardness is
+  about.
+
+  Three deliberate differences from Cog. It does not require a seekable source,
+  where Cog refuses a stream outright, because reading the file whole costs
+  nothing when the emulator needs all of it anyway -- so a rip plays over HTTP.
+  The extension list and which formats are multi-track are both asked of the
+  library rather than hardcoded; Cog's hardcoded lists include formats that only
+  exist in its patched build (`sfm`, `sgc`) and omit ones the stock library
+  plays. And length comes from `gme_info_t::play_length`, which already *is*
+  Cog's fallback chain -- the rip's own length, else intro plus two loops, else
+  150 seconds -- because those are exactly Cog's `synthDefaultLoopCount` and
+  `synthDefaultSeconds` defaults.
+
+  Two things the corpus taught that reading the source would not have:
+
+  * `gme_type_extension()` answers in **upper case** and the registry matches the
+    lowercase extension a URL ends in, so the decoder claimed `SPC`, was never
+    offered `spc`, and was never offered anything at all. The same bug caught the
+    SPC sample-rate special case, which compares the same string.
+  * The type constants (`gme_spc_type` and friends) are exported *data*, and data
+    symbols do not cross a DLL boundary on Windows without `__declspec(dllimport)`
+    -- which the header deliberately does not emit for consumers, its
+    `BLARGG_EXPORT` being left blank to stay "friendly with both static and shared
+    linking". Functions survive that on import thunks; the constants link-error.
+    Everything here identifies types by name instead.
+
+  **Known limitation, measured rather than assumed:** GME's VGM support is
+  Genesis-era. Of four Sega MegaCD rips tried, one played and three came out
+  silent and were then truncated by GME's own silence detection -- those rips
+  drive the RF5C164 PCM chip, which GME does not emulate. Cog routes VGM to
+  libvgmPlayer for this reason. The extensions are claimed anyway because
+  Genesis VGM does work and nothing else here plays them; when libvgmPlayer
+  lands, registering it above this decoder's priority is enough, and
+  MultiDecoder falls back to this one.
+
+  A GME **m3u sidecar** is loaded for track names and lengths, which for most
+  rips is the only place they exist. That collides with the M3U playlist
+  container, which sees the same extension: read as a playlist, every line
+  becomes a path that cannot exist, so a folder of rips filled up with dead
+  entries. The container now recognises the sidecar shape and declines it. The
+  test that matters is the negative one -- `::` also being how an IPv6 host is
+  written, so matching on it alone would discard a real stream entry.
+
 **Then:**
 
 - The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32
@@ -926,6 +973,17 @@ All of these are also documented at the call site.
 - A failing HTTP reconnect backs off and eventually gives up. Cog retries
   immediately and forever, which against a server that is simply down is a hot
   loop rather than a reconnect.
+- **Codecs cannot read Settings, and it is now costing something.** Core takes
+  settings by injection and `SourceDescriptor::create()` / `DecoderDescriptor::create()`
+  take no arguments, so a codec has no route to them. That has now been worked
+  around three times: `httpStreamingBufferSize` in the HTTP source, `synthSampleRate`
+  and `resampling` in OpenMPT, and `synthSampleRate`, `synthDefaultSeconds`,
+  `synthDefaultLoopCount` and `synthDefaultFadeSeconds` in GME. Every one is
+  pinned to Cog's own default, so nothing is *wrong*; but the synth settings are
+  ones a user would reasonably want, and Cog exposes all of them. Threading a
+  `const Settings&` into codec construction is a registry change rather than a
+  codec one, which is why it keeps being deferred -- worth doing before the
+  remaining synthesised formats arrive and make it seven or eight.
 - **Starting and stopping playback are off the GUI thread.** `AudioEngine::play()`
   opens the source and primes about 1.5 s of audio before returning; for a file
   that is microseconds, for a URL it is a network round trip, and against a host

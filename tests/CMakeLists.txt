@@ -22,6 +22,7 @@ add_executable(xpcog-tests
     codecs/test_conformance.cpp
     codecs/test_containers.cpp
     codecs/test_cuesheet.cpp
+    codecs/test_gme_sidecar.cpp
 )
 
 # Guarded because the HTTP source is an option: without it the headers under

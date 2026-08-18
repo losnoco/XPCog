@@ -18,6 +18,7 @@
     "wavpack",
     "taglib",
     "libopenmpt",
+    "libgme",
     {
       "name": "curl",
       "default-features": false,
