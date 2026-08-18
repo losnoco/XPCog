@@ -160,7 +160,14 @@ void Scanner::expandInto(const Url& url, std::vector<Url>& out,
     // already in `seen`, and the scan would come back empty.
     const bool isTrackReference = !url.fragment().empty();
 
-    if (isTrackReference || !registry_.isContainer(url) || depth >= kMaxContainerDepth) {
+    // An extensionless HTTP URL may still be a playlist identified by its
+    // Content-Type. isContainer() deliberately performs no I/O, so give those
+    // URLs one expansion attempt; expandContainer() returns the URL unchanged
+    // when the opened source is ordinary audio instead.
+    const bool mayBeMimeContainer = url.extension().empty();
+    if (isTrackReference ||
+        (!registry_.isContainer(url) && !mayBeMimeContainer) ||
+        depth >= kMaxContainerDepth) {
         seen.push_back(key);
         out.push_back(url);
         return;

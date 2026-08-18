@@ -744,6 +744,13 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   goes down exactly the path a chosen file does -- scan, expand, add -- with no
   special case anywhere.
 
+- **Extensionless HTTP playlists are recognised by MIME type.** Station
+  directories routinely redirect a friendly URL with no `.pls` or `.m3u`
+  suffix to `audio/x-scpls` or `audio/mpegurl`. Container selection now follows
+  the same extension-first, MIME-second rule as decoder selection: the cheap
+  extension check avoids opening normal files, while an extensionless URL gets
+  one source open so its response type can identify the container.
+
 - **A repeating playlist of undecodable tracks now stops instead of spinning.**
   Found by inspection while wiring the above, before any user hit it: the
   feeder's advance loop asks the delegate for the next track and retries on
@@ -1128,14 +1135,6 @@ asserted a property Qt provides rather than the one the code was responsible for
   exactly this reason. The fix is to move open-and-prime off the GUI thread
   behind the existing delegate seam; the timeout cap is the interim mitigation,
   not the answer.
-- **A playlist URL with no file extension is not expanded.** Many stations
-  advertise a `.pls` or `.m3u` that redirects to one, and `PluginRegistry::isContainer()`
-  and `expandContainer()` take only a `Url`, so they match on the extension and
-  never see the `Content-Type` that would identify it. Cog checks the response
-  MIME type for `audio/x-scpls` and `audio/mpegurl` in its session delegate.
-  Fixing it means letting containers match on MIME as decoders already do, which
-  is a registry change: `expandContainer()` would have to open the source before
-  deciding rather than after.
 - `windeployqt` is invoked with `--no-translations`, so a deployed Windows build
   carries no Qt catalogues and Qt's own dialog strings stay English even in
   Spanish. XPCog's strings are unaffected — they are compiled into the executable

@@ -123,11 +123,15 @@ public:
     [[nodiscard]] std::size_t sourceCount()  const noexcept { return sources_.size(); }
     [[nodiscard]] std::size_t containerCount() const noexcept { return containers_.size(); }
 
-    /// True when some container claims this URL's extension.
+    /// True when some container claims this URL's extension. This is the cheap,
+    /// no-I/O check; an extensionless source can still be recognised by MIME
+    /// type when expandContainer() opens it.
     [[nodiscard]] bool isContainer(const Url& url) const;
 
-    /// Expands a playlist or archive into its tracks. Returns just `url` when no
-    /// container claims it, so callers can apply this uniformly to any input.
+    /// Expands a playlist or archive into its tracks. Selection follows Cog's
+    /// extension-first, MIME-second rule; MIME matching lets an extensionless
+    /// HTTP URL advertise a PLS or M3U through Content-Type. Returns just `url`
+    /// when no container claims it, so callers can apply this uniformly.
     [[nodiscard]] std::vector<Url> expandContainer(const Url& url) const;
 
     /// Creates a source for `url`'s scheme, or nullptr if none claims it.

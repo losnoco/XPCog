@@ -107,6 +107,9 @@ bool PluginRegistry::isContainer(const Url& url) const {
 std::vector<Url> PluginRegistry::expandContainer(const Url& url) const {
     const std::string extension = url.extension();
 
+    // Extension wins over MIME, just as it does for decoders. Apart from
+    // preserving Cog's selection rule, this avoids opening every ordinary file
+    // merely to find out that it is not a container.
     for (const auto& descriptor : containers_) {
         for (const auto claimed : descriptor.extensions) {
             if (claimed != extension) {
@@ -117,6 +120,27 @@ std::vector<Url> PluginRegistry::expandContainer(const Url& url) const {
                 return {};
             }
             return descriptor.expand(url, *source);
+        }
+    }
+
+    // A station directory commonly redirects a pretty, extensionless URL to a
+    // PLS or M3U response. Only the opened source knows its Content-Type, so MIME
+    // matching necessarily happens after the extension pass and after open().
+    SourcePtr source = makeSource(url);
+    if (!source || !source->open(url)) {
+        // No extension claimed the URL, so an open failure does not prove it was
+        // a broken container. Preserve the ordinary non-container contract.
+        return {url};
+    }
+
+    const std::string mime = source->mimeType();
+    if (!mime.empty()) {
+        for (const auto& descriptor : containers_) {
+            for (const auto claimed : descriptor.mimeTypes) {
+                if (claimed == mime) {
+                    return descriptor.expand(url, *source);
+                }
+            }
         }
     }
 
