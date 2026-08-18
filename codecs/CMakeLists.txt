@@ -47,6 +47,9 @@ endif()
 if(XPCOG_WITH_VGMSTREAM)
     add_subdirectory(vgmstream)
 endif()
+if(XPCOG_WITH_PSF)
+    add_subdirectory(psf)
+endif()
 
 # M1b onward: ffmpeg, vorbis, opus, mpg123, wavpack, ape, musepack, taglib,
 # cuesheet, m3u, pls, xmlplaylist. M6: the remaining ~27 Cog decoders.

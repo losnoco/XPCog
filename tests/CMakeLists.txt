@@ -57,6 +57,23 @@ if(XPCOG_WITH_VGMSTREAM)
     endif()
 endif()
 
+if(XPCOG_WITH_PSF)
+    target_sources(xpcog-tests PRIVATE codecs/test_psf.cpp)
+    target_link_libraries(xpcog-tests PRIVATE xpcog-codec-psf)
+
+    # Same opt-in shape as the vgmstream corpus, and for the same reason: a PSF
+    # is a rip of a game's sound program and cannot be committed. Point it at a
+    # collection that already exists -- -DXPCOG_PSF_CORPUS=D:/vgm -- and the
+    # lib-chain cases run; unset, they skip.
+    set(XPCOG_PSF_CORPUS "" CACHE PATH
+        "Folder of PSF rips for the container tests; empty to skip")
+    if(XPCOG_PSF_CORPUS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_PSF_CORPUS=\"${XPCOG_PSF_CORPUS}\"")
+        message(STATUS "PSF corpus tests: ${XPCOG_PSF_CORPUS}")
+    endif()
+endif()
+
 # Likewise the archive codec: these include its headers and link its objects.
 if(XPCOG_WITH_ARCHIVE)
     target_sources(xpcog-tests PRIVATE

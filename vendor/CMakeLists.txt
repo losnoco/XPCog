@@ -16,8 +16,14 @@
 #   miniaudio/  vendored                           (M1a) -- done
 #   pffft/    <- Cog Audio/ThirdParty/deadbeef     (M5)
 #   dsd2pcm/  <- extracted from Cog ChunkList.m    (M6)
+#   psflib/   <- Cog Frameworks/psflib             (M6) -- the PSF container
+#             every HighlyComplete core sits on. Four files; the emulator
+#             cores themselves are far larger and land one at a time.
 #   fsurround/<- Cog Audio/ThirdParty/fsurround    (M4) -- data only, done
 
 add_subdirectory(fsurround)
 add_subdirectory(hdcd)
 add_subdirectory(miniaudio)
+if(XPCOG_WITH_PSF)
+    add_subdirectory(psflib)
+endif()

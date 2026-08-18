@@ -1192,6 +1192,47 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   against the duration reported up front, since that number drives the seek bar
   and a decoder can produce good audio while lying about its length.
 
+- **The PSF container**, which is stage one of HighlyComplete rather than the
+  whole of it. Cog's HighlyComplete is one decoder driving *eight* emulator
+  cores -- mGBA for GSF, lazyusf2 for USF, vio2sf for 2SF, SSEQPlayer for NCSF,
+  HighlyExperimental, HighlyTheoretical, HighlyQuixotic and snes9x for the rest
+  -- around 1,600 source files, of which mGBA alone is 989. That does not land in
+  one go, and pretending otherwise would mean a long-lived branch.
+
+  What *does* land in one go is the part all eight share. A PSF is a header, a
+  deflated program image and a tag block, and the interesting piece is the `_lib`
+  tag: a `.minigsf` is a few hundred bytes of override naming a `.gsflib` that
+  holds the game's whole program. In the corpus this was written against, 783
+  `.minigsf` resolve to 12 `.gsflib`. psflib walks that chain and returns the
+  images highest-priority-first, which is the order a core must apply them in.
+
+  Cog's `psflib` is vendored -- four files, and its `psf_file_callbacks` is
+  stdio-shaped, so an `ISource` drops in the same way it did for vgmstream. The
+  `fopen` callback goes back through the registry, so a PSF inside an archive
+  resolves its libraries from that same archive. psflib's callbacks take no user
+  pointer, so the registry reaches them through a thread-local scoped to the one
+  `psf_load()` call.
+
+  **Nothing is registered yet.** A decoder that cannot decode is worse than a
+  format the player does not claim -- the same reasoning that keeps the module
+  decoder's extension list honest -- so this is a plain library the first core
+  will link, not an `xpcog_add_codec()`.
+
+  One thing measured rather than assumed: **which section holds the program
+  depends on the console.** GSF puts the GBA image in `exe`; USF leaves `exe`
+  empty entirely and keeps the N64 data in `reserved`, which is where lazyusf
+  looks. The chain test asserted on `exe` alone and failed on every `.miniusf`
+  in the corpus while the chain itself was resolving perfectly -- a good
+  reminder that a test failing does not mean the thing under test is broken.
+
+  Tests run against the same opt-in corpus mechanism vgmstream introduced
+  (`-DXPCOG_PSF_CORPUS=<path>`): chains resolve, tags parse, the tags-only path
+  does not inflate a multi-megabyte library, and a mini-PSF copied away from its
+  library fails rather than loading half a program. PSF time parsing needs no
+  fixture and always runs -- the `length` tag is the only thing making a PSF
+  track finite, and its fraction is decimal rather than the frame count anyone
+  arriving from cue sheets would assume.
+
 **Then:**
 
 - The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32

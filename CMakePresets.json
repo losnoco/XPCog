@@ -17,7 +17,8 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream",
         "XPCOG_WITH_FFMPEG": "ON",
-        "XPCOG_WITH_VGMSTREAM": "ON"
+        "XPCOG_WITH_VGMSTREAM": "ON",
+        "XPCOG_WITH_PSF": "ON"
       },
       "environment": {
         "VCPKG_BINARY_SOURCES": "clear;files,${sourceDir}/.vcpkg-cache,readwrite"
