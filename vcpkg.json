@@ -17,6 +17,7 @@
     "mpg123",
     "wavpack",
     "taglib",
+    "libopenmpt",
     {
       "name": "curl",
       "default-features": false,

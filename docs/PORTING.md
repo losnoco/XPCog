@@ -770,6 +770,30 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   repeat-one, repeat-all over an all-bad playlist, and every mixed case: a
   candidate that opens resets the situation by ending the advance.
 
+- **Tracker modules**, through libopenmpt. Port of Cog's OpenMPT plugin, and the
+  first decoder added since the architecture claimed that adding one is a single
+  `xpcog_add_codec()` call. It was: one directory, one registrar, one option, one
+  vcpkg line, and no change anywhere else. The extension count went from 35 to
+  about 100 in that one call.
+
+  It is the first codec whose extensions are not known at compile time --
+  libopenmpt answers at runtime and the answer grows when the library is
+  updated. The registry wants a span that outlives it, so the list is built once
+  into a function-local static, which is exactly as long-lived as the registry.
+
+  Cog's archive extensions (`mdz`, `s3z`, `itz` and friends) are deliberately not
+  claimed. Those are zipped modules; libopenmpt does not unpack them and Cog only
+  claims them because its ArchiveSource unpacks them first. Advertising a format
+  that cannot then be opened is worse than not advertising it, so they wait for
+  ArchiveSource.
+
+  Three of Cog's settings are not reachable from a codec here, so each is fixed
+  at what Cog falls back to: `synthSampleRate` (44100), `resampling` (sinc), and
+  the repeat count. That last is a real behaviour difference: Cog passes -1 under
+  repeat-one, which makes libopenmpt loop the module internally for ever. Repeat
+  is the playlist's job here, and a track that reports no duration and never ends
+  is a poor default.
+
 **Then:**
 
 - The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32

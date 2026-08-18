@@ -19,6 +19,7 @@ option(XPCOG_WITH_MUSEPACK  "Musepack decoder (M1b)"       OFF)
 option(XPCOG_WITH_TAGLIB    "TagLib tag reading"           ON)
 option(XPCOG_WITH_DSD       "DSD / DoP support (M6)"       OFF)
 option(XPCOG_WITH_HTTP      "HTTP and internet radio source (libcurl)" ON)
+option(XPCOG_WITH_OPENMPT   "Tracker modules (libopenmpt)" ON)
 
 # Sanitizers are opt-in; the RT-safety work in M1a wants them available early.
 set(XPCOG_SANITIZE "" CACHE STRING "Sanitizers, e.g. address;undefined")
