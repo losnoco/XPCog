@@ -886,6 +886,14 @@ All of these are also documented at the call site.
 - A failing HTTP reconnect backs off and eventually gives up. Cog retries
   immediately and forever, which against a server that is simply down is a hot
   loop rather than a reconnect.
+- The skip-on-failure rule is cycle-checked in *both* places it exists. The
+  engine's advance loop and `PlaybackController::playTrack` each ask the
+  playlist for the next entry when one fails to open, and the playlist answers
+  from the repeat rules -- so repeat-one over a single undecodable entry hands
+  back the same answer for ever. The engine version was caught by inspection;
+  the controller version was a recursion on the GUI thread and was found the
+  honest way, by freezing the application with a dead stream URL in the
+  playlist.
 - iTunes Sound Check hex is parsed properly.
 - Cog stores ReplayGain as scalar floats defaulting to 0, so it cannot tell "no album
   gain" from "0 dB". XPCog keeps absent absent.
@@ -1111,6 +1119,15 @@ asserted a property Qt provides rather than the one the code was responsible for
   XPCog available to choose, and choosing it is the user's step. The extension list
   comes from `PluginRegistry::allExtensions()` rather than being written out
   anywhere, so it cannot fall behind the codecs.
+- **Starting playback is synchronous on the GUI thread.** `PlaybackController::playTrack`
+  calls `AudioEngine::play()` directly, which opens the source and primes about
+  1.5 s of audio before returning. For a file that is microseconds; for an HTTP
+  URL it is a network round-trip, and against a host that accepts the connection
+  and then says nothing it is the source's full header timeout (12 s) of frozen
+  UI. Cog opens URLs from a background queue (`addURLsInBackground:`) for
+  exactly this reason. The fix is to move open-and-prime off the GUI thread
+  behind the existing delegate seam; the timeout cap is the interim mitigation,
+  not the answer.
 - **A playlist URL with no file extension is not expanded.** Many stations
   advertise a `.pls` or `.m3u` that redirects to one, and `PluginRegistry::isContainer()`
   and `expandContainer()` take only a `Url`, so they match on the extension and

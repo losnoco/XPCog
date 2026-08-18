@@ -104,9 +104,13 @@ public:
         worker_ = std::thread([this] { run(); });
 
         // Wait for the headers, so mimeType() can pick a decoder. A stream that
-        // never answers must not hang the caller for ever.
+        // never answers must not hang the caller for ever -- and today the
+        // caller can be the GUI thread (see the known gap on synchronous
+        // play()), so the cap is barely above the 10 s connect timeout rather
+        // than a generous one: a server that accepted the connection but has
+        // sent nothing for that long is not about to start.
         std::unique_lock lock(mutex_);
-        const bool ready = headersKnown_.wait_for(lock, 30s, [this] {
+        const bool ready = headersKnown_.wait_for(lock, 12s, [this] {
             return demux_.headersComplete() || state_ == State::Finished ||
                    state_ == State::Aborted;
         });

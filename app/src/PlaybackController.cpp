@@ -3,6 +3,7 @@
 #include <QMetaObject>
 
 #include <algorithm>
+#include <vector>
 
 namespace xpcog::app {
 namespace {
@@ -90,25 +91,43 @@ void PlaybackController::emitState() {
 // --- transport ----------------------------------------------------------
 
 void PlaybackController::playTrack(TrackId id) {
-    const PlaylistEntry* entry = playlist_.find(id);
-    if (entry == nullptr) {
-        return;
-    }
+    // A loop with a memory rather than recursion, for the same reason the
+    // engine's advance loop keeps one: nextForPlayback() answers from the
+    // repeat rules, so with repeat on and the only remaining entries
+    // undecodable it hands back the same ids for ever. The recursive version
+    // of this function froze the GUI thread on exactly that -- one dead stream
+    // URL in the playlist with repeat-one on.
+    std::vector<TrackId> failed;
 
-    const Url url = entry->url;
-    playlist_.setCurrent(id);
-
-    engine_->stop();
-    paused_ = false;
-
-    if (!engine_->play(url)) {
-        emit playbackFailed(id, tr("No decoder could open this file"));
-        // Cog does not stall the playlist on one bad file, and neither does
-        // this: ask for the next one exactly as an end-of-track would.
-        if (const auto following = playlist_.nextForPlayback()) {
-            playTrack(*following);
+    for (;;) {
+        const PlaylistEntry* entry = playlist_.find(id);
+        if (entry == nullptr) {
+            return;
         }
-        return;
+
+        const Url url = entry->url;
+        playlist_.setCurrent(id);
+
+        engine_->stop();
+        paused_ = false;
+
+        if (engine_->play(url)) {
+            break;
+        }
+
+        emit playbackFailed(id, tr("No decoder could open this file"));
+        failed.push_back(id);
+
+        // Cog does not stall the playlist on one bad file, and neither does
+        // this: ask for the next one exactly as an end-of-track would. But a
+        // candidate coming round again means the repeat rules have nothing
+        // fresh left, and the honest outcome is to stop asking.
+        const auto following = playlist_.nextForPlayback();
+        if (!following ||
+            std::find(failed.begin(), failed.end(), *following) != failed.end()) {
+            return;
+        }
+        id = *following;
     }
 
     audible_ = id;
