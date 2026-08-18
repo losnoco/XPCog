@@ -869,6 +869,28 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   It lands on the same filter Cog would for anyone who never touched the setting:
   Cog defaults to sinc, XPCog to high, and both mean eight taps.
 
+- **No dock arrangement survived a restart**, and had not since close to tray
+  landed in M5. Hiding a `QMainWindow` marks every one of its docks hidden, and
+  `saveState()` faithfully records that -- so a save taken while the window is
+  away stores "every dock closed". Close to tray makes that the normal path:
+  closing saves a correct layout and hides, then quitting from the tray saves
+  again over the top of it with nothing on screen. `persistState()` now writes
+  geometry, state and splitter only while `isVisible()`, which is right rather
+  than merely safe: whatever is already stored was written when the window *was*
+  visible, so it is the last true layout.
+
+  It hid behind two things. The spectrum was the only dock, and it is visible by
+  default, so the wrong state restored to something that looked plausible; and
+  `restoreState()` returns true throughout, because the state it is given is
+  perfectly valid -- it just says the wrong thing. Adding a second dock and
+  asking someone to check it is what made it visible.
+
+  Found by measurement rather than by reading. The diagnosis went through one
+  wrong answer first: an `isVisible()` probe in the constructor reports false for
+  everything, because nothing is visible until the top-level window is shown, so
+  the first reading blamed restore. `isHidden()` is the question that has an
+  answer that early.
+
 - **The equaliser is a dock, not a preferences pane.** It was written as one in
   M4 and that was the wrong home: everything else in preferences is set once and
   forgotten, whereas an equaliser is played *with* -- adjusted while listening,
@@ -1023,6 +1045,16 @@ All of these are also documented at the call site.
 - A failing HTTP reconnect backs off and eventually gives up. Cog retries
   immediately and forever, which against a server that is simply down is a hot
   loop rather than a reconnect.
+- **The app layer has no widget-level test harness, and it has now cost twice.**
+  `xpcog-app-tests` runs under a `QCoreApplication`, which is right for what it
+  covers -- models, commands, icons, translations -- but means nothing that needs
+  a real `QWidget` can be tested at all. Two things this milestone were therefore
+  verified by hand: `PlaybackController`'s asynchronous start, which builds a
+  miniaudio output in its constructor, and the dock-layout save above, which is
+  `QMainWindow` behaviour end to end. Both are exactly the kind of thing that
+  regresses quietly. A second target under `QApplication` with the offscreen
+  platform plugin would cover both; the plugin ships with Qt and CI already has
+  it.
 - **Starting and stopping playback are off the GUI thread.** `AudioEngine::play()`
   opens the source and primes about 1.5 s of audio before returning; for a file
   that is microseconds, for a URL it is a network round trip, and against a host

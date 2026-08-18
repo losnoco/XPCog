@@ -36,6 +36,7 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QDockWidget>
+#include <QTimer>
 #include <QSplitter>
 #include <QSlider>
 #include <QStatusBar>
@@ -122,6 +123,7 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
         split != nullptr) {
         split->restoreState(ui.value(QStringLiteral("window/splitter")).toByteArray());
     }
+
     if (const QString root = ui.value(QStringLiteral("fileTree/root")).toString();
         !root.isEmpty()) {
         tree_->setRootPath(root);
@@ -1004,12 +1006,30 @@ QString MainWindow::statusSummary() const {
 
 void MainWindow::persistState() {
     QSettings ui;
-    ui.setValue(QStringLiteral("window/geometry"), saveGeometry());
-    ui.setValue(QStringLiteral("window/state"), saveState());
-    if (auto* split = findChild<QSplitter*>(QStringLiteral("mainSplitter"));
-        split != nullptr) {
-        ui.setValue(QStringLiteral("window/splitter"), split->saveState());
+
+    // Layout only while the window is actually on screen.
+    //
+    // Hiding a QMainWindow marks every one of its docks hidden, and saveState()
+    // faithfully records that -- so a save taken while the window is away
+    // replaces a good layout with "every dock closed", which is exactly what the
+    // next launch then restores. Close to tray makes that the normal path:
+    // closing saves a correct layout and hides, and quitting from the tray saves
+    // again over the top of it, now with nothing on screen. The symptom is that
+    // no dock arrangement ever survives a restart, and it has been true of the
+    // spectrum since close to tray landed -- the equaliser only made it two
+    // docks instead of one.
+    //
+    // Skipping is right rather than merely safe: the values already stored were
+    // written while the window *was* visible, so they are the last true ones.
+    if (isVisible()) {
+        ui.setValue(QStringLiteral("window/geometry"), saveGeometry());
+        ui.setValue(QStringLiteral("window/state"), saveState());
+        if (auto* split = findChild<QSplitter*>(QStringLiteral("mainSplitter"));
+            split != nullptr) {
+            ui.setValue(QStringLiteral("window/splitter"), split->saveState());
+        }
     }
+
     ui.setValue(QStringLiteral("fileTree/root"), tree_->rootPath());
 
     if (library_ && !library_->savePlaylist(playlist_)) {
