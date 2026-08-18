@@ -1,0 +1,22 @@
+--- a/src/libvgmstream.h
++++ b/src/libvgmstream.h
+@@ -44,9 +44,17 @@
+ 
+ /* external function behavior (for compile time) */
+ #if defined(LIBVGMSTREAM_EXPORT)
+-    #define LIBVGMSTREAM_API __declspec(dllexport) /* when exporting/creating vgmstream DLL */
++    #if defined(_WIN32)
++        #define LIBVGMSTREAM_API __declspec(dllexport) /* when exporting/creating vgmstream DLL */
++    #else
++        #define LIBVGMSTREAM_API __attribute__ ((visibility ("default")))
++    #endif
+ #elif defined(LIBVGMSTREAM_IMPORT)
+-    #define LIBVGMSTREAM_API __declspec(dllimport) /* when importing/linking vgmstream DLL */
++    #if defined(_WIN32)
++        #define LIBVGMSTREAM_API __declspec(dllimport) /* when importing/linking vgmstream DLL */
++    #else
++        #define LIBVGMSTREAM_API
++    #endif
+ #else
+     #define LIBVGMSTREAM_API /* nothing, internal/default */
+ #endif

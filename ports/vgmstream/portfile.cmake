@@ -41,6 +41,21 @@ vcpkg_from_github(
         # file is an error, not a race, so a shared build simply cannot configure
         # on MSVC without this.
         fix-msvc-import-lib-clash.patch
+
+        # And the export macro is MSVC-only without saying so:
+        #
+        #   #if defined(LIBVGMSTREAM_EXPORT)
+        #       #define LIBVGMSTREAM_API __declspec(dllexport)
+        #
+        # with no _WIN32 guard, while the shared target defines
+        # LIBVGMSTREAM_EXPORT unconditionally. On GCC and Clang every API
+        # function therefore begins `__declspec(dllexport)`, which they parse as
+        # a K&R-style definition -- so the headers that follow are read as
+        # *parameter declarations* and the file ends with "expected '{' at end
+        # of input". Hundreds of errors inside /usr/include/stdio.h, none of
+        # them the cause. A shared build simply cannot compile off Windows
+        # without this.
+        fix-declspec-on-non-windows.patch
 )
 
 vcpkg_cmake_configure(

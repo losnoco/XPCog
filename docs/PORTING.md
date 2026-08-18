@@ -1149,6 +1149,16 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   * The public headers carry **no `extern "C"` guard**, in a C library exporting C
     symbols. A C++ consumer compiles cleanly and fails at link with five
     undefined symbols that look exactly like a missing library.
+  * The export macro is **MSVC-only without saying so**: `LIBVGMSTREAM_EXPORT`
+    selects `__declspec(dllexport)` with no `_WIN32` guard, and the shared target
+    defines it unconditionally. On GCC and Clang every API function therefore
+    begins with a `__declspec` they do not accept, which they parse as a K&R
+    definition -- so the headers that follow are read as *parameter declarations*
+    and the file ends with "expected '{' at end of input". The visible result is
+    hundreds of errors inside `/usr/include/stdio.h`, none of them the cause, and
+    a truncated CI log that does not contain the one line that is. A shared build
+    cannot compile off Windows without this patch, which is why Windows went
+    green while the other three went red.
   * `libvgmstream_fill()` **returns 0 samples forever** and never sets its done
     flag, while `libvgmstream_render()` on the same handle and the same file
     returns 1024 samples on the first call. The first version of this decoder
