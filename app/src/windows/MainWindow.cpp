@@ -2,6 +2,7 @@
 
 #include "ActionRegistry.hpp"
 #include "windows/AboutDialog.hpp"
+#include "windows/EqualizerPanel.hpp"
 #include "windows/OpenUrlDialog.hpp"
 #include "windows/MiniWindow.hpp"
 #include "FileTree.hpp"
@@ -227,6 +228,20 @@ void MainWindow::buildUi() {
     spectrumDock_ = spectrumDock;
     spectrum_->applySettings(settings_);
 
+    // The equaliser, likewise a dock rather than a preferences pane. Cog gives
+    // it a window of its own (EqualizerWindowController) for the reason a dock
+    // serves here too: it is a control you play with while listening, not a
+    // setting you visit once. Hidden until asked for -- 31 sliders is a lot of
+    // window to open on someone who wanted a music player.
+    equalizer_          = new EqualizerPanel(settings_, this);
+    auto* equalizerDock = new QDockWidget(tr("Equalizer"), this);
+    equalizerDock->setObjectName(QStringLiteral("equalizerDock"));
+    equalizerDock->setWidget(equalizer_);
+    equalizerDock->setAllowedAreas(Qt::TopDockWidgetArea | Qt::BottomDockWidgetArea);
+    addDockWidget(Qt::BottomDockWidgetArea, equalizerDock);
+    equalizerDock->hide();
+    equalizerDock_ = equalizerDock;
+
     transport_ = addToolBar(tr("Transport"));
     // saveState() identifies toolbars by objectName and warns without one --
     // and, more to the point, silently fails to match them up again on
@@ -358,6 +373,18 @@ void MainWindow::wireUp() {
         connect(spectrumDock_, &QDockWidget::visibilityChanged, command,
                 &QAction::setChecked);
     }
+
+    if (QAction* command = actions_->action(ActionId::ViewEqualizer);
+        command != nullptr) {
+        connect(command, &QAction::toggled, equalizerDock_, &QWidget::setVisible);
+        connect(equalizerDock_, &QDockWidget::visibilityChanged, command,
+                &QAction::setChecked);
+    }
+
+    // The same handler preferences uses: a band move has to reach the engine
+    // mid-track, which is the whole reason the panel is worth having open.
+    connect(equalizer_, &EqualizerPanel::settingChanged, this,
+            [this](const QString& key) { onSettingChanged(key); });
 
     connect(tree_, &FileTree::activated, this,
             [this](const QList<QUrl>& urls) { addUrls(urls); });
@@ -572,28 +599,31 @@ void MainWindow::openFiles() {
     addUrls(urls);
 }
 
+void MainWindow::onSettingChanged(const QString& key) {
+    // Most settings are read live by the engine. The ones the playlist owns
+    // have to be pushed across, since Playlist deliberately does not read
+    // settings itself.
+    if (key == QLatin1String("alwaysStopAfterCurrent")) {
+        playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
+    }
+    // The equaliser is push, not poll: re-reading 32 keys per chunk to notice
+    // a slider move would cost more than the filter itself. Every one of
+    // those keys begins "eq".
+    if (key.startsWith(QLatin1String("eq"))) {
+        playback_->reloadDsp();
+    }
+    // Push for the same reason, and immediate for a better one: every setting
+    // here is about what the display *looks* like, and a colour you have to
+    // restart to see is not a colour picker, it is a form.
+    if (key.startsWith(QLatin1String("spectrum"))) {
+        spectrum_->applySettings(settings_);
+    }
+}
+
 void MainWindow::showPreferences() {
     PreferencesDialog dialog{settings_, this};
-    connect(&dialog, &PreferencesDialog::settingChanged, this, [this](const QString& key) {
-        // Most settings are read live by the engine. The ones the playlist owns
-        // have to be pushed across, since Playlist deliberately does not read
-        // settings itself.
-        if (key == QLatin1String("alwaysStopAfterCurrent")) {
-            playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
-        }
-        // The equaliser is push, not poll: re-reading 32 keys per chunk to notice
-        // a slider move would cost more than the filter itself. Every one of
-        // those keys begins "eq".
-        if (key.startsWith(QLatin1String("eq"))) {
-            playback_->reloadDsp();
-        }
-        // Push for the same reason, and immediate for a better one: every setting
-        // here is about what the display *looks* like, and a colour you have to
-        // restart to see is not a colour picker, it is a form.
-        if (key.startsWith(QLatin1String("spectrum"))) {
-            spectrum_->applySettings(settings_);
-        }
-    });
+    connect(&dialog, &PreferencesDialog::settingChanged, this,
+            [this](const QString& key) { onSettingChanged(key); });
     dialog.exec();
     settings_.sync();
 }

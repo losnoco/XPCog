@@ -36,6 +36,8 @@ set(XPCOG_APP_SOURCES
     src/windows/AboutDialog.hpp
     src/windows/MainWindow.cpp
     src/windows/MainWindow.hpp
+    src/windows/EqualizerPanel.cpp
+    src/windows/EqualizerPanel.hpp
     src/windows/OpenUrlDialog.cpp
     src/windows/OpenUrlDialog.hpp
     src/windows/MiniWindow.cpp

@@ -2,7 +2,6 @@
 
 #include "Appearance.hpp"
 
-#include "xpcog/core/audio/Equalizer.hpp"
 #include "xpcog/core/audio/ReplayGain.hpp"
 
 #include <QCheckBox>
@@ -85,8 +84,10 @@ constexpr std::array kCuratedKeys = {
 /// store. Shown, because the generated pane's whole point is that nothing is
 /// hidden, but not editable: settingsSchemaVersion drives
 /// Settings::applyMigrations(), so typing into it makes migrations re-run or be
-/// skipped, and nothing about a spin box suggests that.
-constexpr std::array kInternalKeys = {"settingsSchemaVersion"};
+/// skipped, and nothing about a spin box suggests that. UserDefaultURLsKey is
+/// the Open URL history -- a newline-separated list the dialog maintains, where
+/// a hand edit can only produce entries that will not parse.
+constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsKey"};
 
 [[nodiscard]] bool contains(std::span<const char* const> keys, std::string_view key) {
     return std::ranges::any_of(keys,
@@ -95,25 +96,13 @@ constexpr std::array kInternalKeys = {"settingsSchemaVersion"};
 
 [[nodiscard]] bool hasCuratedRow(std::string_view key) {
     // Every equaliser key -- eqPreamp and the 31 bands -- has a slider of its
-    // own, so they are matched by prefix rather than listed twice.
+    // own in the equaliser dock, so they are matched by prefix rather than
+    // listed twice. Still excluded now the dock owns them rather than a pane
+    // here: 32 raw spin boxes in Advanced would be a second, worse equaliser.
     if (key.starts_with("eq")) {
         return true;
     }
     return contains(kCuratedKeys, key);
-}
-
-/// Cog's slider range, in dB, for the bands and the preamp alike.
-constexpr int kEqRangeDb = 20;
-/// Sliders are integers, so dB is carried in tenths.
-constexpr int kEqScale = 10;
-
-/// "20", "31.5", "1k", "20k" -- short enough to sit under a narrow slider.
-[[nodiscard]] QString frequencyLabel(double hertz) {
-    if (hertz < 1000.0) {
-        return QString::number(hertz, 'g', 3);
-    }
-    const double kilohertz = hertz / 1000.0;
-    return QString::number(kilohertz, 'g', 2) + QStringLiteral("k");
 }
 
 }  // namespace
@@ -132,7 +121,6 @@ PreferencesDialog::PreferencesDialog(Settings& settings, QWidget* parent)
         panes->addWidget(pane);
     };
     addPane(tr("Playback"), buildPlaybackPane());
-    addPane(tr("Equalizer"), buildEqualizerPane());
     addPane(tr("Appearance"), buildAppearancePane());
     addPane(tr("Spectrum"), buildSpectrumPane());
     addPane(tr("Advanced"), buildAdvancedPane());
@@ -204,103 +192,6 @@ QWidget* PreferencesDialog::buildPlaybackPane() {
     note->setWordWrap(true);
     note->setEnabled(false);
     layout->addRow(note);
-
-    return pane;
-}
-
-QWidget* PreferencesDialog::buildEqualizerPane() {
-    auto* pane   = new QWidget(this);
-    auto* layout = new QVBoxLayout(pane);
-
-    // One column per band, plus the preamp on its own at the left, matching the
-    // shape of Cog's Equalizer window. Sliders are deliberately narrow: 31 bands
-    // is a lot of screen, and the alternative -- a scroll area the user has to
-    // pan to reach 20 kHz -- makes a curve impossible to see as a curve.
-    auto* columns = new QHBoxLayout;
-    columns->setSpacing(2);
-
-    // Every slider reads and writes settings by key, so nothing here has to know
-    // 31 accessor names, and the band-to-key pairing stays where the DSP defines
-    // it.
-    const auto addSlider = [this, columns](const QString& caption, const char* key) {
-        auto* column = new QVBoxLayout;
-        column->setSpacing(2);
-
-        auto* readout = new QLabel;
-        readout->setAlignment(Qt::AlignHCenter);
-
-        auto* slider = new QSlider(Qt::Vertical);
-        slider->setRange(-kEqRangeDb * kEqScale, kEqRangeDb * kEqScale);
-        slider->setFixedWidth(18);
-        slider->setToolTip(caption);
-
-        const double stored = QString::fromStdString(settings_.rawValue(key)).toDouble();
-        slider->setValue(static_cast<int>(std::lround(stored * kEqScale)));
-
-        const auto show = [readout](int value) {
-            readout->setText(QString::number(static_cast<double>(value) / kEqScale, 'f', 1));
-        };
-        show(slider->value());
-
-        connect(slider, &QSlider::valueChanged, this, [this, key, show](int value) {
-            show(value);
-            const double decibels = static_cast<double>(value) / kEqScale;
-            settings_.setRawValue(key, std::to_string(decibels));
-            // Named so MainWindow can tell an equaliser change from any other and
-            // ask the engine to re-read the chain mid-track.
-            emit settingChanged(QString::fromLatin1(key));
-        });
-
-        auto* label = new QLabel(caption);
-        label->setAlignment(Qt::AlignHCenter);
-
-        column->addWidget(readout);
-        column->addWidget(slider, 1, Qt::AlignHCenter);
-        column->addWidget(label);
-        columns->addLayout(column);
-        return slider;
-    };
-
-    QList<QSlider*> sliders;
-    sliders.append(addSlider(tr("Pre"), "eqPreamp"));
-
-    auto* separator = new QFrame;
-    separator->setFrameShape(QFrame::VLine);
-    separator->setFrameShadow(QFrame::Sunken);
-    columns->addWidget(separator);
-
-    const auto frequencies = Equalizer::bandFrequencies();
-    const auto keys        = Equalizer::bandSettingsKeys();
-    for (std::size_t band = 0; band < keys.size(); ++band) {
-        sliders.append(addSlider(frequencyLabel(frequencies[band]), keys[band]));
-    }
-
-    layout->addLayout(columns, 1);
-
-    auto* flat = new QPushButton(tr("Flat"), pane);
-    flat->setToolTip(tr("Returns every band and the preamp to 0 dB, which makes the "
-                        "equaliser bit-transparent again."));
-    connect(flat, &QPushButton::clicked, this, [sliders] {
-        // Each setValue emits valueChanged, so the settings and the engine follow
-        // without this needing to know about either.
-        for (QSlider* slider : sliders) {
-            slider->setValue(0);
-        }
-    });
-
-    auto* note = new QLabel(
-        tr("31 bands at Cog's frequencies and Q, ±20 dB. Changes apply to the "
-           "track already playing. A boost can clip; the preamp is the headroom "
-           "for it."),
-        pane);
-    note->setWordWrap(true);
-    note->setEnabled(false);
-
-    auto* footer = new QHBoxLayout;
-    footer->addWidget(flat);
-    footer->addStretch(1);
-    layout->addLayout(footer);
-    layout->addWidget(note);
 
     return pane;
 }

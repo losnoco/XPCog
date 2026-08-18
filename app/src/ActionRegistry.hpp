@@ -51,6 +51,7 @@ enum class ActionId {
 
     ViewFileTree,
     ViewSpectrum,
+    ViewEqualizer,
     ViewMiniPlayer,
 
     HelpAbout,

@@ -869,6 +869,28 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   It lands on the same filter Cog would for anyone who never touched the setting:
   Cog defaults to sinc, XPCog to high, and both mean eight taps.
 
+- **The equaliser is a dock, not a preferences pane.** It was written as one in
+  M4 and that was the wrong home: everything else in preferences is set once and
+  forgotten, whereas an equaliser is played *with* -- adjusted while listening,
+  against audio you can hear change. Behind a dialog that meant opening
+  preferences, finding the pane, dragging a slider, and having the thing you were
+  judging half-covered by the window doing the judging.
+
+  Cog agrees and always did: its equaliser is an `EqualizerWindowController` with
+  a window of its own, not one of its ten preference panes. So this is a
+  correction toward Cog rather than away from it. A dock is that window with the
+  management already done -- `saveState()` remembers its place and size, and it
+  can still be torn off into a real floating window -- and it is the shape the
+  spectrum already uses for the same reason.
+
+  Hidden until asked for, on Ctrl-E: 31 sliders is a lot of window to open on
+  someone who wanted a music player. The 32 `eq*` keys stay excluded from the
+  generated Advanced pane, as they were before, because 32 raw spin boxes would
+  be a second and worse equaliser sitting two clicks from the real one. The
+  handler that pushes a band change into the running engine is now shared between
+  the dialog and the dock rather than living inside the dialog, since the dock is
+  the one where forgetting it would mean a slider that does nothing.
+
 **Then:**
 
 - The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32

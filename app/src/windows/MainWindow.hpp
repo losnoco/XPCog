@@ -35,6 +35,7 @@ class QUndoStack;
 namespace xpcog::app {
 
 class ActionRegistry;
+class EqualizerPanel;
 class FileTree;
 class ScanTask;
 class SeekSlider;
@@ -85,6 +86,13 @@ private:
     void openFiles();
     void openFolder();
     void openUrl();
+
+    /// A setting changed and something has to be told. Shared by the
+    /// preferences dialog and the equaliser dock, which both emit the same
+    /// keys -- and the equaliser's is the case that must not be forgotten,
+    /// since a band that does not reach the engine is a slider that does
+    /// nothing.
+    void onSettingChanged(const QString& key);
     void showPreferences();
     void savePlaylistAs();
     void addUrls(const QList<QUrl>& urls, int atRow = -1);
@@ -185,6 +193,8 @@ private:
     /// and have to stay in step.
     SpectrumWidget* spectrum_     = nullptr;
     QDockWidget*    spectrumDock_ = nullptr;
+    EqualizerPanel* equalizer_     = nullptr;
+    QDockWidget*    equalizerDock_ = nullptr;
 
     QProgressBar* scanBar_    = nullptr;
     QToolButton*  scanCancel_ = nullptr;

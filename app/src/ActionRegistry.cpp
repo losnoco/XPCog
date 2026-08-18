@@ -39,6 +39,7 @@ constexpr MenuItem kMenuLayout[] = {
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&View"), ActionId::ViewFileTree},
     {nullptr, ActionId::ViewSpectrum},
+    {nullptr, ActionId::ViewEqualizer},
     {nullptr, ActionId::ViewMiniPlayer, true},
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&Edit"), ActionId::EditUndo},
@@ -98,6 +99,13 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
                             QKeySequence(Qt::CTRL | Qt::Key_U));
     spectrum->setCheckable(true);
     spectrum->setChecked(true);
+
+    // Cog keeps its equaliser in a window of its own rather than in
+    // preferences, and so does this. Ctrl-E, which nothing else claims.
+    QAction* equalizer = add(ActionId::ViewEqualizer, tr("&Equalizer"),
+                             QKeySequence(Qt::CTRL | Qt::Key_E));
+    equalizer->setCheckable(true);
+    equalizer->setChecked(false);
 
     QAction* mini = add(ActionId::ViewMiniPlayer, tr("&Mini Player"),
                         QKeySequence(Qt::CTRL | Qt::Key_M));
