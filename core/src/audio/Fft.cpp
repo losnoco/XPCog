@@ -54,6 +54,19 @@ Fft::Fft(std::size_t size) : size_(size) {
 }
 
 void Fft::forward(float* real, float* imaginary) const {
+    transform(real, imaginary, false);
+}
+
+void Fft::forward(double* real, double* imaginary) const {
+    transform(real, imaginary, false);
+}
+
+void Fft::inverse(double* real, double* imaginary) const {
+    transform(real, imaginary, true);
+}
+
+template <typename Sample>
+void Fft::transform(Sample* real, Sample* imaginary, bool invert) const {
     // Decimation in time: reorder into bit-reversed indices, after which the
     // butterflies run in place over contiguous pairs.
     //
@@ -78,8 +91,13 @@ void Fft::forward(float* real, float* imaginary) const {
 
         for (std::size_t base = 0; base < size_; base += length) {
             for (std::size_t k = 0; k < half; ++k) {
+                // The table holds sin(-2*pi*k/N). The inverse transform is the
+                // same sum with the opposite exponent sign, so it needs the
+                // negation and nothing else -- no second table, and no reversal
+                // of the permutation or the stage order.
                 const double twiddleReal = cos_[k * stride];
-                const double twiddleImag = sin_[k * stride];
+                const double twiddleImag =
+                    invert ? -sin_[k * stride] : sin_[k * stride];
 
                 const std::size_t lower = base + k;
                 const std::size_t upper = lower + half;
@@ -94,6 +112,7 @@ void Fft::forward(float* real, float* imaginary) const {
                 const double upperReal = static_cast<double>(real[upper]);
                 const double upperImag = static_cast<double>(imaginary[upper]);
 
+
                 // The rotated upper half, computed before either slot is written --
                 // the lower one is still needed below.
                 const double rotatedReal =
@@ -101,13 +120,18 @@ void Fft::forward(float* real, float* imaginary) const {
                 const double rotatedImag =
                     (upperReal * twiddleImag) + (upperImag * twiddleReal);
 
-                real[upper]      = static_cast<float>(lowerReal - rotatedReal);
-                imaginary[upper] = static_cast<float>(lowerImag - rotatedImag);
-                real[lower]      = static_cast<float>(lowerReal + rotatedReal);
-                imaginary[lower] = static_cast<float>(lowerImag + rotatedImag);
+                real[upper]      = static_cast<Sample>(lowerReal - rotatedReal);
+                imaginary[upper] = static_cast<Sample>(lowerImag - rotatedImag);
+                real[lower]      = static_cast<Sample>(lowerReal + rotatedReal);
+                imaginary[lower] = static_cast<Sample>(lowerImag + rotatedImag);
             }
         }
     }
 }
+
+// Only these two. A third would be a caller that has not decided what precision
+// it works in.
+template void Fft::transform<float>(float*, float*, bool) const;
+template void Fft::transform<double>(double*, double*, bool) const;
 
 }  // namespace xpcog

@@ -355,12 +355,36 @@ Skipping avoids that change rather than postponing it. `Rate`, `MinimumRate` and
 says "not adjustable", and the `dsp` vcpkg feature that pulled in rubberband is
 gone.
 
-**FreeSurround is still outstanding, and was blocked twice over.** It is not a
-time-stretcher — it is a matrix surround decoder, stereo to 5.1 — so the
-paragraph above does not cover it. One of the two blocks is now cleared: the
-golden capture from Cog is taken and committed, which was the part that needed a
-Mac. What remains is the node contract, which cannot express a stage that changes
-the *channel* count.
+**FreeSurround is still outstanding, and both of its blocks are now cleared.** It
+is not a time-stretcher — it is a matrix surround decoder, stereo to 5.1 — so the
+paragraph above does not cover it. The golden capture from Cog is taken and
+committed, which was the part that needed a Mac. The second block dissolved on
+inspection rather than being solved: **it goes in `AudioConverter`, and `DSPNode`
+is not widened.**
+
+That reverses what this document used to say, so it is worth being explicit about
+why. The rule already existed and was written down twice — in `Downmix.hpp` and
+again at the call site in `AudioConverter.cpp` — that a stage changing the channel
+count belongs "where channel geometry is already changing" rather than being
+forced into a contract that cannot express it. FreeSurround is an upmixer; it is
+precisely what that rule was written for. The note here predated the decision and
+was never reconciled with it.
+
+The converter turns out to absorb all three ways FreeSurround breaks the node
+contract, because soxr forced it to first: `fitChannels()` already changes the
+channel count, `process()` already appends to a vector so output frames need not
+match input frames, and `drain()`/`reset()` already exist for a delay line — which
+is exactly what a half-block latency needs. Widening `DSPNode` would instead have
+meant changing the feeder loop, where the read size, the write size and the
+in-place assumption are load-bearing and the memory-ordering commentary is
+densest, for a feature that does not require it.
+
+The cost of the decision, recorded so it is not a surprise later: the converter
+grows an internal ordering. FreeSurround must see stereo at the device rate, so
+it sits after resampling and before channel fitting, and if HRTF arrives in M6 it
+must sit after the upmix. If that becomes unmanageable the answer is to split the
+converter into an explicit pipeline — a refactor with tests already around it —
+not to move channel changes into the chain.
 
 **Still to do:** the reduction from one multichannel layout to a smaller one (7.1
 into quad), which still uses the positional copy. Cog runs every reduction
@@ -404,10 +428,36 @@ than just a sample index. The manifest's RMS table is the human-readable version
 centre loud and rears exactly zero on the mono blocks, rears loud on the
 anti-phase ones.
 
-Still ahead, and portable: `DSPNode` has to widen before the kernel can land. It
-changes the channel count, works on a fixed block rather than any frame count,
-and returns its own buffer rather than working in place — three things the
-current contract does not express.
+**The transform it needs is written.** `RealFft` is a double-precision
+real-input FFT with an inverse, built on the existing `Fft` at half the length —
+the standard pack-N-reals-as-N/2-complex arrangement, which is what vDSP's `zrop`
+does too. `Fft` gained a double instantiation and an inverse to carry it; the
+butterflies, the table and the bit-reversal are shared, and the only difference
+between the two directions is the sign of the twiddle's imaginary part.
+
+Two conventions are deliberate. Bins come back as 0..N/2 **unpacked**, with DC
+and Nyquist as ordinary entries, rather than vDSP's packed layout that hides
+Nyquist in DC's imaginary slot — the packed form saves one complex value and
+costs a reader the one thing they are least likely to know. And both directions
+are unnormalised, so `inverse(forward(x)) == N*x`, because FreeSurround's window
+is `sqrt(hann(k)/N)` applied on both analysis and synthesis and that is where its
+1/N already lives.
+
+What is *not* reproduced is vDSP's factor-of-two scaling convention for real
+transforms, which Cog's kernel silently depends on. Folding it in here would put
+a mystery constant inside a transform that otherwise matches its own definition;
+it belongs in the kernel, named, where the golden capture pins it.
+
+Tested against a direct DFT at five sizes, plus DC and Nyquist against the
+signal's sum and alternating sum, plus the round trip. The round trip is not
+allowed to be the only check: a forward and an inverse wrong in mirror-image ways
+round-trip perfectly, and the untangling twiddle's sign is shared between them.
+Both failure modes were confirmed by sabotage — writing the mirror bin as
+`conj(X[k])`, which is the natural guess and is wrong, fails the DFT comparison;
+flipping only the inverse's twiddle fails only the round trip.
+
+Still ahead: the kernel itself (413 lines) plus `channelmaps.cpp` (3,141, almost
+all data), and the wiring into `fitChannels()` behind a setting.
 
 LPC extrapolation is already vendored but deliberately not built: the converter keeps
 soxr's delay line continuous, so chunk edges already are. It earns its place at the

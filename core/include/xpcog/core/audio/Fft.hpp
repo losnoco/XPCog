@@ -46,7 +46,36 @@ public:
     /// Cog's scaling assumes: the analyser applies its own 2/N.
     void forward(float* real, float* imaginary) const;
 
+    /// The same transform in double precision, for callers whose arithmetic is
+    /// double throughout.
+    ///
+    /// This is not a precision upgrade for the analyser -- the butterflies were
+    /// already computed in double and narrowed per stage. It exists because
+    /// FreeSurround's kernel is double from end to end, and rounding to float at
+    /// every stage boundary is exactly the silent drift the golden capture is
+    /// there to catch.
+    void forward(double* real, double* imaginary) const;
+
+    /// Inverse transform, in place. **Unnormalised**, so
+    /// `inverse(forward(x)) == size() * x`.
+    ///
+    /// Leaving the 1/N off is not an oversight to be corrected at the call site
+    /// later. FreeSurround folds it into its window, which is
+    /// `sqrt(hann(k)/N)` applied on both analysis and synthesis; dividing here
+    /// as well would apply it twice. The one caller that wants a normalised
+    /// inverse should say so itself, visibly.
+    void inverse(double* real, double* imaginary) const;
+
 private:
+    /// The butterflies, once, for both precisions and both directions.
+    ///
+    /// `invert` flips the sign of the twiddles' imaginary part, which is the
+    /// entire difference between the two transforms -- the permutation, the
+    /// stage structure and the table are shared. Explicitly instantiated in the
+    /// .cpp for float and double, so this stays out of the header.
+    template <typename Sample>
+    void transform(Sample* real, Sample* imaginary, bool invert) const;
+
     std::size_t              size_;
     std::vector<std::size_t> reversed_;
     /// cos and sin of -2*pi*k/size for k < size/2. Held as double because they are
