@@ -24,13 +24,19 @@ add_executable(xpcog-tests
     codecs/test_containers.cpp
     codecs/test_cuesheet.cpp
     codecs/test_gme_sidecar.cpp
-    codecs/test_unpackurl.cpp
 )
 
 # Guarded because the HTTP source is an option: without it the headers under
 # codecs/httpsource are not on the include path at all.
 if(XPCOG_WITH_HTTP)
     target_sources(xpcog-tests PRIVATE codecs/test_httpsource.cpp)
+endif()
+
+# Likewise the archive codec: these include its headers and link its objects.
+if(XPCOG_WITH_ARCHIVE)
+    target_sources(xpcog-tests PRIVATE
+        codecs/test_archive.cpp
+        codecs/test_unpackurl.cpp)
 endif()
 
 target_link_libraries(xpcog-tests PRIVATE

@@ -12,24 +12,28 @@
 // seek. Music files are small enough that holding one is cheaper than that, and
 // decoders seek constantly.
 //
+// This file is the *several tracks* half of archive handling. The other half --
+// a `.itz` or `.mdz`, which is one module in a wrapper and is not meant to look
+// like an archive at all -- is CompressedFileSource, next door.
+//
 // Cog's SandboxBroker calls around the archive are absent, as everywhere else --
 // that is the macOS App Sandbox, and the seam for it is platform::IFileAccess.
 
+#include "ArchiveReader.hpp"
+#include "CompressedFileSource.hpp"
 #include "UnpackUrl.hpp"
 
-#include "common/TextEncoding.hpp"
+#include "common/BlobSource.hpp"
 
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 
-#include <archive.h>
 #include <archive_entry.h>
 
-#include <algorithm>
-#include <cstring>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace xpcog {
@@ -45,42 +49,7 @@ constexpr std::string_view kArchiveMimeTypes[] = {
     "application/zip", "application/x-gzip", "application/x-rar-compressed",
     "application/x-7z-compressed"};
 
-/// libarchive's reader, closed and freed however the scope ends.
-using ArchivePtr = std::unique_ptr<struct archive, decltype(&archive_read_free)>;
-
-[[nodiscard]] ArchivePtr openArchive(const std::string& path) {
-    ArchivePtr handle{archive_read_new(), &archive_read_free};
-    if (!handle) {
-        return {nullptr, &archive_read_free};
-    }
-
-    // Every format and every compression filter the build supports: the
-    // extension is a hint from the file's name, and rsn and vgm7z are proof
-    // that the name can be anything at all.
-    archive_read_support_filter_all(handle.get());
-    archive_read_support_format_all(handle.get());
-
-    constexpr std::size_t kBlockSize = 64U * 1024U;
-    if (archive_read_open_filename(handle.get(), path.c_str(), kBlockSize) !=
-        ARCHIVE_OK) {
-        return {nullptr, &archive_read_free};
-    }
-    return handle;
-}
-
-/// The entry's name, preferring libarchive's UTF-8 accessor and falling back to
-/// the raw bytes put through the same guess every other untagged text here gets.
-[[nodiscard]] std::string entryName(struct archive_entry* entry) {
-    if (const char* utf8 = archive_entry_pathname_utf8(entry); utf8 != nullptr) {
-        return utf8;
-    }
-    if (const char* raw = archive_entry_pathname(entry); raw != nullptr) {
-        return codecs::toUtf8(raw);
-    }
-    return {};
-}
-
-class ArchiveSource final : public ISource {
+class ArchiveSource final : public codecs::BlobSource {
 public:
     bool open(const Url& url) override {
         close();
@@ -90,41 +59,24 @@ public:
             return false;
         }
 
-        ArchivePtr handle = openArchive(target->archive);
+        const codecs::ArchivePtr handle = codecs::openArchiveFile(target->archive);
         if (!handle) {
             return false;
         }
 
         struct archive_entry* entry = nullptr;
         while (archive_read_next_header(handle.get(), &entry) == ARCHIVE_OK) {
-            if (entryName(entry) != target->member) {
+            if (codecs::entryName(entry) != target->member) {
                 archive_read_data_skip(handle.get());
                 continue;
             }
 
-            // archive_entry_size is unreliable for some formats, so the read
-            // loop below is the authority and the size is only a hint for how
-            // much to reserve.
-            if (const la_int64_t hint = archive_entry_size(entry); hint > 0) {
-                data_.reserve(static_cast<std::size_t>(hint));
+            auto member = codecs::readEntry(handle.get(), archive_entry_size(entry));
+            if (!member) {
+                return false;
             }
-
-            std::byte chunk[64U * 1024U];
-            for (;;) {
-                const la_ssize_t got =
-                    archive_read_data(handle.get(), chunk, sizeof(chunk));
-                if (got == 0) {
-                    break;  // end of the member
-                }
-                if (got < 0) {
-                    data_.clear();
-                    return false;
-                }
-                data_.insert(data_.end(), chunk, chunk + got);
-            }
-
-            url_    = url;
-            offset_ = 0;
+            setBlob(std::move(*member));
+            url_ = url;
             return true;
         }
 
@@ -133,47 +85,10 @@ public:
         return false;
     }
 
-    [[nodiscard]] bool seekable() const override { return true; }
-
-    bool seek(std::int64_t position, int whence) override {
-        const auto size = static_cast<std::int64_t>(data_.size());
-        switch (whence) {
-            case SEEK_CUR: position += offset_; break;
-            case SEEK_END: position += size; break;
-            default: break;
-        }
-        if (position < 0) {
-            return false;
-        }
-        offset_ = position;
-        return offset_ <= size;
-    }
-
-    [[nodiscard]] std::int64_t tell() const override { return offset_; }
-
-    std::int64_t read(void* buffer, std::int64_t bytes) override {
-        const auto size = static_cast<std::int64_t>(data_.size());
-        if (bytes <= 0 || offset_ >= size) {
-            return 0;
-        }
-        const std::int64_t take = std::min(bytes, size - offset_);
-        std::memcpy(buffer, data_.data() + offset_, static_cast<std::size_t>(take));
-        offset_ += take;
-        return take;
-    }
-
-    void close() override {
-        data_.clear();
-        data_.shrink_to_fit();
-        offset_ = 0;
-    }
-
     [[nodiscard]] const Url& url() const override { return url_; }
 
 private:
-    Url                    url_;
-    std::vector<std::byte> data_;
-    std::int64_t           offset_ = 0;
+    Url url_;
 };
 
 /// One URL per member the build can actually play. Cog filters the same way,
@@ -191,7 +106,7 @@ std::vector<Url> expandArchive(const Url& url, ISource& /*source*/,
         return {url};
     }
 
-    ArchivePtr handle = openArchive(path->string());
+    const codecs::ArchivePtr handle = codecs::openArchiveFile(path->string());
     if (!handle) {
         return {url};
     }
@@ -203,8 +118,8 @@ std::vector<Url> expandArchive(const Url& url, ISource& /*source*/,
             continue;  // directories and links are not tracks
         }
 
-        const std::string name = entryName(entry);
-        if (name.empty()) {
+        const std::string name = codecs::entryName(entry);
+        if (name.empty() || codecs::isArchiveJunk(name)) {
             continue;
         }
 
@@ -233,6 +148,15 @@ void xpcog_register_archive(xpcog::PluginRegistry& r) {
         .create  = []() -> xpcog::SourcePtr {
             return std::make_unique<xpcog::ArchiveSource>();
         },
+    });
+
+    // Not a source of its own: it wraps whichever source the URL's scheme picks,
+    // so a `.itz` unwraps the same whether it is on disk, inside another
+    // archive, or coming down an HTTP connection.
+    r.addSourceWrapper({
+        .name       = "CompressedFileSource",
+        .extensions = xpcog::codecs::compressedModuleExtensions(),
+        .wrap       = &xpcog::codecs::makeCompressedFileSource,
     });
 
     r.addContainer({

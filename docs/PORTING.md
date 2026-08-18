@@ -781,11 +781,13 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   updated. The registry wants a span that outlives it, so the list is built once
   into a function-local static, which is exactly as long-lived as the registry.
 
-  Cog's archive extensions (`mdz`, `s3z`, `itz` and friends) are deliberately not
-  claimed. Those are zipped modules; libopenmpt does not unpack them and Cog only
-  claims them because its ArchiveSource unpacks them first. Advertising a format
-  that cannot then be opened is worse than not advertising it, so they wait for
-  ArchiveSource.
+  Cog's archive extensions (`mdz`, `s3z`, `itz` and friends) are claimed only
+  when the archive codec is in the build, since it is what unpacks them --
+  advertising a format that cannot then be opened is worse than not advertising
+  it, and fills the open dialog with files that fail. The list comes from the
+  archive codec rather than being restated here, so the wrapper and the decoder
+  cannot disagree about which extensions are claimed. See *source wrappers*
+  below.
 
   Three of Cog's settings are not reachable from a codec here, so each is fixed
   at what Cog falls back to: `synthSampleRate` (44100), `resampling` (sinc), and
@@ -939,11 +941,42 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   so streaming would mean re-reading from the start on every backward seek, and
   decoders seek constantly.
 
-  This is also what makes claiming OpenMPT's archive extensions honest, which is
-  why they were declined earlier -- though wiring `mdz`, `s3z` and friends
-  through is still to do, since those are a *single* module compressed rather
-  than an archive of several, and the container's one-URL-per-member shape does
-  not fit them.
+  **Source wrappers**, for the archives that are not meant to look like archives.
+  A `.itz` is an IT module inside a zip; `.mdz`, `.mdr`, `.s3z`, `.xmz` and
+  `.mptmz` are the same trick for the other tracker formats. The scene has used
+  them since the 1990s and treats them as module files -- you double-click one
+  and it plays.
+
+  So they are not containers. Expanding one would put a row in the playlist named
+  after whatever the packer happened to call the file inside, replacing a name
+  the user can see with one they cannot. Instead the registry gained a
+  `SourceWrapperDescriptor`: a source chosen by *extension*, layered over the one
+  the scheme chose. The URL stays `file:///.../song.itz`, and the source hands the
+  decoder the module rather than the zip.
+
+  Selection is by extension because that is the only thing known before anything
+  is opened, and the wrapper has to be in place before the first read. That also
+  draws the boundary against containers: this works because the outer extension
+  already names what is underneath -- a `.itz` is an IT and can be nothing else.
+  A `.gz` names nothing (`song.mod.gz` and `rip.spc.gz` are the same extension),
+  which is why gzip stays with ArchiveContainer, where the member's own name is
+  what picks the decoder.
+
+  Layering rather than replacing means it works over any scheme: a `.itz` unwraps
+  the same on disk, inside another archive (`unpack://` underneath), or over
+  HTTP. Cog instead claims these extensions on its OpenMPT decoder and unpacks
+  through File_Extractor inside it; keeping the unpacking in the archive codec
+  leaves libarchive out of the module decoder, and any later format with the same
+  one-file-in-a-wrapper convention gets it for nothing.
+
+  One thing is lost against the plain file: static tags. Metadata readers take a
+  URL, because the tag libraries want to open the container themselves -- TagLib
+  picks its parser from the extension, and it knows `.it` but not `.itz`, so it
+  declines. Verified on a real module: everything libopenmpt reports survives,
+  and the only field that disappears is TagLib's `trackername`
+  ("Impulse Tracker"), which libopenmpt's own `tracker` already carries in a more
+  specific form ("Impulse Tracker 2.14p4-5"). Archive members have always had
+  this; a reader that works from an `ISource` would fix both at once.
 
   **`ContainerExpandFn` grew a registry parameter**, which archives are the first
   container to need. An archive holds readme files and cover art beside the
@@ -952,6 +985,11 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   registry. Cog asks a global (`[AudioPlayer fileTypes]`). Passing it keeps the
   dependency visible, and means an archive stops offering formats whose codec is
   switched off and starts offering new ones the moment a decoder claims them.
+
+  Playable-extension filtering is not quite enough on its own: a zip made on
+  macOS stores each file's resource fork as `__MACOSX/._Track.spc`, which ends in
+  a playable extension and would otherwise appear as a second, unopenable copy of
+  every track. Those, `.DS_Store` and `Thumbs.db` are filtered by name.
 
   Verified end to end: a zip of two SPC rips and a readme expands to exactly the
   two rips, and the audio decoded out of the archive is byte-identical to the

@@ -19,6 +19,12 @@
 #include "common/SourceBytes.hpp"
 #include "common/TextEncoding.hpp"
 
+#ifdef XPCOG_HAVE_ARCHIVE
+// Declarations only -- no libarchive header comes with it, and the guard means
+// this is never included unless that codec is being built alongside.
+#    include "archive/CompressedFileSource.hpp"
+#endif
+
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
@@ -83,13 +89,17 @@ constexpr std::int32_t kMaxRate     = 192000;
 constexpr std::uint32_t kChannels       = 2;
 constexpr std::size_t   kFramesPerRead = 1024;
 
-/// Every extension libopenmpt claims, lowercase, built once.
+/// Every extension this build can open a module from, lowercase, built once.
 ///
-/// Deliberately *not* including Cog's archive extensions -- mdz, mdr, s3z, xmz,
-/// itz, mptmz. Those are zipped modules, which libopenmpt does not unpack; Cog
-/// can claim them because its ArchiveSource unpacks them first. Claiming them
-/// here would advertise formats that cannot be opened, which is worse than not
-/// advertising them. They belong with ArchiveSource when it lands.
+/// libopenmpt's own list, plus -- when the archive codec is in the build --
+/// mdz, mdr, s3z, xmz, itz and mptmz, which are a single module inside a zip or
+/// a RAR. libopenmpt does not unpack those; the archive codec registers a source
+/// wrapper that hands this decoder the module inside, and the list comes from
+/// there rather than being restated here, so the two can never disagree about
+/// which of them is claimed.
+///
+/// The guard matters: advertising a format nothing can then open is worse than
+/// not advertising it, since it fills the open dialog with files that fail.
 [[nodiscard]] std::span<const std::string_view> supportedExtensions() {
     static const std::vector<std::string> owned = [] {
         std::vector<std::string> list;
@@ -100,7 +110,13 @@ constexpr std::size_t   kFramesPerRead = 1024;
             // the registry simply never offers this decoder.
             list.clear();
         }
+#ifdef XPCOG_HAVE_ARCHIVE
+        for (const std::string_view extension : codecs::compressedModuleExtensions()) {
+            list.emplace_back(extension);
+        }
+#endif
         std::sort(list.begin(), list.end());
+        list.erase(std::unique(list.begin(), list.end()), list.end());
         return list;
     }();
 

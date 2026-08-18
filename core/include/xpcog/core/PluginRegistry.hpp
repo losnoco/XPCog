@@ -103,6 +103,30 @@ struct SourceDescriptor {
     bool (*available)()   = nullptr;
 };
 
+/// Puts a source between the transport and the decoder. Takes the source the
+/// scheme selected and returns the one the decoder will read; must not return
+/// null, and returning `inner` unchanged is how a wrapper declines.
+using SourceWrapFn = SourcePtr (*)(SourcePtr inner);
+
+/// A source chosen by extension rather than by scheme, layered over one that was.
+///
+/// This exists for files whose bytes are not the bytes a decoder wants but whose
+/// name already says what is underneath -- a `.itz` is an IT module inside a zip
+/// and can be nothing else. Those are not containers: a container turns one URL
+/// into several, and there is only ever one thing in here. Wrapping instead
+/// leaves the playlist showing the file the user can see, and works the same
+/// whether the scheme underneath is a local file, an archive member or HTTP.
+///
+/// Selection is by extension because that is the only thing known before
+/// anything is opened, and a wrapper has to be in place before the first read.
+struct SourceWrapperDescriptor {
+    std::string_view                  name;
+    Priority                          priority = kDefaultPriority;
+    std::span<const std::string_view> extensions;  ///< lowercase, no dot
+    SourceWrapFn                      wrap      = nullptr;
+    bool (*available)()                         = nullptr;
+};
+
 /// Whether to exclude the cue-sheet decoder from candidate selection, so that
 /// resolving a cue's referenced audio file does not recurse back into the cue.
 /// Mirrors the `skipCue:` argument threaded through Cog's PluginController.
@@ -128,6 +152,7 @@ public:
     [[nodiscard]] const Settings* settings() const noexcept { return settings_; }
 
     void addSource(SourceDescriptor);
+    void addSourceWrapper(SourceWrapperDescriptor);
     void addDecoder(DecoderDescriptor);
     void addContainer(ContainerDescriptor);
     void addMetadataReader(MetadataReaderDescriptor);
@@ -139,6 +164,9 @@ public:
 
     [[nodiscard]] std::size_t decoderCount() const noexcept { return decoders_.size(); }
     [[nodiscard]] std::size_t sourceCount()  const noexcept { return sources_.size(); }
+    [[nodiscard]] std::size_t sourceWrapperCount() const noexcept {
+        return sourceWrappers_.size();
+    }
     [[nodiscard]] std::size_t containerCount() const noexcept { return containers_.size(); }
 
     /// True when some container claims this URL's extension. This is the cheap,
@@ -152,7 +180,8 @@ public:
     /// when no container claims it, so callers can apply this uniformly.
     [[nodiscard]] std::vector<Url> expandContainer(const Url& url) const;
 
-    /// Creates a source for `url`'s scheme, or nullptr if none claims it.
+    /// Creates a source for `url`'s scheme, or nullptr if none claims it. If a
+    /// wrapper claims the extension too, the result is that wrapper over it.
     /// The source is NOT opened.
     [[nodiscard]] SourcePtr makeSource(const Url& url) const;
 
@@ -194,7 +223,8 @@ public:
 
 private:
     const Settings*                  settings_ = nullptr;
-    std::vector<SourceDescriptor>    sources_;
+    std::vector<SourceDescriptor>        sources_;
+    std::vector<SourceWrapperDescriptor> sourceWrappers_;
     std::vector<DecoderDescriptor>   decoders_;
     std::vector<ContainerDescriptor>      containers_;
     std::vector<MetadataReaderDescriptor> metadataReaders_;

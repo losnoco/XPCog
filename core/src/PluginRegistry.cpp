@@ -15,6 +15,12 @@ void PluginRegistry::addSource(SourceDescriptor d) {
     sources_.push_back(d);
 }
 
+void PluginRegistry::addSourceWrapper(SourceWrapperDescriptor d) {
+    assert(!frozen_ && "PluginRegistry::addSourceWrapper after freeze()");
+    assert(d.wrap && "source wrapper descriptor needs a wrap function");
+    sourceWrappers_.push_back(d);
+}
+
 void PluginRegistry::addDecoder(DecoderDescriptor d) {
     assert(!frozen_ && "PluginRegistry::addDecoder after freeze()");
     assert(d.create && "decoder descriptor needs a create function");
@@ -40,6 +46,7 @@ void PluginRegistry::freeze() {
     // selection never has to reconsider availability.
     const auto unavailable = [](const auto& d) { return d.available && !d.available(); };
     std::erase_if(sources_, unavailable);
+    std::erase_if(sourceWrappers_, unavailable);
     std::erase_if(decoders_, unavailable);
     std::erase_if(containers_, unavailable);
     std::erase_if(metadataReaders_, unavailable);
@@ -48,6 +55,7 @@ void PluginRegistry::freeze() {
     // priority band, matching the ordering Cog's PluginController relies on.
     const auto byPriority = [](const auto& a, const auto& b) { return a.priority > b.priority; };
     std::stable_sort(sources_.begin(), sources_.end(), byPriority);
+    std::stable_sort(sourceWrappers_.begin(), sourceWrappers_.end(), byPriority);
     std::stable_sort(decoders_.begin(), decoders_.end(), byPriority);
     std::stable_sort(containers_.begin(), containers_.end(), byPriority);
     std::stable_sort(metadataReaders_.begin(), metadataReaders_.end(), byPriority);
@@ -156,18 +164,41 @@ bool PluginRegistry::isPlayableExtension(std::string_view extension) const noexc
 SourcePtr PluginRegistry::makeSource(const Url& url) const {
     const std::string_view scheme = url.scheme();
 
+    SourcePtr source;
     for (const auto& descriptor : sources_) {
-        for (const auto claimed : descriptor.schemes) {
-            if (claimed == scheme) {
-                SourcePtr source = descriptor.create();
-                if (source) {
-                    source->setSettings(settings_);
-                }
-                return source;
-            }
+        if (std::find(descriptor.schemes.begin(), descriptor.schemes.end(),
+                      scheme) != descriptor.schemes.end()) {
+            source = descriptor.create();
+            break;
         }
     }
-    return nullptr;
+    if (!source) {
+        return nullptr;
+    }
+
+    // Then whichever wrapper claims the extension, if any. Only the first: a
+    // wrapper's whole job is to make the bytes underneath legible, and once one
+    // has done that there is nothing left for a second to unwrap.
+    const std::string extension = url.extension();
+    if (!extension.empty()) {
+        for (const auto& wrapper : sourceWrappers_) {
+            if (std::find(wrapper.extensions.begin(), wrapper.extensions.end(),
+                          extension) == wrapper.extensions.end()) {
+                continue;
+            }
+            SourcePtr wrapped = wrapper.wrap(std::move(source));
+            assert(wrapped && "a source wrapper must return a source");
+            source = std::move(wrapped);
+            break;
+        }
+    }
+
+    // Once, on the outermost source. A wrapper that needs settings forwards them
+    // to what it wraps, which is the only one that knows whether they matter.
+    if (source) {
+        source->setSettings(settings_);
+    }
+    return source;
 }
 
 DecoderPtr PluginRegistry::makeDecoder(const ISource& source, SkipCue skipCue) const {

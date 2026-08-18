@@ -5,6 +5,6 @@ find_package(LibArchive REQUIRED GLOBAL)
 xpcog_add_codec(
     NAME     archive
     REGISTER xpcog_register_archive
-    SOURCES  ArchiveSource.cpp UnpackUrl.cpp
+    SOURCES  ArchiveSource.cpp ArchiveReader.cpp CompressedFileSource.cpp UnpackUrl.cpp
     DEPS     LibArchive::LibArchive xpcog-codec-common
 )
