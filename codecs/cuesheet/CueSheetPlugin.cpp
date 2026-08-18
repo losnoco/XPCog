@@ -19,7 +19,8 @@
 namespace xpcog {
 namespace {
 
-std::vector<Url> expandCue(const Url& url, ISource& source) {
+std::vector<Url> expandCue(const Url& url, ISource& source,
+                           const PluginRegistry& /*registry*/) {
     const codecs::CueSheet sheet =
         codecs::CueSheet::parse(codecs::readAllText(source), url);
 
@@ -33,7 +34,8 @@ std::vector<Url> expandCue(const Url& url, ISource& source) {
 
 /// The audio files a cue sheet needs alongside it. Cog reports these through
 /// +dependencyUrlsForContainerURL: so the sandbox can be granted access to them.
-std::vector<Url> cueDependencies(const Url& url, ISource& source) {
+std::vector<Url> cueDependencies(const Url& url, ISource& source,
+                                 const PluginRegistry& /*registry*/) {
     const codecs::CueSheet sheet =
         codecs::CueSheet::parse(codecs::readAllText(source), url);
 

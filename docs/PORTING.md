@@ -913,6 +913,50 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   the dialog and the dock rather than living inside the dialog, since the dock is
   the one where forgetting it would mean a slider that does nothing.
 
+- **Archive source**, on libarchive: zip, rar, 7z, tar, gz, and Cog's renamed
+  variants `rsn` (a RAR of SPC rips) and `vgm7z`. Port of Cog's ArchiveSource and
+  ArchiveContainer. The third and last `ISource` -- the seam now has a local
+  file, a network stream and a compressed member behind it, which between them
+  cover every shape it was written for, and it needed no change to take the
+  third.
+
+  Cog's URL format is reproduced exactly:
+
+      unpack://fex|<length>|<archive path>|<member path>
+
+  The length prefix is not decoration. Both halves are arbitrary filesystem paths
+  and either may contain the separator, so no character could delimit them and
+  counting is the only thing that can. Two reasons to keep the format rather than
+  invent one: a Cog playlist can contain these URLs and reading one should not
+  produce dead rows, and putting the member in the *path* leaves the fragment
+  free -- XPCog already spends `#n` on the subsong of a cue track, a module or a
+  rip, and an archived NSF has both a member and a track number. The `fex` token
+  names Cog's extractor rather than libarchive, and stays, because it is part of
+  a wire format shared with Cog where changing it would break reading both ways.
+
+  The member is decompressed whole at open(), as Cog does. Not laziness: a member
+  of a solid archive cannot be seeked without decompressing everything before it,
+  so streaming would mean re-reading from the start on every backward seek, and
+  decoders seek constantly.
+
+  This is also what makes claiming OpenMPT's archive extensions honest, which is
+  why they were declined earlier -- though wiring `mdz`, `s3z` and friends
+  through is still to do, since those are a *single* module compressed rather
+  than an archive of several, and the container's one-URL-per-member shape does
+  not fit them.
+
+  **`ContainerExpandFn` grew a registry parameter**, which archives are the first
+  container to need. An archive holds readme files and cover art beside the
+  music, and offering those as tracks fills a playlist with rows that cannot
+  open; the question "is this extension playable" has no answer without the
+  registry. Cog asks a global (`[AudioPlayer fileTypes]`). Passing it keeps the
+  dependency visible, and means an archive stops offering formats whose codec is
+  switched off and starts offering new ones the moment a decoder claims them.
+
+  Verified end to end: a zip of two SPC rips and a readme expands to exactly the
+  two rips, and the audio decoded out of the archive is byte-identical to the
+  same file decoded from disk.
+
 **Then:**
 
 - The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32

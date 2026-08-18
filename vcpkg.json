@@ -19,6 +19,7 @@
     "taglib",
     "libopenmpt",
     "libgme",
+    "libarchive",
     {
       "name": "curl",
       "default-features": false,

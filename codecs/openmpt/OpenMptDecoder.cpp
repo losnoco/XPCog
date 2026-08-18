@@ -318,7 +318,8 @@ private:
 /// fragment -- the same shape a cue sheet uses. A module with one subsong stays
 /// a single entry rather than becoming `file.it#0`, so the common case does not
 /// grow a fragment nobody asked for.
-std::vector<Url> expandModule(const Url& url, ISource& source) {
+std::vector<Url> expandModule(const Url& url, ISource& source,
+                              const PluginRegistry& /*registry*/) {
     if (!url.fragment().empty()) {
         return {url};  // already addressed; expanding again would recurse
     }

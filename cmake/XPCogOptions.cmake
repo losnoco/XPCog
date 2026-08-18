@@ -21,6 +21,7 @@ option(XPCOG_WITH_DSD       "DSD / DoP support (M6)"       OFF)
 option(XPCOG_WITH_HTTP      "HTTP and internet radio source (libcurl)" ON)
 option(XPCOG_WITH_OPENMPT   "Tracker modules (libopenmpt)" ON)
 option(XPCOG_WITH_GME       "Game music rips (Game_Music_Emu)" ON)
+option(XPCOG_WITH_ARCHIVE   "Archive source (libarchive)" ON)
 
 # Sanitizers are opt-in; the RT-safety work in M1a wants them available early.
 set(XPCOG_SANITIZE "" CACHE STRING "Sanitizers, e.g. address;undefined")

@@ -442,7 +442,8 @@ private:
 /// sidecar is loaded first so the track *count* reflects it: an m3u can name
 /// fewer or more entries than the rip's own header claims, and the sidecar is
 /// the more accurate of the two.
-std::vector<Url> expandRip(const Url& url, ISource& source) {
+std::vector<Url> expandRip(const Url& url, ISource& source,
+                           const PluginRegistry& /*registry*/) {
     if (!url.fragment().empty()) {
         return {url};
     }

@@ -119,7 +119,7 @@ std::vector<Url> PluginRegistry::expandContainer(const Url& url) const {
             if (!source || !source->open(url)) {
                 return {};
             }
-            return descriptor.expand(url, *source);
+            return descriptor.expand(url, *source, *this);
         }
     }
 
@@ -138,7 +138,7 @@ std::vector<Url> PluginRegistry::expandContainer(const Url& url) const {
         for (const auto& descriptor : containers_) {
             for (const auto claimed : descriptor.mimeTypes) {
                 if (claimed == mime) {
-                    return descriptor.expand(url, *source);
+                    return descriptor.expand(url, *source, *this);
                 }
             }
         }
@@ -146,6 +146,11 @@ std::vector<Url> PluginRegistry::expandContainer(const Url& url) const {
 
     // Not a container: it is its own single track.
     return {url};
+}
+
+bool PluginRegistry::isPlayableExtension(std::string_view extension) const noexcept {
+    // allExtensions() is sorted and deduplicated by freeze().
+    return std::binary_search(allExtensions_.begin(), allExtensions_.end(), extension);
 }
 
 SourcePtr PluginRegistry::makeSource(const Url& url) const {

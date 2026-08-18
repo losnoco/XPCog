@@ -35,11 +35,11 @@ private:
 
 SourcePtr makeMimeSource() { return std::make_unique<MimeSource>(); }
 
-std::vector<Url> expandExtension(const Url&, ISource&) {
+std::vector<Url> expandExtension(const Url&, ISource&, const PluginRegistry&) {
     return {*Url::parse("fake://station/extension.flac")};
 }
 
-std::vector<Url> expandMime(const Url&, ISource&) {
+std::vector<Url> expandMime(const Url&, ISource&, const PluginRegistry&) {
     return {*Url::parse("fake://station/mime.flac")};
 }
 

@@ -54,7 +54,14 @@ struct DecoderDescriptor {
 /// `source` and hands it over, so containers never open files themselves --
 /// unlike Cog's CogContainer, which reaches for AudioSource internally. Taking
 /// the source as a parameter keeps containers testable without the filesystem.
-using ContainerExpandFn = std::vector<Url> (*)(const Url& url, ISource& source);
+///
+/// `registry` is there for the one question a container cannot answer alone:
+/// which of the things it found are playable. An archive holds readme files and
+/// cover art beside the music, and offering those as tracks would fill a
+/// playlist with rows that cannot open. Cog asks a global (`[AudioPlayer
+/// fileTypes]`); passing it keeps that dependency visible and testable.
+using ContainerExpandFn = std::vector<Url> (*)(const Url& url, ISource& source,
+                                               const PluginRegistry& registry);
 
 struct ContainerDescriptor {
     std::string_view                  name;
@@ -180,6 +187,10 @@ public:
     /// Drives the app's file-open filter, replacing Cog's generated
     /// CFBundleDocumentTypes (Audio/PluginController.mm -printPluginInfo).
     [[nodiscard]] std::span<const std::string> allExtensions() const noexcept;
+
+    /// Whether any registered decoder claims `extension` (lowercase, no dot).
+    /// The question a container asks before offering something as a track.
+    [[nodiscard]] bool isPlayableExtension(std::string_view extension) const noexcept;
 
 private:
     const Settings*                  settings_ = nullptr;

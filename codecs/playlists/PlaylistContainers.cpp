@@ -52,7 +52,8 @@ namespace {
                        [](unsigned char c) { return std::isalnum(c) != 0; });
 }
 
-std::vector<Url> expandM3u(const Url& url, ISource& source) {
+std::vector<Url> expandM3u(const Url& url, ISource& source,
+                           const PluginRegistry& /*registry*/) {
     const std::string text = codecs::readAllText(source);
 
     std::vector<Url> entries;
@@ -77,7 +78,8 @@ std::vector<Url> expandM3u(const Url& url, ISource& source) {
     return entries;
 }
 
-std::vector<Url> expandPls(const Url& url, ISource& source) {
+std::vector<Url> expandPls(const Url& url, ISource& source,
+                           const PluginRegistry& /*registry*/) {
     const std::string text = codecs::readAllText(source);
 
     // PLS is an INI file whose track entries are FileN=path. The numbering gives
