@@ -10,6 +10,7 @@ add_library(xpcog-core STATIC
     src/audio/Downmix.cpp
     src/audio/Equalizer.cpp
     src/audio/Fader.cpp
+    src/audio/FreeSurround.cpp
     src/audio/Fft.cpp
     src/audio/RealFft.cpp
     src/audio/MiniaudioOutput.cpp
@@ -69,6 +70,10 @@ endif()
 target_link_libraries(xpcog-core
     PUBLIC  vendor-miniaudio
     PRIVATE vendor-hdcd
+    # PUBLIC, not PRIVATE: FreeSurround.hpp is a public core header and names
+    # channel_setup and channel_id, which are the vendored enums. Anything that
+    # can construct a decoder has to be able to name its channel layout.
+    PUBLIC  vendor-fsurround
     PRIVATE ${XPCOG_SQLITE}
     PRIVATE soxr::soxr XPCog::warnings)
 

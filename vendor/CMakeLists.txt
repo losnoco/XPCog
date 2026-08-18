@@ -16,7 +16,8 @@
 #   miniaudio/  vendored                           (M1a) -- done
 #   pffft/    <- Cog Audio/ThirdParty/deadbeef     (M5)
 #   dsd2pcm/  <- extracted from Cog ChunkList.m    (M6)
-#   fsurround/<- Cog Audio/ThirdParty/fsurround    (M4)
+#   fsurround/<- Cog Audio/ThirdParty/fsurround    (M4) -- data only, done
 
+add_subdirectory(fsurround)
 add_subdirectory(hdcd)
 add_subdirectory(miniaudio)

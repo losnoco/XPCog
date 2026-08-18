@@ -456,8 +456,34 @@ Both failure modes were confirmed by sabotage — writing the mirror bin as
 `conj(X[k])`, which is the natural guess and is wrong, fails the DFT comparison;
 flipping only the inverse's twiddle fails only the round trip.
 
-Still ahead: the kernel itself (413 lines) plus `channelmaps.cpp` (3,141, almost
-all data), and the wiring into `fitChannels()` behind a setting.
+**The kernel is ported and matches.** `core/src/audio/FreeSurround.cpp` is the
+decoder rewritten against `RealFft`; `vendor/fsurround/` carries the 21×21 gain
+tables verbatim, which is the split between what was copied and what was
+rewritten. Against the golden capture the worst sample differs by **4.8e-7**
+across all eight blocks, against peaks near 2.6 — two ULP of float32, which is
+as closely as single precision can express agreement.
+
+Three things that had to be got right, none of which were guesses:
+
+- **vDSP's forward real transform returns twice the mathematical DFT**, and Cog's
+  kernel never divides it out. Measured against the fixture rather than read out
+  of Apple's documentation — every block agreed on the same factor to nine
+  significant figures. That constancy is itself the evidence that nothing else
+  differed: a structural error does not come out as one number. It is applied to
+  the two channel amplitudes rather than to their total, because the
+  `ampL + ampR < epsilon` test compares against it too.
+- **The float-returning helpers are reproduced, not corrected.** Upstream's
+  `sqr`, `min`, `max`, `clamp` and `sign` all return `float` from `double`
+  arguments, so `amplitude()` rounds each squared component to single precision
+  *before* adding them, on every bin of every block. They are written here as an
+  explicit narrow-and-widen, which keeps the rounding exact and keeps
+  `-Wdouble-promotion` meaningful.
+- **`pi` is a float upstream**, so the window function is evaluated in single
+  precision all the way through `cosf`. Computing it in double gives a
+  different window, and the window multiplies every sample twice.
+
+Still ahead: wiring into `fitChannels()` behind a setting, which is the last step
+and the one the converter was chosen for.
 
 LPC extrapolation is already vendored but deliberately not built: the converter keeps
 soxr's delay line continuous, so chunk edges already are. It earns its place at the
@@ -681,6 +707,11 @@ All of these are also documented at the call site.
   so a mixed-mode disc gains a bogus track that decodes to noise.
 - `PluginCache` is keyed on mtime and size as well as URL, so retagging a file in
   another program invalidates it. Cog's URL-only key does not.
+- FreeSurround's **`center_image` control does nothing**, in Cog and now here.
+  Upstream stores the value and never reads it — there is no `center_image`
+  anywhere in the decode path. Cog sets it to 0.7 and gets the output it would
+  get at any other value. XPCog keeps the setter, documented as a no-op, because
+  implementing it would mean inventing an algorithm rather than porting one.
 - iTunes Sound Check hex is parsed properly.
 - Cog stores ReplayGain as scalar floats defaulting to 0, so it cannot tell "no album
   gain" from "0 dB". XPCog keeps absent absent.

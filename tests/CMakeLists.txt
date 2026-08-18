@@ -5,6 +5,7 @@ add_executable(xpcog-tests
     core/test_dsp.cpp
     core/test_fft.cpp
     core/test_realfft.cpp
+    core/test_freesurround.cpp
     core/test_gapless.cpp
     core/test_m1c.cpp
     core/test_library.cpp
@@ -27,6 +28,12 @@ target_link_libraries(xpcog-tests PRIVATE
     xpcog-codecs
     Catch2::Catch2WithMain
     XPCog::warnings)
+
+# Where the golden captures live. Passed as a path rather than copied beside the
+# binary: the fixtures are inputs to a comparison, not build outputs, and a copy
+# is one more thing that can silently be stale.
+target_compile_definitions(xpcog-tests
+    PRIVATE "XPCOG_GOLDEN_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/golden\"")
 
 set_target_properties(xpcog-tests PROPERTIES FOLDER tests)
 
