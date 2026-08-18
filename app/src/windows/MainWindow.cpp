@@ -129,6 +129,13 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     // saved before it became unhideable.
     transport_->setVisible(true);
 
+#ifdef Q_OS_MACOS
+    // Closing the window on macOS hides it and leaves the application running,
+    // so something has to bring it back. That something is the Dock icon, and
+    // this is how the click arrives -- see eventFilter().
+    qApp->installEventFilter(this);
+#endif
+
     // Cog restores mini mode at launch from the same key. Through the action, so
     // the menu tick agrees with the window that is actually on screen -- and only
     // when it is on, because toggling a checkable action to the state it already
@@ -959,6 +966,30 @@ void MainWindow::requestQuit() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+#ifdef Q_OS_MACOS
+    // On macOS, closing the window is not quitting. That is the platform's
+    // convention rather than a preference, so it is unconditional here and
+    // CloseToTray is not consulted -- there is no tray to close to, and the
+    // application stays present in the Dock either way.
+    //
+    // The window is hidden rather than closed, which is what keeps the process
+    // alive: quitOnLastWindowClosed acts on lastWindowClosed(), and that is
+    // emitted when the last visible top-level window is *closed*. Ignoring the
+    // event means it never is. Nothing has to be switched off for this to work,
+    // and switching it off instead would leave the Windows and Linux builds
+    // running headless after their last window really did close.
+    //
+    // Quit still reaches here with quitting_ set, so the real exit path is
+    // unaffected -- and the Dock menu's own Quit, which AppKit adds, goes
+    // through the same place.
+    if (!quitting_) {
+        persistState();
+        event->ignore();
+        hide();
+        return;
+    }
+#endif
+
     // Hidden rather than closed, when asked to be and when there is somewhere to
     // hide *to*. hasTrayIcon() rather than isVisible(): on macOS the presence is the
     // Dock menu and there is no tray icon, so honouring this there would hide the
@@ -987,6 +1018,37 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     persistState();
     QMainWindow::closeEvent(event);
 }
+
+#ifdef Q_OS_MACOS
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    // Clicking the Dock icon of a running application is AppKit's
+    // applicationShouldHandleReopen:, and Qt does not surface it under that
+    // name: QCocoaApplicationDelegate answers it by calling
+    // handleApplicationStateChanged(Qt::ApplicationActive) with forcePropagate
+    // set, and returns YES. So the gesture reaches us as an ordinary state
+    // change, and the forcePropagate is what makes it arrive even when the
+    // application is already active -- which it usually is, since clicking the
+    // icon activates it first. Without that flag this would only work when
+    // XPCog was in the background.
+    //
+    // The cost of the flattening is that a plain activation -- Cmd-Tab -- is
+    // indistinguishable from a reopen and will also bring the window back.
+    // Deliberate: the window is hidden rather than closed, there is no other
+    // route to it, and being slightly eager is a far smaller fault than being
+    // unreachable.
+    if (watched == qApp && event->type() == QEvent::ApplicationStateChange &&
+        QGuiApplication::applicationState() == Qt::ApplicationActive) {
+        // Only when nothing of ours is on screen. The main window is also
+        // hidden in mini mode, where the mini player is the visible presence
+        // and restoring this one would put both up at once.
+        const bool miniShowing = mini_ != nullptr && mini_->isVisible();
+        if (isHidden() && !miniShowing) {
+            raiseWindow(this);
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+#endif
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
     if (event->mimeData()->hasUrls()) {

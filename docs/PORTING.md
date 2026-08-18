@@ -695,12 +695,31 @@ belongs; this is the index, not the detail.
   rather than a placeholder — see "Deliberate differences from Cog" below. Nothing
   else changes: the interface and both call sites stay, and Windows keeps its badge.
 
-**Worth re-measuring there**
+**Settled by measuring**
 
-- Whether closing the main window on macOS should quit at all. `closeToTray` is
-  ignored there by design — the presence is the Dock menu, not a tray — but macOS's
-  own convention is that closing a window leaves the application running, and XPCog
-  currently follows Qt's default rather than the platform's.
+- **Closing the main window on macOS no longer quits.** It hides the window and
+  leaves the application running, which is the platform's convention — so it is
+  unconditional there and `CloseToTray` is not consulted. Hiding rather than
+  closing is what keeps the process alive: `quitOnLastWindowClosed` acts on
+  `lastWindowClosed()`, and that fires only when the last *visible* window is
+  genuinely closed. Nothing had to be switched off, and switching that property
+  off globally would have left Windows and Linux running headless after their
+  last window really did close.
+
+  Getting back in is the part with a trap in it. AppKit sends
+  `applicationShouldHandleReopen:` when the Dock icon is clicked, and Qt does not
+  surface it under that name: `QCocoaApplicationDelegate` answers it by calling
+  `handleApplicationStateChanged(Qt::ApplicationActive)` with `forcePropagate`
+  set. So the gesture arrives as an ordinary application state change, and that
+  flag is the whole reason it works at all — clicking the icon activates the
+  application first, so without it the event would be suppressed as a no-change.
+
+  Two consequences, both accepted deliberately. A plain activation — Cmd-Tab — is
+  indistinguishable from a reopen and also restores the window; being slightly
+  eager is a much smaller fault than a hidden window with no route back. And the
+  restore is guarded on nothing of ours being on screen, because mini mode hides
+  the main window too, and without the guard activating in mini mode would put
+  both windows up at once.
 
 ---
 

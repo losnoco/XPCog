@@ -60,6 +60,13 @@ public:
 protected:
     void closeEvent(QCloseEvent* event) override;
 
+#ifdef Q_OS_MACOS
+    /// Watches the application for the Dock's "reopen" gesture. See the
+    /// implementation for why that arrives as a state change rather than as
+    /// something better named.
+    bool eventFilter(QObject* watched, QEvent* event) override;
+#endif
+
     /// The menu QMainWindow offers on a right-click, listing toolbars and docks
     /// so they can be hidden. The transport is removed from it: hiding the only
     /// play button leaves a window with no way to start playback and no obvious
