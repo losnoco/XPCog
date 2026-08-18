@@ -21,8 +21,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macos-26 rather than an older image because the bundle icon is
+          # compiled from app/icons/xpcog.icon, and an Icon Composer package
+          # needs actool from Xcode 26. This is not about staying green --
+          # app/CMakeLists.txt checks actool's version and falls back to the
+          # committed .icns, so older runners build fine. It is about CI
+          # exercising the icon that ships instead of the one that does not.
           - name: macOS
-            os: macos-14
+            os: macos-26
             preset: macos-debug
           - name: Linux
             os: ubuntu-24.04

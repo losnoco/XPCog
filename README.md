@@ -105,6 +105,13 @@ brew install ninja pkg-config nasm                              # macOS
 sudo apt install ninja-build pkg-config nasm autoconf automake libtool  # Debian/Ubuntu
 ```
 
+macOS builds the app icon from `app/icons/xpcog.icon`, an Icon Composer package,
+using `actool` from **Xcode 26 or newer** — not the Command Line Tools. Without
+it the build still succeeds and falls back to a committed `.icns`, saying so as
+it configures; what is lost is the icon's container and its dark and tinted
+appearances, which the system composes from the layered source and cannot
+recover from a bitmap.
+
 Sixteen tests build their fixtures by shelling out to command-line **encoders**,
 and *skip silently* when those are absent — a skip is not a failure, so the suite
 still reports success while the gapless, seek and cue-span tests never run. Install

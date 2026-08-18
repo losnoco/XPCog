@@ -108,12 +108,114 @@ if(WIN32)
     set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/XPCog.rc"
         APPEND PROPERTY OBJECT_DEPENDS "${XPCOG_RC_ICON}")
 elseif(APPLE)
-    # The tile artwork, as the bundle's icon. Named without its extension in the
-    # Info.plist and copied into Contents/Resources, which is where CFBundle
-    # looks; MACOSX_PACKAGE_LOCATION is what puts it there.
-    set(XPCOG_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/icons/xpcog.icns")
-    target_sources(xpcog-app PRIVATE "${XPCOG_ICNS}")
-    set_source_files_properties("${XPCOG_ICNS}" PROPERTIES
+    # The bundle icon, from the Icon Composer package rather than from a
+    # flattened bitmap.
+    #
+    # icons/xpcog.icon is icon.json plus three SVGs -- the artwork the PNG
+    # masters in this directory are rendered from, and the same source Cog
+    # ships as Play.icon. Handing macOS the layers instead of a picture of
+    # them is what earns the modern treatment: the system composes the
+    # rounded-rect container, the specular highlight and the dark and tinted
+    # appearances itself, at any size. A .icns can only ever be the light
+    # variant, already flattened, at the ten sizes someone thought to bake.
+    #
+    # actool compiles it to three things -- Assets.car (the layered form),
+    # a .icns rendered from the same source, and the two Info.plist keys that
+    # name them. Both keys are needed, and they are not alternatives:
+    # CFBundleIconName finds the catalog entry on macOS 26 and later, and
+    # CFBundleIconFile is what everything older reads. A bundle carrying only
+    # the first shows a blank icon on macOS 13.
+    #
+    # actool lives in Xcode, not in the Command Line Tools, so xcrun is asked
+    # for it rather than find_program -- it is not on PATH even when it is
+    # installed. Without Xcode the build falls back to the committed
+    # xpcog.icns from make-icons.py. That is a degraded path and not an equal
+    # one: it is hand-composed from xpcog-tile.png, whose gear overruns the
+    # tile and whose tile fills the canvas edge to edge, where Apple's
+    # container insets it.
+    #
+    # Being present is not enough: Icon Composer arrived with Xcode 26, and an
+    # older actool does not know what a .icon is. It is asked its version and
+    # held to that, because the alternative is a build that fails at the
+    # compile step on any machine carrying an older Xcode. CI runs macos-26 so
+    # that it exercises this path rather than the fallback -- an older image
+    # would still go green, which is exactly the problem.
+    set(XPCOG_ICON_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/icons/xpcog.icon")
+    set(XPCOG_ACTOOL_MIN_VERSION 26)
+
+    execute_process(
+        COMMAND xcrun -f actool
+        OUTPUT_VARIABLE XPCOG_ACTOOL
+        RESULT_VARIABLE XPCOG_ACTOOL_FOUND
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+
+    set(XPCOG_ACTOOL_VERSION 0)
+    if(XPCOG_ACTOOL_FOUND EQUAL 0)
+        # --version answers with a plist, not a version string.
+        execute_process(
+            COMMAND "${XPCOG_ACTOOL}" --version
+            OUTPUT_VARIABLE XPCOG_ACTOOL_VERSION_PLIST
+            ERROR_QUIET)
+        if(XPCOG_ACTOOL_VERSION_PLIST MATCHES
+                "<key>short-bundle-version</key>[ \t\r\n]*<string>([0-9]+)")
+            set(XPCOG_ACTOOL_VERSION "${CMAKE_MATCH_1}")
+        endif()
+    endif()
+
+    if(XPCOG_ACTOOL_FOUND EQUAL 0
+            AND XPCOG_ACTOOL_VERSION GREATER_EQUAL XPCOG_ACTOOL_MIN_VERSION
+            AND IS_DIRECTORY "${XPCOG_ICON_SOURCE}")
+        set(XPCOG_ICON_DIR "${CMAKE_CURRENT_BINARY_DIR}/icon")
+        # So editing a layer rebuilds the icon. The command names the package
+        # directory, and a directory's timestamp does not move when a file
+        # inside it is written.
+        file(GLOB_RECURSE XPCOG_ICON_DEPS CONFIGURE_DEPENDS
+            "${XPCOG_ICON_SOURCE}/*")
+        add_custom_command(
+            OUTPUT "${XPCOG_ICON_DIR}/Assets.car" "${XPCOG_ICON_DIR}/xpcog.icns"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${XPCOG_ICON_DIR}"
+            # --app-icon names the entry, and has to match the package's own
+            # basename; that name is what lands in both Info.plist keys.
+            COMMAND "${XPCOG_ACTOOL}" "${XPCOG_ICON_SOURCE}"
+                    --compile "${XPCOG_ICON_DIR}"
+                    --platform macosx
+                    --minimum-deployment-target "${CMAKE_OSX_DEPLOYMENT_TARGET}"
+                    --app-icon xpcog
+                    --output-partial-info-plist "${XPCOG_ICON_DIR}/icon.plist"
+                    --errors --warnings
+            DEPENDS ${XPCOG_ICON_DEPS}
+            COMMENT "Compiling xpcog.icon"
+            VERBATIM)
+        set(XPCOG_BUNDLE_ICONS
+            "${XPCOG_ICON_DIR}/Assets.car" "${XPCOG_ICON_DIR}/xpcog.icns")
+        # The partial plist actool emits is deliberately not consumed. Its two
+        # keys are known and constant, and merging a generated fragment into
+        # the template would buy nothing but a build ordering problem.
+        set(XPCOG_INFO_PLIST_ICON_NAME
+            "\t<key>CFBundleIconName</key>\n\t<string>xpcog</string>")
+    else()
+        set(XPCOG_BUNDLE_ICONS "${CMAKE_CURRENT_SOURCE_DIR}/icons/xpcog.icns")
+        # Absent rather than empty. LaunchServices treats an empty
+        # CFBundleIconName as a name to look up, fails to find it, and the
+        # fallback it then makes is not the one CFBundleIconFile names.
+        set(XPCOG_INFO_PLIST_ICON_NAME "")
+        if(XPCOG_ACTOOL_FOUND EQUAL 0)
+            message(STATUS
+                "XPCog: actool is Xcode ${XPCOG_ACTOOL_VERSION}, and .icon needs "
+                "${XPCOG_ACTOOL_MIN_VERSION} -- bundling the committed xpcog.icns "
+                "instead of icons/xpcog.icon.")
+        else()
+            message(STATUS
+                "XPCog: actool not found -- bundling the committed xpcog.icns "
+                "instead of icons/xpcog.icon. Install Xcode for the layered icon.")
+        endif()
+    endif()
+
+    # MACOSX_PACKAGE_LOCATION is what copies these into Contents/Resources,
+    # which is where CFBundle looks.
+    target_sources(xpcog-app PRIVATE ${XPCOG_BUNDLE_ICONS})
+    set_source_files_properties(${XPCOG_BUNDLE_ICONS} PROPERTIES
         MACOSX_PACKAGE_LOCATION Resources)
 endif()
 
@@ -126,6 +228,9 @@ set_target_properties(xpcog-app PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_ICON_FILE "xpcog"
+    # Naming a template is what stops Qt reaching for its own; see Info.plist.in
+    # for what was added to it and which pass substitutes what.
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
     FOLDER app)
 
 target_link_libraries(xpcog-app PRIVATE

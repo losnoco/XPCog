@@ -130,6 +130,48 @@ inside the engine, which is where the depth belongs; the ring between the DSP ch
 and the device is deliberately shallow (`1 << 14`, ~186 ms), because that number is
 the latency of every DSP change. See the `AudioEngine` class comment.
 
+### The macOS icon is a layered source, not a bitmap
+
+`app/icons/xpcog.icon` is an Icon Composer package — `icon.json` and three SVGs,
+16 KB in total — and it is the same file Cog ships as `Play.icon`. It is the
+*source* the PNG masters in that directory are rendered from, so adopting it is
+not a change of artwork; it is the difference between handing macOS the layers
+and handing it a photograph of them.
+
+What the layers buy is everything the system composes at draw time: the
+rounded-rect container at the proportions Apple actually uses, the specular
+highlight, and the dark and tinted appearances. A `.icns` cannot express any of
+it — it is one light-mode bitmap per size, and the container has to be painted
+into the artwork by hand. The committed `xpcog.icns` shows what that costs: its
+gear overruns the tile and the tile fills the canvas edge to edge, where the
+system's container insets it.
+
+`actool` compiles the package at build time into `Assets.car`, a `.icns`
+rendered from the same source, and two `Info.plist` keys. Three consequences
+worth stating, because each one is a way to get this wrong:
+
+- **Both keys are required, and they are not alternatives.** `CFBundleIconName`
+  finds the catalog entry on macOS 26 and later; `CFBundleIconFile` is what
+  everything older reads. A bundle carrying only the first is blank on macOS 13.
+- **`actool` ships in Xcode, not the Command Line Tools**, and is not on `PATH`
+  even when present — hence `xcrun -f actool` rather than `find_program`. It also
+  has to be **Xcode 26 or newer**, since that is when Icon Composer arrived and
+  an older `actool` does not know what a `.icon` is; its version is read and
+  checked rather than assumed. Failing either test the build falls back to the
+  committed `.icns`, which is a degraded path and is reported as one. CI runs on
+  `macos-26` for this reason — an older image would still go green while shipping
+  the fallback, which is the failure worth avoiding.
+- **Qt has to be stopped from writing the `Info.plist`.** It picks its own
+  template only when `MACOSX_BUNDLE_INFO_PLIST` is unset, so `app/Info.plist.in`
+  is Qt's file plus the one key, and wants re-checking on a Qt upgrade. Two
+  substitution passes run over it in order — Qt's `@FOO@` first, CMake's
+  `${FOO}` second — which is what lets the icon-name entry be *absent* rather
+  than empty on the fallback path.
+
+`make-icons.py` keeps its job. The PNG set, the Windows `.ico` and the fallback
+`.icns` all still come from it; the `.icon` displaces it only for the macOS
+bundle.
+
 ---
 
 ## Progress
@@ -497,15 +539,29 @@ belongs; this is the index, not the detail.
 
 **Written but never seen — compiles in CI, unverified by eye**
 
-- **`app/icons/xpcog.icns`.** Structurally verified — `make-icons.py` parses the
-  container back and checks magic, lengths and a PNG signature per chunk — but no
-  one has watched macOS draw it. The failure mode is silent: a wrong chunk type for
-  a size is declined rather than reported.
 - **The Dock menu.** `QMenu::setAsDockMenu()` is Qt's own call and CI compiles it,
   but that the items sit correctly *below* the ones AppKit appends is a thing to
   look at.
 - **macOS Now Playing**, verified by hand once, long before the media integration
   grew its Windows and Linux siblings.
+
+**Looked at, and settled**
+
+- **The application icon**, on macOS 27. The `.icns` was the open question and the
+  answer moved the target: `app/icons/xpcog.icon` is an Icon Composer package —
+  `icon.json` and three SVGs, the source Cog ships as `Play.icon` — and it is now
+  what the bundle carries, compiled by `actool` into `Assets.car` at build time.
+  See "The macOS icon" below for why that beats a container of flattened PNGs and
+  what it costs. Two things were learned by looking, neither of which CI could
+  have said:
+
+  1. `QApplication::setWindowIcon()` **replaces the Dock tile** on macOS. Qt
+     implements it as `NSApplication.applicationIconImage`, so the bundle icon
+     showed during launch and was then overwritten by the flat PNG set. The call
+     is now skipped there. The comment above it had asserted the opposite.
+  2. A per-window `setWindowIcon()` — `MiniWindow`'s — does *not* reach the tile.
+     Checked by launching straight into mini mode rather than reasoned about,
+     because the first item is what reasoning would have predicted for both.
 
 **Not written yet**
 
@@ -837,15 +893,14 @@ asserted a property Qt provides rather than the one the code was responsible for
   and consecutive loose FLACs — is verified by hand. `OfflineOutput` establishes
   that the seam is sample-exact, which is the part that can be automated; that it
   is also inaudible through WASAPI is not.
-- `app/icons/xpcog.icns` is **structurally verified but never rendered**. The
-  standard ImageMagick Windows build ships no ICNS coder (`IM_MOD_RL_ICNS_.dll`
-  is absent) and `iconutil` is macOS-only, so `make-icons.py` emits the container
-  itself and parses it back — magic, total length, chunk lengths, and a PNG
-  signature per chunk. That rules out a packing slip, not a wrong chunk type for
-  a given size: macOS declines to draw an icon it dislikes rather than reporting
-  it, so the first real check is a Finder window on a Mac. The Windows `.ico` and
-  the Qt resource are verified on this host, the `.ico` by extracting it back out
-  of the linked executable.
+- `app/icons/xpcog.icns` was **structurally verified but never rendered**, and has
+  since been checked on a Mac and then demoted. `iconutil` parses it and returns
+  all ten chunks as PNGs at the sizes they claim, so the hand-built container was
+  sound — the concern that a wrong chunk type for a size would be silently
+  declined was unfounded. It is now the no-Xcode fallback rather than the bundle's
+  icon; see "The macOS icon is a layered source, not a bitmap" above. The Windows
+  `.ico` and the Qt resource remain verified on the Windows host, the `.ico` by
+  extracting it back out of the linked executable.
 - The **Dock menu** on macOS is likewise unrendered here. It compiles in CI, and
   `QMenu::setAsDockMenu()` is Qt's own call, but that the menu carries the right
   items *below* the ones AppKit appends is a thing to look at rather than assert.

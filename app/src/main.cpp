@@ -141,10 +141,25 @@ int main(int argc, char** argv) {
     QCoreApplication::setApplicationName(QStringLiteral("XPCog"));
 
     // Once, on the application: every window and dialog inherits it, so none of
-    // them has to remember. Windows and macOS take their taskbar and Dock icon
-    // from the executable's own resource instead -- this is what reaches window
-    // title bars, Alt-Tab on some Linux shells, and the About box.
+    // them has to remember. Windows takes its taskbar icon from the executable's
+    // own resource instead -- this is what reaches window title bars, Alt-Tab on
+    // some Linux shells, and the About box.
+    //
+    // Not on macOS, where the same call is actively destructive and the comment
+    // above used to claim otherwise. Qt implements setWindowIcon() there as
+    // NSApplication.applicationIconImage, which is the Dock tile: the bundle's
+    // icon shows while the app launches and is then replaced, in place, by
+    // whatever is passed here. What it replaces is strictly better -- Assets.car,
+    // compiled from icons/xpcog.icon, which the system draws with its container
+    // and in the dark and tinted appearances -- and what it replaces it with is
+    // one flat light-mode PNG. The bundle icon is right, so the fix is to leave
+    // it alone rather than to pass a nicer image.
+    //
+    // This is invisible on Windows and Linux, and invisible in CI on all three:
+    // it compiles everywhere and only a Dock shows it.
+#ifndef Q_OS_MACOS
     QApplication::setWindowIcon(xpcog::app::applicationIcon());
+#endif
 
     installTranslations();
 
