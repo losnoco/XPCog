@@ -37,6 +37,7 @@ namespace xpcog::app {
 class ActionRegistry;
 class EqualizerPanel;
 class FileTree;
+class InfoPanel;
 class ScanTask;
 class SeekSlider;
 class PlaybackController;
@@ -135,6 +136,13 @@ private:
     /// is why it lives here and not in PlaybackController.
     void publishNowPlaying(TrackId id);
 
+    /// Redraws the info dock. Cog's rule (InfoWindowController): the playlist
+    /// selection when there is one, the playing track otherwise. Cheap to call
+    /// from anywhere, because it returns immediately while the dock is hidden --
+    /// which is most of the time, and matters because metadata arriving during a
+    /// scan would otherwise redraw twenty labels per file.
+    void refreshInfo();
+
     [[nodiscard]] QString statusSummary() const;
 
     const PluginRegistry& registry_;
@@ -194,6 +202,8 @@ private:
     QDockWidget*    spectrumDock_ = nullptr;
     EqualizerPanel* equalizer_     = nullptr;
     QDockWidget*    equalizerDock_ = nullptr;
+    InfoPanel*      info_          = nullptr;
+    QDockWidget*    infoDock_      = nullptr;
 
     QProgressBar* scanBar_    = nullptr;
     QToolButton*  scanCancel_ = nullptr;

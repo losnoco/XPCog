@@ -65,6 +65,7 @@ if(XPCOG_BUILD_APP)
         app/main.cpp
         app/QtStringMaker.hpp
         app/test_appicon.cpp
+        app/test_infopanel.cpp
         app/test_openurldialog.cpp
         app/test_playlistcommands.cpp
         app/test_playlistmodel.cpp

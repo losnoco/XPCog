@@ -50,8 +50,10 @@ enum class ActionId {
     OrderShuffleAll,
 
     ViewFileTree,
+    ViewFileTreeRoot,
     ViewSpectrum,
     ViewEqualizer,
+    ViewInfo,
     ViewMiniPlayer,
 
     HelpAbout,

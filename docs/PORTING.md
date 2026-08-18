@@ -915,6 +915,42 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   the dialog and the dock rather than living inside the dialog, since the dock is
   the one where forgetting it would mean a slider that does nothing.
 
+- **The info panel is a dock too**, and for the same reason the equaliser is
+  one. Port of Cog's `InfoInspector` (`InfoWindowController` plus its XIB), all
+  twenty fields in Cog's order and under Cog's labels, grouped where Cog's own
+  order already breaks: who made it, what it is, and what the library knows about
+  it. Cog's is a floating HUD panel it positions to the right of the main window
+  by hand; a right-hand dock is where that lands anyway, minus the arithmetic.
+
+  Which track it shows is Cog's rule, taken from `InfoWindowController`'s
+  observer: the playlist selection when there is one, the playing track
+  otherwise. Worth keeping rather than simplifying -- following the selection
+  alone blanks the panel on every click into empty space, and following playback
+  alone makes it useless for looking anything up.
+
+  Two departures. It shows the **whole path** where Cog shows the last component,
+  and every value is selectable: Cog's HUD is a fixed size, this is a dock you
+  can widen, and a path you can copy is a large part of why an info panel gets
+  opened. And it **redraws nothing while hidden** -- `dataChanged` fires once per
+  file during a scan, and twenty labels per file for a panel nobody has open is
+  pure waste; opening the dock refreshes it, so it is never stale.
+
+  The formatting Cog does in `PlaylistEntry`'s derived accessors (`trackText`,
+  `lengthInfo`, `gainInfo`, `playCountInfo`) is free functions here, because the
+  app test binary has no `QApplication` and cannot build a widget but can check a
+  function. That is also the only reason those four are testable at all, and they
+  hold the non-obvious rules: a disc number changes how a track number is
+  written, `+0.00 dB` has to stay distinguishable from no gain tag at all, and a
+  volume scale of exactly 1.0 is not a gain.
+
+- **The file browser's root can be chosen.** It was always persisted
+  (`fileTree/root`) and never settable, so it sat wherever `QStandardPaths` first
+  put it. Cog puts a bare `Choose` button above its outline view; here the button
+  *is* the current folder's name. That is not decoration: `setRootIndex()` shows a
+  folder's *contents*, so without it the tree never says what it is showing.
+  Also on the context menu and in View, since a button at the top of a pane that
+  can itself be hidden is not a reliable place to keep the only copy.
+
 - **Archive source**, on libarchive: zip, rar, 7z, tar, gz, and Cog's renamed
   variants `rsn` (a RAR of SPC rips) and `vgm7z`. Port of Cog's ArchiveSource and
   ArchiveContainer. The third and last `ISource` -- the seam now has a local

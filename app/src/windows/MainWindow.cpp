@@ -6,6 +6,7 @@
 #include "windows/OpenUrlDialog.hpp"
 #include "windows/MiniWindow.hpp"
 #include "FileTree.hpp"
+#include "InfoPanel.hpp"
 #include "PlaybackController.hpp"
 #include "PlaylistCommands.hpp"
 #include "PlaylistModel.hpp"
@@ -36,6 +37,7 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QDockWidget>
+#include <QItemSelectionModel>
 #include <QTimer>
 #include <QSplitter>
 #include <QSlider>
@@ -244,6 +246,19 @@ void MainWindow::buildUi() {
     equalizerDock->hide();
     equalizerDock_ = equalizerDock;
 
+    // The info panel, at the side rather than the bottom: it is a tall column of
+    // labels, where the spectrum and the equaliser are wide and short. Cog makes
+    // it a floating HUD it positions to the right of the main window by hand --
+    // a right-hand dock is where that lands anyway, minus the arithmetic.
+    info_          = new InfoPanel(library_.get(), this);
+    auto* infoDock = new QDockWidget(tr("Info"), this);
+    infoDock->setObjectName(QStringLiteral("infoDock"));
+    infoDock->setWidget(info_);
+    infoDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::RightDockWidgetArea, infoDock);
+    infoDock->hide();
+    infoDock_ = infoDock;
+
     transport_ = addToolBar(tr("Transport"));
     // saveState() identifies toolbars by objectName and warns without one --
     // and, more to the point, silently fails to match them up again on
@@ -383,10 +398,31 @@ void MainWindow::wireUp() {
                 &QAction::setChecked);
     }
 
+    if (QAction* command = actions_->action(ActionId::ViewInfo); command != nullptr) {
+        connect(command, &QAction::toggled, infoDock_, &QWidget::setVisible);
+        connect(infoDock_, &QDockWidget::visibilityChanged, command,
+                &QAction::setChecked);
+    }
+    // Opening the dock has to fill it: refreshInfo() does nothing while it is
+    // hidden, so without this it would open showing whatever was last selected
+    // before it was closed -- or nothing at all on the first open.
+    connect(infoDock_, &QDockWidget::visibilityChanged, this,
+            [this](bool) { refreshInfo(); });
+
+    on(ActionId::ViewFileTreeRoot, [this] { tree_->chooseRootPath(); });
+
     // The same handler preferences uses: a band move has to reach the engine
     // mid-track, which is the whole reason the panel is worth having open.
     connect(equalizer_, &EqualizerPanel::settingChanged, this,
             [this](const QString& key) { onSettingChanged(key); });
+
+    // What the info dock follows. Selection first, as Cog does; the playing
+    // track is picked up in onCurrentTrackChanged. dataChanged is here because a
+    // freshly added row has no tags until the scanner reaches it, and the panel
+    // should fill in rather than stay blank on whatever was selected first.
+    connect(view_->selectionModel(), &QItemSelectionModel::selectionChanged, this,
+            [this] { refreshInfo(); });
+    connect(model_, &PlaylistModel::dataChanged, this, [this] { refreshInfo(); });
 
     connect(tree_, &FileTree::activated, this,
             [this](const QList<QUrl>& urls) { addUrls(urls); });
@@ -875,10 +911,36 @@ void MainWindow::publishNowPlaying(TrackId id) {
     media_->setNowPlaying(info);
 }
 
+void MainWindow::refreshInfo() {
+    // Hidden is the normal state, and this is called from dataChanged, which a
+    // scan emits per file. Leaving early is what keeps that free.
+    if (info_ == nullptr || infoDock_ == nullptr || !infoDock_->isVisible()) {
+        return;
+    }
+
+    // Cog's rule, from InfoWindowController's observer: the selection when there
+    // is one, the playing track otherwise. Following the selection alone would
+    // blank the panel on every click into empty space; following playback alone
+    // would make it useless for looking anything up.
+    TrackId id = kInvalidTrackId;
+    if (QItemSelectionModel* selection = view_->selectionModel();
+        selection != nullptr && !selection->selectedRows().isEmpty()) {
+        id = static_cast<TrackId>(
+            proxy_->data(selection->selectedRows().front(), PlaylistModel::TrackIdRole)
+                .toULongLong());
+    }
+    if (id == kInvalidTrackId) {
+        id = currentTrack_;
+    }
+
+    info_->showEntry(playlist_.find(id));
+}
+
 void MainWindow::onCurrentTrackChanged(TrackId id) {
     currentTrack_ = id;
     model_->setCurrentTrack(id);
     publishNowPlaying(id);
+    refreshInfo();
 
     const PlaylistEntry* entry = playlist_.find(id);
     if (entry == nullptr) {

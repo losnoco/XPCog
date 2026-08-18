@@ -38,6 +38,8 @@ constexpr MenuItem kMenuLayout[] = {
     {nullptr, ActionId::FileQuit, true},
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&View"), ActionId::ViewFileTree},
+    {nullptr, ActionId::ViewFileTreeRoot},
+    {nullptr, ActionId::ViewInfo, true},
     {nullptr, ActionId::ViewSpectrum},
     {nullptr, ActionId::ViewEqualizer},
     {nullptr, ActionId::ViewMiniPlayer, true},
@@ -94,6 +96,17 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
                         QKeySequence(Qt::CTRL | Qt::Key_B));
     tree->setCheckable(true);
     tree->setChecked(true);
+
+    // Not checkable: it opens a dialog rather than showing or hiding anything.
+    // Directly under the browser it belongs to, because a root you cannot find
+    // is a browser stuck wherever it was left.
+    add(ActionId::ViewFileTreeRoot, tr("Choose &Root Folder…"));
+
+    // Cog's Info Inspector, on Cog's shortcut.
+    QAction* info = add(ActionId::ViewInfo, tr("&Info"),
+                        QKeySequence(Qt::CTRL | Qt::Key_I));
+    info->setCheckable(true);
+    info->setChecked(false);
 
     QAction* spectrum = add(ActionId::ViewSpectrum, tr("&Spectrum"),
                             QKeySequence(Qt::CTRL | Qt::Key_U));
