@@ -1,7 +1,7 @@
 # Network is here for QLocalServer, not for anything that touches a network:
 # Qt puts the local socket classes in that module. The single-instance handler
 # is the only user, and it is why the deployed payload carries Qt6Network.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network LinguistTools)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network Svg LinguistTools)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -16,6 +16,8 @@ set(XPCOG_APP_SOURCES
     src/Appearance.hpp
     src/PlaybackController.cpp
     src/PlaybackController.hpp
+    src/LucideIcon.cpp
+    src/LucideIcon.hpp
     src/FileTree.cpp
     src/FileTree.hpp
     src/SeekSlider.cpp
@@ -62,6 +64,9 @@ target_link_libraries(xpcog-appcore PUBLIC
     xpcog-platform
     Qt6::Widgets
     Qt6::Network
+    # Svg, because the Lucide icons are recoloured from their source before
+    # being rasterised -- see src/LucideIcon.cpp for why that cannot be a PNG.
+    Qt6::Svg
     PRIVATE XPCog::warnings)
 
 set_target_properties(xpcog-appcore PROPERTIES FOLDER app)
@@ -90,6 +95,20 @@ qt_add_resources(xpcog-appcore "icons"
         icons/xpcog-64.png
         icons/xpcog-128.png
         icons/xpcog-256.png
+        # Lucide (https://lucide.dev), ISC -- see icons/lucide/LICENSE. Kept as
+        # SVG source rather than baked to PNGs because the stroke colour is not
+        # knowable until the palette is.
+        icons/lucide/play.svg
+        icons/lucide/pause.svg
+        icons/lucide/square.svg
+        icons/lucide/skip-back.svg
+        icons/lucide/skip-forward.svg
+        icons/lucide/audio-lines.svg
+        icons/lucide/sliders-vertical.svg
+        icons/lucide/info.svg
+        icons/lucide/panel-left.svg
+        icons/lucide/folder-open.svg
+        icons/lucide/x.svg
 )
 
 qt_add_executable(xpcog-app

@@ -953,6 +953,32 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   because valid UTF-8 is self-identifying: the fallback cannot be reached by
   anything this build wrote, and a row corrects itself when rescanned.
 
+- **The transport has icons**, from Lucide (https://lucide.dev, ISC), vendored
+  under `app/icons/lucide/`. Previous, Play/Pause, Stop and Next drew as text
+  labels until now, which is legible and looks like a settings dialog rather than
+  a player. The same set covers the View menu (spectrum, equaliser, info, file
+  browser), the browser's root button and the scan-cancel button, so the chrome
+  reads as one hand rather than as Qt's stock icons plus nothing.
+
+  They are kept as **SVG source rather than baked to PNGs**, which is the whole
+  reason `LucideIcon.cpp` exists. Lucide strokes with `stroke="currentColor"` --
+  a CSS keyword meaning "whatever colour the surrounding text is". A QIcon has no
+  surrounding text, so a renderer left to itself paints them black and a dark
+  theme gets black on near-black. The colour is substituted into the SVG text
+  before it is parsed, which also means the icons follow a run-time style change
+  rather than being fixed at build time; the cache is keyed on the colour for
+  exactly that reason.
+
+  Two things that were wrong on the first pass and are worth remembering. The
+  disabled variant first encoded its alpha in the colour, via
+  `QColor::name(QColor::HexArgb)` -- which spells it `#AARRGGBB`, where SVG's
+  eight-digit form is `#RRGGBBAA`. The same eight characters in a different
+  order, parsed without complaint as the wrong colour. It is the painter's
+  opacity now. And the check that verified all this was itself wrong first:
+  it looked for pixels of the exact stroke RGB, which a low-alpha pixel never
+  has, because `QImage::pixel()` unpremultiplies and rounding moves the value.
+  Measuring hue and mean alpha instead is what actually answers the question.
+
 - **The info panel is a dock too**, and for the same reason the equaliser is
   one. Port of Cog's `InfoInspector` (`InfoWindowController` plus its XIB), all
   twenty fields in Cog's order and under Cog's labels, grouped where Cog's own

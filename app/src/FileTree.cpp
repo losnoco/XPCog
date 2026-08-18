@@ -1,12 +1,13 @@
 #include "FileTree.hpp"
 
+#include "LucideIcon.hpp"
+
 #include <QAction>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileSystemModel>
 #include <QHeaderView>
 #include <QStandardPaths>
-#include <QStyle>
 #include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -47,7 +48,7 @@ FileTree::FileTree(const PluginRegistry& registry, QWidget* parent)
     // answers the more common question.
     root_ = new QToolButton(this);
     root_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    root_->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+    root_->setIcon(lucideIcon(QStringLiteral("folder-open")));
     root_->setAutoRaise(true);
     // Left-aligned like the tree beneath it, and allowed to shrink: the pane is
     // narrow and a long folder name must not set the splitter's minimum width.

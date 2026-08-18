@@ -286,4 +286,5 @@ Upstream Cog: <https://github.com/losnoco/Cog>
 GPL-2.0-or-later, following upstream Cog. See [COPYING](COPYING).
 
 Cog is copyright Vincent Spader and Christopher Snowhill. Bundled decoding and tagging
-libraries are under their own licenses.
+libraries are under their own licenses. Interface icons are [Lucide](https://lucide.dev)
+under the ISC license — see [`app/icons/lucide/LICENSE`](app/icons/lucide/LICENSE).

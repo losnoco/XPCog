@@ -7,6 +7,7 @@
 #include "windows/MiniWindow.hpp"
 #include "FileTree.hpp"
 #include "InfoPanel.hpp"
+#include "LucideIcon.hpp"
 #include "PlaybackController.hpp"
 #include "PlaylistCommands.hpp"
 #include "PlaylistModel.hpp"
@@ -44,7 +45,6 @@
 #include <QSlider>
 #include <QStatusBar>
 #include <QTableView>
-#include <QStyle>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUndoStack>
@@ -269,6 +269,11 @@ void MainWindow::buildUi() {
     transport_->setFloatable(false);
     // Right-clicking the toolbar itself must not offer to hide it either.
     transport_->setContextMenuPolicy(Qt::PreventContextMenu);
+    // Icon-only now that there are icons. The label each button used to show is
+    // still there as its tooltip -- QAction derives one from its text, mnemonic
+    // stripped -- so nothing is lost by not printing "Pre&vious" on a toolbar.
+    transport_->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    transport_->setIconSize(QSize(20, 20));
     // ...and it must not appear as a hideable item in any menu built from
     // toggleViewAction(), which is the other route to the same dead end.
     transport_->toggleViewAction()->setVisible(false);
@@ -309,7 +314,7 @@ void MainWindow::buildUi() {
     // Losing the modal dialog also loses its Cancel button, and a scan of a
     // mistakenly-dropped drive needs a way out that is not quitting.
     scanCancel_ = new QToolButton(this);
-    scanCancel_->setIcon(style()->standardIcon(QStyle::SP_BrowserStop));
+    scanCancel_->setIcon(lucideIcon(QStringLiteral("x")));
     scanCancel_->setAutoRaise(true);
     scanCancel_->setToolTip(tr("Stop reading files"));
     scanCancel_->hide();
@@ -985,7 +990,10 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
     seekBar_->setEnabled(playing);
     if (QAction* command = actions_->action(ActionId::PlaybackPlayPause);
         command != nullptr) {
-        command->setText((playing && !paused) ? tr("&Pause") : tr("&Play"));
+        const bool running = playing && !paused;
+        command->setText(running ? tr("&Pause") : tr("&Play"));
+        command->setIcon(lucideIcon(running ? QStringLiteral("pause")
+                                            : QStringLiteral("play")));
     }
 
     presence_->setPlaybackState(playing, paused);
