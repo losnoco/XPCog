@@ -519,7 +519,7 @@ LPC extrapolation is already vendored but deliberately not built: the converter 
 soxr's delay line continuous, so chunk edges already are. It earns its place at the
 first block after a seek, which is M4's work.
 
-### In progress: M5 — the platform's idea of a player
+### M5 — the platform's idea of a player (complete)
 
 **Done:**
 

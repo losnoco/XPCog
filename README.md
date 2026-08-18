@@ -6,7 +6,7 @@ A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio play
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
 
-> **Status: milestone 5 — a player the desktop knows about.**
+> **Status: milestone 5 complete — a player the desktop knows about.**
 > A Qt window with a playlist, transport, seek bar, file browser, preferences,
 > undo, drag-and-drop and a persistent library. Gapless across formats *and*
 > sample rates, ReplayGain, cue sheets, HDCD. A 31-band equaliser at Cog's
@@ -250,7 +250,7 @@ never confused with the expected tail.
 | ✅ | **M2** | SQLite library, playlist model, shuffle/repeat/queue, scanner, tag reading |
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
-| 🚧 | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge; NSDockTile to come |
+| ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
 | | **M6** | Breadth: the remaining ~27 decoders, DSD/DoP, HRTF, scrobbling |
 
 Milestone 1 covers FLAC, MP3, Vorbis, Opus, AAC/ALAC, WavPack, APE and Musepack. Cog
