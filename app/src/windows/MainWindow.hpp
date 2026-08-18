@@ -84,6 +84,7 @@ private:
 
     void openFiles();
     void openFolder();
+    void openUrl();
     void showPreferences();
     void savePlaylistAs();
     void addUrls(const QList<QUrl>& urls, int atRow = -1);
@@ -201,6 +202,10 @@ private:
     /// The duration of the audible track, remembered so the clock can show the
     /// scrubbed time against it without asking the controller mid-drag.
     double duration_ = 0.0;
+
+    /// Which entry is audible, so a mid-stream tag change can tell whether it
+    /// affects the now-playing display or only a row.
+    TrackId currentTrack_ = kInvalidTrackId;
 };
 
 }  // namespace xpcog::app

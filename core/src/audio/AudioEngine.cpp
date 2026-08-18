@@ -5,11 +5,13 @@
 #include "xpcog/core/audio/ReplayGain.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdlib>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace xpcog {
 namespace {
@@ -399,9 +401,25 @@ void AudioEngine::feederLoop() {
             std::optional<Url> next =
                 (delegate_ != nullptr) ? delegate_->nextTrack() : std::nullopt;
 
+            // URLs already tried and failed during *this* advance. The delegate
+            // answers from the playlist's repeat and shuffle rules, so with
+            // repeat on and every remaining entry undecodable it hands back the
+            // same URLs for ever -- a single bad file on repeat-one is the
+            // simplest case. Seeing a failed candidate come round again means
+            // the delegate has no fresh answer left, and the honest outcome is
+            // to stop, not to spin at full speed emitting trackFailed.
+            std::vector<std::string> failedThisAdvance;
+
             bool advanced = false;
             while (next.has_value()) {
                 const Url candidate = *next;
+
+                const std::string key = candidate.toString();
+                if (std::find(failedThisAdvance.begin(), failedThisAdvance.end(),
+                              key) != failedThisAdvance.end()) {
+                    break;
+                }
+
                 closeTrack();
 
                 if (openTrack(candidate)) {
@@ -431,6 +449,7 @@ void AudioEngine::feederLoop() {
                     break;
                 }
 
+                failedThisAdvance.push_back(key);
                 if (delegate_ != nullptr) {
                     delegate_->trackFailed(candidate);
                     next = delegate_->nextTrack();
@@ -444,6 +463,8 @@ void AudioEngine::feederLoop() {
             }
             continue;
         }
+
+        pollStreamMetadata();
 
         if (!writeToRing(chunk)) {
             break;
@@ -491,6 +512,23 @@ void AudioEngine::feederLoop() {
         finished_ = true;
     }
     finishedCv_.notify_all();
+}
+
+void AudioEngine::pollStreamMetadata() {
+    // Cog asks the source for this inside each decoder, downcasting to
+    // HTTPSource with NSClassFromString -- the same block of code repeated in
+    // five of them, and absent from the rest, so whether a stream's titles
+    // appear depends on which decoder happened to claim it. Asking here instead
+    // costs one virtual call that answers "nothing" for every file, and works
+    // for every decoder including ones written before streams existed.
+    if (!track_ || !track_->source || delegate_ == nullptr) {
+        return;
+    }
+
+    MetadataMap tags = track_->source->takeUpdatedMetadata();
+    if (!tags.empty()) {
+        delegate_->streamMetadataChanged(track_->url, tags);
+    }
 }
 
 void AudioEngine::performSeek(std::int64_t frame) {

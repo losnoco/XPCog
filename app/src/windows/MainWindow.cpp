@@ -2,6 +2,7 @@
 
 #include "ActionRegistry.hpp"
 #include "windows/AboutDialog.hpp"
+#include "windows/OpenUrlDialog.hpp"
 #include "windows/MiniWindow.hpp"
 #include "FileTree.hpp"
 #include "PlaybackController.hpp"
@@ -326,6 +327,7 @@ void MainWindow::wireUp() {
 
     on(ActionId::FileOpen, [this] { openFiles(); });
     on(ActionId::FileOpenFolder, [this] { openFolder(); });
+    on(ActionId::FileOpenUrl, [this] { openUrl(); });
     on(ActionId::FileSavePlaylist, [this] { savePlaylistAs(); });
     on(ActionId::FilePreferences, [this] { showPreferences(); });
     on(ActionId::HelpAbout, [this] {
@@ -405,6 +407,18 @@ void MainWindow::wireUp() {
             &MainWindow::onCurrentTrackChanged);
     connect(playback_.get(), &PlaybackController::playbackStateChanged, this,
             &MainWindow::onPlaybackStateChanged);
+    connect(playback_.get(), &PlaybackController::trackMetadataChanged, this,
+            [this](TrackId id) {
+                // The row redraws itself -- Playlist::update() published the
+                // change and the model turned it into dataChanged. What does not
+                // follow from that is everything keyed on "the track playing
+                // now": the window title, the status line, the mini player and
+                // the OS now-playing card, which is the whole point of a radio
+                // station announcing what it just started.
+                if (id == currentTrack_) {
+                    onCurrentTrackChanged(id);
+                }
+            });
     connect(playback_.get(), &PlaybackController::playbackFailed, this,
             [this](TrackId, const QString& reason) {
                 statusBar()->showMessage(reason, 8000);
@@ -511,6 +525,17 @@ void MainWindow::refreshUndoActions() {
 }
 
 // --- commands -----------------------------------------------------------
+
+void MainWindow::openUrl() {
+    OpenUrlDialog dialog{settings_, this};
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+    // Straight down the same path as a chosen file: the scan expands containers,
+    // reads what tags there are, and adds rows. A stream simply has none of the
+    // first two, which is not a special case anywhere.
+    addUrls({QUrl(dialog.url())});
+}
 
 void MainWindow::openFiles() {
     // The filter comes from the registry rather than a hand-kept list, so a new
@@ -805,6 +830,7 @@ void MainWindow::publishNowPlaying(TrackId id) {
 }
 
 void MainWindow::onCurrentTrackChanged(TrackId id) {
+    currentTrack_ = id;
     model_->setCurrentTrack(id);
     publishNowPlaying(id);
 

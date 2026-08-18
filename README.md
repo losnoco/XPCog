@@ -15,8 +15,9 @@ from a single codebase.
 > Playing on all three platforms — MediaPlayer.framework, SMTC and MPRIS — plus a
 > tray icon on Windows and Linux, the Dock menu on macOS, one instance per user,
 > a spectrum analyser on Cog's own band frequencies, a mini player, and a taskbar
-> badge and progress bar. Now playing over HTTP too, internet radio included,
-> with SHOUTcast metadata de-interleaved out of the stream.
+> badge and progress bar. Now playing over HTTP too — File → Open URL, internet
+> radio included, with SHOUTcast stream titles live in the window as the
+> station announces them.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
 

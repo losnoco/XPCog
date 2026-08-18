@@ -35,6 +35,7 @@
 #pragma once
 
 #include "xpcog/core/AudioFormat.hpp"
+#include "xpcog/core/MetadataMap.hpp"
 #include "xpcog/core/TrackProperties.hpp"
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/Settings.hpp"
@@ -81,6 +82,16 @@ public:
 
         /// A track could not be opened and was skipped.
         virtual void trackFailed(const Url& /*url*/) {}
+
+        /// The source reported tags that changed while the track was playing --
+        /// a SHOUTcast StreamTitle naming the song currently on the radio.
+        /// `url` is the track being decoded, which during a gapless handoff is
+        /// already the next one; a live stream never hands off, so in practice
+        /// it is the audible track.
+        ///
+        /// Called from the feeder thread, like every other delegate method.
+        virtual void streamMetadataChanged(const Url& /*url*/,
+                                           const MetadataMap& /*tags*/) {}
     };
 
     /// `output` and `ring` are borrowed and must outlive the engine, and `output`
@@ -158,6 +169,9 @@ private:
     void feederLoop();
     /// Applies a pending seek. Feeder thread only.
     void performSeek(std::int64_t frame);
+
+    /// Asks the source whether the stream renamed itself, and tells the delegate.
+    void pollStreamMetadata();
     /// Opens `url`, returning false if nothing could decode it.
     bool openTrack(const Url& url);
     void closeTrack();

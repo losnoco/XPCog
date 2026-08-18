@@ -237,6 +237,28 @@ void PlaybackController::trackBegan(const Url& url) {
     }, Qt::QueuedConnection);
 }
 
+void PlaybackController::streamMetadataChanged(const Url& url, const MetadataMap& tags) {
+    // Copied across rather than referenced: the feeder thread owns neither the
+    // playlist nor the map by the time the GUI thread runs this.
+    const std::string text = url.toString();
+    QMetaObject::invokeMethod(this, [this, text, tags] {
+        for (std::size_t i = 0; i < playlist_.size(); ++i) {
+            if (playlist_.at(i).url.toString() != text) {
+                continue;
+            }
+            // Through update() rather than by writing to the entry, so the
+            // playlist's own change notification fires and the id index stays
+            // intact.
+            const TrackId id = playlist_.at(i).id;
+            playlist_.update(id, [&tags](PlaylistEntry& entry) {
+                entry.applyMetadata(tags);
+            });
+            emit trackMetadataChanged(id);
+            return;
+        }
+    }, Qt::QueuedConnection);
+}
+
 void PlaybackController::stoppedNaturally() {
     QMetaObject::invokeMethod(this, [this] {
         audible_ = kInvalidTrackId;

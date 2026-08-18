@@ -32,6 +32,7 @@ struct MenuItem {
 constexpr MenuItem kMenuLayout[] = {
     {QT_TRANSLATE_NOOP("ActionRegistry", "&File"), ActionId::FileOpen},
     {nullptr, ActionId::FileOpenFolder},
+    {nullptr, ActionId::FileOpenUrl},
     {nullptr, ActionId::FileSavePlaylist, true},
     {nullptr, ActionId::FilePreferences, true},
     {nullptr, ActionId::FileQuit, true},
@@ -77,6 +78,12 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
     add(ActionId::FileOpen, tr("&Open Files…"), QKeySequence::Open);
     add(ActionId::FileOpenFolder, tr("Open &Folder…"),
         QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
+    // Cog calls this "Add URL..." on Cmd-Shift-O. The label follows its
+    // siblings here instead, and the shortcut cannot: Ctrl-Shift-O is Open
+    // Folder, which Cog does not have as a separate command because its open
+    // panel takes directories. Ctrl-L is what a browser or VLC uses for the same
+    // "open a location" idea.
+    add(ActionId::FileOpenUrl, tr("Open &URL…"), QKeySequence(Qt::CTRL | Qt::Key_L));
     add(ActionId::FileSavePlaylist, tr("&Save Playlist…"), QKeySequence::Save);
     // Qt moves this to the application menu on macOS, where it belongs.
     add(ActionId::FilePreferences, tr("&Preferences…"), QKeySequence::Preferences);

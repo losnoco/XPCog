@@ -185,6 +185,15 @@ XPCOG_SETTING(SpectrumFloorDb, double, "spectrumFloorDb", -80.0)
 /// the bars alone read as calmer.
 XPCOG_SETTING(SpectrumShowPeaks, bool, "spectrumShowPeaks", true)
 
+/// Recently opened URLs, newest last, newline-separated and capped at fifteen.
+///
+/// Cog's `UserDefaultURLsKey`, same name and same cap (OpenURLPanel.m:57). Cog
+/// stores a real array; settings here are typed scalars, and one string is a
+/// smaller thing to add than a list type used exactly once. A newline is an
+/// unambiguous separator because a URL cannot contain a raw one -- it would be
+/// percent-encoded -- so nothing has to be escaped on the way in or out.
+XPCOG_SETTING(UrlHistory, std::string, "UserDefaultURLsKey", "")
+
 // --- bookkeeping ----------------------------------------------------------
 
 /// Bumped by SettingsMigration; see Settings::applyMigrations().

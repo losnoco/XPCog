@@ -717,6 +717,43 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   left in the ring; and the reconnect loop backs off and gives up instead of
   spinning against a server that is down.
 
+- **Live stream titles reach the screen**, and the way they travel is the
+  structural difference from Cog. Cog polls the source *inside each decoder* --
+  five of them carry the same block, downcasting to `HTTPSource` with
+  `NSClassFromString`, and the other thirty drop titles silently, so whether a
+  station's now-playing works depends on which decoder claimed the stream. Here
+  the engine polls `ISource::takeUpdatedMetadata()` once per feeder pass, after
+  the decoder has read -- one virtual call that answers "nothing" for every
+  file, and it works identically for every decoder including ones written
+  before streams existed. The test drives a fake decoder that knows nothing
+  about sources and asserts the tags arrive anyway.
+
+  From the delegate the tags go through `Playlist::update()` -- so the row
+  repaints through the model's ordinary change path -- and the now-playing
+  surfaces (title bar, status line, mini player, SMTC/MPRIS/Now Playing card)
+  refresh only when the renamed entry is the audible one.
+
+- **Open URL**, the menu's way into all of this. A port of Cog's
+  `OpenURLPanel`: an editable combo over the fifteen most recent URLs, stored
+  under Cog's own `UserDefaultURLsKey` name (as one newline-separated string --
+  a URL cannot contain a raw newline, so nothing needs escaping). The address is
+  validated against `Url::parse()` rather than `QUrl`, which would accept a bare
+  path as a relative URL and let a typo fail silently later. On Ctrl-L, not
+  Cog's Cmd-Shift-O: Ctrl-Shift-O is already Open Folder, and Ctrl-L is the
+  "open a location" convention browsers and VLC share. From the dialog the URL
+  goes down exactly the path a chosen file does -- scan, expand, add -- with no
+  special case anywhere.
+
+- **A repeating playlist of undecodable tracks now stops instead of spinning.**
+  Found by inspection while wiring the above, before any user hit it: the
+  feeder's advance loop asks the delegate for the next track and retries on
+  failure, and the delegate answers from the playlist's repeat rules -- so
+  repeat-one over a single bad file handed back the same URL for ever, a hot
+  loop flooding `trackFailed`. The engine now remembers the candidates that
+  failed during one advance and stops when one comes round again, which handles
+  repeat-one, repeat-all over an all-bad playlist, and every mixed case: a
+  candidate that opens resets the situation by ending the advance.
+
 **Then:**
 
 - The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32
@@ -1074,11 +1111,6 @@ asserted a property Qt provides rather than the one the code was responsible for
   XPCog available to choose, and choosing it is the user's step. The extension list
   comes from `PluginRegistry::allExtensions()` rather than being written out
   anywhere, so it cannot fall behind the codecs.
-- **Live stream titles are parsed but not yet shown.** `ISource::takeUpdatedMetadata()`
-  is the seam and `HttpSource` fills it, so the SHOUTcast `StreamTitle` for the
-  track currently playing is available; nothing polls it yet. Surfacing it means
-  the engine asking the source between reads and republishing the entry's tags,
-  which touches `AudioEngine` and the now-playing path rather than the source.
 - **A playlist URL with no file extension is not expanded.** Many stations
   advertise a `.pls` or `.m3u` that redirects to one, and `PluginRegistry::isContainer()`
   and `expandContainer()` take only a `Url`, so they match on the extension and

@@ -16,6 +16,7 @@ add_executable(xpcog-tests
     core/test_scanner.cpp
     core/test_seek.cpp
     core/test_spectrum.cpp
+    core/test_stream_metadata.cpp
     core/test_transportgain.cpp
     core/test_version.cpp
     codecs/test_conformance.cpp
@@ -55,6 +56,7 @@ if(XPCOG_BUILD_APP)
         app/main.cpp
         app/QtStringMaker.hpp
         app/test_appicon.cpp
+        app/test_openurldialog.cpp
         app/test_playlistcommands.cpp
         app/test_playlistmodel.cpp
         app/test_scantask.cpp

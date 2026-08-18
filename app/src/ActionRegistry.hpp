@@ -24,6 +24,7 @@ namespace xpcog::app {
 enum class ActionId {
     FileOpen,
     FileOpenFolder,
+    FileOpenUrl,
     FileSavePlaylist,
     FilePreferences,
     FileQuit,

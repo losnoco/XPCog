@@ -91,6 +91,10 @@ signals:
 
     void playbackStateChanged(bool playing, bool paused);
 
+    /// A playing stream renamed itself: the entry's tags have already been
+    /// updated, and the row and the now-playing display need redrawing.
+    void trackMetadataChanged(TrackId id);
+
     /// A file could not be opened. Playback carries on, matching Cog's
     /// behaviour of not stalling on one bad file.
     ///
@@ -105,6 +109,7 @@ private:
     void               trackBegan(const Url& url) override;
     void               stoppedNaturally() override;
     void               trackFailed(const Url& url) override;
+    void streamMetadataChanged(const Url& url, const MetadataMap& tags) override;
 
     void emitState();
 
