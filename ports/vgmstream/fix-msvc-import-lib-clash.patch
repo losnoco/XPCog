@@ -1,0 +1,18 @@
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -64,6 +64,15 @@
+ add_library(libvgmstream STATIC ${libvgmstream_sources} ${libvgmstream_headers})
+ set_target_properties(libvgmstream PROPERTIES PREFIX "")
+ 
++# MSVC gives the shared target's *import* library the same name as this static
++# one -- both are libvgmstream.lib in src/ -- and two build rules writing one
++# file is a hard ninja error rather than a race. Only the shared target is
++# installed, so the static one is renamed rather than dropped: the CLI and the
++# player plugins still link it by target name.
++if(BUILD_SHARED_LIBS AND MSVC)
++	set_target_properties(libvgmstream PROPERTIES OUTPUT_NAME "libvgmstream_static")
++endif()
++
+ if(USE_FFMPEG AND FFMPEG_COMPILE)
+ 	add_dependencies(libvgmstream avcodec)
+ endif()

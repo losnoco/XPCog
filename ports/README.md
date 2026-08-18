@@ -26,3 +26,4 @@ modified by Cog, or has no usable upstream — for example Cog's `lpc.c`,
 |---|---|---|
 | `libmpcdec` | Not in vcpkg. Note that vcpkg's `mpc` port is GNU MPC, an unrelated multiprecision library — an easy and costly mistake. Build from Cog's `Frameworks/MPCDec`. | M1b |
 | `signalsmith-stretch` | Header-only, not packaged upstream. | M4 |
+| `vgmstream` | Not in vcpkg. Needs one patch: on MSVC the static target and the shared target's import library are both `src/libvgmstream.lib`, which ninja refuses. | M6 |

@@ -33,6 +33,12 @@
     }
   ],
   "features": {
+    "vgmstream": {
+      "description": "vgmstream decoder: several hundred video-game streaming formats",
+      "dependencies": [
+        "vgmstream"
+      ]
+    },
     "ffmpeg": {
       "description": "FFmpeg decoder: AAC, ALAC, WMA, AC3, DTS, TAK, and more (long build)",
       "dependencies": [

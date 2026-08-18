@@ -1118,6 +1118,57 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   two rips, and the audio decoded out of the archive is byte-identical to the
   same file decoded from disk.
 
+- **vgmstream**, the first overlay port and the largest single format gain of the
+  milestone: several hundred video-game streaming containers -- BRSTM, BCSTM,
+  BFSTM, BWAV, BFWAV, HPS, AST, ADX, AAX, DSP, SSM, AFC, BNS and a long tail.
+  Most are a header wrapped around ADPCM or PCM, which is why the base build
+  covers them with no optional codec library at all.
+
+  **Priority is below default**, which is the design decision here. vgmstream
+  claims `wav`, `ogg` and `mp3` among its hundreds of extensions, because a game
+  archive may hold any of them. Left at kDefaultPriority it would win ties
+  against FLAC, FFmpeg and mpg123 for ordinary music, and a library would still
+  play -- through the wrong decoder, with different metadata. Registered lower,
+  it is what catches the file a dedicated decoder declined, which is the
+  MultiDecoder fallback doing exactly what it was written for.
+
+  **Companion files go through the registry.** vgmstream reads more than the file
+  it is handed: an `.aw` bank needs its `.bms`, dual-mono `.dsp` rips come in
+  pairs, a `.txtp` names the streams it wants. Its streamfile interface has an
+  `open` callback, and routing that back through `PluginRegistry::makeSource()`
+  means a companion resolves the same way inside an archive or over HTTP as on
+  disk. Cog reaches for its own file layer here.
+
+  Four things fought back, and three are worth recording because none was
+  guessable from the documentation:
+
+  * On MSVC the static target and the shared target's *import* library are both
+    `src/libvgmstream.lib`. Two ninja rules for one file is a hard error, so a
+    shared build cannot configure at all. One patch in the port renames the
+    static one.
+  * The public headers carry **no `extern "C"` guard**, in a C library exporting C
+    symbols. A C++ consumer compiles cleanly and fails at link with five
+    undefined symbols that look exactly like a missing library.
+  * `libvgmstream_fill()` **returns 0 samples forever** and never sets its done
+    flag, while `libvgmstream_render()` on the same handle and the same file
+    returns 1024 samples on the first call. The first version of this decoder
+    used fill() and decoded every rip to zero frames. Diagnosed by driving the
+    library through its *own* stdio reader, which failed identically -- that is
+    what separated a broken library path from a broken bridge, and without it
+    the obvious next move would have been rewriting the streamfile code that was
+    never at fault.
+  * MPEG and Vorbis are off despite vcpkg carrying both: on MSVC vgmstream links
+    import libraries generated from `.def` files it ships and expects its own DLL
+    names at run time, so forcing that path only moves the failure to a missing
+    DLL on first play. ATRAC9, CELT, Speex, G.719 and G.722.1 are off because
+    they are *downloaded* at configure time, which no reproducible build should do.
+
+  Verified against a 5,318-file corpus: thirteen formats decode, each to a frame
+  count matching the duration reported, with real audio rather than silence. What
+  is *not* tested in the tree is decoding itself -- every fixture would be a rip
+  of copyrighted game audio -- so the test asserts registration and the priority
+  ordering, and this paragraph is the record of the rest.
+
 **Then:**
 
 - The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32

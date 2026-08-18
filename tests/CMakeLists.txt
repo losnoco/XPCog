@@ -33,6 +33,10 @@ if(XPCOG_WITH_HTTP)
     target_sources(xpcog-tests PRIVATE codecs/test_httpsource.cpp)
 endif()
 
+if(XPCOG_WITH_VGMSTREAM)
+    target_sources(xpcog-tests PRIVATE codecs/test_vgmstream.cpp)
+endif()
+
 # Likewise the archive codec: these include its headers and link its objects.
 if(XPCOG_WITH_ARCHIVE)
     target_sources(xpcog-tests PRIVATE

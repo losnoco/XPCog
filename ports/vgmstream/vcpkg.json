@@ -1,0 +1,20 @@
+{
+  "name": "vgmstream",
+  "version": "2117",
+  "description": "Library for playing streamed audio from video games",
+  "homepage": "https://vgmstream.org",
+  "license": "ISC",
+  "dependencies": [
+    "libogg",
+    "libvorbis",
+    "mpg123",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}
