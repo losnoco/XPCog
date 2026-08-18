@@ -692,6 +692,15 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   check that the de-interleaving is exact, since a single misplaced byte would
   shift everything after it.
 
+  The station that does the second half of that lives in `tools/fake-radio`,
+  along with the client that checks it. The checker is there because the first
+  version of the station was subtly wrong -- it sent the WAV header around its
+  own metaint accounting, putting every metadata block 44 bytes late -- and the
+  symptoms were glitching audio, unreliable titles and dropouts: three
+  separate-looking faults that all read as bugs in the player. A fixture for a
+  protocol needs its own conformance check, or debugging it is guesswork about
+  which side is lying.
+
   Three things are deliberately absent.
 
   * **The streaming buffer size is fixed** at Cog's 256 KiB default. Cog exposes
