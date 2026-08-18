@@ -253,12 +253,14 @@ never confused with the expected tail.
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
 | ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
-| 🚧 | **M6** | Breadth. HTTP and internet radio done; the remaining ~27 decoders, archive sources, DSD/DoP, HRTF, scrobbling to come |
+| 🚧 | **M6** | Breadth. HTTP and internet radio, tracker modules and game music rips done; the remaining decoders, archive sources, DSD/DoP, HRTF, scrobbling to come |
 
-Milestone 1 covers FLAC, MP3, Vorbis, Opus, AAC/ALAC, WavPack, APE and Musepack. Cog
-recognises around 900 file extensions across ~35 decoders; reaching that is M6 and
-beyond, and the architecture is sized for it — each additional decoder is one
-`xpcog_add_codec()` call, never a refactor.
+Milestone 1 covers FLAC, MP3, Vorbis, Opus, AAC/ALAC, WavPack, APE and Musepack; M6
+adds tracker modules (libopenmpt) and game music rips (Game_Music_Emu), taking the
+recognised extension count past a hundred. Cog recognises around 900 across ~35
+decoders; reaching that is the rest of M6 and beyond, and the architecture is sized
+for it — each additional decoder is one `xpcog_add_codec()` call, never a refactor,
+and the two added so far each cost exactly that.
 
 ### Deliberately out of scope
 
