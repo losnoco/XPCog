@@ -451,7 +451,11 @@ constexpr std::string_view kExtensions[] = {
 
 constexpr std::string_view kMimeTypes[] = {
     "audio/aac",  "audio/mp4", "audio/x-ms-wma", "audio/ac3",
-    "audio/vnd.dolby.dd-raw", "audio/x-ape",     "audio/x-tta"};
+    "audio/vnd.dolby.dd-raw", "audio/x-ape",     "audio/x-tta",
+    // audio/aacp is what an AAC+ radio station announces. A stream URL usually
+    // has no extension, so the MIME type is the only thing that names the codec
+    // and a missing entry means the stream simply will not play.
+    "audio/aacp"};
 
 }  // namespace
 }  // namespace xpcog

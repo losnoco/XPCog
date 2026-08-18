@@ -6,7 +6,7 @@ A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio play
 Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
 from a single codebase.
 
-> **Status: milestone 5 complete — a player the desktop knows about.**
+> **Status: milestone 6 — breadth.**
 > A Qt window with a playlist, transport, seek bar, file browser, preferences,
 > undo, drag-and-drop and a persistent library. Gapless across formats *and*
 > sample rates, ReplayGain, cue sheets, HDCD. A 31-band equaliser at Cog's
@@ -15,7 +15,8 @@ from a single codebase.
 > Playing on all three platforms — MediaPlayer.framework, SMTC and MPRIS — plus a
 > tray icon on Windows and Linux, the Dock menu on macOS, one instance per user,
 > a spectrum analyser on Cog's own band frequencies, a mini player, and a taskbar
-> badge and progress bar.
+> badge and progress bar. Now playing over HTTP too, internet radio included,
+> with SHOUTcast metadata de-interleaved out of the stream.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
 
@@ -251,7 +252,7 @@ never confused with the expected tail.
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
 | ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
-| | **M6** | Breadth: the remaining ~27 decoders, DSD/DoP, HRTF, scrobbling |
+| 🚧 | **M6** | Breadth. HTTP and internet radio done; the remaining ~27 decoders, archive sources, DSD/DoP, HRTF, scrobbling to come |
 
 Milestone 1 covers FLAC, MP3, Vorbis, Opus, AAC/ALAC, WavPack, APE and Musepack. Cog
 recognises around 900 file extensions across ~35 decoders; reaching that is M6 and

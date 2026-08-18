@@ -23,6 +23,12 @@ add_executable(xpcog-tests
     codecs/test_cuesheet.cpp
 )
 
+# Guarded because the HTTP source is an option: without it the headers under
+# codecs/httpsource are not on the include path at all.
+if(XPCOG_WITH_HTTP)
+    target_sources(xpcog-tests PRIVATE codecs/test_httpsource.cpp)
+endif()
+
 target_link_libraries(xpcog-tests PRIVATE
     xpcog-core
     xpcog-codecs

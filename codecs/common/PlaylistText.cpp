@@ -1,5 +1,7 @@
 #include "PlaylistText.hpp"
 
+#include "common/TextEncoding.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -7,54 +9,6 @@
 
 namespace xpcog::codecs {
 namespace {
-
-/// Validates UTF-8 strictly enough to decide whether to fall back to Latin-1.
-[[nodiscard]] bool isValidUtf8(const std::string& text) {
-    std::size_t i = 0;
-    while (i < text.size()) {
-        const auto byte = static_cast<unsigned char>(text[i]);
-
-        std::size_t continuation = 0;
-        if (byte < 0x80) {
-            continuation = 0;
-        } else if ((byte & 0xE0) == 0xC0) {
-            continuation = 1;
-        } else if ((byte & 0xF0) == 0xE0) {
-            continuation = 2;
-        } else if ((byte & 0xF8) == 0xF0) {
-            continuation = 3;
-        } else {
-            return false;
-        }
-
-        if (i + continuation >= text.size()) {
-            return false;
-        }
-        for (std::size_t k = 1; k <= continuation; ++k) {
-            if ((static_cast<unsigned char>(text[i + k]) & 0xC0) != 0x80) {
-                return false;
-            }
-        }
-        i += continuation + 1;
-    }
-    return true;
-}
-
-/// Latin-1 to UTF-8. Every byte maps to a codepoint, so this cannot fail.
-[[nodiscard]] std::string latin1ToUtf8(const std::string& text) {
-    std::string out;
-    out.reserve(text.size());
-    for (const char c : text) {
-        const auto byte = static_cast<unsigned char>(c);
-        if (byte < 0x80) {
-            out.push_back(static_cast<char>(byte));
-        } else {
-            out.push_back(static_cast<char>(0xC0 | (byte >> 6)));
-            out.push_back(static_cast<char>(0x80 | (byte & 0x3F)));
-        }
-    }
-    return out;
-}
 
 [[nodiscard]] std::string trimmed(std::string_view text) {
     const auto notSpace = [](unsigned char c) { return std::isspace(c) == 0; };
@@ -80,9 +34,7 @@ std::string readAllText(ISource& source) {
         text.erase(0, 3);
     }
 
-    if (!isValidUtf8(text)) {
-        text = latin1ToUtf8(text);
-    }
+    text = toUtf8(std::move(text));
 
     std::replace(text.begin(), text.end(), '\r', '\n');
     return text;

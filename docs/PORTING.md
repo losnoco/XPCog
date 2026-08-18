@@ -642,11 +642,86 @@ on — is **deliberately not being written**; see "Deliberate differences from C
 The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
 `TaskbarIntegration`, which makes this milestone complete rather than partial.
 
-### Then
+### In progress: M6 — breadth
 
-- **M6** — Breadth: archive/HTTP sources (libcurl, to keep sources Qt-free), DSD/DoP,
-  the remaining ~27 decoders and ~32 vendored libraries (one `xpcog_add_codec()` plus
-  one vcpkg overlay port each), `cogimport`, HRTF, Last.fm, global hotkeys.
+**Done:**
+
+- **The HTTP source**, on libcurl rather than a Qt network stack, so sources keep
+  the Qt-free rule and behave identically on all three platforms. Port of Cog
+  `Plugins/HTTPSource/HTTPSource.m`, which is an NSURLSession transfer on a worker
+  thread filling a ring that the decoder's thread drains. The shape survives the
+  move; only the transport underneath it changes.
+
+  It is split into three pieces rather than one, along the line of what can be
+  tested without a socket. `StreamBuffer` is the ring and the seek arithmetic.
+  `IcyDemux` is the SHOUTcast protocol — the headers that arrive in the body and
+  the metadata interleaved into it. `HttpSource` is what is left: libcurl, a
+  thread, and the waiting. The first two are where the bugs live and neither can
+  fail visibly: a ring is wrong only at the wrap, and ICY framing is wrong only
+  every `metaint` bytes. Both show up as a click or a seek landing in the wrong
+  place, so playing a stream and hearing music is not evidence about either.
+
+  **One libcurl option is the whole feature.** A SHOUTcast server answers
+  `ICY 200 OK` instead of an HTTP status line, which is not HTTP, and libcurl
+  rejects the response outright. With `CURLOPT_HTTP09_ALLOWED` it treats the
+  reply as HTTP/0.9 — no headers, body from the first byte — so the ICY header
+  block arrives as the opening bytes of the body. That is exactly the shape Cog's
+  `handle_icy_headers()` was written for, which is why the port of it has a job
+  to do rather than being dead code under a client that parses headers itself.
+  Checked against a fake SHOUTcast server rather than reasoned about, because the
+  alternative reading — that libcurl normalises the response into headers — would
+  have produced a parser that silently never ran.
+
+  **The stall timeout is checked on the reading side, not by libcurl.** The
+  obvious option is `CURLOPT_LOW_SPEED_TIME`, and it is wrong here. When playback
+  pauses the decoder stops draining, the ring fills, the write callback blocks on
+  purpose, and libcurl counts that deliberate back-pressure as a stalled
+  transfer — so a paused stream would reconnect every ten seconds. Cog puts the
+  clock check inside `-read:amount:` and this does too: only a reader that is
+  waiting can tell a dead connection from a decoder that simply is not asking.
+
+  **Cancellation is a generation counter, not a handle poked across threads.**
+  Only the worker touches its `CURL*`. A seek, a stall or a close bumps the
+  counter, and both callbacks compare the generation they started with against
+  the current one, so the transfer ends at the next callback with nothing racing
+  on libcurl state.
+
+  Verified end to end against a local server: a file decoded over HTTP is
+  byte-identical to the same file decoded from disk, and so is one delivered as
+  an ICY stream with metadata blocks interleaved every 8192 bytes — which is the
+  check that the de-interleaving is exact, since a single misplaced byte would
+  shift everything after it.
+
+  Three things are deliberately absent.
+
+  * **The streaming buffer size is fixed** at Cog's 256 KiB default. Cog exposes
+    it as `httpStreamingBufferSize`; a codec here cannot reach `Settings`, which
+    core takes by injection rather than from a global, and `SourceDescriptor::create()`
+    takes no arguments. Making it configurable means threading settings through
+    `PluginRegistry` into source construction — a registry change, not a source
+    one, and not worth making for this alone.
+  * **Cog's retry-overlap matcher.** When a live stream drops, Cog snapshots the
+    tail of its ring, reconnects, and searches the new data for where it overlaps
+    the snapshot so the reconnect does not repeat audio. That matters when a
+    server resends recent bytes; a SHOUTcast reconnect normally just resumes
+    live, and a stream with a length reconnects with a `Range` header from
+    `resumeOffset()` and so cannot duplicate anything at all. The gap is a
+    possible small discontinuity on a dropped live stream.
+  * **`allowInsecureSSL`.** Cog offers it; certificates are verified here with no
+    way to turn that off, for the same settings-reachability reason and because
+    the option is one nobody should be reaching for.
+
+  **Bugs fixed rather than reproduced**, all three recorded below as well:
+  a metadata block with no `StreamTitle` no longer switches the framing off; a
+  backward seek after a reconnect no longer reads whatever the previous request
+  left in the ring; and the reconnect loop backs off and gives up instead of
+  spinning against a server that is down.
+
+**Then:**
+
+- The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32
+  vendored libraries (one `xpcog_add_codec()` plus one vcpkg overlay port each),
+  `cogimport`, HRTF, Last.fm, global hotkeys.
 
 Milestone 1's narrow format scope was a fastest-path-to-execution choice, not the
 destination. The architecture is sized for full Cog parity throughout: if adding a
@@ -761,6 +836,19 @@ All of these are also documented at the call site.
   anywhere in the decode path. Cog sets it to 0.7 and gets the output it would
   get at any other value. XPCog keeps the setter, documented as a no-op, because
   implementing it would mean inventing an algorithm rather than porting one.
+- An ICY metadata block containing no `StreamTitle` no longer switches the
+  de-interleaving off. Cog sets `icy_metaint = 0` when its parser returns -1, so a
+  server that sends `StreamUrl` on its own costs every later metadata block: they
+  reach the decoder as audio, a click every `metaint` bytes for the rest of the
+  stream. The framing and the tag parse are separate concerns here.
+- A backward seek on an HTTP stream is bounded by what was actually written, not
+  only by ring geometry. Cog's test is `pos - target <= bufferSize - remaining`,
+  which says nothing about whether those bytes were ever fetched -- so after a
+  reconnect, which moves the cursor while leaving the previous request's bytes in
+  the ring, it reports stale audio as reachable.
+- A failing HTTP reconnect backs off and eventually gives up. Cog retries
+  immediately and forever, which against a server that is simply down is a hot
+  loop rather than a reconnect.
 - iTunes Sound Check hex is parsed properly.
 - Cog stores ReplayGain as scalar floats defaulting to 0, so it cannot tell "no album
   gain" from "0 dB". XPCog keeps absent absent.
@@ -986,6 +1074,19 @@ asserted a property Qt provides rather than the one the code was responsible for
   XPCog available to choose, and choosing it is the user's step. The extension list
   comes from `PluginRegistry::allExtensions()` rather than being written out
   anywhere, so it cannot fall behind the codecs.
+- **Live stream titles are parsed but not yet shown.** `ISource::takeUpdatedMetadata()`
+  is the seam and `HttpSource` fills it, so the SHOUTcast `StreamTitle` for the
+  track currently playing is available; nothing polls it yet. Surfacing it means
+  the engine asking the source between reads and republishing the entry's tags,
+  which touches `AudioEngine` and the now-playing path rather than the source.
+- **A playlist URL with no file extension is not expanded.** Many stations
+  advertise a `.pls` or `.m3u` that redirects to one, and `PluginRegistry::isContainer()`
+  and `expandContainer()` take only a `Url`, so they match on the extension and
+  never see the `Content-Type` that would identify it. Cog checks the response
+  MIME type for `audio/x-scpls` and `audio/mpegurl` in its session delegate.
+  Fixing it means letting containers match on MIME as decoders already do, which
+  is a registry change: `expandContainer()` would have to open the source before
+  deciding rather than after.
 - `windeployqt` is invoked with `--no-translations`, so a deployed Windows build
   carries no Qt catalogues and Qt's own dialog strings stay English even in
   Spanish. XPCog's strings are unaffected — they are compiled into the executable

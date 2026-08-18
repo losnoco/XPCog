@@ -52,6 +52,20 @@ public:
     /// Empty unless the transport reports one (HTTP Content-Type).
     [[nodiscard]] virtual std::string mimeType() const { return {}; }
 
+    /// Tags the transport learned *after* open() and that have changed since the
+    /// last call. Empty when nothing is new, which is always the case for a file.
+    ///
+    /// This exists for SHOUTcast StreamTitle, which arrives interleaved with the
+    /// audio and names the track currently playing rather than the stream -- so
+    /// unlike every other metadata path it has no single moment at which it can
+    /// be read.
+    ///
+    /// One consuming call rather than Cog's -hasMetadata / -metadata pair
+    /// (HTTPSource.m:1080). Cog's -hasMetadata clears the flag it reports, so
+    /// asking twice loses the update and asking in the other order returns tags
+    /// that were already shown.
+    [[nodiscard]] virtual MetadataMap takeUpdatedMetadata() { return {}; }
+
     /// Unblocks an in-flight read when playback is stopping. Teardown still
     /// happens in close(), on the reader's own thread.
     virtual void interrupt() {}

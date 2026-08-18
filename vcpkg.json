@@ -18,6 +18,13 @@
     "wavpack",
     "taglib",
     {
+      "name": "curl",
+      "default-features": false,
+      "features": [
+        "ssl"
+      ]
+    },
+    {
       "name": "catch2",
       "host": false
     }
