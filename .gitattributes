@@ -7,3 +7,7 @@
 *.png binary
 *.ico binary
 *.icns binary
+
+# Golden reference captures: raw float32, and the one file in the tree where a
+# single rewritten byte changes a number rather than breaking a parse.
+*.f32 binary

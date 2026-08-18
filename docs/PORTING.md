@@ -355,11 +355,12 @@ Skipping avoids that change rather than postponing it. `Rate`, `MinimumRate` and
 says "not adjustable", and the `dsp` vcpkg feature that pulled in rubberband is
 gone.
 
-**FreeSurround is deferred, and blocked twice over.** It is not a time-stretcher
-— it is a matrix surround decoder, stereo to 5.1 — so the paragraph above does
-not cover it. It changes the *channel* count, which the node contract cannot
-express either, and it is one of the kernels that needs a golden capture from Cog
-before being replaced, which needs a Mac.
+**FreeSurround is still outstanding, and was blocked twice over.** It is not a
+time-stretcher — it is a matrix surround decoder, stereo to 5.1 — so the
+paragraph above does not cover it. One of the two blocks is now cleared: the
+golden capture from Cog is taken and committed, which was the part that needed a
+Mac. What remains is the node contract, which cannot express a stage that changes
+the *channel* count.
 
 **Still to do:** the reduction from one multichannel layout to a smaller one (7.1
 into quad), which still uses the positional copy. Cog runs every reduction
@@ -385,11 +386,28 @@ three of them passes every kernel test while dropping audio past the filter at a
 seam. Deleting the prebuffer call moves the measured gain by 6%, which that test
 catches.
 
-For FreeSurround, capture golden reference output from Cog **before** replacing
-the kernel — numeric drift from removing vDSP is silent otherwise, and unlike the
-equaliser it is not pinned down by a closed-form response. Note this needs a
-macOS machine: Cog does not run elsewhere, so on Windows or Linux that
-verification is simply unavailable.
+**The FreeSurround reference is captured.** `tests/golden/fsurround-5point1.f32`
+is 8 blocks of 4096 frames of Cog's own decoder output, at Cog's shipping
+parameters, in FreeSurround's own channel order; `tools/fsurround-golden/`
+holds the generator and the note on what it does not cover. This was the half
+that needed a Mac, and it is the only verification this kernel gets: drift from
+removing vDSP is silent, and unlike the equaliser there is no closed-form
+response to check against.
+
+Two properties of the capture are load-bearing rather than incidental. The input
+is generated from an LCG using only power-of-two coefficients, so it reproduces
+bit-for-bit on the Windows and Linux machines that will compare against it — an
+input that merely *nearly* reproduced would be indistinguishable from the port
+being wrong. And each block carries one stereo relationship (mono, uncorrelated,
+anti-phase, panned), so a failure names the steering regime that broke rather
+than just a sample index. The manifest's RMS table is the human-readable version:
+centre loud and rears exactly zero on the mono blocks, rears loud on the
+anti-phase ones.
+
+Still ahead, and portable: `DSPNode` has to widen before the kernel can land. It
+changes the channel count, works on a fixed block rather than any frame count,
+and returns its own buffer rather than working in place — three things the
+current contract does not express.
 
 LPC extrapolation is already vendored but deliberately not built: the converter keeps
 soxr's delay line continuous, so chunk edges already are. It earns its place at the
@@ -536,10 +554,10 @@ belongs; this is the index, not the detail.
 
 **Blocked — cannot be done anywhere else**
 
-- **FreeSurround.** The last M4 kernel. It needs golden reference output captured
-  from Cog *before* the kernel is replaced, and Cog runs nowhere else. It is blocked
-  twice over: it also changes the channel count, which `DSPNode`'s in-place,
-  fixed-frame contract cannot express, so the interface has to widen first.
+- Nothing, now. **FreeSurround** was the entry here and its Mac-only half is done:
+  the golden reference is captured and committed, so the rest of that work — widening
+  `DSPNode`, porting the kernel off vDSP — can be finished on any platform. See
+  "The FreeSurround reference is captured" below.
 
 **Looked at, and settled**
 
