@@ -513,10 +513,10 @@ first block after a seek, which is M4's work.
   path that did work. Quit now closes the window properly first, and the saving is a
   `persistState()` both paths call.
 
-**Still to do:** the Dock half of the taskbar work — `NSDockTile`, which is the
-surface Cog actually draws on. The interface and both call sites exist; only the
-macOS implementation is missing, and it is the kind of custom tile drawing that
-wants a Mac to look at rather than CI to compile.
+The Dock half of this — `NSDockTile`, the surface Cog's `DockIconController` draws
+on — is **deliberately not being written**; see "Deliberate differences from Cog".
+The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
+`TaskbarIntegration`, which makes this milestone complete rather than partial.
 
 ### Then
 
@@ -541,16 +541,12 @@ belongs; this is the index, not the detail.
   twice over: it also changes the channel count, which `DSPNode`'s in-place,
   fixed-frame contract cannot express, so the interface has to widen first.
 
-**Written but never seen — compiles in CI, unverified by eye**
-
-- **The Dock menu.** `QMenu::setAsDockMenu()` is Qt's own call and CI compiles it,
-  but that the items sit correctly *below* the ones AppKit appends is a thing to
-  look at.
-- **macOS Now Playing**, verified by hand once, long before the media integration
-  grew its Windows and Linux siblings.
-
 **Looked at, and settled**
 
+- **The Dock menu** and **macOS Now Playing**, both checked on macOS 27 and both
+  correct as written. The Dock menu's items sit below the ones AppKit appends, and
+  Now Playing still behaves after the media integration grew its Windows and Linux
+  siblings around it. Neither needed a change; they needed someone to look.
 - **The application icon**, on macOS 27. The `.icns` was the open question and the
   answer moved the target: `app/icons/xpcog.icon` is an Icon Composer package —
   `icon.json` and three SVGs, the source Cog ships as `Play.icon` — and it is now
@@ -567,13 +563,13 @@ belongs; this is the index, not the detail.
      Checked by launching straight into mini mode rather than reasoned about,
      because the first item is what reasoning would have predicted for both.
 
-**Not written yet**
+**Decided against**
 
-- **`NSDockTile`** — the Dock half of the taskbar badge and progress bar, and the
-  surface Cog's `DockIconController` actually draws on. The interface
-  (`TaskbarIntegration`) and both call sites exist and are live on Windows; macOS
-  gets the do-nothing base class. Custom tile drawing wants a Mac to look at rather
-  than CI to compile, which is why it was left rather than guessed at.
+- **`NSDockTile`** is not being written. It was the Dock half of the taskbar badge
+  and progress bar, and the surface Cog's `DockIconController` draws on. macOS keeps
+  the do-nothing `TaskbarIntegration` base class, which is now the finished state
+  rather than a placeholder — see "Deliberate differences from Cog" below. Nothing
+  else changes: the interface and both call sites stay, and Windows keeps its badge.
 
 **Worth re-measuring there**
 
@@ -600,6 +596,13 @@ All of these are also documented at the call site.
   single track, which is what `RepeatMode::One` is for.
 - Undo exists. Cog has none: `-delete:` removes the managed objects and the only way
   back is to re-add the files.
+- **No custom Dock tile.** Cog's `DockIconController` draws playback state onto the
+  icon through `NSDockTile`; XPCog does not, and macOS keeps the do-nothing
+  `TaskbarIntegration`. The badge and progress bar stay a Windows feature, where the
+  taskbar has a place for them that the platform itself defines. On macOS the same
+  information is already in the Dock menu and in Now Playing, and buying a third
+  copy of it costs hand-drawn tile artwork that has to be maintained against an icon
+  the system otherwise composes on its own.
 
 **Bugs fixed rather than reproduced**
 
