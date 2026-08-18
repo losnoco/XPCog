@@ -10,7 +10,8 @@ from a single codebase.
 > A Qt window with a playlist, transport, seek bar, file browser, preferences,
 > undo, drag-and-drop and a persistent library. Gapless across formats *and*
 > sample rates, ReplayGain, cue sheets, HDCD. A 31-band equaliser at Cog's
-> frequencies, transport fades, and matrix downmix/upmix. Media keys and Now
+> frequencies, transport fades, matrix downmix/upmix and FreeSurround stereo-to-5.1.
+> Media keys and Now
 > Playing on all three platforms — MediaPlayer.framework, SMTC and MPRIS — plus a
 > tray icon on Windows and Linux, the Dock menu on macOS, one instance per user,
 > a spectrum analyser on Cog's own band frequencies, a mini player, and a taskbar
@@ -248,7 +249,7 @@ never confused with the expected tail.
 | ✅ | **M1c** | ReplayGain, resampling, settings, HDCD |
 | ✅ | **M2** | SQLite library, playlist model, shuffle/repeat/queue, scanner, tag reading |
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
-| ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix. Time-stretch dropped by decision; FreeSurround deferred |
+| ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
 | 🚧 | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge; NSDockTile to come |
 | | **M6** | Breadth: the remaining ~27 decoders, DSD/DoP, HRTF, scrobbling |
 

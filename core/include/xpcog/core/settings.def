@@ -26,6 +26,12 @@ XPCOG_SETTING(EnableFading, bool, "enableFading", true)
 /// Decode HDCD control codes when present.
 XPCOG_SETTING(EnableHDCD, bool, "enableHDCD", true)
 
+/// Upmix stereo to 5.1 with FreeSurround. Cog's key and Cog's default.
+///
+/// Read once, when the device is opened: turning it on decides the device's
+/// channel count, and that cannot change mid-stream without a gap.
+XPCOG_SETTING(EnableFSurround, bool, "enableFSurround", false)
+
 /// Emit DSD as DoP rather than decimating it to PCM. M6.
 XPCOG_SETTING(OutputDSDAsDoP, bool, "outputDSDAsDoP", false)
 

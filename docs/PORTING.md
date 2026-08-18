@@ -205,7 +205,7 @@ bundle.
   worker thread, macOS media keys and Now Playing, i18n scaffolding, and a `deploy`
   target producing a signed self-contained bundle.
 
-### M4 — the DSP chain (complete bar FreeSurround)
+### M4 — the DSP chain (complete)
 
 **Done:** `DSPNode` and the equaliser, wired into the engine behind a two-stage
 buffer.
@@ -482,8 +482,38 @@ Three things that had to be got right, none of which were guesses:
   precision all the way through `cosf`. Computing it in double gives a
   different window, and the window multiplies every sample twice.
 
-Still ahead: wiring into `fitChannels()` behind a setting, which is the last step
-and the one the converter was chosen for.
+**Wired in, and M4 is complete.** `EnableFSurround` is Cog's key and Cog's
+default (off). Reading it is the engine's job and happens once, where the device
+format is decided, because turning the upmix on is what makes the device six
+channels wide and that cannot change mid-stream without a gap.
+
+Inside the converter the upmixer sits at the end, after gain — Cog's order, and
+it matters: the decoder's steering is not scale-invariant, since the test
+deciding whether a bin has a decodable position at all compares an absolute
+amplitude against an epsilon. Everything before it runs in stereo, so channel
+fitting reduces to two and the resampler is created for two channels rather than
+six.
+
+Three details that are easy to get wrong and are each pinned by a test:
+
+- **Channel order.** FreeSurround emits FL, FC, FR, BL, BR, LFE; XPCog
+  interleaves by channel-flag order, which for 5.1 is FL, FR, FC, LFE, BL, BR.
+  Assuming the two agree is a plausible mistake that produces a plausible
+  result — perfectly correlated input comes out loud in the *right* speaker
+  instead of the centre — so the test feeds exactly that and checks where the
+  energy landed.
+- **Frame count.** The decoder holds back half a block and the converter buffers
+  up to a whole one. The leading half block of priming is discarded rather than
+  reported as latency, so the stream stays aligned with the clock instead of
+  starting 46 ms late, and `drain()` gives the tail back. In and out are equal.
+- **Refusing to half-apply.** Asking for the upmix at any width other than six
+  leaves it off rather than interleaving six channels into a narrower stream.
+
+Two limitations, recorded rather than discovered later. A later track that is
+already multichannel is fitted to stereo and upmixed again rather than passed
+through, which is lossy — the price of not reconfiguring the device mid-album.
+And the upmix is only offered when the *first* track is stereo, because widening
+something that already has a surround field is not what the control means.
 
 LPC extrapolation is already vendored but deliberately not built: the converter keeps
 soxr's delay line continuous, so chunk edges already are. It earns its place at the

@@ -93,11 +93,27 @@ bool AudioEngine::play(const Url& url) {
     format_.format        = SampleFormat::F32;
     format_.bitsPerSample = 32;
 
+    // FreeSurround is decided here, and only here, for the same reason the rate
+    // is: it widens the device from two channels to six, and the device is
+    // opened once. A later track that is already multichannel is fitted to
+    // stereo and upmixed again rather than passed through -- which is lossy, and
+    // is the price of not reconfiguring the device mid-album. Only offered when
+    // the first track is stereo, because upmixing something that already has a
+    // surround field is not what the control means.
+    const bool wantFreeSurround = settings_.EnableFSurround() && format_.channels == 2;
+    if (wantFreeSurround) {
+        format_.channels      = 6;
+        format_.channelConfig = kChannelFrontLeft | kChannelFrontRight |
+                                kChannelFrontCenter | kChannelLFE | kChannelBackLeft |
+                                kChannelBackRight;
+    }
+
     if (!converter_.setOutputFormat(format_.sampleRate, format_.channels,
                                     settings_.Resampling())) {
         closeTrack();
         return false;
     }
+    converter_.setFreeSurround(wantFreeSurround);
     converter_.reset();
     converter_.setHdcdEnabled(settings_.EnableHDCD());
     applyReplayGain(firstProps);

@@ -12,6 +12,7 @@
 // reproduces bit-for-bit off the Mac it was captured on -- if it did not, a
 // mismatch here would be indistinguishable from the port being wrong.
 
+#include "xpcog/core/audio/AudioConverter.hpp"
 #include "xpcog/core/audio/FreeSurround.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -175,4 +176,141 @@ TEST_CASE("flush drops the overlap history", "[audio][fsurround]") {
         REQUIRE(static_cast<double>(after[i]) ==
                 Catch::Approx(static_cast<double>(reference[i])).margin(1e-9));
     }
+}
+
+// ---------------------------------------------------------------------------
+// The converter integration.
+//
+// The kernel is pinned by the golden fixture above. What these check is the
+// plumbing around it, which the fixture cannot see: that the six channels come
+// out in XPCog's interleave order rather than FreeSurround's, that no frames are
+// invented or lost, and that asking for the upmix at a width it does not produce
+// leaves it switched off instead of half-applied.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr std::uint32_t kSurroundChannels = 6;
+
+// XPCog interleaves 5.1 by channel-flag order.
+enum : std::size_t {
+    kFrontLeft = 0,
+    kFrontRight = 1,
+    kFrontCenter = 2,
+    kLfe = 3,
+    kBackLeft = 4,
+    kBackRight = 5,
+};
+
+/// Stereo float chunk whose two channels are identical -- perfectly correlated,
+/// which the decoder must steer hard to the centre and nowhere near the rears.
+xpcog::AudioChunk monoStereoChunk(std::size_t frames, GoldenInput& source) {
+    xpcog::AudioFormat format;
+    format.sampleRate = kSampleRate;
+    format.channels   = 2;
+    format.format     = xpcog::SampleFormat::F32;
+
+    xpcog::AudioChunk chunk;
+    chunk.setFormat(format);
+    auto* data = reinterpret_cast<float*>(chunk.allocFrames(frames));
+
+    std::vector<float> scratch(kBlockSize * 2);
+    std::size_t        written = 0;
+    unsigned           block   = 0;
+    while (written < frames) {
+        source.fill(block % 8 == 0 ? 0 : 0, scratch.data());  // regime 0: L == R
+        ++block;
+        const std::size_t take = std::min<std::size_t>(kBlockSize, frames - written);
+        for (std::size_t i = 0; i < take * 2; ++i) {
+            data[(written * 2) + i] = scratch[i];
+        }
+        written += take;
+    }
+    return chunk;
+}
+
+double rmsOf(const std::vector<float>& samples, std::size_t channel,
+             std::size_t firstFrame) {
+    double      sum   = 0.0;
+    std::size_t count = 0;
+    for (std::size_t f = firstFrame; f < samples.size() / kSurroundChannels; ++f) {
+        const double v = static_cast<double>(samples[(f * kSurroundChannels) + channel]);
+        sum += v * v;
+        ++count;
+    }
+    return count == 0 ? 0.0 : std::sqrt(sum / static_cast<double>(count));
+}
+
+}  // namespace
+
+TEST_CASE("the converter upmixes stereo into the layout's channel order",
+          "[audio][fsurround]") {
+    xpcog::AudioConverter converter;
+    REQUIRE(converter.setOutputFormat(kSampleRate, kSurroundChannels, "high"));
+    converter.setFreeSurround(true);
+    REQUIRE(converter.freeSurroundEnabled());
+
+    GoldenInput            source;
+    const std::size_t      frames = static_cast<std::size_t>(kBlockSize) * 4;
+    const xpcog::AudioChunk chunk = monoStereoChunk(frames, source);
+
+    std::vector<float> out;
+    REQUIRE(converter.process(chunk, out));
+    converter.drain(out);
+
+    REQUIRE(out.size() % kSurroundChannels == 0);
+
+    // Measured past the first block, so the decoder's priming is not averaged in.
+    const std::size_t settled = kBlockSize;
+    const double centre = rmsOf(out, kFrontCenter, settled);
+    const double left   = rmsOf(out, kFrontLeft, settled);
+    const double right  = rmsOf(out, kFrontRight, settled);
+    const double back   = rmsOf(out, kBackLeft, settled);
+    const double lfe    = rmsOf(out, kLfe, settled);
+
+    INFO("L " << left << " R " << right << " C " << centre << " LFE " << lfe
+              << " BL " << back);
+
+    // The assertion that catches a wrong remap table: with identical channels in,
+    // the energy belongs in the centre and the rears must be silent. Get the
+    // mapping wrong and the loud channel lands somewhere else, which no amount of
+    // correct arithmetic upstream would reveal.
+    CHECK(centre > 10 * left);
+    CHECK(centre > 10 * right);
+    CHECK(back < 1.0e-6);
+    // Bass redirection is off, so the LFE slot is untouched silence.
+    CHECK(lfe == 0.0);
+}
+
+TEST_CASE("the upmix neither invents nor loses frames", "[audio][fsurround]") {
+    // The decoder holds half a block back and the converter buffers up to a whole
+    // one, so without the priming discard and the flush this would come out short
+    // at the start and long at the end.
+    xpcog::AudioConverter converter;
+    REQUIRE(converter.setOutputFormat(kSampleRate, kSurroundChannels, "high"));
+    converter.setFreeSurround(true);
+
+    GoldenInput source;
+    // Deliberately not a multiple of the block size, so a partial block has to be
+    // flushed rather than falling out for free.
+    const std::size_t       frames = (static_cast<std::size_t>(kBlockSize) * 3) + 1234;
+    const xpcog::AudioChunk chunk  = monoStereoChunk(frames, source);
+
+    std::vector<float> out;
+    REQUIRE(converter.process(chunk, out));
+    converter.drain(out);
+
+    CHECK(out.size() / kSurroundChannels == frames);
+}
+
+TEST_CASE("the upmix stays off at a width it does not produce", "[audio][fsurround]") {
+    // Half-applying it would interleave six channels into a two-channel stream.
+    // Refusing is the only safe answer, and it has to be observable.
+    xpcog::AudioConverter converter;
+    REQUIRE(converter.setOutputFormat(kSampleRate, 2, "high"));
+    converter.setFreeSurround(true);
+    CHECK_FALSE(converter.freeSurroundEnabled());
+
+    REQUIRE(converter.setOutputFormat(kSampleRate, kSurroundChannels, "high"));
+    CHECK(converter.freeSurroundEnabled());
 }
