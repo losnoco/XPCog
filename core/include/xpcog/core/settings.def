@@ -139,6 +139,22 @@ XPCOG_SETTING(WidgetStyle, std::string, "widgetStyle", "")
 /// application somewhere unreachable -- see StatusPresence::hasTrayIcon().
 XPCOG_SETTING(CloseToTray, bool, "closeToTray", false)
 
+/// Whether the "still playing, in the tray" notice has already been shown.
+///
+/// The notice exists because a window that vanishes with no explanation is
+/// indistinguishable from a crash. That is a thing worth saying once, and only
+/// once: someone who has closed to the tray twenty times knows where the window
+/// went, and a toast on every close is the kind of nagging that teaches people
+/// to dismiss notifications without reading them.
+///
+/// Recorded rather than kept in memory for the session, because the two are
+/// different promises. Per-session means "once every launch", which for anyone
+/// who quits daily is the same as always. This means once, ever.
+///
+/// **No Cog counterpart**, for the same reason CloseToTray has none.
+/// Set back to false to see it again.
+XPCOG_SETTING(TrayHideAnnounced, bool, "trayHideAnnounced", false)
+
 // --- mini player ----------------------------------------------------------
 
 /// Whether the mini player is showing instead of the main window. A mode, not a

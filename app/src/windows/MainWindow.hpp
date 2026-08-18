@@ -181,7 +181,6 @@ private:
     bool quitting_ = false;
 
     /// So the "still running" notification appears once, not on every close.
-    bool announcedTrayHide_ = false;
 
     /// The mini player, built the first time it is asked for. Null until then:
     /// most sessions never open it, and it holds a seek slider that would

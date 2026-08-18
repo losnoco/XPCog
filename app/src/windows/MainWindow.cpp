@@ -1092,11 +1092,18 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         event->ignore();
         hide();
 
-        // Once per session. A window that vanishes with no explanation is
-        // indistinguishable from a crash, and this is the only moment where saying
-        // so is useful rather than noise.
-        if (!announcedTrayHide_) {
-            announcedTrayHide_ = true;
+        // Once, ever -- not once per session. A window that vanishes with no
+        // explanation is indistinguishable from a crash, so it is worth saying;
+        // saying it every launch to someone who closes to the tray daily is how
+        // people learn to dismiss notifications without reading them.
+        //
+        // Written before it is shown, and synced immediately: the whole point of
+        // this path is that the session continues afterwards, possibly for days,
+        // and a machine that goes down in the meantime must not resurrect the
+        // notice.
+        if (!settings_.TrayHideAnnounced()) {
+            settings_.setTrayHideAnnounced(true);
+            settings_.sync();
             presence_->showMessage(
                 tr("XPCog is still playing"),
                 tr("The window is closed, not the player. Click the tray icon to "

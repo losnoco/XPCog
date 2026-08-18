@@ -99,6 +99,11 @@ TEST_CASE("settings return their defaults when unset", "[settings]") {
     CHECK(settings.EnableFading());
     CHECK(settings.Volume() == Catch::Approx(1.0));
     CHECK(settings.SettingsSchemaVersion() == 0);
+
+    // Pinned because the failure is silent in the wrong direction: a default of
+    // true means the "still playing, in the tray" notice is never shown to
+    // anyone, and nothing about that looks broken.
+    CHECK_FALSE(settings.TrayHideAnnounced());
 }
 
 TEST_CASE("settings round-trip through the store", "[settings]") {
