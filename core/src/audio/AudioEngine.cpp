@@ -62,16 +62,42 @@ bool AudioEngine::openTrack(const Url& url) {
     track->source  = std::move(opened.source);
     track->decoder = std::move(opened.decoder);
     track->url     = url;
-    track_         = std::move(track);
+    {
+        const std::lock_guard lock(trackMutex_);
+        track_ = std::move(track);
+    }
     return true;
 }
 
 void AudioEngine::closeTrack() {
-    if (track_) {
+    std::unique_ptr<OpenTrack> doomed;
+    {
+        const std::lock_guard lock(trackMutex_);
+        doomed = std::move(track_);
+    }
+
+    // Destroyed outside the lock: ~HttpSource joins its network thread, and
+    // holding the pointer lock across that would block a concurrent
+    // interruptTrack() on exactly the teardown it is trying to help along.
+    if (doomed) {
         // Decoder first: it borrows the source and must not outlive it.
-        track_->decoder.reset();
-        track_->source.reset();
-        track_.reset();
+        doomed->decoder.reset();
+        doomed->source.reset();
+    }
+}
+
+void AudioEngine::interruptTrack() {
+    const std::lock_guard lock(trackMutex_);
+    if (!track_) {
+        return;
+    }
+    // Both, and in this order: a decoder may be waiting on its own buffering
+    // above the source, and unblocking the source first would leave it parked.
+    if (track_->decoder) {
+        track_->decoder->interrupt();
+    }
+    if (track_->source) {
+        track_->source->interrupt();
     }
 }
 
@@ -395,6 +421,14 @@ void AudioEngine::feederLoop() {
         }
 
         if (!track_ || !track_->decoder->readAudio(chunk)) {
+            // A read that ended because stop() interrupted it is not the end of
+            // the track, and asking the delegate for the next one here would
+            // open a fresh source during shutdown -- for an HTTP URL, a whole
+            // new connection nothing will ever close.
+            if (!running_.load(std::memory_order_acquire)) {
+                break;
+            }
+
             // End of the current decoder. Ask for the next track *now*, while the
             // audio already in the ring is still playing out -- this is what makes
             // the handoff gapless. Cog does the same in -endOfInputReached:.
@@ -635,6 +669,14 @@ void AudioEngine::stop() {
     pendingPause_.store(false, std::memory_order_release);
 
     running_.store(false, std::memory_order_release);
+
+    // Before the join, not after. A blocked read never observes running_, and
+    // the thing that would end it -- closeTrack() destroying the source -- runs
+    // below, on the far side of this join. Without this, stopping a live stream
+    // whose server has gone quiet waits for audio that is never coming, which
+    // froze the application on every attempt to switch tracks.
+    interruptTrack();
+
     if (feeder_.joinable()) {
         feeder_.join();
     }

@@ -172,6 +172,11 @@ private:
 
     /// Asks the source whether the stream renamed itself, and tells the delegate.
     void pollStreamMetadata();
+
+    /// Unblocks a read that may never return on its own, so stop() can join the
+    /// feeder. A file's read() always completes; a live stream's parks until
+    /// more audio arrives, which for a stalled stream is never.
+    void interruptTrack();
     /// Opens `url`, returning false if nothing could decode it.
     bool openTrack(const Url& url);
     void closeTrack();
@@ -207,6 +212,11 @@ private:
     // The open track, touched only by the feeder thread.
     struct OpenTrack;
     std::unique_ptr<OpenTrack> track_;
+
+    /// Guards the *pointer*, not the track. Only the feeder swaps it, so the
+    /// feeder reads it unlocked; stop() runs on another thread and must not
+    /// read a half-swapped pointer while reaching in to interrupt.
+    mutable std::mutex trackMutex_;
 
     std::thread                 feeder_;
     std::atomic<bool>           running_{false};

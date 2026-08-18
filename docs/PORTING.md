@@ -893,6 +893,18 @@ All of these are also documented at the call site.
 - A failing HTTP reconnect backs off and eventually gives up. Cog retries
   immediately and forever, which against a server that is simply down is a hot
   loop rather than a reconnect.
+- **`stop()` interrupts the source before joining the feeder.** `ISource::interrupt()`
+  and `IDecoder::interrupt()` were declared from M1a with the right doc comment
+  -- "unblocks an in-flight read when playback is stopping" -- and called by
+  nothing, because until an HTTP source existed no `read()` ever blocked. With
+  one, the feeder parks inside `read()` waiting for audio a quiet server will
+  never send; `running_ = false` cannot reach a blocked read, and `closeTrack()`
+  -- the thing that would end it -- runs *after* the join. Every attempt to
+  switch tracks froze. The interrupt now happens before the join, under a mutex
+  that guards the track pointer alone, and the feeder no longer opens a fresh
+  track when it wakes to find playback stopping. The test parks a fake source
+  and asserts `stop()` returns, rescuing the blocked thread on failure so a
+  regression reports rather than hangs the suite.
 - The skip-on-failure rule is cycle-checked in *both* places it exists. The
   engine's advance loop and `PlaybackController::playTrack` each ask the
   playlist for the next entry when one fails to open, and the playlist answers
