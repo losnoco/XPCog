@@ -893,6 +893,35 @@ All of these are also documented at the call site.
 - A failing HTTP reconnect backs off and eventually gives up. Cog retries
   immediately and forever, which against a server that is simply down is a hot
   loop rather than a reconnect.
+- **Starting and stopping playback are off the GUI thread.** `AudioEngine::play()`
+  opens the source and primes about 1.5 s of audio before returning; for a file
+  that is microseconds, for a URL it is a network round trip, and against a host
+  that accepts and then says nothing it was the source's full header timeout of
+  frozen window. `stop()` blocks too, on the fade and two joins. Both now run on
+  a starter thread owned by `PlaybackController`, which is where Cog puts the
+  same work (`-addURLsInBackground:`).
+
+  Two things make that safe rather than merely asynchronous. A generation
+  counter: every request bumps it, a stale result is dropped, and the starter
+  checks it *before* doing the work -- so a burst of double-clicks settles on the
+  last one instead of opening a connection per click. And a `starting_` flag the
+  GUI thread consults before touching the engine at all: while a start is in
+  flight the device is being renegotiated underneath it, so `playing()`,
+  `position()` and `sampleRate()` answer with neutral values and pause and seek
+  decline, rather than reading state that is being rebuilt.
+
+  The skip-on-failure rule survives the change: `failedStarts_` carries the
+  memory of what has already failed across the asynchronous hops, since
+  `nextForPlayback()` still answers from the repeat rules and would otherwise
+  offer the same dead entry for ever.
+
+  The window says **Connecting…** while it waits. That is not decoration: a
+  window that is responsive but showing nothing reads as the same failure the
+  hang did.
+
+  Verified by hand rather than by test, and that is a gap:
+  `PlaybackController` constructs a real miniaudio output in its constructor, so
+  testing it needs the output injected first.
 - **`stop()` interrupts the source before joining the feeder.** `ISource::interrupt()`
   and `IDecoder::interrupt()` were declared from M1a with the right doc comment
   -- "unblocks an in-flight read when playback is stopping" -- and called by
@@ -1138,15 +1167,6 @@ asserted a property Qt provides rather than the one the code was responsible for
   XPCog available to choose, and choosing it is the user's step. The extension list
   comes from `PluginRegistry::allExtensions()` rather than being written out
   anywhere, so it cannot fall behind the codecs.
-- **Starting playback is synchronous on the GUI thread.** `PlaybackController::playTrack`
-  calls `AudioEngine::play()` directly, which opens the source and primes about
-  1.5 s of audio before returning. For a file that is microseconds; for an HTTP
-  URL it is a network round-trip, and against a host that accepts the connection
-  and then says nothing it is the source's full header timeout (12 s) of frozen
-  UI. Cog opens URLs from a background queue (`addURLsInBackground:`) for
-  exactly this reason. The fix is to move open-and-prime off the GUI thread
-  behind the existing delegate seam; the timeout cap is the interim mitigation,
-  not the answer.
 - `windeployqt` is invoked with `--no-translations`, so a deployed Windows build
   carries no Qt catalogues and Qt's own dialog strings stay English even in
   Spanish. XPCog's strings are unaffected — they are compiled into the executable

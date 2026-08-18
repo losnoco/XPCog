@@ -407,6 +407,20 @@ void MainWindow::wireUp() {
             &MainWindow::onCurrentTrackChanged);
     connect(playback_.get(), &PlaybackController::playbackStateChanged, this,
             &MainWindow::onPlaybackStateChanged);
+    connect(playback_.get(), &PlaybackController::startPending, this,
+            [this](TrackId id) {
+                // Opening a URL is a network round trip. It no longer blocks the
+                // window, so the window has to say what it is waiting for --
+                // otherwise "responsive but showing nothing" reads as the same
+                // failure the hang did.
+                const PlaylistEntry* entry = playlist_.find(id);
+                const QString name = (entry != nullptr)
+                                         ? QString::fromStdString(entry->display())
+                                         : QString{};
+                nowPlaying_->setText(name.isEmpty() ? tr("Connecting…")
+                                                    : tr("Connecting to %1…").arg(name));
+                statusBar()->showMessage(tr("Connecting…"), 30000);
+            });
     connect(playback_.get(), &PlaybackController::trackMetadataChanged, this,
             [this](TrackId id) {
                 // The row redraws itself -- Playlist::update() published the
