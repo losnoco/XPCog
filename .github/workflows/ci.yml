@@ -30,12 +30,20 @@ jobs:
           - name: macOS
             os: macos-26
             preset: macos-debug
+            # Not 6.8 like the others, and not a preference. Qt 6.8's QtGui
+            # carries -framework AGL in its link interface, and Apple removed
+            # AGL from the macOS 26 SDK, so 6.8 cannot link on this image at
+            # all. 6.11 dropped the reference and is what the port is developed
+            # against anyway.
+            qt: "6.11.*"
           - name: Linux
             os: ubuntu-24.04
             preset: linux-debug
+            qt: "6.8.*"
           - name: Windows
             os: windows-2022
             preset: windows-debug
+            qt: "6.8.*"
 
     steps:
       - uses: actions/checkout@v4
@@ -135,10 +143,15 @@ jobs:
         with:
           arch: x64
 
+      # Per-platform, not one version for all three -- see the matrix for why
+      # macOS cannot use 6.8. Keeping Linux and Windows there is deliberate: it
+      # is the only thing standing behind the "Qt 6.5+" claim in the README, and
+      # building everything against the newest Qt would quietly turn that into
+      # "whatever the developers happen to have".
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.8.*"
+          version: ${{ matrix.qt }}
           cache: true
 
       - name: Set up vcpkg

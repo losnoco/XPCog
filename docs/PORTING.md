@@ -160,7 +160,11 @@ worth stating, because each one is a way to get this wrong:
   checked rather than assumed. Failing either test the build falls back to the
   committed `.icns`, which is a degraded path and is reported as one. CI runs on
   `macos-26` for this reason — an older image would still go green while shipping
-  the fallback, which is the failure worth avoiding.
+  the fallback, which is the failure worth avoiding. That move cost a Qt bump on
+  that job alone: Qt 6.8's `QtGui` carries `-framework AGL`, Apple removed AGL
+  from the macOS 26 SDK, and the link fails outright. macOS builds against
+  `6.11.*`; Linux and Windows stay on `6.8.*`, because they are what stands
+  behind the "Qt 6.5+" claim in the README.
 - **Qt has to be stopped from writing the `Info.plist`.** It picks its own
   template only when `MACOSX_BUNDLE_INFO_PLIST` is unset, so `app/Info.plist.in`
   is Qt's file plus the one key, and wants re-checking on a Qt upgrade. Two
