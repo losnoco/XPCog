@@ -20,6 +20,16 @@ Use [`../vendor/`](../vendor) instead when the code is a single file, has been
 modified by Cog, or has no usable upstream — for example Cog's `lpc.c`,
 `hdcd_decode2.c`, and the `dsd2pcm` filter extracted from `ChunkList.m`.
 
+## One trap when adding the first port
+
+A port's manifest is also called `vcpkg.json`. CI's `lukka/run-vcpkg` step finds
+the vcpkg baseline by globbing `**/vcpkg.json`, and when that matches more than
+one file it reads none of them — the job then dies at setup with *"A Git commit
+id for vcpkg's baseline was not found"*, which points at the baseline, which is
+present and correct. Adding `vgmstream` took all four jobs down exactly this way.
+`.github/workflows/ci.yml` now passes `vcpkgJsonIgnores` for `**/ports/**`, so
+further ports here need no change.
+
 ## Known additions
 
 | Port | Why | Milestone |

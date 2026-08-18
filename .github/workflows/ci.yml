@@ -158,6 +158,13 @@ jobs:
         uses: lukka/run-vcpkg@v11
         with:
           runVcpkgInstall: false
+          # An overlay port's manifest is also called vcpkg.json, so the action's
+          # default '**/vcpkg.json' glob finds ours *and* every port under
+          # ports/. Faced with more than one it reads none of them, and the job
+          # dies at setup with "A Git commit id for vcpkg's baseline was not
+          # found" -- which points at the baseline, which is present and fine.
+          # The first overlay port added here took all four jobs down this way.
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
       # The presets already point VCPKG_BINARY_SOURCES at .vcpkg-cache; this is
       # what makes that directory survive between runs. Without it every job
@@ -244,6 +251,13 @@ jobs:
         uses: lukka/run-vcpkg@v11
         with:
           runVcpkgInstall: false
+          # An overlay port's manifest is also called vcpkg.json, so the action's
+          # default '**/vcpkg.json' glob finds ours *and* every port under
+          # ports/. Faced with more than one it reads none of them, and the job
+          # dies at setup with "A Git commit id for vcpkg's baseline was not
+          # found" -- which points at the baseline, which is present and fine.
+          # The first overlay port added here took all four jobs down this way.
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
       # Shares the Linux job's key on purpose: same triplet, same dependencies.
       # Dropping Qt changes what we build, not what vcpkg builds. On the very
