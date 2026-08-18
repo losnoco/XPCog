@@ -446,7 +446,8 @@ private:
 constexpr std::string_view kExtensions[] = {
     "aac", "ac3", "aif", "aifc", "aiff", "alac", "amr", "ape", "asf", "au",
     "caf", "dts", "eac3", "m4a", "m4b",  "mka",  "mkv", "mp4", "mpc", "oma",
-    "opus", "ra", "rm",  "tak",  "tta",  "wav",  "wma", "wv",  "flac", "mp3", "ogg"};
+    "opus", "ra", "rm",  "tak",  "tta",  "wav",  "wma", "wv",  "flac", "mp3",
+    "ogg", "webm"};
 
 constexpr std::string_view kMimeTypes[] = {
     "audio/aac",  "audio/mp4", "audio/x-ms-wma", "audio/ac3",
