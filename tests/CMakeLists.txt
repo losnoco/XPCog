@@ -34,7 +34,27 @@ if(XPCOG_WITH_HTTP)
 endif()
 
 if(XPCOG_WITH_VGMSTREAM)
-    target_sources(xpcog-tests PRIVATE codecs/test_vgmstream.cpp)
+    target_sources(xpcog-tests PRIVATE
+        codecs/test_vgmstream.cpp
+        codecs/test_vgmstream_corpus.cpp)
+
+    # Every fixture these formats need is a rip of copyrighted game audio, so
+    # none of it can live in this repository -- which left the decoder with no
+    # automated decode coverage at all, and its worst bug (every rip decoding to
+    # zero frames, silently) was exactly what a decode test catches first.
+    #
+    # So point the suite at a corpus that already exists on the machine running
+    # it:  -DXPCOG_VGM_CORPUS=D:/vgm
+    #
+    # Unset, the cases skip. CI and every other clone are unaffected and nothing
+    # copyrighted is committed, downloaded or referenced.
+    set(XPCOG_VGM_CORPUS "" CACHE PATH
+        "Folder of game rips to decode in the vgmstream tests; empty to skip")
+    if(XPCOG_VGM_CORPUS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_VGM_CORPUS=\"${XPCOG_VGM_CORPUS}\"")
+        message(STATUS "vgmstream corpus tests: ${XPCOG_VGM_CORPUS}")
+    endif()
 endif()
 
 # Likewise the archive codec: these include its headers and link its objects.

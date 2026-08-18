@@ -1164,10 +1164,23 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
     they are *downloaded* at configure time, which no reproducible build should do.
 
   Verified against a 5,318-file corpus: thirteen formats decode, each to a frame
-  count matching the duration reported, with real audio rather than silence. What
-  is *not* tested in the tree is decoding itself -- every fixture would be a rip
-  of copyrighted game audio -- so the test asserts registration and the priority
-  ordering, and this paragraph is the record of the rest.
+  count matching the duration reported, with real audio rather than silence.
+
+  **The decode tests run against a corpus that is not in this repository.** Every
+  fixture these formats need is a rip of copyrighted game audio, so none can be
+  committed -- which is how the decoder reached a commit with no decode coverage
+  at all, and its worst bug was the kind a decode test catches on the first run.
+  Configuring with `-DXPCOG_VGM_CORPUS=<path>` points the suite at a collection
+  that already exists on the machine; unset, the cases skip, so CI and every
+  other clone are unaffected and nothing copyrighted is committed, downloaded or
+  named. The pattern generalises to any format whose fixtures cannot be shipped.
+
+  Two cases: the opening seconds of a couple of files per format must produce
+  frames *and* a non-zero peak -- silence is what a decoder wired to the wrong
+  sample format hands back, and it would pass a frames-only check -- and the
+  shortest file in the corpus is decoded whole, its frame count compared exactly
+  against the duration reported up front, since that number drives the seek bar
+  and a decoder can produce good audio while lying about its length.
 
 **Then:**
 
