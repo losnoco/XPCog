@@ -71,6 +71,61 @@ std::vector<std::uint8_t> tinyMidi() {
     return out;
 }
 
+/// A format-2 file: two independent sequences, of different lengths.
+///
+/// Format 2 is the one case where a Standard MIDI file is several songs rather
+/// than several parts of one, and it is what XMI is mapped onto -- so this is
+/// the fixture that makes subsongs real without needing an XMI to hand.
+std::vector<std::uint8_t> formatTwoMidi() {
+    const auto be16 = [](std::vector<std::uint8_t>& v, std::uint16_t x) {
+        v.push_back(static_cast<std::uint8_t>(x >> 8));
+        v.push_back(static_cast<std::uint8_t>(x & 0xFF));
+    };
+    const auto be32 = [](std::vector<std::uint8_t>& v, std::uint32_t x) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            v.push_back(static_cast<std::uint8_t>((x >> shift) & 0xFF));
+        }
+    };
+
+    // One sequence: a note held for `quarters` quarter-notes, named `name`.
+    const auto sequence = [](const std::string& name, int quarters) {
+        std::vector<std::uint8_t> track;
+        track.insert(track.end(), {0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20});
+        track.insert(track.end(), {0x00, 0xFF, 0x03,
+                                   static_cast<std::uint8_t>(name.size())});
+        track.insert(track.end(), name.begin(), name.end());
+        track.insert(track.end(), {0x00, 0x90, 0x3C, 0x64});
+        // A variable-length delta of quarters * 480 ticks.
+        const std::uint32_t delta = static_cast<std::uint32_t>(quarters) * 480U;
+        std::vector<std::uint8_t> vlq;
+        std::uint32_t             value = delta;
+        vlq.push_back(static_cast<std::uint8_t>(value & 0x7F));
+        while ((value >>= 7) != 0) {
+            vlq.push_back(static_cast<std::uint8_t>((value & 0x7F) | 0x80));
+        }
+        track.insert(track.end(), vlq.rbegin(), vlq.rend());
+        track.insert(track.end(), {0x80, 0x3C, 0x00});
+        track.insert(track.end(), {0x00, 0xFF, 0x2F, 0x00});
+        return track;
+    };
+
+    const auto first  = sequence("First", 2);   // one second at 120 bpm
+    const auto second = sequence("Second", 4);  // two seconds
+
+    std::vector<std::uint8_t> out;
+    out.insert(out.end(), {'M', 'T', 'h', 'd'});
+    be32(out, 6);
+    be16(out, 2);    // format 2: independent sequences
+    be16(out, 2);    // two of them
+    be16(out, 480);
+    for (const auto& track : {first, second}) {
+        out.insert(out.end(), {'M', 'T', 'r', 'k'});
+        be32(out, static_cast<std::uint32_t>(track.size()));
+        out.insert(out.end(), track.begin(), track.end());
+    }
+    return out;
+}
+
 std::vector<std::uint8_t> readFile(const fs::path& path) {
     std::vector<std::uint8_t> bytes;
     std::FILE*                f = std::fopen(path.string().c_str(), "rb");
@@ -160,6 +215,32 @@ TEST_CASE("the event stream comes out in order and in samples", "[midi]") {
     // library's own seconds being passed through as if they were samples.
     CHECK(static_cast<double>(events.back().timestampSamples) ==
           Catch::Approx(44100.0).margin(2205.0));
+}
+
+TEST_CASE("a format-2 file is several songs, not several parts", "[midi]") {
+    codecs::MidiFile file;
+    REQUIRE(file.parse(formatTwoMidi(), "mid"));
+
+    // Two, because format 2 says the tracks are independent. Everything else --
+    // format 0 and format 1 -- is one song however many tracks it has, and
+    // midi_container draws that line itself: every path that is not form 2
+    // writes to channel mask zero, so the count falls out of the parse rather
+    // than out of a rule stated twice.
+    REQUIRE(file.subsongCount() == 2);
+
+    // Different lengths, which is what proves the subsong index reaches
+    // get_timestamp_end rather than being accepted and ignored. A decoder that
+    // dropped it would report the first song's duration for both and look
+    // entirely healthy doing it -- the failure the QSF core was caught by.
+    CHECK(file.duration(0) == Catch::Approx(1.0).margin(0.05));
+    CHECK(file.duration(1) == Catch::Approx(2.0).margin(0.05));
+
+    // And the same for metadata and the event stream, so all three accessors
+    // are known to address the song they were asked for.
+    CHECK(file.metadata(0).first("title") == "First");
+    CHECK(file.metadata(1).first("title") == "Second");
+    CHECK(file.stream(1, 44100.0).back().timestampSamples >
+          file.stream(0, 44100.0).back().timestampSamples);
 }
 
 TEST_CASE("a file that is not MIDI is refused", "[midi]") {

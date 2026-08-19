@@ -82,11 +82,23 @@ MetadataMap MidiFile::metadata(std::size_t subsong) const {
         std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
         });
-        if (key == "track_name_00" || key == "title") {
-            tags.set("title", item.m_value);
-        } else {
-            tags.add(key, item.m_value);
+        // A track name becomes the title, and which track carries it depends on
+        // the subsong: get_meta_data names these `track_name_NN` by *track*
+        // index, and for a format-2 file it emits only the one track that is
+        // this subsong -- so song 1's name is `track_name_01` and nothing is
+        // called `track_name_00` at all. Matching the prefix rather than the
+        // first index is what makes a subsong past the first have a name.
+        //
+        // A format-1 file can name several of its tracks. The first stands as
+        // the title and the rest are kept under their own keys, which is the
+        // same choice Cog makes.
+        if (key == "title" || key.rfind("track_name_", 0) == 0) {
+            if (tags.first("title").empty()) {
+                tags.set("title", item.m_value);
+                continue;
+            }
         }
+        tags.add(key, item.m_value);
     }
     return tags;
 }
