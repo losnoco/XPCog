@@ -87,8 +87,13 @@ bool AudioEngine::openTrack(const Url& url) {
     // Only then. A file's tags come from the metadata readers, which are better
     // at it than a decoder is, and republishing the decoder's would overwrite
     // them with a second opinion every time the track started.
-    decoderTagsDirty_.store(track->decoder->properties().totalFrames <= 0,
-                            std::memory_order_release);
+    const TrackProperties properties = track->decoder->properties();
+    decoderTagsDirty_.store(properties.totalFrames <= 0, std::memory_order_release);
+
+    // What this decoder counts frames in. Everything the engine tracks is in
+    // device frames; the decoder's own units only appear at the two ends of a
+    // seek, and this is what converts between them.
+    trackRate_.store(properties.format.sampleRate, std::memory_order_release);
     {
         const std::lock_guard lock(trackMutex_);
         track_ = std::move(track);
@@ -664,7 +669,15 @@ void AudioEngine::performSeek(std::int64_t frame) {
     // position for three seconds after every seek. It is taken below instead,
     // once the consumer has acknowledged the flush and framesPlayed() is
     // truthful again.
-    pendingSeekTrack_ = static_cast<std::uint64_t>(reached);
+    // Back into device frames, which is what the position clock is measured in
+    // -- `reached` is the decoder's answer in the decoder's own units. For
+    // everything but DSD the ratio is 1.
+    const double trackRate = trackRate_.load(std::memory_order_acquire);
+    const double scale     = (trackRate > 0.0 && format_.sampleRate > 0.0)
+                                 ? format_.sampleRate / trackRate
+                                 : 1.0;
+    pendingSeekTrack_ =
+        static_cast<std::uint64_t>(static_cast<double>(reached) * scale);
     seekBasePending_  = true;
 }
 
@@ -672,7 +685,13 @@ bool AudioEngine::seek(double seconds) {
     if (status_.load(std::memory_order_relaxed) == PlaybackStatus::Stopped) {
         return false;
     }
-    const double rate = format_.sampleRate;
+    // The *decoder's* rate, not the device's. IDecoder::seek() counts in the
+    // frames the decoder produces, and for DSD that is 705,600 a second against
+    // a device running at 48,000 -- so using the device's rate here asked for a
+    // position fourteen times too early, which is what "the seeking is way off"
+    // looked like. Every PCM file has the two rates equal, which is why this
+    // survived until now.
+    const double rate = trackRate_.load(std::memory_order_acquire);
     if (rate <= 0.0) {
         return false;
     }

@@ -47,9 +47,12 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <thread>
+#include <string_view>
 #include <vector>
 
 using Catch::Approx;
@@ -112,6 +115,73 @@ constexpr bool kHaveDsdFile = true;
 constexpr bool kHaveDsdFile = false;
 [[nodiscard]] fs::path dsdFile() { return {}; }
 #endif
+
+
+// ---------------------------------------------------------------------------
+// A decoder that counts frames faster than the device does
+// ---------------------------------------------------------------------------
+// Everything below could be done with a real DSD file, and one case does that.
+// This one does not need it, and it is sharper: what is asserted is the frame
+// number the engine *asks the decoder for*, which is the number that was wrong.
+
+std::atomic<std::int64_t> g_seekRequest{-1};
+
+class FakeDsdDecoder final : public xpcog::IDecoder {
+public:
+    bool open(xpcog::ISource* /*source*/) override { return true; }
+
+    [[nodiscard]] xpcog::TrackProperties properties() const override {
+        xpcog::TrackProperties props;
+        props.format.sampleRate    = kDsdRate;
+        props.format.channels      = 2;
+        props.format.channelConfig = 0x3;
+        props.format.format        = xpcog::SampleFormat::DSD;
+        props.format.bitsPerSample = 1;
+        // Ten minutes of it, so a seek to a minute in is well inside.
+        props.totalFrames = static_cast<std::int64_t>(kDsdRate * 600.0);
+        props.seekable    = true;
+        props.codec       = "FakeDSD";
+        return props;
+    }
+
+    bool readAudio(xpcog::AudioChunk& out) override {
+        constexpr std::size_t kFrames = 4096;
+        out.clear();
+        out.setFormat(properties().format);
+        std::byte* bytes = out.allocFrames(kFrames);
+        // DSD silence, so nothing here can be mistaken for a signal.
+        std::fill_n(bytes, kFrames * 2, std::byte{0xAA});
+        out.setFrameCount(kFrames);
+        position_ += static_cast<std::int64_t>(kFrames);
+        return true;
+    }
+
+    std::int64_t seek(std::int64_t frame) override {
+        g_seekRequest.store(frame, std::memory_order_release);
+        position_ = frame;
+        return frame;
+    }
+
+    void close() override {}
+
+private:
+    std::int64_t position_ = 0;
+};
+
+constexpr std::string_view kFakeExtensions[] = {"fakedsd"};
+
+/// A file for the fake decoder to be handed. Its contents do not matter -- the
+/// decoder ignores the source -- but the registry opens it, so it has to exist.
+[[nodiscard]] fs::path fakeTrackFile() {
+    const fs::path dir = fs::temp_directory_path() / "xpcog-dsd-tests";
+    fs::create_directories(dir);
+    const fs::path path = dir / "fake.fakedsd";
+    if (std::FILE* file = std::fopen(path.string().c_str(), "wb")) {
+        std::fputc(0, file);
+        std::fclose(file);
+    }
+    return path;
+}
 
 }  // namespace
 
@@ -275,4 +345,48 @@ TEST_CASE("a DSD track actually plays", "[audio][dsd]") {
     INFO("peak " << peak << " over " << played.size() << " samples");
     CHECK(peak > 0.001F);
     CHECK(peak < 4.0F);
+}
+
+TEST_CASE("a seek asks the decoder for the decoder's own frames",
+          "[audio][dsd][seek]") {
+    // Before registerAllCodecs, which ends in freeze() -- adding a decoder after
+    // that asserts, and an assert in a test is a dialog box on somebody's screen.
+    xpcog::PluginRegistry registry;
+    registry.addDecoder(xpcog::DecoderDescriptor{
+        .name       = "FakeDsdDecoder",
+        .extensions = kFakeExtensions,
+        .create     = [] { return xpcog::DecoderPtr{new FakeDsdDecoder()}; },
+    });
+    xpcog::registerAllCodecs(registry);
+
+    const fs::path path = fakeTrackFile();
+
+    xpcog::RingBuffer  ring(48000 * 2);
+    auto               output = xpcog::makeOfflineOutput(ring);
+    auto               store  = xpcog::makeMemorySettingsStore();
+    xpcog::Settings    settings(*store);
+    xpcog::AudioEngine engine(registry, *output, ring, settings);
+
+    g_seekRequest.store(-1, std::memory_order_release);
+    REQUIRE(engine.play(xpcog::Url::fromLocalPath(path)));
+
+    // The device is not running at the track's rate and cannot: 705,600 Hz is
+    // past what any backend accepts, so the engine fell back. That gap is
+    // exactly what a seek has to cross.
+    REQUIRE(output->negotiatedFormat().sampleRate != kDsdRate);
+
+    REQUIRE(engine.seek(60.0));
+    for (int spin = 0; spin < 400 && g_seekRequest.load(std::memory_order_acquire) < 0;
+         ++spin) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    const std::int64_t asked = g_seekRequest.load(std::memory_order_acquire);
+    engine.stop();
+
+    // A minute in, counted the way the decoder counts. Measured against the
+    // device's rate instead, this asked for 2,880,000 -- four seconds of music
+    // where a minute was wanted, which is what "the seeking is way off" was.
+    REQUIRE(asked >= 0);
+    INFO("asked for frame " << asked << ", a minute is " << (kDsdRate * 60.0));
+    CHECK(static_cast<double>(asked) == Approx(kDsdRate * 60.0).epsilon(0.001));
 }

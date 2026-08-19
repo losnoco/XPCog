@@ -268,6 +268,14 @@ private:
 
     /// Frame the feeder should jump to, or -1 for none. Written by any thread,
     /// consumed by the feeder.
+    /// The rate the *decoder* counts frames in, which is not always the rate the
+    /// device runs at. They agreed for every PCM file, so the difference went
+    /// unnoticed until DSD: 705,600 Hz of one-bit audio into a device running
+    /// at 48,000, and a seek to a minute in asked the decoder for four seconds.
+    /// Set wherever a decoder is installed -- openTrack() is the only place --
+    /// and read from the caller's thread, hence atomic.
+    std::atomic<double> trackRate_{0.0};
+
     std::atomic<std::int64_t> pendingSeek_{-1};
 
     /// Frames the device had played when the seek landed, and where in the track
