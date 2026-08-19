@@ -13,6 +13,10 @@ PanelFeed& PanelFeed::instance() {
     return *feed;
 }
 
+bool PanelFeed::producing() const noexcept {
+    return produced_.load(std::memory_order_relaxed);
+}
+
 bool PanelFeed::wanted() const noexcept {
     return wanted_.load(std::memory_order_relaxed);
 }
@@ -20,7 +24,13 @@ bool PanelFeed::wanted() const noexcept {
 void PanelFeed::setWanted(bool wanted) noexcept {
     wanted_.store(wanted, std::memory_order_relaxed);
     if (!wanted) {
-        clear();
+        // Drop the queued states, which describe a panel nobody is looking at
+        // -- but keep knowing which track is audible. Forgetting that as well
+        // meant a display closed and reopened during one track stayed empty
+        // until the *next* track began, because nothing else ever says which
+        // one is playing.
+        flush();
+        produced_.store(false, std::memory_order_relaxed);
     }
 }
 
@@ -39,6 +49,8 @@ void PanelFeed::post(const Url& track, double seconds,
         tracks_.push_back(Track{track, {}});
         it = std::prev(tracks_.end());
     }
+
+    produced_.store(true, std::memory_order_relaxed);
 
     PanelFrame frame;
     frame.seconds = seconds;
@@ -107,6 +119,7 @@ void PanelFeed::clear() {
     tracks_.clear();
     audible_     = Url{};
     haveAudible_ = false;
+    produced_.store(false, std::memory_order_relaxed);
 }
 
 }  // namespace xpcog

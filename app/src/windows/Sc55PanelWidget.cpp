@@ -88,6 +88,11 @@ void Sc55PanelWidget::tick() {
     }
     auto frames = PanelFeed::instance().take(position_());
     if (frames.empty()) {
+        // Still worth a repaint while there is no frame: the explanation drawn
+        // in its place can change without any frame ever arriving.
+        if (!haveFrame_) {
+            update();
+        }
         return;
     }
 
@@ -108,6 +113,18 @@ void Sc55PanelWidget::paintEvent(QPaintEvent* /*event*/) {
     QPainter painter(this);
     painter.fillRect(rect(), palette().window());
     if (!haveFrame_) {
+        // An empty panel has two completely different causes and they look the
+        // same, so it says which. "Nothing has been produced" means the track
+        // is not playing on a machine that has a front panel -- the OPL3 has
+        // none -- and no amount of waiting will change that.
+        painter.setPen(palette().color(QPalette::Disabled, QPalette::WindowText));
+        const QString message =
+            PanelFeed::instance().producing()
+                ? tr("Waiting for the panel…")
+                : tr("Nothing is playing on the SC-55.\n\nChoose it under "
+                     "Preferences → MIDI; the OPL3 synthesisers have no display.");
+        painter.drawText(rect().adjusted(12, 12, -12, -12),
+                         Qt::AlignCenter | Qt::TextWordWrap, message);
         return;
     }
 

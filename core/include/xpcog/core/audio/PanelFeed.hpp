@@ -98,6 +98,14 @@ public:
     /// answer the same question; this one does not have to estimate.
     [[nodiscard]] std::vector<PanelFrame> take(double seconds);
 
+    /// Whether anything has ever been posted since the display was switched on.
+    ///
+    /// For telling "nothing is producing" apart from "producing, nothing due
+    /// yet" -- which from a blank panel look identical, and have completely
+    /// different causes: the first means this track is not on a machine with a
+    /// front panel at all.
+    [[nodiscard]] bool producing() const noexcept;
+
     /// Drops everything. For a seek, where every queued frame describes a
     /// moment that is no longer coming.
     void flush();
@@ -131,6 +139,7 @@ private:
     Url                audible_;
     bool               haveAudible_ = false;
     std::atomic<bool>  wanted_{false};
+    std::atomic<bool>  produced_{false};
 };
 
 }  // namespace xpcog

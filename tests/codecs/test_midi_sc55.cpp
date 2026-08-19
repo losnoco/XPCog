@@ -393,3 +393,47 @@ TEST_CASE("nothing feeds the panel when nothing is displaying it",
     CHECK(feed.take(60.0).empty());
     feed.clear();
 }
+
+TEST_CASE("opening the panel part-way through a track starts feeding it",
+          "[midi][sc55]") {
+    if (!kHaveRoms || !fs::exists(romPath())) {
+        SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
+    }
+
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+    feed.setWanted(false);
+
+    Harness harness;
+    harness.settings.setMidiPlugin("NukeSc55");
+    harness.settings.setMidiRomPath(romPath().string());
+
+    const auto path = writeFixture("sc55-late.mid", tinyMidi());
+    const Url  url  = Url::fromLocalPath(path);
+    feed.setAudibleTrack(url);
+
+    PluginRegistry::OpenResult opened = harness.registry.open(url);
+    REQUIRE(opened);
+
+    // Play a little with the display closed, which is the ordinary case: a
+    // panel nobody has opened costs the emulator nothing.
+    AudioChunk chunk;
+    REQUIRE(opened.decoder->readAudio(chunk));
+    CHECK(feed.take(60.0).empty());
+
+    // Now open it. The decoder asks per read rather than latching at open, so
+    // this has to start working without waiting for the next track -- which is
+    // the whole reason it is asked per read.
+    feed.setWanted(true);
+    for (int i = 0; i < 200 && !feed.producing(); ++i) {
+        if (!opened.decoder->readAudio(chunk)) {
+            break;
+        }
+    }
+
+    CHECK(feed.producing());
+    CHECK_FALSE(feed.take(60.0).empty());
+
+    feed.setWanted(false);
+    feed.clear();
+}

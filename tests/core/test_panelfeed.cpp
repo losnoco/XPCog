@@ -163,3 +163,50 @@ TEST_CASE("switching the display off stops the feed and empties it",
     CHECK_FALSE(feed.wanted());
     CHECK(feed.take(60.0).empty());
 }
+
+TEST_CASE("closing and reopening the display during a track still shows it",
+          "[panelfeed]") {
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+
+    const Url one = track("one.mid");
+    feed.setWanted(true);
+    feed.setAudibleTrack(one);
+    feed.post(one, 1.0, blob(1));
+    CHECK(feed.take(60.0).size() == 1);
+
+    // Switching off drops what was queued -- nobody is looking at it. What it
+    // must not drop is *which track is playing*: nothing else ever says so
+    // except a track beginning, so forgetting it here left a panel that had
+    // been closed and reopened mid-track empty until the next track started.
+    feed.setWanted(false);
+    feed.setWanted(true);
+
+    feed.post(one, 2.0, blob(2));
+    const auto due = feed.take(60.0);
+    REQUIRE(due.size() == 1);
+    CHECK(first(due[0]) == 2);
+
+    feed.setWanted(false);
+    feed.clear();
+}
+
+TEST_CASE("a display can tell 'nothing produces one' from 'nothing yet'",
+          "[panelfeed]") {
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+    feed.setWanted(true);
+
+    // The two look identical on screen -- a blank panel -- and mean completely
+    // different things: one is a track on a synthesiser with no display at all.
+    CHECK_FALSE(feed.producing());
+
+    const Url one = track("one.mid");
+    feed.setAudibleTrack(one);
+    feed.post(one, 1.0, blob(1));
+    CHECK(feed.producing());
+
+    feed.setWanted(false);
+    CHECK_FALSE(feed.producing());
+    feed.clear();
+}
