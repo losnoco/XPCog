@@ -1,0 +1,10 @@
+{
+  "name": "libsidplayfp",
+  "version-string": "2.3.1-kode54-519d120",
+  "description": "libsidplayfp, the C64 SID player library, reSIDfp emulation only. kode54's fork, pinned to the commit Cog's sidplay plugin is built against.",
+  "homepage": "https://github.com/libsidplayfp/libsidplayfp",
+  "license": "GPL-2.0-or-later",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true }
+  ]
+}

@@ -1498,6 +1498,33 @@ All of these are also documented at the call site.
 
 **Behaviour**
 
+- **SID playback is reproducible; Cog's is not.** `SidConfig::DEFAULT_POWER_ON_DELAY`
+  is deliberately one past `MAX_POWER_ON_DELAY`, and libsidplayfp reads anything
+  above the maximum as *pick one at random*, from a generator seeded with
+  `time(0)`. It models something true -- a C64 does not come up in the same state
+  twice, and a tune reading uninitialised memory sounds slightly different each
+  time it is switched on -- but for a music player it means the same file decodes
+  to different samples on every run. XPCog pins the delay to the middle of the
+  valid range.
+
+  Getting it to take effect needs the calls in the opposite order to Cog's.
+  `Player::config()` calls `initialise()` and only *then* assigns `m_cfg = cfg`,
+  so a `config()` made while a tune is loaded initialises from the previous
+  settings and stores the new ones for next time. Configure first, with no tune
+  loaded, and that block is skipped; `load()` then re-configures with `force`
+  set, by which point `m_cfg` is the intended one. Measured rather than reasoned:
+  with Cog's order the effective delay came back as a fresh random number per run,
+  which is visible in `SidInfo::powerOnDelay()`.
+
+  One source of variation remains and is upstream's. Two decodes of the same
+  tune *within one process* diverge by a single LSB inside the first twenty
+  samples, while a fresh process is reproducible -- the signature of a member
+  reSIDfp does not initialise, reading zeroed pages the first time and the
+  previous decode's heap afterwards. Not chased down, but recorded here and
+  worked around in `tests/codecs/test_sid.cpp`, which compares how *much* two
+  subsongs differ rather than whether they differ at all. That matters: written
+  as an exact comparison first, the test passed with `selectSong()` sabotaged.
+
 - **Sort order is display-only and never changes playback order.** In Cog, shuffle
   and next/previous operate on `arrangedObjects` — the *sorted* order — a
   long-standing source of confusion. `xpcog::Playlist` owns canonical order and the

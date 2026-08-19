@@ -68,6 +68,12 @@
           ]
         }
       ]
+    },
+    "sid": {
+      "description": "libsidplayfp: the C64 SID core behind the .sid decoder",
+      "dependencies": [
+        "libsidplayfp"
+      ]
     }
   }
 }

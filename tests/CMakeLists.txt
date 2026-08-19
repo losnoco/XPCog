@@ -57,6 +57,20 @@ if(XPCOG_WITH_VGMSTREAM)
     endif()
 endif()
 
+if(XPCOG_WITH_SID)
+    target_sources(xpcog-tests PRIVATE codecs/test_sid.cpp)
+
+    # Its own corpus variable rather than XPCOG_PSF_CORPUS: a SID collection is
+    # not a folder of rips of anything else, and HVSC is the one everybody has.
+    set(XPCOG_SID_CORPUS "" CACHE PATH
+        "Folder of .sid files for the SID tests; empty to skip")
+    if(XPCOG_SID_CORPUS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_SID_CORPUS=\"${XPCOG_SID_CORPUS}\"")
+        message(STATUS "SID corpus tests: ${XPCOG_SID_CORPUS}")
+    endif()
+endif()
+
 if(XPCOG_WITH_PSF)
     target_sources(xpcog-tests PRIVATE codecs/test_psf.cpp codecs/test_usf.cpp
                                        codecs/test_gsf.cpp

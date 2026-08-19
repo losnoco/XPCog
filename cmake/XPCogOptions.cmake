@@ -24,6 +24,7 @@ option(XPCOG_WITH_GME       "Game music rips (Game_Music_Emu)" ON)
 option(XPCOG_WITH_ARCHIVE   "Archive source (libarchive)" ON)
 option(XPCOG_WITH_VGMSTREAM "Video-game streamed audio (vgmstream)" OFF)
 option(XPCOG_WITH_PSF       "PSF container (HighlyComplete; cores land separately)" OFF)
+option(XPCOG_WITH_SID       "Commodore 64 tunes (libsidplayfp)" OFF)
 
 # Sanitizers are opt-in; the RT-safety work in M1a wants them available early.
 set(XPCOG_SANITIZE "" CACHE STRING "Sanitizers, e.g. address;undefined")
