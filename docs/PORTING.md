@@ -795,13 +795,41 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   this reason -- and still requires the rest in order, with none dropped or
   repeated, since either would look exactly like the feature working.
 
-  **Two gaps left, both in FFmpeg rather than here.** `libavformat/mp3dec.c` has
-  no mid-stream ID3 handling at all, so an MP3 rendition surfaces only its first
-  tag; and ID3 inside MPEG-TS arrives as a separate `AV_CODEC_ID_TIMED_ID3`
-  stream, which this decoder ignores. Cog patches neither -- its
-  `0006-hls-live-id3-metadata.patch` fixes FFmpeg's own `hls.c` demuxer, which
-  XPCog never uses, since the HLS decoder here replaces it and hands FFmpeg raw
-  concatenated segments instead.
+  **MPEG-TS carries the same tags a different way, and that half is ours.** A
+  transport-stream rendition does not splice ID3 into the audio -- it declares a
+  second elementary stream of `stream_type` 0x15, which libavformat surfaces as
+  `AV_CODEC_ID_TIMED_ID3` and whose packets are each a complete ID3v2 tag. It
+  parses none of them: `ff_id3v2_read_dict` is internal, and the only public
+  alternative is a nested `AVFormatContext` per packet. So `codecs/common/Id3v2`
+  is a parser that takes bytes, and `FFmpegDecoder` routes those packets into it.
+
+  It reads text frames, comments and lyrics, under the same key names FFmpeg's
+  own reader produces, so a tag parsed here merges with one the demuxer
+  harvested rather than sitting beside it. **`PRIV` is dropped on purpose**, and
+  that is the load-bearing decision: every HLS transport-stream segment carries
+  `com.apple.streaming.transportStreamTimestamp` in one, and its value moves
+  every segment -- keeping it would rename the playing track every few seconds
+  for the entire broadcast. Announcement is also gated on the tag map actually
+  changing, since a station repeats its current title in every segment. One test
+  covers each of those two, and both pass without either guard if the check is
+  only "a title arrived".
+
+  The parser is small but the parts that are wrong quietly are all here: a frame
+  size is 24-bit in ID3v2.2, plain 32-bit in .3 and syncsafe in .4 (with the
+  fallback FFmpeg also carries, for taggers that write .4 sizes the .3 way), and
+  a text frame's encoding may be Latin-1, UTF-16 either way round, or UTF-8.
+  Read wrong, none of it stops a stream playing -- it yields a tag that is merely
+  mis-decoded or one frame short. Hence a test per case.
+
+  The MPEG-TS fixture is built with libavformat rather than the `ffmpeg` binary,
+  because there is no way to ask the CLI for one: only the mpegts *demuxer* ever
+  produces a timed-ID3 stream, so nothing exists to feed the muxer from.
+
+  **One gap left, and it is FFmpeg's.** `libavformat/mp3dec.c` has no mid-stream
+  ID3 handling at all, so an MP3 rendition surfaces only its first tag. Cog does
+  not patch this either -- its `0006-hls-live-id3-metadata.patch` fixes FFmpeg's
+  own `hls.c` demuxer, which XPCog never uses, since the HLS decoder here
+  replaces it and hands FFmpeg raw concatenated segments instead.
 
 - **HTTP Live Streaming.** Port of Cog `Plugins/HLS/`. HLS is not an audio
   format -- an `.m3u8` is a manifest naming a sequence of ordinary media files --

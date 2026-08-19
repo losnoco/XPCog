@@ -25,6 +25,7 @@ add_executable(xpcog-tests
     codecs/test_containers.cpp
     codecs/test_cuesheet.cpp
     codecs/test_gme_sidecar.cpp
+    codecs/test_id3v2.cpp
 )
 
 # Guarded because the HTTP source is an option: without it the headers under
@@ -33,8 +34,13 @@ if(XPCOG_WITH_HTTP)
     target_sources(xpcog-tests PRIVATE codecs/test_httpsource.cpp)
 endif()
 
+# The mid-stream tag tests build their own MPEG-TS fixture with libavformat:
+# only the mpegts demuxer ever produces a timed-ID3 stream, so there is nothing
+# to feed the muxer from through the ffmpeg binary.
 if(XPCOG_WITH_FFMPEG)
+    find_package(FFMPEG REQUIRED)
     target_sources(xpcog-tests PRIVATE codecs/test_ffmpeg_stream_tags.cpp)
+    target_include_directories(xpcog-tests SYSTEM PRIVATE ${FFMPEG_INCLUDE_DIRS})
 endif()
 
 # Guarded for the same reason as the HTTP source: without HLS the headers under

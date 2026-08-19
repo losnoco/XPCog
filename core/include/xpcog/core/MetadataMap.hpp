@@ -23,6 +23,11 @@ public:
     struct Entry {
         std::string key;
         MetaValue   value;
+
+        /// Needed for MetadataMap's own comparison below, which is only defined
+        /// when the element type has one -- so without this the map compares
+        /// only in code that never instantiates it.
+        [[nodiscard]] friend bool operator==(const Entry&, const Entry&) = default;
     };
 
     /// Replaces any existing value for `key`.

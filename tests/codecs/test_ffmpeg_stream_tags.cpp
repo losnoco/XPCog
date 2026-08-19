@@ -20,6 +20,13 @@
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Url.hpp"
 
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/log.h>
+#include <libavutil/mathematics.h>
+}
+
 #include "../TestShell.hpp"
 #include "../TestSignal.hpp"
 
@@ -262,6 +269,105 @@ std::filesystem::path buildTaggedHlsStream() {
     return manifest;
 }
 
+/// Remuxes the ADTS fixture into MPEG-TS with a second elementary stream of
+/// AV_CODEC_ID_TIMED_ID3, carrying one complete ID3v2 tag at each of `at`
+/// seconds. Empty when the fixture cannot be built.
+///
+/// Built with libavformat rather than the ffmpeg binary because there is no way
+/// to ask the CLI for this: only the mpegts demuxer ever produces a timed-ID3
+/// stream, so nothing exists to feed the muxer from.
+std::filesystem::path buildTimedId3Ts(
+    const std::vector<std::pair<double, std::string>>& at) {
+    const auto out = fixtureDir() / "timed.ts";
+    if (std::filesystem::exists(out)) {
+        return out;
+    }
+    if (buildTaggedStream().empty()) {
+        return {};
+    }
+    const auto source = fixtureDir() / "plain.aac";
+
+    // The decoder quiets FFmpeg when it first opens something, but this runs
+    // before that and would otherwise print muxer diagnostics into the test log.
+    av_log_set_level(AV_LOG_QUIET);
+
+    AVFormatContext* input = nullptr;
+    if (avformat_open_input(&input, source.string().c_str(), nullptr, nullptr) < 0) {
+        return {};
+    }
+    if (avformat_find_stream_info(input, nullptr) < 0) {
+        avformat_close_input(&input);
+        return {};
+    }
+    const int audioIn = av_find_best_stream(input, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+    if (audioIn < 0) {
+        avformat_close_input(&input);
+        return {};
+    }
+
+    AVFormatContext* output = nullptr;
+    if (avformat_alloc_output_context2(&output, nullptr, "mpegts",
+                                       out.string().c_str()) < 0 ||
+        output == nullptr) {
+        avformat_close_input(&input);
+        return {};
+    }
+
+    AVStream* audioOut = avformat_new_stream(output, nullptr);
+    avcodec_parameters_copy(audioOut->codecpar, input->streams[audioIn]->codecpar);
+    audioOut->codecpar->codec_tag = 0;
+
+    AVStream* metaOut               = avformat_new_stream(output, nullptr);
+    metaOut->codecpar->codec_type = AVMEDIA_TYPE_DATA;
+    metaOut->codecpar->codec_id   = AV_CODEC_ID_TIMED_ID3;
+
+    if (avio_open(&output->pb, out.string().c_str(), AVIO_FLAG_WRITE) < 0 ||
+        avformat_write_header(output, nullptr) < 0) {
+        avformat_close_input(&input);
+        avformat_free_context(output);
+        return {};
+    }
+
+    AVPacket*   packet = av_packet_alloc();
+    std::size_t next   = 0;
+    while (av_read_frame(input, packet) >= 0) {
+        if (packet->stream_index != audioIn) {
+            av_packet_unref(packet);
+            continue;
+        }
+
+        const AVRational sourceBase = input->streams[audioIn]->time_base;
+        const double     seconds    = static_cast<double>(packet->pts) * av_q2d(sourceBase);
+
+        while (next < at.size() && seconds >= at[next].first) {
+            const auto                tagBytes = id3v2TitleTag(at[next].second);
+            AVPacket*                 tag      = av_packet_alloc();
+            av_new_packet(tag, static_cast<int>(tagBytes.size()));
+            std::memcpy(tag->data, tagBytes.data(), tagBytes.size());
+            tag->stream_index = metaOut->index;
+            tag->pts = tag->dts =
+                av_rescale_q(packet->pts, sourceBase, metaOut->time_base);
+            tag->flags |= AV_PKT_FLAG_KEY;
+            av_interleaved_write_frame(output, tag);
+            av_packet_free(&tag);
+            ++next;
+        }
+
+        av_packet_rescale_ts(packet, sourceBase, audioOut->time_base);
+        packet->stream_index = audioOut->index;
+        av_interleaved_write_frame(output, packet);
+        av_packet_unref(packet);
+    }
+
+    av_write_trailer(output);
+    av_packet_free(&packet);
+    avio_closep(&output->pb);
+    avformat_free_context(output);
+    avformat_close_input(&input);
+
+    return std::filesystem::exists(out) ? out : std::filesystem::path{};
+}
+
 const bool kHaveHls = [] {
     const auto extensions = registry().allExtensions();
     return std::find(extensions.begin(), extensions.end(), "m3u8") != extensions.end();
@@ -403,4 +509,74 @@ TEST_CASE("an HLS rendition's per-segment tags reach the playlist",
     REQUIRE(observed.size() <= expected.size());
     CHECK(std::equal(observed.begin(), observed.end(),
                      expected.end() - static_cast<std::ptrdiff_t>(observed.size())));
+}
+
+TEST_CASE("MPEG-TS timed metadata renames the playing track",
+          "[ffmpeg][streamtags]") {
+    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+
+    // The other way HLS carries a now-playing title. A packed-audio rendition
+    // splices ID3 into the audio, where the ADTS demuxer parses it; a transport
+    // stream puts it in an elementary stream of its own (stream_type 0x15),
+    // where libavformat hands over the bytes and parses nothing -- so this is
+    // the path that needs our own ID3 reader.
+    const auto path = buildTimedId3Ts({{1.0, "Second Number"}, {2.5, "Third Number"}});
+    if (path.empty()) SKIP("ffmpeg not available to build an MPEG-TS fixture");
+
+    auto opened = registry().open(Url::fromLocalPath(path));
+    REQUIRE(opened);
+
+    std::vector<std::string> titles;
+    opened.decoder->setChangeCallback([&](bool propertiesChanged, bool metadataChanged) {
+        CHECK_FALSE(propertiesChanged);
+        if (metadataChanged) {
+            titles.emplace_back(opened.decoder->metadata().first("title"));
+        }
+    });
+
+    AudioChunk  chunk;
+    std::size_t frames = 0;
+    while (opened.decoder->readAudio(chunk)) {
+        frames += chunk.frameCount();
+    }
+    REQUIRE(frames > 0);
+
+    // Unlike the in-band case, these arrive as ordinary packets, so they are
+    // reported as the stream is read rather than during the probe.
+    CHECK(titles == std::vector<std::string>{"Second Number", "Third Number"});
+}
+
+TEST_CASE("MPEG-TS timed metadata that repeats is announced once",
+          "[ffmpeg][streamtags]") {
+    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+
+    // Every HLS transport-stream segment carries a timed-ID3 packet whether or
+    // not the programme moved on -- with the Apple timestamp PRIV frame in it,
+    // whose value changes every time. A reader that announced each packet, or
+    // that kept PRIV, would rename the track every few seconds for the whole
+    // broadcast.
+    std::filesystem::remove(fixtureDir() / "timed.ts");
+    const auto path = buildTimedId3Ts({{0.5, "Only Track"},
+                                       {1.0, "Only Track"},
+                                       {1.5, "Only Track"},
+                                       {2.0, "Only Track"}});
+    if (path.empty()) SKIP("ffmpeg not available to build an MPEG-TS fixture");
+
+    auto opened = registry().open(Url::fromLocalPath(path));
+    REQUIRE(opened);
+
+    int announcements = 0;
+    opened.decoder->setChangeCallback([&](bool, bool metadataChanged) {
+        if (metadataChanged) {
+            ++announcements;
+        }
+    });
+
+    AudioChunk chunk;
+    while (opened.decoder->readAudio(chunk)) {
+    }
+    CHECK(announcements == 1);
+
+    // Left behind for any test that runs after this one in the same directory.
+    std::filesystem::remove(fixtureDir() / "timed.ts");
 }

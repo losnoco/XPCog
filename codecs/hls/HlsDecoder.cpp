@@ -19,6 +19,7 @@
 
 #include "HlsDecoder.hpp"
 
+#include "../common/Id3v2.hpp"
 #include "../common/PlaylistText.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
@@ -49,22 +50,15 @@ struct SegmentFormat {
     std::string_view mimeType;
 };
 
-/// Skips an ID3v2 tag, which an HLS "packed audio" segment carries in front of
+/// Skips any ID3v2 tags, which an HLS "packed audio" segment carries in front of
 /// the audio to convey its timestamp -- so the bytes that identify the format
 /// are not at offset zero for exactly the renditions most likely to be raw AAC.
 [[nodiscard]] std::span<const std::byte> skipId3(std::span<const std::byte> data) {
-    while (data.size() >= 10 && static_cast<char>(data[0]) == 'I' &&
-           static_cast<char>(data[1]) == 'D' && static_cast<char>(data[2]) == '3') {
-        // A syncsafe 32-bit size: seven bits per byte, high bit always clear.
-        std::size_t size = 0;
-        for (std::size_t i = 6; i < 10; ++i) {
-            size = (size << 7) | (std::to_integer<std::size_t>(data[i]) & 0x7FU);
-        }
-        const std::size_t total = size + 10;
-        if (total >= data.size()) {
+    while (const std::size_t length = codecs::id3v2TagLength(data)) {
+        if (length >= data.size()) {
             return {};
         }
-        data = data.subspan(total);
+        data = data.subspan(length);
     }
     return data;
 }

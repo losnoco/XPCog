@@ -9,6 +9,8 @@
 // audiotoolboxdec codecs. That is a build configuration, not a code dependency;
 // the vcpkg FFmpeg here is fully portable.
 
+#include "../common/Id3v2.hpp"
+
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 
@@ -134,6 +136,16 @@ public:
 
         if (!openFormatContext(source, io_, format_ctx_)) {
             return false;
+        }
+
+        // MPEG-TS carries HLS's timed metadata in its own elementary stream
+        // (stream_type 0x15), which av_find_best_stream will never pick because
+        // it is not audio. Noted here so its packets can be recognised in the
+        // read loop rather than discarded with everything else non-audio.
+        for (unsigned int i = 0; i < format_ctx_->nb_streams; ++i) {
+            if (format_ctx_->streams[i]->codecpar->codec_id == AV_CODEC_ID_TIMED_ID3) {
+                timedId3Streams_.push_back(static_cast<int>(i));
+            }
         }
 
         const AVCodec* codec = nullptr;
@@ -300,6 +312,8 @@ public:
 
             if (packet_->stream_index == streamIndex_) {
                 avcodec_send_packet(codec_ctx_, packet_);
+            } else if (isTimedId3Stream(packet_->stream_index)) {
+                applyTimedId3(packet_->data, packet_->size);
             }
             av_packet_unref(packet_);
         }
@@ -362,6 +376,7 @@ public:
         source_      = nullptr;
         streamIndex_ = -1;
         drained_     = false;
+        timedId3Streams_.clear();
     }
 
     void interrupt() override {
@@ -452,6 +467,41 @@ private:
         notifyChanged(false, true);
     }
 
+    [[nodiscard]] bool isTimedId3Stream(int index) const {
+        return std::find(timedId3Streams_.begin(), timedId3Streams_.end(), index) !=
+               timedId3Streams_.end();
+    }
+
+    /// One packet of an MPEG-TS timed-metadata stream, whose payload is a whole
+    /// ID3v2 tag.
+    ///
+    /// The other half of the same feature as harvestMidStreamTags(): a
+    /// packed-audio HLS rendition splices its tags into the audio, where the
+    /// demuxer parses them, and a transport-stream rendition puts them in a
+    /// stream of their own, where nothing does -- libavformat exposes no public
+    /// ID3 parser, so the bytes are ours to read.
+    ///
+    /// Announced only when something actually changed. Every HLS segment carries
+    /// one of these packets whether or not the programme moved on, so reporting
+    /// each one would rename the track every few seconds for the whole broadcast.
+    void applyTimedId3(const std::uint8_t* payload, int bytes) {
+        if (payload == nullptr || bytes <= 0) {
+            return;
+        }
+
+        MetadataMap updated = tags_;
+        if (!codecs::parseId3v2({reinterpret_cast<const std::byte*>(payload),
+                                 static_cast<std::size_t>(bytes)},
+                                updated)) {
+            return;
+        }
+        if (updated == tags_) {
+            return;
+        }
+        tags_ = std::move(updated);
+        notifyChanged(false, true);
+    }
+
     /// True when a demuxer has announced new metadata since the last call, which
     /// also clears the announcement.
     [[nodiscard]] bool takeMetadataEvents() {
@@ -525,6 +575,7 @@ private:
     AVFrame*         frame_       = nullptr;
     int              streamIndex_ = -1;
     bool             drained_     = false;
+    std::vector<int> timedId3Streams_;
 
     // Chapter bookkeeping, also used for gaplessness in some containers
     std::int64_t startFrames_  = 0;
