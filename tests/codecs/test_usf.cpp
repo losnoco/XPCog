@@ -315,6 +315,48 @@ TEST_CASE("seeking lands on the same audio as playing through", "[usf][corpus]")
     CHECK(std::equal(sought.samples.begin(), sought.samples.begin() + 4410 * 2, expected));
 }
 
+TEST_CASE("opening a USF does not boot an N64", "[usf][corpus]") {
+    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+        SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
+    }
+
+    const auto usfs = findUsfs(1);
+    if (usfs.empty()) {
+        SKIP("corpus holds no USF files");
+    }
+
+    // Scanner::readMetadata opens a decoder for every file it walks, only to
+    // ask for properties -- and every one of those answers comes from the tag
+    // block. So open() reads tags and stops, and the emulator waits for the
+    // first frame anyone wants. Cog does the same.
+    //
+    // "No emulator was started" is otherwise only observable with a stopwatch,
+    // and a timing assertion is not a test. This is the behavioural
+    // consequence instead: the tags-only path stops before psflib follows
+    // `_lib`, so a mini-PSF carried away from its library still opens -- and
+    // then has nothing to play. Eager loading could not produce that, because
+    // it resolves the chain up front and fails there.
+    const fs::path orphan =
+        fs::temp_directory_path() / "xpcog-usf-orphan" / usfs.front().filename();
+    std::error_code error;
+    fs::create_directories(orphan.parent_path(), error);
+    fs::copy_file(usfs.front(), orphan, fs::copy_options::overwrite_existing, error);
+    REQUIRE_FALSE(error);
+
+    PluginRegistry::OpenResult opened = registry().open(Url::fromLocalPath(orphan));
+    REQUIRE(static_cast<bool>(opened));
+
+    // Tags and duration, with no library in sight.
+    CHECK(opened.decoder->properties().totalFrames > 0);
+
+    AudioChunk chunk;
+    CHECK_FALSE(opened.decoder->readAudio(chunk));
+
+    opened.decoder->close();
+    opened.decoder.reset();
+    fs::remove_all(orphan.parent_path(), error);
+}
+
 TEST_CASE("the USF core refuses another console's PSF", "[usf][corpus]") {
     if (!kHaveCorpus || !fs::exists(corpusRoot())) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");

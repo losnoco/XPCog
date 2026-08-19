@@ -118,6 +118,27 @@ public:
     void setRegistry(const PluginRegistry* registry) override { registry_ = registry; }
     void setSettings(const Settings* settings) override { settings_ = settings; }
 
+    /// Reads the tag block and stops there. **No emulator is started here** --
+    /// that waits for the first readAudio() or seek(), which is what Cog does
+    /// too: HCDecoder's -open: runs the metadata psf_load and nothing else, and
+    /// -initializeDecoder is reached from -readAudio and -seek.
+    ///
+    /// It matters because of how a library scan works. Scanner::readMetadata
+    /// opens a decoder for every file it walks, purely to ask for properties,
+    /// and everything properties() reports comes from the tag block -- the
+    /// `length` tag is the duration and the rest is fixed. Booting an N64 to
+    /// answer a question the first few hundred bytes already answer would mean
+    /// allocating the machine, walking the `_lib` chain and inflating a
+    /// multi-megabyte .usflib once per track: 694 times over for the corpus
+    /// this was written against, and eight times that once the rest of
+    /// HighlyComplete's cores sit behind the same container.
+    ///
+    /// The cost is that a mini-PSF orphaned from its library now opens and then
+    /// fails at playback, rather than failing to open -- the tags-only path
+    /// stops before psflib follows `_lib` at all. Cog has the same behaviour,
+    /// and the alternative is paying the full inflate on every scanned file to
+    /// find out.
+    ///
     /// Takes the URL rather than the bytes. psflib follows `_lib` by name, so
     /// the chain has to be walked through the registry from the top; `source`
     /// is already open on the outermost file and is simply not the way in.
@@ -127,46 +148,20 @@ public:
             return false;
         }
 
-        // Nested tags: `_enablecompare` and `_enablefifofull` belong to the
-        // *game*, so a set puts them in the .usflib rather than repeating them
-        // in each of its hundred .miniusf files. Reading only the outermost
-        // file loses them, and the two of them are the difference between a rip
-        // that renders correctly and one that renders subtly wrong.
         const std::optional<codecs::PsfFile> psf =
-            codecs::loadPsf(source->url(), *registry_, kUsfVersion,
-                            /*wantNestedTags=*/true);
-        if (!psf || psf->empty()) {
+            codecs::readPsfTags(source->url(), *registry_);
+        if (!psf) {
             return false;
         }
 
-        auto state = std::make_unique<UsfState>(usf_get_state_size());
-        usf_clear(state->get());
-
-        // HLE audio: the sound microcode is recognised and run natively instead
-        // of being emulated instruction by instruction on the RSP. Far faster,
-        // and Cog turns it on unconditionally for USF.
-        usf_set_hle_audio(state->get(), 1);
-
-        for (const codecs::PsfProgram& program : psf->programs) {
-            // A USF with anything in `exe` is not a USF. Cog's loader refuses
-            // it outright rather than guessing, because the only way to produce
-            // one is to have mislabelled some other format's file.
-            if (!program.exe.empty()) {
-                return false;
-            }
-            if (program.reserved.empty()) {
-                continue;
-            }
-            if (usf_upload_section(state->get(), program.reserved.data(),
-                                   program.reserved.size()) < 0) {
-                return false;
-            }
+        // readPsfTags() probes rather than enforcing, so the version byte is
+        // checked here instead. Feeding a GBA image to an N64 is not a near
+        // miss -- it is arbitrary bytes at the reset vector.
+        if (psf->version != kUsfVersion) {
+            return false;
         }
 
-        // After the upload, never before: usf_clear() zeroed both flags and the
-        // tags that set them arrive while the chain is being walked.
-        usf_set_compare(state->get(), flagSet(psf->tags, "_enablecompare") ? 1 : 0);
-        usf_set_fifo_full(state->get(), flagSet(psf->tags, "_enablefifofull") ? 1 : 0);
+        url_ = source->url();
 
         rate_   = preferredRate(settings_);
         tags_   = psf->tags;
@@ -202,9 +197,61 @@ public:
         format_.format        = SampleFormat::S16;
         format_.bitsPerSample = 16;
 
-        state_    = std::move(state);
         framePos_ = 0;
+        return true;
+    }
 
+    /// Boots the machine, on the first frame anyone actually wants. Everything
+    /// deferred from open() happens here, once.
+    [[nodiscard]] bool start() {
+        if (state_) {
+            return true;
+        }
+        if (registry_ == nullptr) {
+            return false;
+        }
+
+        // Nested tags: `_enablecompare` and `_enablefifofull` belong to the
+        // *game*, so a set puts them in the .usflib rather than repeating them
+        // in each of its hundred .miniusf files. Reading only the outermost
+        // file loses them, and the two of them are the difference between a rip
+        // that renders correctly and one that renders subtly wrong.
+        const std::optional<codecs::PsfFile> psf =
+            codecs::loadPsf(url_, *registry_, kUsfVersion, /*wantNestedTags=*/true);
+        if (!psf || psf->empty()) {
+            return false;
+        }
+
+        auto state = std::make_unique<UsfState>(usf_get_state_size());
+        usf_clear(state->get());
+
+        // HLE audio: the sound microcode is recognised and run natively instead
+        // of being emulated instruction by instruction on the RSP. Far faster,
+        // and Cog turns it on unconditionally for USF.
+        usf_set_hle_audio(state->get(), 1);
+
+        for (const codecs::PsfProgram& program : psf->programs) {
+            // A USF with anything in `exe` is not a USF. Cog's loader refuses
+            // it outright rather than guessing, because the only way to produce
+            // one is to have mislabelled some other format's file.
+            if (!program.exe.empty()) {
+                return false;
+            }
+            if (program.reserved.empty()) {
+                continue;
+            }
+            if (usf_upload_section(state->get(), program.reserved.data(),
+                                   program.reserved.size()) < 0) {
+                return false;
+            }
+        }
+
+        // After the upload, never before: usf_clear() zeroed both flags and the
+        // tags that set them arrive while the chain is being walked.
+        usf_set_compare(state->get(), flagSet(psf->tags, "_enablecompare") ? 1 : 0);
+        usf_set_fifo_full(state->get(), flagSet(psf->tags, "_enablefifofull") ? 1 : 0);
+
+        state_ = std::move(state);
         skipLeadingSilence();
         return true;
     }
@@ -223,7 +270,7 @@ public:
     [[nodiscard]] MetadataMap metadata() const override { return tags_; }
 
     bool readAudio(AudioChunk& out) override {
-        if (!state_ || framePos_ >= totalFrames_) {
+        if (framePos_ >= totalFrames_ || !start()) {
             return false;
         }
 
@@ -268,16 +315,23 @@ public:
     /// through would have reached. Seeking to a beat and hearing a different
     /// one is not a rounding error to a listener.
     std::int64_t seek(std::int64_t frame) override {
-        if (!state_) {
+        const bool wasRunning = state_ != nullptr;
+        if (!start()) {
             return -1;
         }
         frame = std::clamp<std::int64_t>(frame, 0, totalFrames_);
 
-        usf_restart(state_->get());
-        pending_.clear();
-        pendingPos_ = 0;
-        framePos_   = 0;
-        skipLeadingSilence();
+        // start() has just booted a machine sitting at frame zero with its
+        // leading silence already trimmed, so restarting it would only redo
+        // both. Seeking on an already-running one has to, since there is no
+        // rewinding an emulator.
+        if (wasRunning) {
+            usf_restart(state_->get());
+            pending_.clear();
+            pendingPos_ = 0;
+            skipLeadingSilence();
+        }
+        framePos_ = 0;
 
         std::int64_t remaining = frame;
         while (remaining > 0) {
@@ -307,6 +361,7 @@ public:
         pending_.clear();
         pendingPos_ = 0;
     }
+
 
 private:
     [[nodiscard]] std::int64_t toFrames(double seconds) const {
@@ -403,6 +458,7 @@ private:
     const PluginRegistry* registry_ = nullptr;
     const Settings*       settings_ = nullptr;
 
+    Url                       url_;
     std::unique_ptr<UsfState> state_;
     AudioFormat               format_{};
     int                       rate_        = kDefaultRate;
