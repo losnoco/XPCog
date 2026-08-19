@@ -273,7 +273,12 @@ public:
 
     /// What a chooser button does with whatever the dialog returned. Empty is
     /// the cancelled dialog, and leaves the setting alone.
-    [[nodiscard]] static auto chooser(QLineEdit* edit) {
+    ///
+    /// Spelled out rather than deduced: a member function with an `auto` return
+    /// type cannot be called from another member's body, because every body in a
+    /// class is parsed after the class is complete and the deduction has not
+    /// happened at the point of the call.
+    [[nodiscard]] static std::function<void(const QString&)> chooser(QLineEdit* edit) {
         return [edit](const QString& chosen) {
             if (!chosen.isEmpty()) {
                 edit->setText(QDir::toNativeSeparators(chosen));
