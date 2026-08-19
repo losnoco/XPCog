@@ -55,6 +55,8 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <array>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -280,37 +282,112 @@ public:
             return -1;
         }
 
-        // An FM chip is a state machine with envelopes in flight; there is no
-        // way to compute where it would have been. Going backwards means
-        // resetting it and playing the sequence again, and going forwards means
-        // rendering the gap and throwing the audio away -- which is also why
-        // dispatching the events without rendering would not do, since the
-        // envelopes advance with the samples and not with the events.
-        if (frame < framePos_) {
-            if (!restart()) {
-                return -1;
-            }
-        }
-
-        // Nothing rendered from here to the target is ever heard, so nothing
-        // about it belongs on the panel. Capture goes off for the discard and
-        // whatever was already queued for this track goes with it.
-        if (sc55_ != nullptr) {
-            sc55_->setCaptureLcd(false);
+        // Not by rendering the skipped audio. That was the first shape this
+        // took and it is why seeking a MIDI took seconds: for the SC-55 it
+        // meant emulating a Hitachi H8 through every sample being skipped over,
+        // and even the OPL was synthesising a minute of music to throw away.
+        //
+        // Cog does not render either (MIDIPlayer.cpp:410): it resets the synth
+        // and replays the events that *set state*, all at once. A note that
+        // started before the seek point should not be sounding after it, so
+        // notes are exactly what does not need replaying -- what does is which
+        // instrument each channel holds, where its controllers are, and what
+        // the machine was told by SysEx.
+        if (!restart()) {
+            return -1;
         }
         PanelFeed::instance().forget(url_);
 
-        while (framePos_ < frame) {
-            const auto step = static_cast<std::size_t>(std::min<std::int64_t>(
-                static_cast<std::int64_t>(kFramesPerRead), frame - framePos_));
-            scratch_.resize(step * 2);
-            render(scratch_.data(), step);
-            framePos_ += static_cast<std::int64_t>(step);
+        const std::uint64_t target = sequencePosition(frame);
+
+        // Collapsed rather than replayed in order, which matters for more than
+        // speed: the SC-55 receives MIDI over an emulated serial port whose
+        // buffer is 8192 bytes and which does not check for overflow
+        // (mcu.cpp:893), so replaying every controller change in a long track
+        // would quietly overwrite itself. Only the last value of each thing can
+        // matter, and that is bounded by the number of channels.
+        struct ChannelState {
+            std::optional<std::uint8_t>          program;
+            std::optional<std::uint32_t>         bend;
+            std::map<std::uint8_t, std::uint8_t> controllers;
+        };
+        std::array<ChannelState, 16> channels;
+        std::vector<std::uint32_t>   sysex;
+
+        std::size_t index = 0;
+        for (; index < stream_.events.size() &&
+               stream_.events[index].timestampSamples < target;
+             ++index) {
+            const codecs::MidiStreamEvent& event = stream_.events[index];
+            if (event.port != 0) {
+                continue;
+            }
+            if (event.isSysex) {
+                sysex.push_back(event.message);
+                continue;
+            }
+            const auto status  = static_cast<std::uint8_t>(event.message & 0xFF);
+            const auto channel = static_cast<std::size_t>(status & 0x0F);
+            switch (status & 0xF0) {
+                case 0xB0:
+                    channels[channel].controllers[static_cast<std::uint8_t>(
+                        (event.message >> 8) & 0x7F)] =
+                        static_cast<std::uint8_t>((event.message >> 16) & 0x7F);
+                    break;
+                case 0xC0:
+                    channels[channel].program =
+                        static_cast<std::uint8_t>((event.message >> 8) & 0x7F);
+                    break;
+                case 0xE0:
+                    channels[channel].bend = event.message;
+                    break;
+                default:
+                    // Notes and aftertouch. Nothing here should still be
+                    // sounding at the seek point.
+                    break;
+            }
         }
-        if (sc55_ != nullptr) {
-            (void)sc55_->takeLcdFrames();
-            sc55_->setCaptureLcd(true);
+
+        // SysEx first, then channel state. That is deliberately not file order:
+        // a GS reset arriving after a controller would undo it, and the
+        // collapsed values are the ones that survived to the seek point.
+        std::size_t sent = 0;
+        for (const std::uint32_t entry : sysex) {
+            if (entry < stream_.sysex.size()) {
+                const codecs::MidiSysex& message = stream_.sysex[entry];
+                if (message.port == 0 && !message.data.empty()) {
+                    synth_->writeSysex(message.data);
+                    sent += message.data.size();
+                    drainIfFull(sent);
+                }
+            }
         }
+        for (std::size_t channel = 0; channel < channels.size(); ++channel) {
+            const ChannelState& state = channels[channel];
+            const auto          status = static_cast<std::uint32_t>(channel);
+            // Ascending, so bank select (0 and 32) lands before the program
+            // change that reads it.
+            for (const auto& [controller, value] : state.controllers) {
+                synth_->write(0xB0u | status | (std::uint32_t{controller} << 8) |
+                              (std::uint32_t{value} << 16));
+                sent += 3;
+                drainIfFull(sent);
+            }
+            if (state.program) {
+                synth_->write(0xC0u | status | (std::uint32_t{*state.program} << 8));
+                sent += 2;
+                drainIfFull(sent);
+            }
+            if (state.bend) {
+                synth_->write(*state.bend);
+                sent += 3;
+                drainIfFull(sent);
+            }
+        }
+
+        eventIndex_ = index;
+        seqSample_  = target;
+        framePos_   = frame;
         return framePos_;
     }
 
@@ -364,6 +441,43 @@ private:
         }
         synth_ = std::move(opl);
         return true;
+    }
+
+    /// Where in the sequence an output frame falls.
+    ///
+    /// The two are the same until the loop point, after which the sequence is
+    /// being replayed and the output has run past it. Seeking has to land on
+    /// the sequence position, not the output one, or a looped file would seek
+    /// past its own end.
+    [[nodiscard]] std::uint64_t sequencePosition(std::int64_t frame) const {
+        const auto position = static_cast<std::uint64_t>(std::max<std::int64_t>(0, frame));
+        if (!looped_ || position < loopStartSample_ ||
+            loopEndSample_ <= loopStartSample_) {
+            return position;
+        }
+        const std::uint64_t span = loopEndSample_ - loopStartSample_;
+        return loopStartSample_ + ((position - loopStartSample_) % span);
+    }
+
+    /// Lets the machine read what it has been sent, before sending more.
+    ///
+    /// Only the SC-55 needs this -- its MIDI arrives on an emulated serial port
+    /// with an 8192-byte ring buffer that overwrites rather than refusing --
+    /// and the collapsed state above is normally far short of that. The margin
+    /// is for the file that is not normal: sixteen channels of dense controller
+    /// use comes to six kilobytes on its own.
+    void drainIfFull(std::size_t& sent) {
+        constexpr std::size_t kUartSafeBytes = 4096;
+        constexpr std::size_t kDrainFrames   = 2048;
+        if (sent < kUartSafeBytes) {
+            return;
+        }
+        sent = 0;
+        scratch_.resize(kDrainFrames * 2);
+        synth_->render(scratch_.data(), kDrainFrames);
+        if (sc55_ != nullptr) {
+            (void)sc55_->takeLcdFrames();
+        }
     }
 
     bool restart() {

@@ -18,9 +18,11 @@
 //   decoder that never reads it still plays, on whichever synthesiser it
 //   happened to construct. Only the two drivers differing catches that.
 //
-//   The seek approximate. An FM chip has envelopes in flight, so a seek that
-//   does not replay the sequence lands in a chip state that never existed.
-//   Only comparing against a straight decode catches it.
+//   The seek forgetful. A seek does not render the audio it skips over -- it
+//   resets the synthesiser and replays the state the events had left it in --
+//   so a seek that moved only the cursor would still play, on whatever
+//   instrument the machine happened to boot with. Only two files differing by
+//   one program change catch that.
 
 #include "MidiFixtures.hpp"
 
@@ -248,41 +250,69 @@ TEST_CASE("the midiPlugin setting reaches the synthesiser", "[midi]") {
     CHECK(withFallback.samples == withDoom.samples);
 }
 
-TEST_CASE("seeking lands where a straight decode would have", "[midi]") {
+TEST_CASE("seeking restores the synthesiser rather than replaying the music",
+          "[midi]") {
     Harness    harness;
     const auto path = writeFixture("tiny-seek.mid", tinyMidi());
     const Url  url  = Url::fromLocalPath(path);
 
-    const Decoded straight = decode(harness.registry, url, kTwoSeconds);
-    REQUIRE(straight.samples.size() == 44100 * 2);
-
     PluginRegistry::OpenResult opened = harness.registry.open(url);
     REQUIRE(opened);
 
-    constexpr std::int64_t kTarget = 22050;  // half a second in
+    // Lands exactly, and what is left is exactly what remains of the track.
+    // Sample-for-sample agreement with a straight decode is deliberately *not*
+    // asserted any more: a seek no longer renders the audio it skips over --
+    // for the SC-55 that meant emulating a whole CPU through every skipped
+    // sample, which is why seeking took seconds. The synthesiser is reset and
+    // put back into the state the events had left it in, which is what Cog
+    // does and is a different signal from the one rendering would have left.
+    constexpr std::int64_t kTarget = 22050;
     REQUIRE(opened.decoder->seek(kTarget) == kTarget);
 
-    std::vector<std::int16_t> seeked;
-    AudioChunk                chunk;
+    std::size_t frames = 0;
+    AudioChunk  chunk;
     while (opened.decoder->readAudio(chunk)) {
-        const std::size_t frames = chunk.frameCount();
-        if (frames == 0) {
-            break;
-        }
-        const std::size_t at = seeked.size();
-        seeked.resize(at + frames * 2);
-        std::memcpy(seeked.data() + at, chunk.bytes().data(),
-                    frames * 2 * sizeof(std::int16_t));
+        frames += chunk.frameCount();
     }
+    CHECK(frames == 44100 - kTarget);
+}
 
-    // Sample for sample, not approximately. The seek replays the sequence from
-    // the start and throws the audio away, so there is no reason for a single
-    // sample to differ -- and if one does, the chip was resumed from a state it
-    // could not have reached by playing.
-    REQUIRE(seeked.size() == straight.samples.size() - kTarget * 2);
-    CHECK(seeked == std::vector<std::int16_t>(
-                        straight.samples.begin() + kTarget * 2,
-                        straight.samples.end()));
+TEST_CASE("a seek carries the instrument with it", "[midi]") {
+    // The state a seek has to restore, made visible: two files identical but
+    // for a program change before the seek point. Seek past it in both and
+    // render the note that comes after. If the change is replayed the note is
+    // a French horn in one and a piano in the other; if the seek merely moved
+    // a cursor, both are pianos and the samples agree.
+    const auto sound = [](Harness& harness, const char* name, bool withProgram) {
+        const auto path =
+            writeFixture(name, programChangeMidi(withProgram));
+        PluginRegistry::OpenResult opened =
+            harness.registry.open(Url::fromLocalPath(path));
+        REQUIRE(opened);
+        REQUIRE(opened.decoder->seek(11025) == 11025);  // a quarter second in
+
+        std::vector<std::int16_t> samples;
+        AudioChunk                chunk;
+        while (samples.size() < 44100 * 2 && opened.decoder->readAudio(chunk)) {
+            const std::size_t got = chunk.frameCount();
+            const std::size_t at  = samples.size();
+            samples.resize(at + got * 2);
+            std::memcpy(samples.data() + at, chunk.bytes().data(),
+                        got * 2 * sizeof(std::int16_t));
+        }
+        return samples;
+    };
+
+    Harness withIt;
+    Harness without;
+    const auto changed = sound(withIt, "seek-program.mid", true);
+    const auto plain   = sound(without, "seek-noprogram.mid", false);
+
+    REQUIRE_FALSE(changed.empty());
+    REQUIRE(changed.size() == plain.size());
+    CHECK(peak(changed) > kAudible);
+    CHECK(peak(plain) > kAudible);
+    CHECK(changed != plain);
 }
 
 TEST_CASE("the corpus plays, not merely parses", "[midi][corpus]") {

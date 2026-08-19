@@ -303,6 +303,38 @@ Recording all along costs the emulator a comparison against the previous panel
 state on every rendered sample, inside something already emulating a whole CPU
 per sample. Cog pays it too.
 
+### Seeking does not replay the music
+
+Rendering the skipped audio is the obvious implementation and it is what this
+did first. It is also why seeking a MIDI took seconds: for the SC-55 it meant
+emulating a Hitachi H8 through every sample being passed over, and even the OPL
+was synthesising a minute of music in order to throw it away.
+
+Cog does not render (`MIDIPlayer.cpp:410`). It resets the synthesiser and
+replays the events that *set state*, all at once. A note that began before the
+seek point should not be sounding after it, so notes are exactly what does not
+need replaying — what does is which instrument each channel holds, where its
+controllers are, and what the machine was told by SysEx.
+
+The state is **collapsed** rather than replayed in order, which matters for more
+than speed. The SC-55 receives MIDI over an emulated serial port whose buffer is
+8192 bytes and which does not check for overflow (`mcu.cpp:893`) — it wraps and
+overwrites. Replaying every controller change in a long track would quietly
+clobber itself. Only the last value of each thing can matter, and that is
+bounded by sixteen channels. SysEx goes first and channel state after, which is
+deliberately not file order: a GS reset arriving after a controller would undo
+it, and the collapsed values are the ones that survived to the seek point.
+
+Even collapsed, sixteen channels of dense controller use comes to six kilobytes,
+so the replay renders a couple of thousand frames whenever it has sent four
+kilobytes, letting the machine read what it has been given.
+
+The cost of all this is that a seek no longer lands in a state identical to
+having played there — envelopes in flight are gone, and a note sustained across
+the seek point does not resume. That is what Cog does and what a MIDI player is
+expected to do. The test for it is two files differing by one program change:
+seek past it in both, and the note that follows sounds different in one.
+
 ### Missing ROMs fall back rather than refusing
 
 Cog returns `NO` from `-open:` when the ROMs are absent, so the file does not

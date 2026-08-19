@@ -116,6 +116,50 @@ inline std::vector<std::uint8_t> formatTwoMidi() {
     return out;
 }
 
+/// A file for testing seeks: a program change near the start, then a note well
+/// after it.
+///
+/// `withProgram` is what makes it a pair. Seeking past the program change and
+/// rendering the note gives one sound when the change was replayed and another
+/// when it was not, which is the only way to see from the outside whether a
+/// seek restored the synthesiser's state or merely moved the cursor.
+inline std::vector<std::uint8_t> programChangeMidi(bool withProgram) {
+    const auto be16 = [](std::vector<std::uint8_t>& v, std::uint16_t x) {
+        v.push_back(static_cast<std::uint8_t>(x >> 8));
+        v.push_back(static_cast<std::uint8_t>(x & 0xFF));
+    };
+    const auto be32 = [](std::vector<std::uint8_t>& v, std::uint32_t x) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            v.push_back(static_cast<std::uint8_t>((x >> shift) & 0xFF));
+        }
+    };
+
+    std::vector<std::uint8_t> track;
+    // 120 bpm, so a quarter note is half a second.
+    track.insert(track.end(), {0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20});
+    if (withProgram) {
+        // Program 60, French horn -- far enough from program 0 in any bank
+        // that the two cannot be confused.
+        track.insert(track.end(), {0x00, 0xC0, 0x3C});
+    }
+    // delta 480 (one quarter, half a second): note on
+    track.insert(track.end(), {0x83, 0x60, 0x90, 0x40, 0x64});
+    // delta 960: note off
+    track.insert(track.end(), {0x87, 0x40, 0x80, 0x40, 0x00});
+    track.insert(track.end(), {0x00, 0xFF, 0x2F, 0x00});
+
+    std::vector<std::uint8_t> out;
+    out.insert(out.end(), {'M', 'T', 'h', 'd'});
+    be32(out, 6);
+    be16(out, 0);
+    be16(out, 1);
+    be16(out, 480);
+    out.insert(out.end(), {'M', 'T', 'r', 'k'});
+    be32(out, static_cast<std::uint32_t>(track.size()));
+    out.insert(out.end(), track.begin(), track.end());
+    return out;
+}
+
 inline std::vector<std::uint8_t> readFile(const fs::path& path) {
     std::vector<std::uint8_t> bytes;
     std::FILE*                f = std::fopen(path.string().c_str(), "rb");
