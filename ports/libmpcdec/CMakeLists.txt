@@ -149,7 +149,26 @@ if(LIBMPCDEC_BUILD_TOOLS)
         target_compile_options(mpcenc PRIVATE /w)
         target_link_libraries(mpcenc PRIVATE winmm)
     else()
-        target_compile_options(mpcenc PRIVATE -w)
+        # -w silences warnings; it does not silence this one. Since GCC 14,
+        # -Wincompatible-pointer-types is a permerror -- an error by default,
+        # which -w leaves alone -- and the encoder trips it in two places:
+        #
+        #   libmpcpsy/ans.c   passes m->SCF_Index_L, an `int *` in the psy
+        #                     model's struct, where FindOptimalANS declares
+        #                     `const int scf [] [3]`. The same storage with one
+        #                     dimension lost on the way in.
+        #
+        #   mpcenc/mpcenc.c   passes subq[Band].L, `mpc_int16_t [36]`, to
+        #                     QuantizeSubband and QuantizeSubbandWithNoiseShaping,
+        #                     whose prototypes in mpcenc.h say `unsigned int *`.
+        #                     libmpcenc/quant.c defines both as `mpc_int16_t *`,
+        #                     so the definition agrees with the call and it is
+        #                     the prototype that is stale.
+        #
+        # Both are the encoder's alone -- the nine decoder sources compile
+        # clean -- so the flag goes on this target and not on mpcdec.
+        target_compile_options(mpcenc PRIVATE -w
+                                              -Wno-error=incompatible-pointer-types)
         target_link_libraries(mpcenc PRIVATE m)
     endif()
 
