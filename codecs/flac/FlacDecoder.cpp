@@ -310,8 +310,27 @@ bool FlacDecoder::open(ISource* source) {
         return false;
     }
 
-    if (!source_->seekable()) {
+    const bool seekable = source_->seekable();
+
+    if (!seekable) {
         FLAC__stream_decoder_set_md5_checking(decoder_, 0);
+    }
+
+    // A live Ogg FLAC stream restarts its bitstream at every track change: the
+    // encoder ends one logical stream and begins another, with a fresh serial
+    // number, STREAMINFO and Vorbis comment. libFLAC calls those chain links,
+    // and *by default it stops at the end of the first one* -- which on an
+    // Icecast station means playback ends when the first song does. The
+    // END_OF_LINK state the read loop handles is only ever reported when this
+    // is on, so without it that branch is unreachable.
+    //
+    // Streams only. A seekable chained file would additionally need its length
+    // summed across links (FLAC__stream_decoder_find_total_samples) and seeking
+    // taught to cross them; today it plays the first link and reports a length
+    // that matches, which is at least self-consistent. Those files are rare and
+    // this is not the bug being fixed.
+    if (isOggFlac && !seekable) {
+        FLAC__stream_decoder_set_decode_chained_stream(decoder_, 1);
     }
 
     FLAC__stream_decoder_set_metadata_ignore_all(decoder_);
@@ -321,8 +340,6 @@ bool FlacDecoder::open(ISource* source) {
                                               FLAC__METADATA_TYPE_VORBIS_COMMENT);
     FLAC__stream_decoder_set_metadata_respond(decoder_, FLAC__METADATA_TYPE_PICTURE);
     FLAC__stream_decoder_set_metadata_respond(decoder_, FLAC__METADATA_TYPE_CUESHEET);
-
-    const bool seekable = source_->seekable();
 
     const auto init = isOggFlac
                           ? FLAC__stream_decoder_init_ogg_stream(
@@ -370,6 +387,7 @@ bool FlacDecoder::readAudio(AudioChunk& out) {
         }
         if (state == FLAC__STREAM_DECODER_END_OF_LINK) {
             // Chained Ogg FLAC: finish this link and continue into the next.
+            beginLink();
             if (!FLAC__stream_decoder_finish_link(decoder_)) {
                 return false;
             }
@@ -377,6 +395,14 @@ bool FlacDecoder::readAudio(AudioChunk& out) {
         if (!FLAC__stream_decoder_process_single(decoder_)) {
             return false;
         }
+    }
+
+    // Announced here rather than from the metadata callback: a link's blocks
+    // arrive one at a time, and the tags are only complete once a frame follows
+    // them. Reporting per block would name the track from a half-read comment.
+    if (linkChanged_) {
+        linkChanged_ = false;
+        notifyChanged(false, true);
     }
 
     out.clear();
@@ -417,6 +443,24 @@ std::int64_t FlacDecoder::seek(std::int64_t frame) {
                        ? static_cast<double>(frame) / format_.sampleRate
                        : 0.0;
     return frame;
+}
+
+void FlacDecoder::beginLink() {
+    // A chain link is the next track, and its Vorbis comment describes that one
+    // rather than the one just finished. These accumulate -- tags_ appends
+    // repeated names, because a FLAC file may legitimately carry several ARTIST
+    // lines -- so without clearing them a station's tag list grows by a whole
+    // track every few minutes and the title is whichever song came first.
+    tags_             = {};
+    replayGain_       = {};
+    albumArt_.clear();
+    cuesheet_.clear();
+    cuesheetFound_    = false;
+    hasVorbisComment_ = false;
+    // The new link carries its own STREAMINFO, which is not the "several
+    // STREAMINFO blocks in one stream" case the metadata callback guards against.
+    hasStreamInfo_    = false;
+    linkChanged_      = true;
 }
 
 void FlacDecoder::close() {

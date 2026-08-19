@@ -855,6 +855,46 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   own `hls.c` demuxer, which XPCog never uses, since the HLS decoder here
   replaces it and hands FFmpeg raw concatenated segments instead.
 
+- **Chained Ogg FLAC, so a FLAC station survives its own track changes.** An
+  Icecast station serving FLAC does not send one endless bitstream: at every
+  track change the encoder ends the Ogg stream and begins another, with a fresh
+  serial number, STREAMINFO and Vorbis comment. libFLAC calls those chain links
+  and **stops at the end of the first one unless told otherwise**, so playback
+  ended when the first song did.
+
+  The failure gives nothing away. The decoder reports a clean end of stream and
+  the engine believes it, so it looks like a station that simply stopped rather
+  than like a bug -- and on a local file it never happens at all.
+
+  `FLAC__stream_decoder_set_decode_chained_stream()` is the whole switch. Worth
+  noting that the `END_OF_LINK` handling in the read loop was already written and
+  had never once executed: that state is *only* reported when this flag is on, so
+  the code that looked like chained-stream support was unreachable.
+
+  **Streams only, on purpose.** The flag is set when the container is Ogg and the
+  source is not seekable. A seekable chained *file* would also need its length
+  summed across links (`FLAC__stream_decoder_find_total_samples`) and seeking
+  taught to cross them; today it plays the first link and reports a length that
+  matches, which is at least self-consistent. That predicate works because
+  `HttpSource` distinguishes the two questions properly: `seekable()` is false
+  for a response with no length, while `seek()` still rewinds inside its ring --
+  which the FLAC decoder depends on separately, since it peeks four bytes for the
+  Ogg magic and rewinds before deciding anything.
+
+  **A link boundary clears the previous track's tags.** Vorbis comments
+  legitimately repeat -- a file may carry several ARTIST lines -- so `tags_`
+  appends, and without clearing them a station's tag list grows by a whole track
+  every few minutes with the first song's name still at the front. The new link's
+  tags are announced from `readAudio()` rather than from the metadata callback,
+  because a link's blocks arrive one at a time and only a following frame proves
+  the set is complete.
+
+  The fixture is two encodes concatenated, which is byte-for-byte what the
+  station sends, read through a source that reports itself unseekable while
+  allowing that same small rewind. Checked against a real FLAC station for five
+  minutes across a 3:58 track: it plays through the boundary and renames at it,
+  where before it stopped.
+
 - **The engine listens to the decoder, not just the source.** Polling
   `ISource::takeUpdatedMetadata()` finds a SHOUTcast `StreamTitle`, which arrives
   *beside* the audio. It cannot find a title that arrives *inside* it, which is

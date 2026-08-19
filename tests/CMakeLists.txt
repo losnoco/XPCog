@@ -37,6 +37,10 @@ endif()
 # The mid-stream tag tests build their own MPEG-TS fixture with libavformat:
 # only the mpegts demuxer ever produces a timed-ID3 stream, so there is nothing
 # to feed the muxer from through the ffmpeg binary.
+if(XPCOG_WITH_FLAC)
+    target_sources(xpcog-tests PRIVATE codecs/test_flac_chained.cpp)
+endif()
+
 if(XPCOG_WITH_FFMPEG)
     find_package(FFMPEG REQUIRED)
     target_sources(xpcog-tests PRIVATE codecs/test_ffmpeg_stream_tags.cpp)

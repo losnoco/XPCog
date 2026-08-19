@@ -51,6 +51,10 @@ private:
 
     void interleave(const FLAC__Frame* frame, const FLAC__int32* const buffer[]);
 
+    /// Drops the finished link's per-track state, so the next one's metadata
+    /// replaces it rather than piling on top.
+    void beginLink();
+
     FLAC__StreamDecoder* decoder_ = nullptr;
     ISource*             source_  = nullptr;
 
@@ -69,6 +73,9 @@ private:
     bool abort_           = false;
     bool cuesheetFound_   = false;
     bool hasVorbisComment_ = false;
+    /// A chain link boundary was crossed and the new link's tags are not yet
+    /// announced. Cleared by readAudio() once a frame proves them complete.
+    bool linkChanged_     = false;
 
     std::string            cuesheet_;
     std::vector<std::byte> albumArt_;
