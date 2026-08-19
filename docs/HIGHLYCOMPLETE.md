@@ -221,10 +221,27 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   and listed at the top of the core's `CMakeLists.txt`, so a re-vendor does not
   drop them silently.
 
-- **The scanner opens the decoder regardless**, so no PSF metadata reader was
-  registered. `MetadataReadFn` takes only a `Url` and `readPsfTags()` needs a
-  registry to resolve through, and it would buy nothing anyway:
-  `Scanner::readMetadata` calls `registry_.open()` for the properties whatever
-  the tag readers say. Worth revisiting for the whole PSF family at once — it is
-  an emulator boot per file during a scan — but as a change to the reader
-  contract, not as something one core does.
+- **A core must not start its emulator in `open()`.** `Scanner::readMetadata`
+  opens a decoder for every file it walks, purely to ask for properties, and
+  every answer `properties()` gives comes from the tag block — `length` is the
+  duration and the rest is fixed. Booting the machine to answer that means
+  allocating it, walking the `_lib` chain and inflating a multi-megabyte library
+  once per track. So `open()` reads tags and stops, and the emulator waits for
+  the first `readAudio()` or `seek()`. Cog does the same: `-open:` runs the
+  metadata `psf_load` and nothing else, and `-initializeDecoder` is reached from
+  `-readAudio` and `-seek`. Scanning 175 files against a 4.3 MB library, three
+  runs each, is 10.60 / 10.37 / 9.65 s eager against 5.69 / 3.80 / 3.61 s lazy.
+
+  Two consequences worth knowing before copying the shape. A mini-PSF orphaned
+  from its library now opens and then fails at playback rather than failing to
+  open, because the tags-only path stops before psflib follows `_lib` at all —
+  which is also the only way to *test* laziness, since "no emulator started" is
+  otherwise a stopwatch reading. And the version byte has to be checked by hand,
+  since `readPsfTags()` probes rather than enforcing.
+
+  **GSF is the exception**, in Cog and so here too: `-open:` initialises it
+  eagerly because the sample rate comes from the core rather than from a tag.
+
+- **No PSF metadata reader is registered.** `MetadataReadFn` takes only a `Url`
+  and `readPsfTags()` needs a registry to resolve through. With `open()` now
+  cheap there is nothing left to win, so the reader contract stays as it is.
