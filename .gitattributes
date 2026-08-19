@@ -11,3 +11,10 @@
 # Golden reference captures: raw float32, and the one file in the tree where a
 # single rewritten byte changes a number rather than breaking a parse.
 *.f32 binary
+
+# Shell scripts keep LF on checkout, autocrlf notwithstanding. A CRLF shebang is
+# not a shebang: the kernel -- and Git Bash -- take the trailing \r as part of
+# the interpreter's name and report `/usr/bin/env bash^M: no such file`. Only
+# `./script.sh` breaks, so this would survive every test that ran it as
+# `bash script.sh` and fail the first time someone ran it the obvious way.
+*.sh text eol=lf
