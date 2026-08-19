@@ -112,6 +112,87 @@ private:
     std::int64_t chunksLeft_ = 64;
 };
 
+/// A decoder that carries the title inside the audio, the way an HLS rendition
+/// and a chained Ogg do -- the source underneath knows nothing about any of it,
+/// so this is the half the source poll cannot see.
+class FakeTaggedDecoder final : public IDecoder {
+public:
+    /// `length` of 0 means "unknown", which is what a live stream reports and
+    /// what decides whether the tags known at open() are worth announcing.
+    explicit FakeTaggedDecoder(std::int64_t length) : totalFrames_(length) {
+        tags_.set("artist", "Opening Artist");
+        tags_.set("title", "Opening Title");
+    }
+
+    bool open(ISource*) override { return true; }
+
+    [[nodiscard]] TrackProperties properties() const override {
+        TrackProperties props;
+        props.format.sampleRate    = kRate;
+        props.format.channels      = kChannels;
+        props.format.channelConfig = 0x3;
+        props.format.format        = SampleFormat::F32;
+        props.totalFrames          = totalFrames_;
+        return props;
+    }
+
+    [[nodiscard]] MetadataMap metadata() const override { return tags_; }
+
+    bool readAudio(AudioChunk& out) override {
+        if (chunksLeft_ == 0) {
+            return false;
+        }
+        --chunksLeft_;
+
+        // Once, part-way through, so the announcement is a change rather than
+        // something that could have been read at open().
+        if (chunksLeft_ == 20) {
+            tags_.set("artist", "Second Artist");
+            tags_.set("title", "Second Title");
+            notifyChanged(false, true);
+        }
+
+        AudioFormat format;
+        format.sampleRate    = kRate;
+        format.channels      = kChannels;
+        format.channelConfig = 0x3;
+        format.format        = SampleFormat::F32;
+        out.setFormat(format);
+        std::byte* dst = out.allocFrames(kFrames);
+        std::memset(dst, 0, kFrames * kChannels * sizeof(float));
+        out.setFrameCount(kFrames);
+        return true;
+    }
+
+    std::int64_t seek(std::int64_t) override { return -1; }
+    void close() override {}
+
+private:
+    static constexpr std::size_t kFrames = 4096;
+    std::int64_t                 chunksLeft_ = 64;
+    std::int64_t                 totalFrames_;
+    MetadataMap                  tags_;
+};
+
+/// A source with nothing to say, so anything the delegate hears came from the
+/// decoder.
+class SilentSource final : public ISource {
+public:
+    bool open(const Url& url) override {
+        url_ = url;
+        return true;
+    }
+    [[nodiscard]] bool seekable() const override { return false; }
+    bool seek(std::int64_t, int) override { return false; }
+    [[nodiscard]] std::int64_t tell() const override { return 0; }
+    std::int64_t read(void*, std::int64_t) override { return 0; }
+    void close() override {}
+    [[nodiscard]] const Url& url() const override { return url_; }
+
+private:
+    Url url_;
+};
+
 // --- shutdown fakes ------------------------------------------------------
 //
 // A live stream whose server has gone quiet: the connection is up, the decoder
@@ -237,6 +318,33 @@ public:
     std::int64_t seek(std::int64_t) override { return -1; }
     void close() override {}
 };
+
+constexpr std::string_view kQuietScheme[] = {"quiet"};
+constexpr std::string_view kStreamExt[]   = {"stream"};
+constexpr std::string_view kFileExt[]     = {"file"};
+
+/// A source that never announces anything, over decoders that do -- so anything
+/// the delegate hears in these tests came from the decoder.
+void populateDecoderTagRegistry(PluginRegistry& registry) {
+    registry.addSource({
+        .name    = "SilentSource",
+        .schemes = kQuietScheme,
+        .create  = []() -> SourcePtr { return std::make_unique<SilentSource>(); },
+    });
+    registry.addDecoder({
+        .name       = "TaggedStreamDecoder",
+        .extensions = kStreamExt,
+        .create     = []() -> DecoderPtr { return std::make_unique<FakeTaggedDecoder>(0); },
+    });
+    registry.addDecoder({
+        .name       = "TaggedFileDecoder",
+        .extensions = kFileExt,
+        .create     = []() -> DecoderPtr {
+            return std::make_unique<FakeTaggedDecoder>(64 * 4096);
+        },
+    });
+    registry.freeze();
+}
 
 constexpr std::string_view kScheme[]    = {"fake"};
 constexpr std::string_view kExtension[] = {"tst"};
@@ -385,4 +493,61 @@ TEST_CASE("stopping a stream parked in read() does not deadlock",
         stopped.wait();
     }
     CHECK(status == std::future_status::ready);
+}
+
+TEST_CASE("tags a decoder learns mid-play reach the delegate", "[engine][stream]") {
+    // The other half of the stream-metadata seam. Polling the source finds a
+    // SHOUTcast StreamTitle, which arrives beside the audio; it cannot find a
+    // title that arrives *inside* it, which is where an HLS rendition and a
+    // chained Ogg both put one. Without the decoder's change callback wired up,
+    // a station whose titles come that way plays perfectly and never renames.
+    PluginRegistry registry;
+    populateDecoderTagRegistry(registry);
+
+    RingBuffer ring(static_cast<std::size_t>(kRate * 0.5) * kChannels);
+    auto       output = makeOfflineOutput(ring);
+    auto       store  = makeMemorySettingsStore();
+    Settings   settings(*store);
+
+    AudioEngine       engine(registry, *output, ring, settings);
+    RecordingDelegate delegate;
+    engine.setDelegate(&delegate);
+
+    const Url url = *Url::parse("quiet://radio.example/now.stream");
+    REQUIRE(engine.play(url));
+    engine.waitUntilFinished();
+
+    // Two: what the decoder already knew when it opened, and the change it made
+    // part-way through.
+    REQUIRE(delegate.updates.size() == 2);
+    CHECK(delegate.updates[0].first == url.toString());
+    CHECK(delegate.updates[0].second.first("title") == "Opening Title");
+    CHECK(delegate.updates[1].second.first("artist") == "Second Artist");
+    CHECK(delegate.updates[1].second.first("title") == "Second Title");
+}
+
+TEST_CASE("a track of known length keeps the tags it was scanned with",
+          "[engine][stream]") {
+    // The opening announcement above is for streams only. A file's tags come
+    // from the metadata readers, which are better at it than a decoder is;
+    // republishing the decoder's every time a track started would overwrite the
+    // scanned ones with a second opinion, and quietly disagree with the library.
+    PluginRegistry registry;
+    populateDecoderTagRegistry(registry);
+
+    RingBuffer ring(static_cast<std::size_t>(kRate * 0.5) * kChannels);
+    auto       output = makeOfflineOutput(ring);
+    auto       store  = makeMemorySettingsStore();
+    Settings   settings(*store);
+
+    AudioEngine       engine(registry, *output, ring, settings);
+    RecordingDelegate delegate;
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(*Url::parse("quiet://library.example/song.file")));
+    engine.waitUntilFinished();
+
+    // Only the mid-play change, which is a real event either way.
+    REQUIRE(delegate.updates.size() == 1);
+    CHECK(delegate.updates[0].second.first("title") == "Second Title");
 }

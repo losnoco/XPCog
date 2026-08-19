@@ -173,6 +173,12 @@ private:
     /// Asks the source whether the stream renamed itself, and tells the delegate.
     void pollStreamMetadata();
 
+    /// Set by the decoder's change callback, which fires on the feeder thread
+    /// from inside readAudio(); cleared by pollStreamMetadata() when it reports.
+    /// Atomic because nothing in the contract says a decoder must notify from
+    /// the thread that called it.
+    std::atomic<bool> decoderTagsDirty_{false};
+
     /// Unblocks a read that may never return on its own, so stop() can join the
     /// feeder. A file's read() always completes; a live stream's parks until
     /// more audio arrives, which for a stalled stream is never.

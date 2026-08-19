@@ -149,16 +149,24 @@ std::vector<std::uint8_t> id3v2TextFrame(std::string_view identifier,
     return id3v2Frame(identifier, payload);
 }
 
-/// The PRIV frame every HLS segment carries, whose value is that segment's own
-/// timestamp and therefore differs on every one.
-std::vector<std::uint8_t> id3v2TimestampFrame(std::uint64_t timestamp) {
-    const std::string         owner = "com.apple.streaming.transportStreamTimestamp";
+/// A PRIV frame: an owner string, a terminator, then whatever the publisher
+/// wants. `com.apple.streaming.transportStreamTimestamp` is in every HLS segment
+/// and holds that segment's own timestamp; stations add their own alongside it.
+std::vector<std::uint8_t> id3v2PrivFrame(std::string_view owner,
+                                         std::string_view value) {
     std::vector<std::uint8_t> payload(owner.begin(), owner.end());
     payload.push_back(0x00);
-    for (int i = 7; i >= 0; --i) {
-        payload.push_back(static_cast<std::uint8_t>((timestamp >> (8 * i)) & 0xFF));
-    }
+    payload.insert(payload.end(), value.begin(), value.end());
     return id3v2Frame("PRIV", payload);
+}
+
+std::vector<std::uint8_t> id3v2TimestampFrame(std::uint64_t timestamp) {
+    std::string value(8, '\0');
+    for (int i = 0; i < 8; ++i) {
+        value[static_cast<std::size_t>(i)] =
+            static_cast<char>((timestamp >> (8 * (7 - i))) & 0xFF);
+    }
+    return id3v2PrivFrame("com.apple.streaming.transportStreamTimestamp", value);
 }
 
 /// An ID3v2.4 tag around the given frames. Sizes are syncsafe -- seven bits per
@@ -187,9 +195,11 @@ std::vector<std::uint8_t> id3v2TitleTag(std::string_view title) {
 /// carrying several stable frames alongside a timestamp that moves.
 std::vector<std::uint8_t> id3v2BroadcastTag(std::string_view artist,
                                             std::string_view title,
-                                            std::uint64_t    timestamp) {
+                                            std::uint64_t    timestamp,
+                                            std::string_view stationState) {
     return id3v2Tag({id3v2TextFrame("TPE1", artist), id3v2TextFrame("TIT2", title),
-                     id3v2TextFrame("TALB", "Live"), id3v2TimestampFrame(timestamp)});
+                     id3v2TextFrame("TALB", "Live"), id3v2TimestampFrame(timestamp),
+                     id3v2PrivFrame("station.example.state", stationState)});
 }
 
 /// The offset of the first ADTS frame that starts at or after `at`. Walking the
@@ -659,9 +669,14 @@ TEST_CASE("a broadcast that repeats its title is announced once", "[ffmpeg][stre
 
         // The last segment is the only one where the programme actually moves on.
         const bool changed = (i + 1 == kSegments);
-        const auto tag     = id3v2BroadcastTag(changed ? "Second Artist" : "First Artist",
-                                               changed ? "Second Song" : "First Song",
-                                               0x0d0000ULL + static_cast<std::uint64_t>(i) * 0x1000ULL);
+        // The station's own blob moves within the song too -- a real one carries
+        // an in-break flag and an ad/content marker, which flip during a
+        // commercial break while the song on either side of it is the same.
+        const auto tag = id3v2BroadcastTag(
+            changed ? "Second Artist" : "First Artist",
+            changed ? "Second Song" : "First Song",
+            0x0d0000ULL + static_cast<std::uint64_t>(i) * 0x1000ULL,
+            (i % 2 == 0) ? R"({"in_break":false})" : R"({"in_break":true})");
         out.insert(out.end(), tag.begin(), tag.end());
         out.insert(out.end(), audio.begin() + static_cast<std::ptrdiff_t>(begin),
                    audio.begin() + static_cast<std::ptrdiff_t>(end));
@@ -672,10 +687,12 @@ TEST_CASE("a broadcast that repeats its title is announced once", "[ffmpeg][stre
     auto opened = registry().open(Url::fromLocalPath(path));
     REQUIRE(opened);
     CHECK(opened.decoder->metadata().first("title") == "First Song");
-    // Dropped rather than shown: it names nothing a listener reads, and it is
-    // the reason an unchanging broadcast looks like it is changing.
+    // Dropped rather than shown: private publisher data that names nothing a
+    // listener reads, and the reason an unchanging broadcast looks like it is
+    // changing.
     CHECK_FALSE(opened.decoder->metadata().contains(
         "id3v2_priv.com.apple.streaming.transportstreamtimestamp"));
+    CHECK_FALSE(opened.decoder->metadata().contains("id3v2_priv.station.example.state"));
 
     std::vector<std::string> titles;
     opened.decoder->setChangeCallback([&](bool, bool metadataChanged) {

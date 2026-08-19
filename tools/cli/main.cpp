@@ -266,6 +266,20 @@ int play(const std::vector<std::string>& paths) {
         void trackFailed(const xpcog::Url& url) override {
             std::fprintf(stderr, "skipped (cannot open): %s\n", url.toString().c_str());
         }
+        void streamMetadataChanged(const xpcog::Url&,
+                                   const xpcog::MetadataMap& tags) override {
+            // What a radio station is playing right now, from either half of the
+            // seam: a SHOUTcast StreamTitle beside the audio, or an ID3v2 tag
+            // inside it. Printing it is also the only way to watch that path
+            // work against a real station without a GUI.
+            const std::string artist{tags.first("artist")};
+            const std::string title{tags.first("title")};
+            if (artist.empty() && title.empty()) {
+                return;
+            }
+            std::fprintf(stderr, "now playing: %s%s%s\n", artist.c_str(),
+                         (artist.empty() || title.empty()) ? "" : " - ", title.c_str());
+        }
     };
 
     // Probe the first track for a ring size. The engine and the output must share

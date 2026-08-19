@@ -62,6 +62,33 @@ bool AudioEngine::openTrack(const Url& url) {
     track->source  = std::move(opened.source);
     track->decoder = std::move(opened.decoder);
     track->url     = url;
+
+    // The decoder's own side of the stream-metadata question. Some formats carry
+    // the now-playing title in the audio rather than around it -- an HLS
+    // rendition leads every segment with an ID3v2 tag, and a chained Ogg starts a
+    // new comment header -- and the source underneath knows nothing about any of
+    // it, so polling takeUpdatedMetadata() alone never sees those.
+    //
+    // A flag rather than calling the delegate from here: this fires from inside
+    // readAudio(), and every other delegate call happens at a defined point in
+    // the pump rather than part-way through decoding.
+    track->decoder->setChangeCallback([this](bool /*propertiesChanged*/,
+                                             bool metadataChanged) {
+        if (metadataChanged) {
+            decoderTagsDirty_.store(true, std::memory_order_release);
+        }
+    });
+
+    // A track with no known length is a live stream, and nothing has ever opened
+    // it before now -- so whatever the decoder read on the way in is news, and
+    // without publishing it the row stays named after its URL until the song
+    // changes, which on a radio station is minutes away.
+    //
+    // Only then. A file's tags come from the metadata readers, which are better
+    // at it than a decoder is, and republishing the decoder's would overwrite
+    // them with a second opinion every time the track started.
+    decoderTagsDirty_.store(track->decoder->properties().totalFrames <= 0,
+                            std::memory_order_release);
     {
         const std::lock_guard lock(trackMutex_);
         track_ = std::move(track);
@@ -70,6 +97,8 @@ bool AudioEngine::openTrack(const Url& url) {
 }
 
 void AudioEngine::closeTrack() {
+    decoderTagsDirty_.store(false, std::memory_order_release);
+
     std::unique_ptr<OpenTrack> doomed;
     {
         const std::lock_guard lock(trackMutex_);
@@ -555,13 +584,26 @@ void AudioEngine::pollStreamMetadata() {
     // appear depends on which decoder happened to claim it. Asking here instead
     // costs one virtual call that answers "nothing" for every file, and works
     // for every decoder including ones written before streams existed.
-    if (!track_ || !track_->source || delegate_ == nullptr) {
+    if (!track_ || delegate_ == nullptr) {
         return;
     }
 
-    MetadataMap tags = track_->source->takeUpdatedMetadata();
-    if (!tags.empty()) {
-        delegate_->streamMetadataChanged(track_->url, tags);
+    if (track_->source) {
+        MetadataMap tags = track_->source->takeUpdatedMetadata();
+        if (!tags.empty()) {
+            delegate_->streamMetadataChanged(track_->url, tags);
+        }
+    }
+
+    // And the decoder's, for the formats that carry the title inside the audio.
+    // Exchanged rather than read: the callback may fire again while this is
+    // being reported, and losing that would strand the newer tags until the one
+    // after it.
+    if (track_->decoder && decoderTagsDirty_.exchange(false, std::memory_order_acq_rel)) {
+        MetadataMap tags = track_->decoder->metadata();
+        if (!tags.empty()) {
+            delegate_->streamMetadataChanged(track_->url, tags);
+        }
     }
 }
 

@@ -786,9 +786,14 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   repainting the playlist row and refiring every now-playing surface each time.
   Two separate things made an unchanged tag look new:
 
-  * Apple's `com.apple.streaming.transportStreamTimestamp` PRIV frame is in every
-    segment and holds *that segment's* timestamp, so the tags genuinely are not
-    byte-identical. Dropped in `readTags()`; it names nothing a listener reads.
+  * ID3 `PRIV` frames move faster than the programme does. Apple's
+    `com.apple.streaming.transportStreamTimestamp` is in every segment and holds
+    *that segment's* timestamp; the station's own blob carries an in-break flag
+    and an ad/content marker, which flip during a commercial break while the song
+    either side of it is the same. All of them are dropped in `readTags()` now --
+    private data for the publisher's tooling, naming nothing a listener reads,
+    and the same rule the timed-ID3 parser beside it already applied. (The one
+    real loss is a station-specific album-art URL that nothing consumes yet.)
   * FFmpeg's `av_dict_set` replaces a value by swapping the dictionary's last
     element into the vacated slot, so re-reading an unchanged dictionary returns
     the same tags rotated by one. Hence `MetadataMap::sameContentAs()`, which
@@ -849,6 +854,34 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   not patch this either -- its `0006-hls-live-id3-metadata.patch` fixes FFmpeg's
   own `hls.c` demuxer, which XPCog never uses, since the HLS decoder here
   replaces it and hands FFmpeg raw concatenated segments instead.
+
+- **The engine listens to the decoder, not just the source.** Polling
+  `ISource::takeUpdatedMetadata()` finds a SHOUTcast `StreamTitle`, which arrives
+  *beside* the audio. It cannot find a title that arrives *inside* it, which is
+  where an HLS rendition and a chained Ogg both put one -- the source underneath
+  is moving bytes and knows nothing about any of it. `IDecoder`'s change callback
+  existed for exactly this and nothing was connected to it, so a station whose
+  titles come that way played perfectly and never renamed. Found by pointing the
+  finished HLS decoder at a real one.
+
+  The callback sets a flag rather than calling the delegate, because it fires
+  from inside `readAudio()` and every other delegate call happens at a defined
+  point in the pump. `pollStreamMetadata()` then reports both halves.
+
+  **A live stream also publishes what the decoder knew at open().** Nothing has
+  ever opened a stream before now, so the scanner has no tags for it and the row
+  would stay named after its URL until the song changed -- minutes, on a radio
+  station. Only when the length is unknown, though: a file's tags come from the
+  metadata readers, which are better at it than a decoder is, and republishing
+  the decoder's at every track start would overwrite the scanned ones with a
+  second opinion.
+
+  Nothing in the app needed changing -- the delegate, `Playlist::update()` and
+  the now-playing surfaces were all already wired for the ICY path, which is the
+  point of the two halves meeting at one delegate method. `xpcog-cli play` now
+  prints the title as well, which is the only way to watch that path work against
+  a real station without a GUI: pointed at Audacy's KROQ it names the song at
+  once and again when it changes, and not in between.
 
 - **HTTP Live Streaming.** Port of Cog `Plugins/HLS/`. HLS is not an audio
   format -- an `.m3u8` is a manifest naming a sequence of ordinary media files --

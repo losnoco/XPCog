@@ -552,13 +552,18 @@ private:
                     return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 });
 
-                // Every HLS segment carries this, and it is specified to hold
-                // that segment's own timestamp -- so it differs on every one. It
-                // names nothing a listener reads, and keeping it would make the
-                // comparison in harvestMidStreamTags() find a change in each
-                // segment of an unchanging broadcast, which is the whole reason
-                // that comparison exists.
-                if (key == "id3v2_priv.com.apple.streaming.transportstreamtimestamp") {
+                // ID3 PRIV frames, which FFmpeg surfaces under this prefix.
+                // Dropped wholesale, for the same reason the timed-ID3 parser
+                // beside this one drops them: they are private data for the
+                // publisher's own tooling, and on a live stream they move far
+                // more often than the programme does. Apple's
+                // transportStreamTimestamp is in every HLS segment and holds
+                // that segment's own timestamp; a station's own blob carries
+                // things like an in-break flag and an ad/content marker. Keeping
+                // any of them makes the comparison in harvestMidStreamTags()
+                // find a change in an unchanging broadcast -- which renames the
+                // playing track for something no listener can see.
+                if (key.starts_with("id3v2_priv.")) {
                     continue;
                 }
 
