@@ -188,14 +188,22 @@ TEST_CASE("the sample rate is the one the GBA chose", "[gsf][corpus]") {
 
     // A GBA's sound hardware runs at `0x200 >> SOUNDBIAS.resolution` cycles per
     // sample -- 32768 Hz at reset, doubling for each resolution step the game
-    // selects during startup. It is read from the core after the ROM has run,
-    // because until then the register holds its reset value.
+    // selects during its own startup. The rate is read from the core once it has
+    // settled, not declared.
     //
-    // Cog declares a constant 65536 for every GSF, with an `// XXX` beside it.
-    // This corpus contains games at 32768, which that constant plays an octave
-    // high, so the assertion here is that the rate *varies* across games and is
-    // always one of the rates a GBA can actually produce. A decoder that went
-    // back to a constant would fail this the moment it met the other kind.
+    // The second assertion is the one that matters, and it is here because the
+    // bug it guards against shipped. The GBA emits samples from the very first
+    // frame, at the reset default, before the game has written SOUNDBIAS -- so a
+    // probe that waits only for "some audio exists" stops on frame zero and
+    // reports 32768 for every rip in the world. Every other measurement stays
+    // correct: duration, peak, fade and the `_lib` chain all pass. What gives it
+    // away is the track playing at half speed, which is not something a test
+    // hears.
+    //
+    // What it can see is that 32768 is the value a too-early probe returns, so
+    // an entire corpus reporting exactly the reset default is the signature of
+    // the regression. A corpus made up solely of genuine 32 kHz rips would need
+    // this relaxed; the 783 files this was written against are all 65536.
     std::vector<double> rates;
     for (const fs::path& path : gsfs) {
         INFO(path.filename().string());
@@ -212,6 +220,14 @@ TEST_CASE("the sample rate is the one the GBA chose", "[gsf][corpus]") {
         rates.push_back(rate);
     }
     REQUIRE_FALSE(rates.empty());
+
+    constexpr double kResetDefault = 32768.0;
+    const bool anyPastReset =
+        std::any_of(rates.begin(), rates.end(),
+                    [](double rate) { return rate != kResetDefault; });
+    INFO("every sampled game reported the 32768 Hz reset default, which is what a "
+         "probe that stops before the game configures SOUNDBIAS returns");
+    CHECK(anyPastReset);
 }
 
 TEST_CASE("a GSF honours the length and fade tags", "[gsf][corpus]") {

@@ -51,8 +51,10 @@ relationships, not on specific titles.
 
 Sweeps over the whole corpus, which is how each core was checked beyond the
 tests: all 694 `.miniusf` open and report a duration, and all 783 `.minigsf` do,
-none failing. The GSF sweep also collected sample rates, and they are not
-uniform — 546 files at 65536 Hz and 237 at 32768 Hz. See *From stage 2*.
+none failing. The GSF sweep also collects sample rates, and every file reports
+65536 Hz. That uniformity is worth re-checking after any change to the rate
+probe — a sweep that suddenly reports 32768 across the board means the probe has
+gone back to reading the reset default. See *From stage 2*.
 
 ## What stage 0 gives a core
 
@@ -263,18 +265,34 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   records how to re-derive it from the port's own `build.ninja`. **Check this
   first for every remaining core that has a real upstream.**
 
-- **A GBA has no sample rate.** The sound hardware runs at
-  `0x200 >> SOUNDBIAS.resolution` cycles per sample — 32768 Hz out of reset, and
-  the *game* writes that register during its own startup. So the answer does not
-  exist until the ROM has been loaded, reset and run far enough to configure its
-  audio, which is why GSF starts its emulator in `open()` while USF does not.
+- **A GBA has no sample rate, and asking too early gets the reset default.** The
+  sound hardware runs at `0x200 >> SOUNDBIAS.resolution` cycles per sample —
+  32768 Hz out of reset, and the *game* writes that register during its own
+  startup. So the answer does not exist until the ROM has been loaded, reset and
+  run far enough to configure its audio, which is why GSF starts its emulator in
+  `open()` while USF does not.
+
+  The trap is that the GBA emits samples from the very first frame, at the
+  32768 Hz default, before the game has touched SOUNDBIAS. A probe that runs
+  "until there is audio" — the obvious formulation — therefore stops on frame
+  zero and reports 32768 for everything. Super Mario Advance switches to 65536
+  around frame 20. This shipped, and was caught by someone listening to a track
+  and hearing it play at half speed; every automated measurement of it —
+  duration, peak, fade, chain resolution — was correct throughout.
+
+  So the probe runs until the rate has held for half a second, then resets the
+  machine and clears the audio buffer. The reset is not optional: mGBA's buffer
+  is a plain circle buffer with no resampler, it saturates within a few frames,
+  and keeping the probe's audio would start the track somewhere inside its first
+  second.
 
   Cog declares a constant 65536 with an `// XXX` beside it and the
-  `audioSampleRate()` call left commented out. Across the 783 `.minigsf` here,
-  546 do run at 65536 and **237 run at 32768** — Mario Kart: Super Circuit and
-  the whole Super Mario Advance series — so that constant plays 30% of this
-  corpus an octave high. The rate is read from the core instead, which is what
-  the commented-out line was going to do.
+  `audioSampleRate()` call left commented out. **On this corpus that constant is
+  correct** — all 783 `.minigsf` across all twelve games report 65536. Reading
+  it from the core is still the right thing, because 32768 rips exist and the
+  constant is silently an octave out for them, but nothing here demonstrates a
+  bug in Cog. An earlier revision of this document claimed a 546/237 split; that
+  was the early-probe bug above measuring itself.
 
 - **mGBA is told a power-of-two ROM size and allocated ten bytes more.** It masks
   cartridge addresses against the size rather than bounds-checking them, so a

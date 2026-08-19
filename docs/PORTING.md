@@ -1278,9 +1278,13 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
 
   Also: a GBA has no fixed sample rate. It is `0x200 >> SOUNDBIAS.resolution`
   cycles per sample, and the game writes that register during startup, so the
-  rate is read from the core after the ROM has run rather than declared. Cog
-  hardcodes 65536 with an `// XXX`; this corpus contains games at 32768, which
-  that constant plays an octave high.
+  rate is read from the core after the ROM has run rather than declared. The
+  catch is that the GBA emits audio from the first frame at the 32768 Hz reset
+  default, so a probe that waits only for the first samples reports 32768 for
+  every rip and every track plays at half speed -- which shipped, and was caught
+  by ear rather than by any test, since duration, peak, fade and chain
+  resolution were all correct meanwhile. The probe now waits for the rate to
+  hold, then resets the machine so the track still starts at its beginning.
 
   The staging plan for the remaining six cores -- what each needs, which
   section holds its program, where Cog keeps it, and what a core must implement

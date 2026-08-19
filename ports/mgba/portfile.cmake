@@ -14,6 +14,8 @@ vcpkg_from_github(
     REF f6b1854c373fd7cdf8571b9d8568f68bc2decdb1
     SHA512 747059946ddd313da1d74742137ff9717ab198d1661aed367c34f64a63c7dd90e2fa9b519ea5b6551b4f30b6d16a6cc3e120cd3442de41e6d80c9f37fff76d95
     HEAD_REF master
+    PATCHES
+        fix-windows-epoxy-check.patch
 )
 
 # Not LIBMGBA_ONLY, which is mGBA's own switch for "library only" and is the
@@ -33,6 +35,14 @@ vcpkg_from_github(
 # CMake goes looking for Qt and SDL and builds two players. The rest is stated
 # rather than left to default because a default that changes upstream would
 # reintroduce a dependency silently.
+#
+# The patch above is the price of not using LIBMGBA_ONLY. mGBA refuses to
+# configure for Windows unless one of LIBMGBA_ONLY, SKIP_LIBRARY or USE_EPOXY is
+# set -- libepoxy being how it reaches OpenGL there. That guard is about the GL
+# *frontends*, which DISABLE_FRONTENDS has already switched off, so the patch
+# adds DISABLE_FRONTENDS to the same list rather than dragging in a GL loader a
+# decoder will never call. macOS and Linux configure without it, which is why
+# this only showed up on the Windows job.
 #
 # GBA only. A GSF is a Game Boy Advance program by definition, and Cog's Xcode
 # project likewise defines M_CORE_GBA without M_CORE_GB.

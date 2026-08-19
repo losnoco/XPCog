@@ -251,19 +251,7 @@ public:
 
         core_ = std::move(gba);
 
-        // Run until the sound hardware has produced something. Until then
-        // SOUNDBIAS holds its reset value and audioSampleRate() would answer
-        // for a machine the game has not finished configuring.
-        mAudioBuffer* buffer = core_->core->getAudioBuffer(core_->core);
-        for (int frame = 0; frame < kMaxPrimeFrames && mAudioBufferAvailable(buffer) == 0;
-             ++frame) {
-            core_->core->runFrame(core_->core);
-        }
-
-        const unsigned reported = core_->core->audioSampleRate(core_->core);
-        rate_ = (reported >= kMinRate && reported <= kMaxRate)
-                    ? static_cast<int>(reported)
-                    : kDefaultRate;
+        rate_ = probeSampleRate();
 
         tags_   = psf->tags;
         volume_ = (psf->volume > 0.0) ? psf->volume : 1.0;
@@ -375,6 +363,51 @@ public:
     void close() override { core_.reset(); }
 
 private:
+    /// Runs the machine until the output rate settles, reports it, and then
+    /// puts the machine back to the start.
+    ///
+    /// "Until it settles" rather than "until there is audio", which is the
+    /// obvious version and is wrong. SOUNDBIAS holds its reset value of 32768
+    /// while the game boots, and the GBA emits samples at that rate from the
+    /// very first frame -- so a loop that stops at the first available sample
+    /// stops before the game has configured anything and reports 32768 for
+    /// every rip. That is not a silent error: the track then plays at half
+    /// speed, which is how it was found. Super Mario Advance switches to 65536
+    /// around frame 20.
+    ///
+    /// The reset afterwards is what makes this affordable. The audio produced
+    /// while probing is the opening of the track, and mGBA's buffer is a plain
+    /// circle buffer with no resampler -- it saturates within a few frames and
+    /// starts dropping the oldest samples, so keeping it would mean starting
+    /// the track somewhere in its first second. Resetting replays it properly.
+    ///
+    /// What this cannot fix is a game that changes SOUNDBIAS *during* the
+    /// track: the declared format is fixed for the stream, so the rate that
+    /// holds once the game has finished initialising is the one to report.
+    [[nodiscard]] int probeSampleRate() {
+        mCore* core = core_->core;
+
+        unsigned rate   = core->audioSampleRate(core);
+        int      stable = 0;
+        for (int frame = 0; frame < kMaxRateProbeFrames && stable < kRateStableFrames;
+             ++frame) {
+            core->runFrame(core);
+            const unsigned now = core->audioSampleRate(core);
+            if (now == rate) {
+                ++stable;
+            } else {
+                rate   = now;
+                stable = 0;
+            }
+        }
+
+        core->reset(core);
+        mAudioBufferClear(core->getAudioBuffer(core));
+
+        return (rate >= kMinRate && rate <= kMaxRate) ? static_cast<int>(rate)
+                                                      : kDefaultRate;
+    }
+
     /// mGBA has no fixed frames-per-call: it fills an internal buffer as the
     /// emulated hardware produces samples, so this drains what is there and
     /// runs whole video frames until there is more. `kMaxPrimeFrames` bounds
@@ -439,6 +472,13 @@ private:
     /// Sixty video frames is a second of emulated time with nothing to show for
     /// it, which is long enough to call a rip broken rather than slow.
     static constexpr int kMaxPrimeFrames = 60;
+
+    /// How long the rate must hold before it is believed, and how long to wait
+    /// for that. Half a second of stability, giving up after five -- a game
+    /// that is still changing SOUNDBIAS after five seconds is not going to
+    /// settle on an answer worth declaring.
+    static constexpr int kRateStableFrames   = 30;
+    static constexpr int kMaxRateProbeFrames = 300;
     static constexpr unsigned kMinRate   = 8000;
     static constexpr unsigned kMaxRate   = 192000;
 
