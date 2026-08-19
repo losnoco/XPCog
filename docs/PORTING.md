@@ -1286,7 +1286,34 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   resolution were all correct meanwhile. The probe now waits for the rate to
   hold, then resets the machine so the track still starts at its beginning.
 
-  The staging plan for the remaining six cores -- what each needs, which
+- **The third core: melonDS, so `2sf` and `mini2sf` play.** With it every one of
+  the 1,656 PSF-family files in the corpus plays; the five cores left add
+  formats rather than coverage.
+
+  It is called vio2sf in Cog and it is not vio2sf. kode54 replaced the contents
+  of that framework with melonDS and kept the name, rewriting every source
+  file's includes to `<vio2sf/...>` -- so `vendor/vio2sf` keeps a directory of
+  that name while containing melonDS.
+
+  Two things generalise from it. **Read what the build builds, not what
+  upstream's CMakeLists says**: melonDS's own file lists 59 sources plus teakra,
+  and following it does not compile, because Cog's Xcode project excludes 64
+  files through folder-synchronisation exceptions -- all the DSi sources, the
+  DSP, teakra, both JIT backends, the GL renderers. `DSi.cpp` references a field
+  that is commented out in this copy's `Args.h`, so it *cannot* build here, and
+  that is how the exclusion list was found. And **the header layout on disk is
+  not what the compiler sees**: the framework flattens headers from two trees
+  into one directory, and the sources say `#include <vio2sf/ff.h>` for a file
+  that lives in `fatfs/`.
+
+  melonDS carries an ARM recompiler and Cog builds it (`JIT_ENABLED=1`,
+  unconditional). This build does not: a JIT needs writable-and-executable
+  memory, which means MAP_JIT and the `allow-jit` entitlement on Apple Silicon
+  and the `onecore` dance on Windows, and the interpreter runs about 9x realtime
+  in a Debug build. That is packaging surface not worth taking on to render a
+  few minutes of audio.
+
+  The staging plan for the remaining five cores -- what each needs, which
   section holds its program, where Cog keeps it, and what a core must implement
   -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
   picked up on another machine.

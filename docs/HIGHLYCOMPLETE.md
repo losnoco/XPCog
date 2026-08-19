@@ -14,7 +14,8 @@ or reproducible; nothing depends on the session that started it.
 | 0 | psflib vendored, PSF container, tests | **done** — `24df743` |
 | 1 | lazyusf2 → USF, `usf` + `miniusf` registered | **done** |
 | 2 | mGBA → GSF, `gsf` + `minigsf` registered | **done** |
-| 3… | the remaining six cores | not started — see *Which core next* |
+| 3 | melonDS → 2SF, `2sf` + `mini2sf` registered | **done** |
+| 4… | the remaining five cores | not started — see *Which core next* |
 
 Stage 0 registered **nothing** with the plugin registry — deliberately, since a
 decoder that cannot decode is worse than a format the player does not claim.
@@ -51,7 +52,7 @@ relationships, not on specific titles.
 
 Sweeps over the whole corpus, which is how each core was checked beyond the
 tests: all 694 `.miniusf` open and report a duration, and all 783 `.minigsf` do,
-none failing. The GSF sweep also collects sample rates, and every file reports
+none failing, and all 179 `.mini2sf`. The GSF sweep also collects sample rates, and every file reports
 65536 Hz. That uniformity is worth re-checking after any change to the rate
 probe — a sweep that suddenly reports 32768 across the board means the probe has
 gone back to reading the reset default. See *From stage 2*.
@@ -113,7 +114,7 @@ Version bytes verified against Cog's `HCDecoder.mm`, not recalled.
 |---|---|---|---|---|
 | `0x22` | gsf, minigsf | mGBA | 989 | **done** — overlay port, `kode54/mgba` |
 | `0x21` | usf, miniusf | lazyusf2 | 211 | **done** — `vendor/lazyusf2`, 52 built |
-| `0x24` | 2sf, mini2sf | vio2sf | 255 | vendored in Cog |
+| `0x24` | 2sf, mini2sf | **melonDS**, not vio2sf | 44 built | **done** — `vendor/vio2sf` |
 | `0x25` | ncsf, minincsf | SSEQPlayer | 31 | vendored in Cog |
 | `0x23` | snsf, minisnsf | snes9x | 36 | vendored in Cog |
 | `0x12` | dsf, minidsf | HighlyTheoretical | 29 | vendored in Cog |
@@ -132,27 +133,30 @@ hand-written `CMakeLists.txt` since upstream ships only an Xcode project.
 
 ## Which core next
 
-Two of eight are in, and between them they cover 1,477 of this corpus's 1,656
-PSF-family files. The shape is settled and there are now two templates:
-`codecs/usf` for a core with no upstream (vendored under `vendor/`, hand-written
-`CMakeLists.txt`), and `codecs/gsf` for one that has an upstream (a vcpkg
-overlay port under `ports/`, which CI binary-caches).
+Three of eight are in, covering **1,656 of 1,656** PSF-family files in this
+corpus — every rip here now plays. What is left adds formats rather than
+coverage, and none of the five has a single file here to listen to, which on
+this project's evidence is the part that matters: the GSF pitch bug passed every
+automated check and was caught by ear.
 
-Prefer the port. `ports/README.md` already said so; stage 2 confirmed it is also
-the cheaper answer for a large core, because the port is built once per platform
-and restored from the cache thereafter rather than compiled on every push.
+Two templates exist. `codecs/usf` and `codecs/twosf` are cores with no usable
+upstream: vendored under `vendor/`, hand-written `CMakeLists.txt`. `codecs/gsf`
+is one that has an upstream: a vcpkg overlay port under `ports/`, which CI
+binary-caches. Prefer the port when the choice exists.
 
-The six left:
+The five left, all vendored-in-Cog and all with nothing in this corpus:
 
-- **vio2sf → 2SF.** 179 files here, 255 sources, vendored — the largest
-  remaining share and the same shape as `codecs/usf`.
-- **The four small ones** — HighlyQuixotic at 11 files, HighlyExperimental at 25,
-  HighlyTheoretical at 29, SSEQPlayer at 31. Five formats between them for the
-  size of one mGBA, but nothing in this corpus exercises any of them, so
-  correctness would rest on "it did not crash". HighlyExperimental additionally
-  needs a PlayStation BIOS image; Cog carries `hebios.bin` beside `HCDecoder.mm`,
-  which is a redistribution question rather than a technical one.
-- **snes9x → SNSF.** 36 files, vendored, nothing in this corpus.
+- **snes9x → SNSF**, 36 files.
+- **HighlyTheoretical → DSF and SSF**, 29 files, two formats for one core.
+- **SSEQPlayer → NCSF**, 31 files. Note it is a *sequence* player rather than an
+  emulator, so the core contract will fit it differently.
+- **HighlyExperimental → PSF and PSF2**, 25 files, and the namesake format.
+  Needs a PlayStation BIOS image; Cog carries `hebios.bin` beside
+  `HCDecoder.mm`, which is a redistribution question rather than a technical
+  one. PSF2 also needs `psf2fs.c`, already vendored in `vendor/psflib`.
+- **HighlyQuixotic → QSF**, 11 files, the smallest.
+
+Getting a corpus with something in these formats is worth more than any of them.
 
 ## Lessons already paid for
 
@@ -223,6 +227,59 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   to vendored sources are marked in place with an "XPCog local change" comment
   and listed at the top of the core's `CMakeLists.txt`, so a re-vendor does not
   drop them silently.
+
+### From stage 3 (melonDS → 2SF)
+
+- **"vio2sf" is melonDS.** The table above used to say the 2SF core is vio2sf,
+  a DeSmuME derivative. kode54 replaced the contents of Cog's `vio2sf`
+  framework with melonDS and kept the name, so Cog's decoder says
+  `#import <vio2sf/NDS.h>` and gets melonDS. Every source file in the tree has
+  its includes rewritten to that prefix, which is why `vendor/vio2sf` keeps a
+  directory literally named `vio2sf/`. Check what a framework *contains* before
+  believing what it is called.
+
+- **Read what the build builds, not what upstream's CMakeLists says.** melonDS
+  ships a perfectly good `src/CMakeLists.txt` listing 59 sources plus teakra,
+  and following it produces compile errors — because Cog does not build most of
+  it. Its Xcode project uses folder synchronisation with a
+  `membershipExceptions` list, and that list excludes **all** the DSi sources,
+  all of `DSP_HLE/`, all of teakra, both JIT backends, the GL renderers and the
+  GDB stub: 64 files. Once they are gone the build is 44 sources and needs no
+  teakra at all, since `DSi_DSP.cpp` was its only consumer.
+
+  The exclusions are not arbitrary tidiness either. `DSi.cpp` references
+  `args.NANDImage`, and `NANDImage` is *commented out* in kode54's `Args.h` --
+  that file cannot compile in this tree, which is how the exclusion list was
+  found.
+
+- **The header layout on disk is not the layout the compiler sees.** Cog's
+  framework copies every header, from both `include/` and `src/`, into one flat
+  `vio2sf.framework/Headers/`, and the sources were rewritten to match:
+  `#include <vio2sf/ff.h>` for a file that lives in `fatfs/`. Preserving the
+  directory structure faithfully gives a tree that cannot compile. There are no
+  basename collisions across the 93 headers, so flattening is lossless.
+
+- **melonDS's JIT is built by Cog and is not built here.** `JIT_ENABLED=1` is
+  unconditional in Cog's Xcode project. A recompiler needs memory that is both
+  writable and executable, which on Apple Silicon means MAP_JIT,
+  `pthread_jit_write_protect_np` and the `com.apple.security.cs.allow-jit`
+  entitlement under hardened runtime, and on Windows is why melonDS links
+  `onecore`. The interpreter runs at roughly 9x realtime in a *Debug* build,
+  which is ample, so none of that packaging surface is worth taking on. The
+  sources are still vendored, behind upstream's `ENABLE_JIT`.
+
+- **2SF is the only format here that uses both sections.** `exe` is the ROM as
+  offset/length chunks; `reserved` is a run of `SAVE` records, each zlib
+  compressed with its own CRC *inside* the section psflib already CRC-checked.
+  Cog parses the save image and then never gives it to the emulator -- only the
+  cartridge is used -- and this does the same, because parsing it is what makes
+  a corrupt one a refusal rather than arbitrary playback.
+
+- **A 2SF opens with the game booting.** `_2sf_initial_frames` says how many
+  frames to run and discard first, and no `.2sflib` in this corpus sets it, so
+  the first second or so is a DS powering on. Cog behaves identically. This is
+  not the USF silence trim and deliberately not treated as one: the rip is
+  supposed to state it.
 
 - **A core must not start its emulator in `open()`.** `Scanner::readMetadata`
   opens a decoder for every file it walks, purely to ask for properties, and

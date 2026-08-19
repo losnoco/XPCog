@@ -1,0 +1,107 @@
+# vio2sf: the Nintendo DS core behind 2SF.
+#
+# The name is Cog's and it is a fossil. vio2sf was originally a DeSmuME
+# derivative; kode54 replaced its contents with **melonDS** and kept the
+# framework name, so `Frameworks/vio2sf` in Cog contains melonDS and Cog's
+# decoder reaches it through `#import <vio2sf/NDS.h>`. Those include paths are
+# baked into every one of the source files, which is why the directory below is
+# literally named `vio2sf/` rather than being tidied to `melonDS/` -- the same
+# reasoning that keeps psflib's nested layout in vendor/psflib.
+#
+# Vendored rather than an overlay port even though melonDS has a real upstream:
+# this copy is modified (the include rewrite above, kode54's Platform shim),
+# which ../README.md and ../../ports/README.md both make the `vendor/` case.
+#
+# ---------------------------------------------------------------------------
+# No JIT
+# ---------------------------------------------------------------------------
+# melonDS carries an ARM recompiler with x86-64 and AArch64 backends, and Cog
+# builds it: `JIT_ENABLED=1` is in its Xcode project unconditionally, for both
+# configurations. This build leaves it out and runs the interpreter.
+#
+# That is a deliberate trade rather than an oversight. A JIT has to allocate
+# memory that is both writable and executable: on Apple Silicon that means
+# MAP_JIT plus pthread_jit_write_protect_np and the
+# com.apple.security.cs.allow-jit entitlement on a hardened-runtime build, and
+# on Windows it is why melonDS reaches for `onecore`. That is real packaging
+# surface for a player whose job here is to render a few minutes of DS audio,
+# and none of it is needed while the interpreter keeps up. Revisit if it stops
+# keeping up -- the sources are all still here, behind ENABLE_JIT upstream.
+find_package(ZLIB REQUIRED)
+
+add_library(vendor-vio2sf STATIC
+    src/ARCodeFile.cpp
+    src/ARDatabaseDAT.cpp
+    src/AREngine.cpp
+    src/ARM.cpp
+    src/ARMInterpreter.cpp
+    src/ARMInterpreter_ALU.cpp
+    src/ARMInterpreter_Branch.cpp
+    src/ARMInterpreter_LoadStore.cpp
+    src/CP15.cpp
+    src/CRC32.cpp
+    src/DMA.cpp
+    src/DMA_Timings.cpp
+    src/FATIO.cpp
+    src/FATStorage.cpp
+    src/GBACart.cpp
+    src/GBACartMotionPak.cpp
+    src/GPU.cpp
+    src/GPU_Soft.cpp
+    src/GPU2D.cpp
+    src/GPU2D_Soft.cpp
+    src/GPU3D.cpp
+    src/GPU3D_Soft.cpp
+    src/GPU3D_Texcache.cpp
+    src/Mic.cpp
+    src/NDS.cpp
+    src/NDSCart.cpp
+    src/NDSCartR4.cpp
+    src/ROMList.cpp
+    src/FreeBIOS.cpp
+    src/RTC.cpp
+    src/Savestate.cpp
+    src/SPI.cpp
+    src/SPI_Firmware.cpp
+    src/SPU.cpp
+    src/Utils.cpp
+    src/Wifi.cpp
+    src/WifiAP.cpp
+    src/fatfs/ff.c
+    src/fatfs/ffsystem.c
+    src/fatfs/ffunicode.c
+    src/sha1/sha1.c
+    src/tiny-AES-c/aes.c
+    src/xxhash/xxhash.c
+    src/blip-buf/blip_buf.c
+
+    platform/Platform.cpp)
+
+# `<vio2sf/NDS.h>` for both this library and its consumers; `src/` privately,
+# because a handful of melonDS sources include "version.h" beside themselves.
+target_include_directories(vendor-vio2sf PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+# The header tree is flat, which is not how it sits in Cog's repository and is
+# exactly how Cog's compiler sees it: the framework copies every header into one
+# `vio2sf.framework/Headers/`, and the sources were rewritten to match --
+# `#include <vio2sf/ff.h>` for a file that lives in `fatfs/`. Preserving the
+# subdirectories on disk gives a tree that cannot compile. There are no basename
+# collisions across the 73 headers, so flattening is lossless.
+target_include_directories(vendor-vio2sf PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vio2sf")
+target_link_libraries(vendor-vio2sf PUBLIC ZLIB::ZLIB)
+target_compile_features(vendor-vio2sf PUBLIC cxx_std_17)
+set_target_properties(vendor-vio2sf PROPERTIES FOLDER vendor)
+
+if(MSVC)
+    target_compile_definitions(vendor-vio2sf PRIVATE _CRT_SECURE_NO_WARNINGS
+                                                     _CRT_NONSTDC_NO_WARNINGS)
+    target_compile_options(vendor-vio2sf PRIVATE /w)
+else()
+    # -fwrapv is upstream's, and PUBLIC there for a reason: the ARM interpreter
+    # relies on signed overflow wrapping to compute the V flag, and signed
+    # overflow is undefined behaviour without it. At -O2 the compiler is
+    # entitled to assume it never happens, and the emulated CPU then takes the
+    # wrong branch.
+    target_compile_options(vendor-vio2sf PRIVATE -w -fwrapv)
+endif()
