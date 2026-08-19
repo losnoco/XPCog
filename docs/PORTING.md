@@ -202,7 +202,7 @@ bundle.
   bridging the engine's feeder thread to Qt signals, transport with a
   click-to-position seek bar, `PreferencesDialog`, `FileTree`, `QSettingsStore`,
   About dialogs, playlist export, undo for every playlist edit, folder scans on a
-  worker thread, macOS media keys and Now Playing, i18n scaffolding, and a `deploy`
+  worker thread, macOS media keys and Now Playing, and a `deploy`
   target producing a signed self-contained bundle.
 
 ### M4 — the DSP chain (complete)
@@ -2110,7 +2110,7 @@ All of these are also documented at the call site.
   loop rather than a reconnect.
 - **The app layer has no widget-level test harness, and it has now cost twice.**
   `xpcog-app-tests` runs under a `QCoreApplication`, which is right for what it
-  covers -- models, commands, icons, translations -- but means nothing that needs
+  covers -- models, commands, icons -- but means nothing that needs
   a real `QWidget` can be tested at all. Two things this milestone were therefore
   verified by hand: `PlaybackController`'s asynchronous start, which builds a
   miniaudio output in its constructor, and the dock-layout save above, which is
@@ -2396,14 +2396,12 @@ asserted a property Qt provides rather than the one the code was responsible for
   XPCog available to choose, and choosing it is the user's step. The extension list
   comes from `PluginRegistry::allExtensions()` rather than being written out
   anywhere, so it cannot fall behind the codecs.
-- `windeployqt` is invoked with `--no-translations`, so a deployed Windows build
-  carries no Qt catalogues and Qt's own dialog strings stay English even in
-  Spanish. XPCog's strings are unaffected — they are compiled into the executable
-  as a `:/i18n` resource — and `macdeployqt` copies Qt's by default, so the two
-  platforms currently disagree.
-- `populateMenuBar()`'s translation lookup is not covered by a test: it needs a
-  `QMenuBar`, so a `QApplication` and a platform plugin, and the test binary has
-  neither.
+- **The interface is English only, on purpose.** The `tr()` calls are all there
+  and cost nothing, but the catalogues, `qt_add_translations()`, the `QTranslator`
+  at startup and the `:/i18n` resource have been taken back out until the strings
+  settle — a catalogue that has to be re-scanned after every wording change is
+  upkeep bought before there is a translator to spend it on.
+  [`../app/i18n/README.md`](../app/i18n/README.md) says what to put back.
 - The macOS Now Playing integration is verified by hand, not by test. So are the
   pause and stop fades against a real device: the offline output shows the ramp in
   the capture, but that it sounds like a fade rather than a duck is a listening

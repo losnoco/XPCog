@@ -18,26 +18,12 @@
 
 #include <QApplication>
 #include <QMessageBox>
-#include <QLibraryInfo>
 #include <QList>
-#include <QLocale>
 #include <QStringList>
-#include <QTranslator>
 #include <QUrl>
 
 namespace {
 
-/// Installs the interface language, and Qt's own strings for it.
-///
-/// Two translators, because they come from different places: XPCog's are
-/// compiled into the binary as a resource by qt_add_translations, and Qt's --
-/// the text of the standard dialog buttons, the file dialog, the "About Qt"
-/// box -- ship with Qt. Loading only ours gives a translated menu bar above an
-/// English Open dialog, which reads as a half-finished translation.
-///
-/// Both are leaked deliberately: a QTranslator must outlive every widget that
-/// asks it for text, and the alternative is a static whose destruction order
-/// against QApplication is not something to rely on.
 /// The file arguments, as URLs. Shared between the command line this process
 /// was given and the one a later launch hands over, so both reach openUrls()
 /// having been interpreted the same way.
@@ -112,25 +98,6 @@ void performRegistration(const QStringList&           arguments,
                     nullptr, static_cast<int>(extensions.size())));
 }
 
-void installTranslations() {
-    const QLocale locale = QLocale::system();
-
-    auto* qt = new QTranslator;
-    if (qt->load(locale, QStringLiteral("qtbase"), QStringLiteral("_"),
-                 QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
-        QCoreApplication::installTranslator(qt);
-    }
-
-    auto* ours = new QTranslator;
-    if (ours->load(locale, QStringLiteral("xpcog"), QStringLiteral("_"),
-                   QStringLiteral(":/i18n"))) {
-        QCoreApplication::installTranslator(ours);
-    }
-    // No else: an unavailable language is not an error. QTranslator::load falls
-    // back from es_MX to es on its own, and failing that the source strings are
-    // already English.
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -161,7 +128,6 @@ int main(int argc, char** argv) {
     QApplication::setWindowIcon(xpcog::app::applicationIcon());
 #endif
 
-    installTranslations();
 
     const QStringList arguments = QApplication::arguments();
 
