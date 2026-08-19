@@ -1,0 +1,36 @@
+--- a/spessasynth_core/CMakeLists.txt	2026-08-19 18:36:55.566789300 -0400
++++ b/spessasynth_core/CMakeLists.txt	2026-08-19 18:37:35.558212800 -0400
+@@ -126,22 +126,17 @@
+         target_compile_definitions(spessasynth PRIVATE SS_HAVE_LIBVORBISFILE=1)
+         message(STATUS "libvorbisfile found")
+     else()
+-        find_package(PkgConfig QUIET)
+-        if(PkgConfig_FOUND)
+-            pkg_check_modules(Vorbis REQUIRED vorbisfile)
+-            if(Vorbis_FOUND)
+-                target_sources(spessasynth PRIVATE src/soundbank/vorbis_decode.c)
+-                include_directories(${Vorbis_INCLUDE_DIRS})
+-                link_directories(${Vorbis_LIBRARY_DIRS})
+-                target_link_libraries(spessasynth PRIVATE ${Vorbis_LIBRARIES})
+-                target_compile_definitions(spessasynth PRIVATE SS_HAVE_LIBVORBISFILE=1)
+-                message(STATUS "libvorbisfile found")
+-            else()
+-                message(STATUS "libvorbisfile not found - Vorbis SF3 sample support disabled.")
+-            endif()
+-        else()
+-            message(STATUS "pkgconfig not found - Vorbis SF3 sample support disabled.")
+-        endif()
++        # The same CMake config as the MSVC branch above, rather than
++        # pkg-config. Vorbis ships VorbisConfig.cmake on every platform, while
++        # pkg-config is a tool that may simply not be installed -- and the
++        # branch this replaces called pkg_check_modules with REQUIRED, so a
++        # macOS or Linux build without it failed at configure time instead of
++        # quietly losing Vorbis-compressed SF3 banks.
++        find_package(Vorbis CONFIG REQUIRED)
++        target_sources(spessasynth PRIVATE src/soundbank/vorbis_decode.c)
++        target_link_libraries(spessasynth PRIVATE Vorbis::vorbisfile)
++        target_compile_definitions(spessasynth PRIVATE SS_HAVE_LIBVORBISFILE=1)
++        message(STATUS "libvorbisfile found")
+     endif()
+ endif()
+ 

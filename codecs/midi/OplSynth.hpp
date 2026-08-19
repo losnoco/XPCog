@@ -40,6 +40,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 /// vendor/nuked-opl3/interface.h. Forward-declared so that header, which has no
 /// include guard and declares its classes at global scope, stays inside the one
@@ -81,7 +82,7 @@ public:
     /// Renders `frames` stereo frames. The chip runs at a fixed 49716 Hz and a
     /// sinc resampler inside it produces the requested rate, so this is exact
     /// for any `frames` including zero.
-    void render(std::int16_t* out, std::size_t frames) override;
+    void render(float* out, std::size_t frames) override;
 
     /// Rebuilds the chip, which for an OPL3 is an allocation and a register
     /// clear -- there is nothing here that takes time to become ready.
@@ -93,6 +94,10 @@ public:
     [[nodiscard]] static unsigned bankCount(OplDriver driver);
 
 private:
+    /// Where the chip's own 16-bit output lands on its way to being widened.
+    /// A member rather than a local so a render does not allocate.
+    std::vector<std::int16_t> pcm_;
+
     midisynth* synth_      = nullptr;
     OplDriver  driver_     = OplDriver::Doom;
     unsigned   bank_       = 0;

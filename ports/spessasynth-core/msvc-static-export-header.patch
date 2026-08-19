@@ -1,0 +1,28 @@
+--- a/spessasynth_core/CMakeLists.txt	2026-08-14 09:47:24.000000000 -0400
++++ b/spessasynth_core/CMakeLists.txt	2026-08-19 18:36:55.566789300 -0400
+@@ -93,6 +93,17 @@
+     endif()
+ else()
+     add_library(spessasynth STATIC ${SS_SOURCES})
++    if(MSVC)
++        # Every public header includes spessasynth_exports.h under _MSC_VER,
++        # but only the shared branch above generates one. Generating it here
++        # with GenerateExportHeader would not do: for a static target the macro
++        # expands to __declspec(dllimport) unless the consumer also defines the
++        # STATIC_DEFINE, and a consumer of an installed header has no way to
++        # know it should. An empty macro is what static linkage wants.
++        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/spessasynth_exports.h"
++             "#pragma once\n#define SPESSASYNTH_EXPORTS\n")
++        include_directories(${CMAKE_CURRENT_BINARY_DIR})
++    endif()
+ endif()
+ 
+ set_target_properties(spessasynth PROPERTIES VERSION 4.3.17 SOVERSION 10)
+@@ -211,3 +222,7 @@
+     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+ install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
++if(MSVC)
++    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/spessasynth_exports.h"
++            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
++endif()

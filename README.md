@@ -21,8 +21,8 @@ from a single codebase.
 > stream survives its own track changes. Breadth since: archives played in
 > place, tracker modules, game music rips, vgmstream's console formats, the
 > whole PSF family on all eight of its emulator cores, Commodore 64 tunes,
-> Musepack, Monkey's Audio Link files, and MIDI on a Sound Blaster's OPL3 or an
-> emulated Roland SC-55.
+> Musepack, Monkey's Audio Link files, and MIDI on a Sound Blaster's OPL3, a
+> SoundFont bank, or an emulated Roland SC-55 with its front panel.
 > **842 extensions** across 23 decoders.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
@@ -144,10 +144,11 @@ winget install Xiph.FLAC Gyan.FFmpeg LAME.LAME Mozilla.opus-tools
 `oggenc.exe` (renamed from `oggenc2.exe`) anywhere on `PATH`.
 
 Watch the skip count in `ctest` output, not just the pass rate. With the encoders
-installed a full run is **481 tests, 61 skipped**, and those 61 want something no
-package manager can supply: rips of copyrighted game programs, which cannot be
-committed. Point `XPCOG_PSF_CORPUS`, `XPCOG_VGM_CORPUS`, `XPCOG_SID_CORPUS`,
-`XPCOG_MIDI_CORPUS` or `XPCOG_SC55_ROMS` at one and the matching cases run.
+installed a full run is **488 tests, 64 skipped**, and those 64 want something no
+package manager can supply: rips of copyrighted game programs, a Roland's
+firmware, a SoundFont bank. Point `XPCOG_PSF_CORPUS`, `XPCOG_VGM_CORPUS`,
+`XPCOG_SID_CORPUS`, `XPCOG_MIDI_CORPUS`, `XPCOG_SC55_ROMS` or `XPCOG_SOUNDFONT`
+at one and the matching cases run.
 Without the encoders, 41 more go quiet.
 
 Note that the encoders alone were not enough before the fixture commands stopped
@@ -282,7 +283,7 @@ never confused with the expected tail.
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
 | ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
-| 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores, SID, Musepack, APL and MIDI on OPL3 and an emulated SC-55 all done; the SC-55 front panel, SpessaSynth, DSD/DoP, the remaining decoders, `cogimport`, HRTF, scrobbling and global hotkeys to come |
+| 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores, SID, Musepack, APL and MIDI on OPL3, SpessaSynth and an emulated SC-55 with its front panel all done; DSD/DoP, the remaining decoders, `cogimport`, HRTF, scrobbling and global hotkeys to come |
 
 Milestone 1's formats were FLAC, MP3, Vorbis, Opus, AAC/ALAC and WavPack, with APE
 and Musepack arriving through FFmpeg rather than their own decoders; Musepack has

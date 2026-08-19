@@ -84,21 +84,24 @@ void OplSynth::write(std::uint32_t message) {
     }
 }
 
-void OplSynth::render(std::int16_t* out, std::size_t frames) {
+void OplSynth::render(float* out, std::size_t frames) {
     if (frames == 0) {
         return;
     }
     if (synth_ == nullptr) {
-        std::fill_n(out, frames * 2, std::int16_t{0});
+        std::fill_n(out, frames * 2, 0.0F);
         return;
     }
     // midi_generate takes a frame count in an unsigned int and writes stereo
-    // pairs. Chunked so a very long render cannot overflow that count, which is
-    // narrower than the std::size_t a caller may hold.
-    constexpr std::size_t kMaxChunk = 65536;
+    // pairs of 16-bit samples. Chunked for two reasons: that count is narrower
+    // than the std::size_t a caller may hold, and the chunk is also the scratch
+    // the chip's output is widened from.
+    constexpr std::size_t kMaxChunk = 4096;
+    pcm_.resize(kMaxChunk * 2);
     while (frames > 0) {
         const std::size_t todo = std::min(frames, kMaxChunk);
-        synth_->midi_generate(out, static_cast<unsigned>(todo));
+        synth_->midi_generate(pcm_.data(), static_cast<unsigned>(todo));
+        widen(pcm_.data(), out, todo * 2);
         out += todo * 2;
         frames -= todo;
     }

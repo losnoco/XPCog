@@ -33,6 +33,7 @@
 #include <cmath>
 #include <cstddef>
 #include <functional>
+#include <initializer_list>
 #include <span>
 #include <string>
 #include <string_view>
@@ -83,6 +84,7 @@ constexpr std::array kMidiSynthChoices = {
     Choice{"DOOM4", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX Strife")},
     Choice{"DOOM5", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMXOPL")},
     Choice{"OPL3W0", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — General MIDI")},
+    Choice{"Spessa", QT_TRANSLATE_NOOP("PreferencesDialog", "SoundFont — SpessaSynth")},
     Choice{"NukeSc55", QT_TRANSLATE_NOOP("PreferencesDialog", "Roland SC-55")},
 };
 
@@ -102,7 +104,8 @@ constexpr std::array kCuratedKeys = {
     "volumeScaling", "resampling", "enableHDCD", "enableFSurround",
     "enableFading", "suspendOutputOnPause",
     // MIDI
-    "midiPlugin", "midiRomPath", "synthSampleRate", "synthDefaultSeconds",
+    "midiPlugin", "midiRomPath", "soundFontPath", "synthSampleRate",
+    "synthDefaultSeconds",
     "synthDefaultFadeSeconds", "synthDefaultLoopCount",
     // Appearance
     // floatingMiniWindow is deliberately absent: the mini player carries its
@@ -214,23 +217,29 @@ public:
     /// Two buttons rather than one because the thing being named may be either
     /// a folder or a file, and no file dialog on any platform offers both at
     /// once. The line edit accepts a typed or pasted path either way.
-    void path(const QString& label, const char* key, const QString& archiveFilter,
+    /// One file, chosen or typed. For a setting that names a single file and
+    /// nothing else -- a SoundFont bank -- where the folder button a path() row
+    /// carries would only offer something that cannot be right.
+    void file(const QString& label, const char* key, const QString& filter,
               QWidget* parent) const {
-        auto* edit = new QLineEdit(QString::fromStdString(settings_->rawValue(key)));
-        auto* settings = settings_;
-        auto  announce = announce_;
-        QObject::connect(edit, &QLineEdit::editingFinished, edit,
-                         [settings, announce, edit, key] {
-                             settings->setRawValue(key, edit->text().toStdString());
-                             announce(key);
+        auto*      edit   = makeEdit(key);
+        const auto choose = chooser(edit);
+
+        auto* browse = new QPushButton(
+            QCoreApplication::translate("PreferencesDialog", "Choose…"));
+        QObject::connect(browse, &QPushButton::clicked, browse,
+                         [parent, choose, label, filter] {
+                             choose(QFileDialog::getOpenFileName(parent, label, {},
+                                                                 filter));
                          });
 
-        const auto choose = [edit](const QString& chosen) {
-            if (!chosen.isEmpty()) {
-                edit->setText(QDir::toNativeSeparators(chosen));
-                emit edit->editingFinished();
-            }
-        };
+        addRow(label, edit, {browse});
+    }
+
+    void path(const QString& label, const char* key, const QString& archiveFilter,
+              QWidget* parent) const {
+        auto*      edit   = makeEdit(key);
+        const auto choose = chooser(edit);
 
         auto* folder = new QPushButton(
             QCoreApplication::translate("PreferencesDialog", "Folder…"));
@@ -246,12 +255,42 @@ public:
                                                                  archiveFilter));
                          });
 
+        addRow(label, edit, {folder, archive});
+    }
+
+    /// A line edit that writes its setting when it loses focus or takes Return.
+    [[nodiscard]] QLineEdit* makeEdit(const char* key) const {
+        auto* edit = new QLineEdit(QString::fromStdString(settings_->rawValue(key)));
+        auto* settings = settings_;
+        auto  announce = announce_;
+        QObject::connect(edit, &QLineEdit::editingFinished, edit,
+                         [settings, announce, edit, key] {
+                             settings->setRawValue(key, edit->text().toStdString());
+                             announce(key);
+                         });
+        return edit;
+    }
+
+    /// What a chooser button does with whatever the dialog returned. Empty is
+    /// the cancelled dialog, and leaves the setting alone.
+    [[nodiscard]] static auto chooser(QLineEdit* edit) {
+        return [edit](const QString& chosen) {
+            if (!chosen.isEmpty()) {
+                edit->setText(QDir::toNativeSeparators(chosen));
+                emit edit->editingFinished();
+            }
+        };
+    }
+
+    void addRow(const QString& label, QLineEdit* edit,
+                std::initializer_list<QPushButton*> buttons) const {
         auto* row    = new QWidget;
         auto* layout = new QHBoxLayout(row);
         layout->setContentsMargins(0, 0, 0, 0);
         layout->addWidget(edit, 1);
-        layout->addWidget(folder);
-        layout->addWidget(archive);
+        for (QPushButton* button : buttons) {
+            layout->addWidget(button);
+        }
         layout_->addRow(label, row);
     }
 
@@ -364,6 +403,10 @@ QWidget* PreferencesDialog::buildMidiPane() {
     const RowBuilder row{settings_, layout, changeNotifier()};
 
     row.choice(tr("Synthesiser"), "midiPlugin", kMidiSynthChoices);
+    row.file(tr("SoundFont"), "soundFontPath",
+             tr("SoundFont banks (*.sf2 *.sf3 *.sf2pack *.dls *.sflist *.json);;"
+                "All files (*)"),
+             pane);
     row.path(tr("SC-55 ROMs"), "midiRomPath",
              tr("Archives (*.zip *.rar *.7z);;All files (*)"), pane);
 
@@ -375,6 +418,10 @@ QWidget* PreferencesDialog::buildMidiPane() {
     row.seconds(tr("Default fade time"), "synthDefaultFadeSeconds", 60.0);
     row.number(tr("Default loop count"), "synthDefaultLoopCount", 0, 10);
 
+    row.note(tr("SpessaSynth plays a SoundFont bank, and has no sound of its own "
+                "without one — any .sf2, .sf3 or .dls will do. A file that has "
+                "a bank of its own beside it is played with that one instead, "
+                "whatever is chosen here."));
     row.note(tr("The Roland needs its five ROM files, which are not something "
                 "this player can supply. Name either the folder holding them or "
                 "the archive they came in — they are recognised by content, so "

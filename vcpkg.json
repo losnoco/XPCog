@@ -20,6 +20,7 @@
     "libgme",
     "zlib",
     "libarchive",
+    "spessasynth-core",
     {
       "name": "curl",
       "default-features": false,

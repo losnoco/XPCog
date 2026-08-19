@@ -65,7 +65,7 @@ player does not claim.
 |---|---|---|---|
 | 0 | `midi_processing` vendored; container, sequencer, metadata, subsongs. **Registers nothing.** | — | done |
 | 1 | **Nuked OPL3**, via the `opl3*` sources. First audible MIDI, and the decoder that registers. | nothing external | done |
-| 2 | **SpessaSynth**, and a SoundFont setting | a user-supplied `.sf2`/`.sf3` | |
+| 2 | **SpessaSynth**, and a SoundFont setting | a user-supplied `.sf2`/`.sf3` | done |
 | 3 | **Nuked SC-55**, and a ROM setting | a user-supplied ROM set | audio done |
 | 3b | The SC-55's **front-panel LCD**, in sync with playback | the same ROM set | capture and feed done |
 
@@ -108,6 +108,73 @@ pointer. Cog's `MSPlayer::enum_synthesizers` does exactly that and gets away wit
 it because a fresh page on macOS reads as zero. MSVC's debug heap fills new
 memory with 0xCD, and it crashed on the first corpus file. Same shape as the
 `vendor/vio2sf` GPU.h fix, and found the same way.
+
+## What stage 2 turned out to be
+
+**A port, not a vendored tree.** `spessasynth_core_c` is kode54's C port of
+SpessaSynth, and Cog carries it as a submodule for the reason Cog carries
+everything as a submodule. It has a real upstream, a pinned commit and its own
+`CMakeLists.txt`, which is exactly the rule in `ports/README.md`, so it is
+`ports/spessasynth-core` — 67 sources that CI compiles once per platform and
+restores from the binary cache thereafter.
+
+Two patches, both about builds Cog never does:
+
+  Every public header includes `spessasynth_exports.h` under `_MSC_VER`, and
+  only the *shared* branch of upstream's CMake generates one. Generating it in
+  the static branch instead would not do either: for a static target the macro
+  comes out as `__declspec(dllimport)` unless the consumer also defines the
+  static define, and a consumer of an installed header has no way to know it
+  should. The patch writes the two-line header static linkage actually wants.
+
+  Vorbis was found through `pkg_check_modules(... REQUIRED)` on everything but
+  MSVC, so a macOS or Linux machine without pkg-config failed at configure
+  rather than losing Vorbis-compressed SF3 banks. Vorbis ships a CMake config on
+  every platform; the patch uses the same call the MSVC branch already made.
+
+**The audio interface had to widen to float.** The OPL3 and the SC-55 are
+16-bit machines, so `MidiSynth::render` was 16-bit and nothing was lost. This
+one mixes in float and its output goes past full scale on a hot bank with reverb
+running — so a 16-bit interface would be *this decoder* deciding where somebody
+else's SoundFont clips. Now every synthesiser hands back float, the other two
+widen exactly (every `int16` is a `float`), the decoder's fade is a multiply
+instead of a clamp-and-round, and the codec reports `F32`. Cog's MIDI decoder
+has always reported 32-bit float for the same reason.
+
+**It wants to be driven in blocks of 128, and that is not a preference.** The
+engine ramps gain, pan and filter across a block and steps its LFOs once per
+block, so asking it for four samples would run a whole block's worth of ramping
+into four samples. `SoundFontSynth` therefore renders whole blocks and hands out
+slices, which is what Cog does (`SpessaPlayer::getChunkSize` is 128). The price
+is that an event can be applied up to a block early, since the audio for its own
+sample may already exist — 2.9 ms at 44100, and the same bound Cog lives with.
+Everywhere else this decoder is still sample-exact.
+
+**A 1.3 GB bank is a normal thing to be handed.** The engine keeps the file open
+and decodes samples as the music reaches them, so neither `preload_all_samples`
+nor `preload_instruments` is set. The whole SoundFont test case set against a
+1,351,598,224-byte bank runs in **0.287 s**, which is the measurement that says
+nothing is being read up front.
+
+**A file may bring its own bank, and it wins.** Cog's rule
+(`MIDIDecoder.mm:271`), kept whole: `song.mid.sf2`, `song.sf2` and
+`Album/Album.sf2` are looked for in that order, each with every extension the
+engine reads, and lists come before banks. A game rip that ships its instruments
+is asking to be played with them rather than with whatever is configured — so
+this overrides the `midiPlugin` setting, which is the one place a setting does
+not have the last word.
+
+**The old names still mean something.** Cog migrates `BASSMIDI`, `FluidSynth`
+and `TinySF` to `Spessa`, all three having meant "play the bank I chose", and
+`parseSynthChoice` accepts them for the same reason. What is *not* accepted is
+Cog's four-plus-four AudioUnit component code, which names a macOS synthesiser
+that does not exist here.
+
+**Two things Cog has and this does not.** An RMID file can carry its bank inside
+it; `midi_processing` does not extract one, and SpessaSynth's own loader is the
+thing that would. And Cog's `midi.flavor` setting picks a SysEx filter — GM,
+GM2, GS, one of four SC-88 flavours, XG — inside `MIDIPlayer`, which was not
+ported. Both are gaps rather than decisions, and neither stops a file playing.
 
 ## The SC-55 ROMs are the user's, not ours
 

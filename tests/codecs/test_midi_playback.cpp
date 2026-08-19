@@ -82,7 +82,7 @@ fs::path writeFixture(const std::string& name,
 }
 
 struct Decoded {
-    std::vector<std::int16_t> samples;
+    std::vector<float> samples;
     TrackProperties           properties;
     MetadataMap               tags;
 };
@@ -107,15 +107,15 @@ struct Decoded {
         const std::size_t at       = out.samples.size();
         out.samples.resize(at + frames * channels);
         std::memcpy(out.samples.data() + at, chunk.bytes().data(),
-                    frames * channels * sizeof(std::int16_t));
+                    frames * channels * sizeof(float));
     }
     return out;
 }
 
-[[nodiscard]] int peak(const std::vector<std::int16_t>& samples) {
-    int highest = 0;
-    for (const std::int16_t sample : samples) {
-        highest = std::max(highest, std::abs(static_cast<int>(sample)));
+[[nodiscard]] float peak(const std::vector<float>& samples) {
+    float highest = 0.0F;
+    for (const float sample : samples) {
+        highest = std::max(highest, std::fabs(sample));
     }
     return highest;
 }
@@ -124,7 +124,9 @@ struct Decoded {
 /// separates "the chip ran" from "the chip played". The threshold is low
 /// because a single FM note at velocity 100 is not loud, and high enough that
 /// the resampler's ringing on a genuinely silent stream cannot reach it.
-constexpr int kAudible = 500;
+/// Full scale is 1.0 now that the decoder renders float, so the threshold that
+/// used to be 500 of 32768 is written as exactly that.
+constexpr float kAudible = 500.0F / 32768.0F;
 
 constexpr std::size_t kTwoSeconds = 2 * 44100 * 2;
 
@@ -177,7 +179,7 @@ TEST_CASE("the chip is quiet before the first note reaches it", "[midi]") {
     // event has been delivered at all, which is what a decoder that rendered
     // the whole sequence up front and then handed out slices would produce.
     constexpr std::size_t kFortyMilliseconds = 44100 * 40 / 1000;
-    const std::vector<std::int16_t> head(
+    const std::vector<float> head(
         decoded.samples.begin(),
         decoded.samples.begin() + kFortyMilliseconds * 2);
     CHECK(peak(head) == 0);
@@ -291,14 +293,14 @@ TEST_CASE("a seek carries the instrument with it", "[midi]") {
         REQUIRE(opened);
         REQUIRE(opened.decoder->seek(11025) == 11025);  // a quarter second in
 
-        std::vector<std::int16_t> samples;
+        std::vector<float> samples;
         AudioChunk                chunk;
         while (samples.size() < 44100 * 2 && opened.decoder->readAudio(chunk)) {
             const std::size_t got = chunk.frameCount();
             const std::size_t at  = samples.size();
             samples.resize(at + got * 2);
             std::memcpy(samples.data() + at, chunk.bytes().data(),
-                        got * 2 * sizeof(std::int16_t));
+                        got * 2 * sizeof(float));
         }
         return samples;
     };

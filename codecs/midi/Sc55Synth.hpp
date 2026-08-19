@@ -98,7 +98,7 @@ public:
     void writeSysex(std::span<const std::uint8_t> bytes) override;
 
     /// Renders `frames` stereo frames.
-    void render(std::int16_t* out, std::size_t frames) override;
+    void render(float* out, std::size_t frames) override;
 
     /// Resets the machine over MIDI rather than rebooting it.
     ///
@@ -147,6 +147,10 @@ private:
     double      sampleRate_ = 0.0;
     /// The model the ROMs turned out to be, for displayName().
     std::string device_ = "Roland SC-55";
+
+    /// Where the DAC's own 16-bit output lands on its way to being widened.
+    /// A member rather than a local so a render does not allocate.
+    std::vector<std::int16_t> pcm_;
 
     bool                      captureLcd_ = false;
     /// Samples rendered since this machine was opened, and what has to be added

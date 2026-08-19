@@ -196,26 +196,29 @@ std::vector<Sc55LcdFrame> Sc55Synth::takeLcdFrames() {
     return std::exchange(lcdFrames_, {});
 }
 
-void Sc55Synth::render(std::int16_t* out, std::size_t frames) {
+void Sc55Synth::render(float* out, std::size_t frames) {
     if (frames == 0) {
         return;
     }
     if (state_ == nullptr) {
-        std::fill_n(out, frames * 2, std::int16_t{0});
+        std::fill_n(out, frames * 2, 0.0F);
         return;
     }
     // Chunked so a long render cannot overflow the uint32_t count, and because
     // the emulator advances a whole machine per call -- there is no advantage
-    // to asking it for a million frames at once.
+    // to asking it for a million frames at once. The chunk is also the scratch
+    // the DAC's 16-bit output is widened from.
     constexpr std::size_t kMaxChunk = 4096;
+    pcm_.resize(kMaxChunk * 2);
     while (frames > 0) {
         const std::size_t todo = std::min(frames, kMaxChunk);
         if (captureLcd_) {
-            sc55_render_with_lcd(state_, out, static_cast<std::uint32_t>(todo),
+            sc55_render_with_lcd(state_, pcm_.data(), static_cast<std::uint32_t>(todo),
                                  &Sc55Synth::pushLcd, this);
         } else {
-            sc55_render(state_, out, static_cast<std::uint32_t>(todo));
+            sc55_render(state_, pcm_.data(), static_cast<std::uint32_t>(todo));
         }
+        widen(pcm_.data(), out, todo * 2);
         rendered_ += todo;
         out += todo * 2;
         frames -= todo;
@@ -248,7 +251,7 @@ void Sc55Synth::reset() {
     // A hundred and seven bytes, well inside the 8192-byte port buffer, and
     // then long enough for the firmware to have read them.
     const auto settle = static_cast<std::size_t>(sampleRate_ * kResetSettleSeconds);
-    std::vector<std::int16_t> discard(settle * 2);
+    std::vector<float> discard(settle * 2);
     render(discard.data(), settle);
     (void)takeLcdFrames();
 }

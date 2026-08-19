@@ -239,15 +239,21 @@ XPCOG_SETTING(SynthDefaultLoopCount, int, "synthDefaultLoopCount", 2)
 ///                     bank -- DMX default, Doom 1, Doom 2, Raptor, Strife,
 ///                     DMXOPL.
 ///   `OPL3W0`          Nuked OPL3 through Nuke.YKT's General MIDI driver.
+///   `Spessa`          SpessaSynth, playing the bank named by `soundFontPath`.
+///   `NukeSc55`        A Roland SC-55, from the ROMs at `midiRomPath`.
 ///
-/// Cog also accepts `SpessaSynth`, `NukeSc55` and a four-plus-four character
-/// AudioUnit component code. The first two arrive with their stages (see
-/// docs/MIDI.md); the third is macOS-only and is not being ported. Anything
-/// unrecognised falls back to the default rather than refusing to play.
+/// `Spessa` is also what Cog migrates `BASSMIDI`, `FluidSynth` and `TinySF` to,
+/// and those names are accepted here for the same reason -- a settings file
+/// written by an older Cog names a SoundFont synthesiser that no longer exists
+/// under a name that still means "play my bank". Cog additionally accepts a
+/// four-plus-four character AudioUnit component code, which is macOS-only and
+/// is not being ported. Anything unrecognised falls back to the default rather
+/// than refusing to play.
 ///
 /// The default is a Sound Blaster because it is the one synthesiser here that
-/// needs nothing the listener has to supply. Cog's own default is an AudioUnit,
-/// which does not exist on this platform.
+/// needs nothing the listener has to supply -- the other two each want a file
+/// nobody can be handed. Cog's own default is `Spessa`, which it can afford
+/// because it ships a bank in its application bundle.
 XPCOG_SETTING(MidiPlugin, std::string, "midiPlugin", "DOOM0")
 
 /// Where the Roland SC-55 ROM set is, for the `NukeSc55` synthesiser.
@@ -264,6 +270,20 @@ XPCOG_SETTING(MidiPlugin, std::string, "midiPlugin", "DOOM0")
 /// not a complete set of one model, falls back to the OPL3 -- the file still
 /// plays, and the track properties say what rendered it.
 XPCOG_SETTING(MidiRomPath, std::string, "midiRomPath", "")
+
+/// Which SoundFont SpessaSynth plays.
+///
+/// Cog's `soundFontPath` key, and the same meanings: a `.sf2`, `.sf3`,
+/// `.sf2pack` or `.dls` bank, or an `.sflist`/`.json` naming several with the
+/// programs and channels each covers. Read in place, and streamed rather than
+/// loaded -- a bank can be well over a gigabyte, and a piece of music reaches
+/// almost none of it.
+///
+/// A file may also bring its own bank, which wins over this one: see
+/// findCompanionBank() in codecs/midi/SoundFontSynth.hpp. Empty, with no
+/// companion bank either, falls back to the OPL3 -- the file still plays, and
+/// the track properties say what rendered it.
+XPCOG_SETTING(SoundFontPath, std::string, "soundFontPath", "")
 
 /// Ring size for the HTTP source, in bytes. Must be a power of two between
 /// 64 KiB and 128 MiB; anything else falls back to the default. A slow or

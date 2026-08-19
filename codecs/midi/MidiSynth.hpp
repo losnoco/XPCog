@@ -39,8 +39,15 @@ public:
     /// synthesiser with nowhere to put it.
     virtual void writeSysex(std::span<const std::uint8_t> /*bytes*/) {}
 
-    /// Renders `frames` stereo frames of 16-bit samples.
-    virtual void render(std::int16_t* out, std::size_t frames) = 0;
+    /// Renders `frames` stereo frames.
+    ///
+    /// Float, and not because anything here is fussy about headroom. Two of
+    /// these synthesisers are 16-bit machines and the third is not: SpessaSynth
+    /// mixes in float and its output exceeds full scale on a bank with hot
+    /// samples and reverb running, so a 16-bit interface would decide where
+    /// that clips. Widening the other two costs nothing and invents nothing --
+    /// every 16-bit sample is a float exactly.
+    virtual void render(float* out, std::size_t frames) = 0;
 
     /// Returns to a known state as cheaply as the machine allows.
     ///
@@ -56,6 +63,20 @@ public:
     /// asked for -- a missing ROM set falls back rather than refusing to play --
     /// so it is worth being able to see.
     [[nodiscard]] virtual const char* displayName() const noexcept = 0;
+
+protected:
+    /// Widens a synthesiser's own 16-bit rendering into what render() returns.
+    ///
+    /// The divisor is 32768 rather than 32767, so the conversion is exact in
+    /// binary and -32768 lands on -1.0 -- the arithmetic every audio API uses,
+    /// at the price of never quite reaching +1.0.
+    static void widen(const std::int16_t* pcm, float* out,
+                      std::size_t samples) noexcept {
+        constexpr float kScale = 1.0F / 32768.0F;
+        for (std::size_t i = 0; i < samples; ++i) {
+            out[i] = static_cast<float>(pcm[i]) * kScale;
+        }
+    }
 };
 
 }  // namespace xpcog::codecs

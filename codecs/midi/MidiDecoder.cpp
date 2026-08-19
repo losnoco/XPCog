@@ -1,9 +1,10 @@
 // MIDI playback: the sequencer in MidiFile driving a synthesiser.
 //
 // Port of Cog Plugins/MIDI/MIDIDecoder.mm and the callback half of
-// MIDIPlayer.cpp. The synthesiser is Nuked OPL3 (OplSynth.hpp), which is stage
-// 1 of docs/MIDI.md and the first of three: SpessaSynth and Nuked SC-55 slot in
-// behind the same event stream, and neither needs anything here to change shape.
+// MIDIPlayer.cpp. Three synthesisers answer the same event stream -- Nuked OPL3
+// (OplSynth.hpp), SpessaSynth (SoundFontSynth.hpp) and Nuked SC-55
+// (Sc55Synth.hpp) -- and which one runs is a setting, not a decoder each, since
+// they all claim the same extensions. See docs/MIDI.md.
 //
 // ---------------------------------------------------------------------------
 // Why a MIDI file has a length at all
@@ -42,7 +43,9 @@
 #include "midi/OplSynth.hpp"
 #include "midi/Sc55Roms.hpp"
 #include "midi/Sc55Synth.hpp"
+#include "midi/SoundFontSynth.hpp"
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/audio/PanelFeed.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
@@ -77,14 +80,15 @@ constexpr int kMaxLoopCount = 10;
 
 /// What `midiPlugin` names, resolved.
 struct SynthChoice {
-    enum class Backend : std::uint8_t { Opl, Sc55 };
+    enum class Backend : std::uint8_t { Opl, SoundFont, Sc55 };
 
     Backend           backend = Backend::Opl;
     codecs::OplDriver driver  = codecs::OplDriver::Doom;
     unsigned          bank    = 0;
 };
 
-/// Reads the setting's `DOOM<n>` / `OPL3W<n>` / `NukeSc55` vocabulary.
+/// Reads the setting's `DOOM<n>` / `OPL3W<n>` / `Spessa` / `NukeSc55`
+/// vocabulary.
 ///
 /// Anything else -- an AudioUnit component code from a macOS Cog, or a synth
 /// whose stage has not landed -- falls back to the default rather than refusing
@@ -101,6 +105,14 @@ struct SynthChoice {
     std::string_view rest;
     if (setting == "NukeSc55") {
         choice.backend = SynthChoice::Backend::Sc55;
+        return choice;
+    }
+    // Cog's name for SpessaSynth, and the three names Cog migrates to it. A
+    // settings file written by an older Cog may still say BASSMIDI, FluidSynth
+    // or TinySF; all three meant "play the bank I chose", and so does this.
+    if (setting == "Spessa" || setting == "SpessaSynth" || setting == "BASSMIDI" ||
+        setting == "FluidSynth" || setting == "TinySF") {
+        choice.backend = SynthChoice::Backend::SoundFont;
         return choice;
     }
     // OPL3W before DOOM: neither is a prefix of the other, but testing the
@@ -190,6 +202,24 @@ public:
         choice_ = parseSynthChoice(
             settings_ != nullptr ? settings_->MidiPlugin() : std::string{"DOOM0"});
 
+        // A file that brought its own SoundFont is played with it, whatever the
+        // setting says -- Cog's rule (MIDIDecoder.mm:271), and the reason is
+        // that a bank sitting beside a game rip is part of the rip rather than
+        // a preference. The configured bank is the fallback for everything else.
+        bank_.reset();
+        if (const auto local = url_.localPath()) {
+            bank_ = codecs::findCompanionBank(*local);
+        }
+        if (bank_) {
+            choice_.backend = SynthChoice::Backend::SoundFont;
+        } else if (choice_.backend == SynthChoice::Backend::SoundFont &&
+                   settings_ != nullptr) {
+            const std::string configured = settings_->SoundFontPath();
+            if (!configured.empty()) {
+                bank_ = pathFromUtf8(configured);
+            }
+        }
+
         // The SC-55's ROMs are read once and kept, not re-read on every seek:
         // going backwards means booting a fresh machine, and that should not
         // also mean hashing 3.6 MB off disk again.
@@ -215,8 +245,9 @@ public:
         format_.sampleRate    = sampleRate_;
         format_.channels      = 2;
         format_.channelConfig = 0x3;  // FL|FR
-        format_.format        = SampleFormat::S16;
-        format_.bitsPerSample = 16;
+        // Float, because one of the three synthesisers is: see MidiSynth.hpp.
+        format_.format        = SampleFormat::F32;
+        format_.bitsPerSample = 32;
 
         eventIndex_ = 0;
         seqSample_  = 0;
@@ -269,7 +300,7 @@ public:
         out.streamTimeRatio = 1.0;
 
         std::byte* dst = out.allocFrames(want);
-        std::memcpy(dst, scratch_.data(), want * 2 * sizeof(std::int16_t));
+        std::memcpy(dst, scratch_.data(), want * 2 * sizeof(float));
         out.setFrameCount(want);
 
         framePos_ += static_cast<std::int64_t>(want);
@@ -412,11 +443,11 @@ private:
     /// Constructs the synthesiser the setting asked for, or the one that can
     /// actually run.
     ///
-    /// A configured SC-55 with no ROMs falls back to the OPL rather than
-    /// refusing the file, which is the same call parseSynthChoice makes about a
-    /// name it does not recognise. Refusing would mean a `.mid` that will not
-    /// open at all until five files nobody can be pointed at are found -- and
-    /// the fallback is visible, since properties() reports what actually ran.
+    /// A configured SC-55 with no ROMs, or SpessaSynth with no bank, falls back
+    /// to the OPL rather than refusing the file -- the same call parseSynthChoice
+    /// makes about a name it does not recognise. Refusing would mean a `.mid`
+    /// that will not open at all until a file nobody can be pointed at is found,
+    /// and the fallback is visible: properties() reports what actually ran.
     bool buildSynth() {
         synth_.reset();
         sc55_ = nullptr;
@@ -439,19 +470,53 @@ private:
             }
         }
 
-        double rate = kDefaultSampleRate;
-        if (settings_ != nullptr) {
-            const auto configured = static_cast<double>(settings_->SynthSampleRate());
-            if (configured >= kMinSampleRate && configured <= kMaxSampleRate) {
-                rate = configured;
+        if (choice_.backend == SynthChoice::Backend::SoundFont && bank_) {
+            auto soundfont = std::make_unique<codecs::SoundFontSynth>();
+            if (soundfont->open(*bank_, configuredSampleRate(), interpolation())) {
+                synth_ = std::move(soundfont);
+                return true;
             }
         }
+
         auto opl = std::make_unique<codecs::OplSynth>();
-        if (!opl->open(choice_.driver, choice_.bank, rate)) {
+        if (!opl->open(choice_.driver, choice_.bank, configuredSampleRate())) {
             return false;
         }
         synth_ = std::move(opl);
         return true;
+    }
+
+    /// The rate the listener asked for, for the synthesisers that can be asked.
+    /// The SC-55 cannot: its rate is its hardware's.
+    [[nodiscard]] double configuredSampleRate() const {
+        if (settings_ == nullptr) {
+            return kDefaultSampleRate;
+        }
+        const auto configured = static_cast<double>(settings_->SynthSampleRate());
+        if (configured >= kMinSampleRate && configured <= kMaxSampleRate) {
+            return configured;
+        }
+        return kDefaultSampleRate;
+    }
+
+    /// What the `resampling` tier means to a wavetable synthesiser.
+    ///
+    /// XPCog's setting names quality rather than algorithms (settings.def), so
+    /// the mapping is by cost: nearest is the cheap one, sinc the expensive one,
+    /// and Hermite -- Cog's `cubic` -- is what the middle asks for.
+    [[nodiscard]] codecs::SoundFontInterpolation interpolation() const {
+        const std::string tier =
+            settings_ != nullptr ? settings_->Resampling() : std::string{"high"};
+        if (tier == "quick") {
+            return codecs::SoundFontInterpolation::Nearest;
+        }
+        if (tier == "low") {
+            return codecs::SoundFontInterpolation::Linear;
+        }
+        if (tier == "best") {
+            return codecs::SoundFontInterpolation::Sinc;
+        }
+        return codecs::SoundFontInterpolation::Hermite;
     }
 
     /// Where in the sequence an output frame falls.
@@ -550,7 +615,7 @@ private:
 
     /// Fills `frames` stereo frames, delivering every event that falls inside
     /// them at its own sample and rewinding at the loop point.
-    void render(std::int16_t* out, std::size_t frames) {
+    void render(float* out, std::size_t frames) {
         std::size_t produced = 0;
         while (produced < frames) {
             if (looped_ && seqSample_ >= loopEndSample_) {
@@ -620,7 +685,7 @@ private:
         }
     }
 
-    void applyFade(std::int16_t* frames, std::size_t count) {
+    void applyFade(float* frames, std::size_t count) {
         // No fade while looping for ever: the fade is what turns a sequence
         // that repeats into a track that ends.
         if (fadeFrames_ <= 0 || (looped_ && loopForever(settings_))) {
@@ -638,10 +703,7 @@ private:
             const double gain = static_cast<double>(totalFrames_ - position) /
                                 static_cast<double>(fadeFrames_);
             for (std::size_t channel = 0; channel < 2; ++channel) {
-                const double scaled =
-                    static_cast<double>(frames[i * 2 + channel]) * gain;
-                frames[i * 2 + channel] =
-                    static_cast<std::int16_t>(std::clamp(scaled, -32768.0, 32767.0));
+                frames[i * 2 + channel] *= static_cast<float>(gain);
             }
         }
     }
@@ -662,6 +724,11 @@ private:
     /// fresh machine without going back to disk.
     std::optional<codecs::Sc55RomSet> roms_;
 
+    /// The SoundFont this file plays on: the one beside it, or the configured
+    /// one. Empty when neither exists, which is what sends SpessaSynth back to
+    /// the OPL3.
+    std::optional<std::filesystem::path> bank_;
+
     std::size_t subsong_    = 0;
     AudioFormat format_{};
     double      sampleRate_ = kDefaultSampleRate;
@@ -681,7 +748,7 @@ private:
     std::int64_t totalFrames_ = 0;
     std::int64_t fadeFrames_  = 0;
 
-    std::vector<std::int16_t> scratch_;
+    std::vector<float> scratch_;
 };
 
 /// A file holding more than one sequence expands to one URL per sequence.

@@ -84,7 +84,7 @@ fs::path writeFixture(const std::string& name,
 }
 
 struct Decoded {
-    std::vector<std::int16_t> samples;
+    std::vector<float> samples;
     TrackProperties           properties;
 };
 
@@ -107,20 +107,22 @@ struct Decoded {
         const std::size_t at       = out.samples.size();
         out.samples.resize(at + frames * channels);
         std::memcpy(out.samples.data() + at, chunk.bytes().data(),
-                    frames * channels * sizeof(std::int16_t));
+                    frames * channels * sizeof(float));
     }
     return out;
 }
 
-[[nodiscard]] int peak(const std::vector<std::int16_t>& samples) {
-    int highest = 0;
-    for (const std::int16_t sample : samples) {
-        highest = std::max(highest, std::abs(static_cast<int>(sample)));
+[[nodiscard]] float peak(const std::vector<float>& samples) {
+    float highest = 0.0F;
+    for (const float sample : samples) {
+        highest = std::max(highest, std::fabs(sample));
     }
     return highest;
 }
 
-constexpr int kAudible = 500;
+/// Full scale is 1.0 now that the decoder renders float, so the threshold that
+/// used to be 500 of 32768 is written as exactly that.
+constexpr float kAudible = 500.0F / 32768.0F;
 
 }  // namespace
 
@@ -237,7 +239,7 @@ TEST_CASE("the panel is not captured unless something is watching",
         SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
     }
 
-    std::vector<std::int16_t> audio(2 * 8192);
+    std::vector<float> audio(2 * 8192);
     playSomething(synth);
     synth.render(audio.data(), 8192);
 
@@ -263,7 +265,7 @@ TEST_CASE("panel states are positioned in the stream, not since boot",
     const auto rate   = static_cast<std::uint64_t>(synth.sampleRate());
     const auto frames = static_cast<std::size_t>(rate);  // one second
 
-    std::vector<std::int16_t> audio(frames * 2);
+    std::vector<float> audio(frames * 2);
     playSomething(synth);
     synth.render(audio.data(), frames);
 
@@ -307,7 +309,7 @@ TEST_CASE("panel positions do not depend on how the audio was chunked",
         synth.setCaptureLcd(true);
         const auto frames = static_cast<std::size_t>(synth.sampleRate());
 
-        std::vector<std::int16_t> audio(chunk * 2);
+        std::vector<float> audio(chunk * 2);
         playSomething(synth);
         for (std::size_t done = 0; done < frames; done += chunk) {
             synth.render(audio.data(), std::min(chunk, frames - done));

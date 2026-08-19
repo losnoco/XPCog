@@ -104,7 +104,8 @@ endif()
 if(XPCOG_WITH_MIDI)
     target_sources(xpcog-tests PRIVATE codecs/test_midi_container.cpp
                                        codecs/test_midi_playback.cpp
-                                       codecs/test_midi_sc55.cpp)
+                                       codecs/test_midi_sc55.cpp
+                                       codecs/test_midi_soundfont.cpp)
     target_link_libraries(xpcog-tests PRIVATE xpcog-codec-midi)
 
     # The Roland ROM set, which cannot be committed and which nobody can be
@@ -117,6 +118,18 @@ if(XPCOG_WITH_MIDI)
         target_compile_definitions(xpcog-tests
             PRIVATE "XPCOG_SC55_ROMS=\"${XPCOG_SC55_ROMS}\"")
         message(STATUS "SC-55 ROM tests: ${XPCOG_SC55_ROMS}")
+    endif()
+
+    # A SoundFont, which is the one asset of the three that a listener plausibly
+    # already has and still cannot be committed -- the bank this was written
+    # against is 1.3 GB. Anything the engine reads will do: .sf2, .sf3, .dls or
+    # an .sflist naming several.
+    set(XPCOG_SOUNDFONT "" CACHE FILEPATH
+        "SoundFont bank for the MIDI tests; empty to skip")
+    if(XPCOG_SOUNDFONT)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_SOUNDFONT=\"${XPCOG_SOUNDFONT}\"")
+        message(STATUS "SoundFont tests: ${XPCOG_SOUNDFONT}")
     endif()
 
     # Its own corpus variable, like the SID one and for the same reason: a MIDI
