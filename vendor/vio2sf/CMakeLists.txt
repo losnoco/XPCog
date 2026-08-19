@@ -94,9 +94,22 @@ target_compile_features(vendor-vio2sf PUBLIC cxx_std_17)
 set_target_properties(vendor-vio2sf PROPERTIES FOLDER vendor)
 
 if(MSVC)
+    # NOMINMAX is the one that looks optional and is not. Something in melonDS
+    # pulls in <windows.h>, which defines `max` as a macro, and every
+    # `std::max(a, b)` in the ARM core then fails to parse:
+    #
+    #   ARM.h(288): error C2589: '(': illegal token on right side of '::'
+    #
+    # XPCog::warnings sets it for first-party targets, and vendored code
+    # deliberately does not link that -- so it has to be stated here.
     target_compile_definitions(vendor-vio2sf PRIVATE _CRT_SECURE_NO_WARNINGS
-                                                     _CRT_NONSTDC_NO_WARNINGS)
-    target_compile_options(vendor-vio2sf PRIVATE /w)
+                                                     _CRT_NONSTDC_NO_WARNINGS
+                                                     NOMINMAX
+                                                     WIN32_LEAN_AND_MEAN)
+    # The GNU bit builtins melonDS uses unguarded; see the header for why this
+    # is a force-include rather than edits to the sources.
+    target_compile_options(vendor-vio2sf PRIVATE /w
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/platform/MsvcBuiltins.h")
 else()
     # -fwrapv is upstream's, and PUBLIC there for a reason: the ARM interpreter
     # relies on signed overflow wrapping to compute the V flag, and signed

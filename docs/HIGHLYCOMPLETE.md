@@ -281,6 +281,20 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   not the USF silence trim and deliberately not treated as one: the rip is
   supposed to state it.
 
+- **Two Windows failures per vendored core, not one, and neither is exotic.**
+  melonDS uses `__builtin_popcount` and `__builtin_ctzll` unguarded in a few
+  places while `BitSet.h` beside them has a proper `#elif defined(_MSC_VER)`
+  arm -- an inconsistency nobody would notice, because Cog builds this for
+  macOS only. `vendor/vio2sf/platform/MsvcBuiltins.h` supplies them as a
+  force-include rather than patching the sources, since the next file to use one
+  should not need another patch.
+
+  The other is worth memorising: `std::max` failing with *"error C2589: '(':
+  illegal token on right side of '::'"* is `<windows.h>`'s `max` macro, and the
+  fix is `NOMINMAX`. `XPCog::warnings` already defines it, and vendored targets
+  deliberately do not link `XPCog::warnings`, so **every vendored core has to
+  define it again for itself**.
+
 - **A core must not start its emulator in `open()`.** `Scanner::readMetadata`
   opens a decoder for every file it walks, purely to ask for properties, and
   every answer `properties()` gives comes from the tag block — `length` is the
