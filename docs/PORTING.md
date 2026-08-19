@@ -1350,7 +1350,25 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   the numbered form and returns them highest priority first; merging them in any
   other order assembles the wrong track and plays it happily.
 
-  The staging plan for the remaining three cores -- what each needs, which
+- **The sixth core: SSEQPlayer, so `ncsf` and `minincsf` play.** The only one of
+  the eight that is not an emulator. An NCSF holds an SDAT, the DS's sound
+  archive, and SSEQPlayer performs it -- parsing the sequence, resolving the
+  instrument bank and samples, mixing sixteen channels in software. No ARM code
+  runs, so there is no save state, no ROM to place at addresses, and none of the
+  section-layout care the other five need.
+
+  Worth recording that `IDecoder` needed no adjustment for it. The contract is
+  about audio -- open, properties, read, seek -- and a sequence player fits it as
+  readily as an emulator, which is a small piece of evidence that the six-protocol
+  shape inherited from Cog's `Audio/Plugin.h` was the right thing to preserve.
+
+  Two things are peculiar to it. Every track in a set shares one `.ncsflib`, so
+  the four bytes of `reserved` naming the sequence are the *only* thing telling
+  the tracks apart: ignore them and all 45 files decode, report their own titles
+  and lengths, and play the same music. And it reports a malformed archive by
+  throwing rather than returning a status, so the decoder catches.
+
+  The staging plan for the remaining two cores -- what each needs, which
   section holds its program, where Cog keeps it, and what a core must implement
   -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
   picked up on another machine.

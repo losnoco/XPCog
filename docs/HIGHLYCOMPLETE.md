@@ -17,7 +17,8 @@ or reproducible; nothing depends on the session that started it.
 | 3 | melonDS → 2SF, `2sf` + `mini2sf` registered | **done** |
 | 4 | snes9x → SNSF, `snsf` + `minisnsf` registered | **done** |
 | 5 | HighlyTheoretical → SSF *and* DSF | **done** |
-| 6… | the remaining three cores | not started — see *Which core next* |
+| 6 | SSEQPlayer → NCSF, `ncsf` + `minincsf` registered | **done** |
+| 7… | the remaining two cores | not started — see *Which core next* |
 
 Stage 0 registered **nothing** with the plugin registry — deliberately, since a
 decoder that cannot decode is worse than a format the player does not claim.
@@ -117,7 +118,7 @@ Version bytes verified against Cog's `HCDecoder.mm`, not recalled.
 | `0x22` | gsf, minigsf | mGBA | 989 | **done** — overlay port, `kode54/mgba` |
 | `0x21` | usf, miniusf | lazyusf2 | 211 | **done** — `vendor/lazyusf2`, 52 built |
 | `0x24` | 2sf, mini2sf | **melonDS**, not vio2sf | 44 built | **done** — `vendor/vio2sf` |
-| `0x25` | ncsf, minincsf | SSEQPlayer | 31 | vendored in Cog |
+| `0x25` | ncsf, minincsf | SSEQPlayer | 13 built | **done** — `vendor/sseqplayer` |
 | `0x23` | snsf, minisnsf | snes9x | 18 built | **done** — `vendor/snes9x` |
 | `0x12` | dsf, minidsf | HighlyTheoretical | 7 built | **done** — `vendor/highlytheoretical` |
 | `0x11` | ssf, minissf | HighlyTheoretical | — | **done** — same core, same decoder |
@@ -135,22 +136,21 @@ hand-written `CMakeLists.txt` since upstream ships only an Xcode project.
 
 ## Which core next
 
-Five of eight, covering six of the ten formats. Three cores remain:
+Six of eight, and seven of the ten formats. Two cores remain, both
+vendored-in-Cog and both with nothing in any corpus here:
 
-- **SSEQPlayer → NCSF**, 31 files. A *sequence* player rather than an emulator,
-  so read it before assuming the shape of the other five transfers.
-- **HighlyExperimental → PSF and PSF2**, 25 files, and the format the family is
-  named after — two more formats for one core, as HighlyTheoretical was. Needs a
-  PlayStation BIOS image; Cog carries `hebios.bin` beside `HCDecoder.mm`, which
-  is a redistribution question rather than a technical one. PSF2 additionally
-  needs `psf2fs.c`, already vendored in `vendor/psflib`.
-- **HighlyQuixotic → QSF**, 11 files, the smallest.
+- **HighlyExperimental → PSF and PSF2**, 25 files, and the format the whole
+  family is named after — two more formats for one core, as HighlyTheoretical
+  was. It needs a PlayStation BIOS image: Cog carries `hebios.bin` beside
+  `HCDecoder.mm`, which is a redistribution question rather than a technical one
+  and should be settled before the work starts. PSF2 additionally needs
+  `psf2fs.c`, already vendored in `vendor/psflib` and so far unused.
+- **HighlyQuixotic → QSF**, 11 files, the smallest of the eight. Its `reserved`
+  section carries a Kabuki decryption key, which no other format here has.
 
-On test material: every core so far was proved by listening, and twice the
-decisive track came from outside the main corpus — Tales of Phantasia for SNSF,
-Sonic Shuffle and NiGHTS for DSF and SSF. Nothing in this tree can hear a wrong
-sample rate or a starved stream. Rips for the three remaining formats are worth
-more than starting any of them blind.
+Every core so far was proved by listening, and for four of the six the decisive
+material came from outside the main corpus. Nothing in this tree can hear a
+wrong sample rate, a starved stream, or a sequence number that was ignored.
 
 ## Lessons already paid for
 
@@ -221,6 +221,30 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   to vendored sources are marked in place with an "XPCog local change" comment
   and listed at the top of the core's `CMakeLists.txt`, so a re-vendor does not
   drop them silently.
+
+### From stage 6 (SSEQPlayer → NCSF)
+
+- **This one is not an emulator, and the core contract fits it anyway.** An NCSF
+  holds an SDAT — the DS's standard sound archive — and SSEQPlayer *performs*
+  it: parsing the SSEQ sequence, resolving the SBNK instrument bank and the
+  SWAR/SWAV samples, mixing sixteen channels in software. No ARM code runs.
+  Which means no save state, no ROM assembled at addresses, no CPU-APU
+  handshake, and none of the section-layout care the other five need — the
+  archive arrives in one piece and `reserved` is four bytes naming which
+  sequence to play. The `IDecoder` shape needed no adjustment for it, which is
+  the useful finding: the contract is about *audio*, not about emulation.
+
+- **The sequence number is the only thing distinguishing a track.** Every file
+  in a set shares one `.ncsflib`. Drop those four bytes and all 45 files still
+  decode, still report their own titles, lengths and ReplayGain, and all play
+  sequence zero. `test_ncsf.cpp` decodes two files from one set and requires
+  they differ — the analogue of the wrong-overlay-order failure elsewhere, and
+  equally invisible to every other check.
+
+- **It reports failure by throwing.** SSEQPlayer signals a malformed archive, an
+  absent sequence or an unresolvable bank with `std::runtime_error` where the
+  emulator cores return a status. A rip is an untrusted file, so the decoder
+  catches at both `start()` and render and declines. Cog wraps the same calls.
 
 ### From stage 5 (HighlyTheoretical → SSF and DSF)
 

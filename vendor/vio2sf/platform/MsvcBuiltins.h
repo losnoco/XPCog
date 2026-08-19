@@ -52,6 +52,11 @@ static __forceinline int __builtin_clz(unsigned int value) {
     return 31 - static_cast<int>(index);
 }
 
+// A control-flow intrinsic rather than a value, so a macro rather than a
+// function: MSVC's __assume(0) has to appear at the use site to tell the
+// optimiser the path is unreachable.
+#define __builtin_unreachable() __assume(0)
+
 static __forceinline int __builtin_clzll(unsigned long long value) {
     unsigned long index = 0;
     _BitScanReverse64(&index, value);
