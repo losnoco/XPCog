@@ -1960,9 +1960,8 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
 
 **Then:**
 
-- The rest of M6 — the remaining decoders and their libraries (one
-  `xpcog_add_codec()` plus one vcpkg overlay port each), `cogimport`, HRTF,
-  Last.fm, global hotkeys.
+- The rest of M6, itemised under "Where to pick up next" below — that is the
+  hand-off list, and it is the one to read first.
 
   **DSD plays; DoP does not.** The decimation filter is
   [`vendor/dsd2pcm`](../vendor/dsd2pcm) — Sebastian Gesemann's, lifted out of
@@ -1999,9 +1998,113 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   FFmpeg's raw DSD packets rather than its DSD decoders (`FFMPEGDecoder.m:259`)
   — the same one-bit stream, arriving from a different container.
 
+- **Choosing the output device, and taking it exclusively.** Half of it existed
+  already — `IAudioOutput::devices()` enumerated and `Config::deviceId`
+  selected, and nothing ever set it — so what this added is a preference, a
+  picker, and the rule that turns a stored choice back into a device.
+
+  That rule is Cog's (`Preferences/OutputsArrayController.m`): match on id, then
+  on name. Not redundancy — a USB interface that has been unplugged and put
+  back, or a machine that has rebooted, can present the same hardware under a
+  new id, and matching on id alone drops the listener onto the laptop speakers
+  without a word. A choice that matches nothing plays on the default device and
+  is deliberately *not* rewritten, so plugging the device back in restores it.
+  `resolveOutputDevice()` is that rule with nothing else in it, so it is tested
+  without a sound card.
+
+  Exclusive mode has **no Cog counterpart** — Cog is CoreAudio only and offers
+  no hog mode. It is asked for rather than demanded: WASAPI grants it only when
+  nothing else holds the device, a backend without the concept returns
+  `MA_SHARE_MODE_NOT_SUPPORTED`, and falling back to sharing is a better answer
+  than refusing to play. `exclusiveHeld()` reports what was actually granted.
+
+  Both are read when the device is opened, which is when a track starts, so
+  changing either restarts the current track and seeks back to where it had
+  reached — see "Where to pick up next" for what switching live would take.
+
 Milestone 1's narrow format scope was a fastest-path-to-execution choice, not the
 destination. The architecture is sized for full Cog parity throughout: if adding a
 decoder ever requires a refactor, the design has failed.
+
+### Where to pick up next
+
+Written to be picked up cold, on another machine, by someone who has not read the
+rest of this file. Ordered by what each one is worth, not by size. Everything
+here is reachable from a clean checkout — `cmake --preset <platform>-debug` and
+the README's asset variables are the whole setup.
+
+**1. `.dsf` and `.dff`, the other DSD containers.** Small now that the DSD path
+exists, and the last format gap in the family. Cog reads them through FFmpeg but
+**not** through FFmpeg's DSD decoders: `FFMPEGDecoder.m:259` matches
+`AV_CODEC_ID_DSD_LSBF`, `_MSBF` and their planar variants, sets `rawDSD`, and
+hands the packets on untouched so Cog's own filter does the decimation. Our
+`codecs/ffmpeg` claims neither extension today. The work is claiming them,
+detecting those codec ids, reporting `SampleFormat::DSD` at the byte rate — the
+convention `codecs/wavpack` already uses — and honouring the two variations Cog
+tracks: LSB-first bit order (`rawDSDReverseBits`) and planar layout
+(`rawDSDPlanar`). `AudioConverter` and `vendor/dsd2pcm` need no changes at all.
+There is no `.dsf` in the corpus here, so this needs one to verify.
+
+**2. Switching the output device live.** Today a device change restarts the
+track and seeks back to where it was — a short gap, honest but not what Cog
+does. Cog switches under the running stream. The obstacle is the position clock:
+`audibleTrackStart_` and `seekPlayedBase_` are absolute counts of
+`output_.framesPlayed()`, which returns to zero when the device restarts, so
+they have to be rebased — the same arithmetic `performSeek()` already does for
+the seek base. The second half is the ring: it holds audio converted for the old
+device format, so a device at another rate means flushing it and reconfiguring
+the converter, which is what `AudioEngine::play()` does from scratch.
+
+**3. Native output backends, replacing miniaudio.** miniaudio is a stopgap;
+`IAudioOutput` is the seam that makes it a swap rather than a rewrite. A native
+WASAPI backend buys rates above miniaudio's 384,000 Hz ceiling, event-driven
+exclusive mode, and the integer output DoP needs. The three questions a backend
+answers for itself are already virtual and already asked:
+`supportsSampleRate()`, `preferredSampleRate()`, `exclusiveHeld()`. Keep new
+ones there rather than in the engine — the DSD failure below is what happens
+when a backend's limit leaks upward.
+
+**4. DoP output.** `ChunkList.m` has all of it: `convert_dsd_to_dop_f32`, the
+alternating 0x05/0xFA markers, `reverse_bits8` for putting the payload's bit
+order back on the wire. It is not ported because there is no DoP-capable DAC
+here to verify against, and a DoP path that has never locked a real device is a
+guess with a test around it. Two things to know before starting. The carrier
+rates are the DSD rate over sixteen — 176,400 for DSD64 and 352,800 for DSD128 —
+so they are *inside* miniaudio's range and the backend is not the blocker. And
+the device has to be switched to 24-bit integer output
+(`DoPIntegerRenderFormatForDeviceFormat`), because the marker bytes must survive
+bit-exactly and a float path that scales or dithers destroys them.
+
+**5. The decoders Cog has and this does not.** Each is one `xpcog_add_codec()`
+call plus one vcpkg overlay port, which is the claim this architecture makes
+about itself. AdPlug (~40 formats, and it overlaps the MIDI stack at `.lds`),
+Hively — which settles the `.ahx` question `docs/MIDI.md` has been carrying —
+Organya, Syntrax, libvgmPlayer, Shorten, SilenceDecoder. Cog's BASSMODS, Dumb,
+modplay and playptmod are all tracker players that OpenMPT already covers here.
+
+**6. `cogimport`.** Reading an existing Cog installation — its playlists, its
+SQLite library, its defaults — is the difference between a port and something a
+Cog user can move to. Core already has the plist reader and writer that Cog's
+XML playlists need, and `codecs/playlists` already parses that format.
+
+**7. The feature tail.** HRTF (Cog's is an impulse-response convolver in the DSP
+chain, and `docs/PORTING.md`'s DSP section notes where it would sit), Last.fm
+scrobbling, global hotkeys.
+
+**8. Three MIDI leftovers**, all recorded in `docs/MIDI.md` and none of them
+blocking: an RMID's embedded soundbank is not extracted (`midi_processing` does
+not, SpessaSynth's own loader would); Cog's `midi.flavor` SysEx filter — GM,
+GM2, GS, four SC-88 flavours, XG — lives in `MIDIPlayer` and was not ported; and
+whether to ship a default SoundFont, which is what lets Cog default to
+SpessaSynth (it carries `GeneralUserXG-SFeTest.sf3`, 11 MB, at its repository
+root) while this defaults to the OPL3.
+
+**The habit that matters more than any of these.** Read Cog's implementation
+first — not only the algorithm, but the code around it that decides how the
+algorithm is *fed*. DSD cost two rounds for exactly that reason: the filter, the
+decoder and the tests were all correct, and it still would not play, because the
+question of what rate the device runs at was answered in `OutputCoreAudio.m` and
+nobody had read it.
 
 ### Waiting on a Mac
 
