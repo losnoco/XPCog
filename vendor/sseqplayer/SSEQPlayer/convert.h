@@ -11,12 +11,19 @@
 #include <sstream>
 #include <typeinfo>
 #include <locale>
-#if (defined(__GNUC__) || defined(__clang__)) && !defined(_LIBCPP_VERSION)
-# include "wstring_convert.h"
-# include "codecvt.h"
-#else
-# include <codecvt>
-#endif
+/* XPCog local change: was a conditional that used the bundled wstring_convert.h
+   and codecvt.h whenever the compiler was GCC or clang without libc++. That
+   assumption is a decade stale -- libstdc++ has shipped <codecvt> since GCC 5.1
+   -- so on Linux the bundled headers *redefine* std::codecvt<char16_t, ...> and
+   the build fails with a redefinition and an ambiguous wstring_convert. Cog
+   builds this for macOS alone, where libc++ takes the other branch and the
+   bundled copies are never compiled at all.
+
+   Every toolchain this tree targets provides <codecvt>; it is deprecated in
+   C++17 and still present, and this target compiles with warnings off. The
+   bundled headers are left in place, unused, rather than deleted from a
+   vendored tree. */
+#include <codecvt>
 #include <vector>
 #include <cmath>
 

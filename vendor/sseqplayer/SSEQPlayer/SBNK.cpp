@@ -7,6 +7,10 @@
  * http://www.feshrine.net/hacking/doc/nds-sdat.html
  */
 
+/* XPCog local change: <stdexcept> for std::runtime_error, which this file
+   throws. libc++ happens to pull it in transitively and libstdc++ does not, so
+   Cog's macOS-only build never needed it stated. */
+#include <stdexcept>
 #include "SBNK.h"
 #include "NDSStdHeader.h"
 

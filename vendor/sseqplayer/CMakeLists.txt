@@ -14,6 +14,22 @@
 # It also throws. SDAT parsing reports a malformed archive by throwing
 # std::runtime_error, where the emulator cores return a status, so the decoder
 # catches rather than checks. Cog does the same.
+# ---------------------------------------------------------------------------
+# Local changes to the vendored sources
+# ---------------------------------------------------------------------------
+# Both are the same story -- Cog builds this for macOS and libc++ alone, so
+# nothing here has ever met libstdc++ or MSVC. Each is marked in place with an
+# "XPCog local change" comment.
+#
+#   convert.h            used the bundled wstring_convert.h/codecvt.h whenever
+#                        the compiler was GCC or clang without libc++. libstdc++
+#                        has shipped <codecvt> since GCC 5.1, so on Linux the
+#                        bundled copies redefine std::codecvt and the build
+#                        fails. Now always <codecvt>.
+#   six .cpp files       <stdexcept> stated for the std::runtime_error they
+#                        throw. libc++ pulls it in transitively; libstdc++ does
+#                        not.
+
 add_library(vendor-sseqplayer STATIC
     SSEQPlayer/Channel.cpp
     SSEQPlayer/FATSection.cpp
