@@ -98,6 +98,20 @@ std::vector<PanelFrame> PanelFeed::take(double seconds) {
     return out;
 }
 
+std::optional<PanelFrame> PanelFeed::peekEarliest() const {
+    std::lock_guard lock(mutex_);
+    if (!haveAudible_) {
+        return std::nullopt;
+    }
+    const auto it = std::find_if(tracks_.begin(), tracks_.end(), [this](const Track& entry) {
+        return entry.url == audible_;
+    });
+    if (it == tracks_.end() || it->frames.empty()) {
+        return std::nullopt;
+    }
+    return it->frames.front();
+}
+
 void PanelFeed::flush() {
     std::lock_guard lock(mutex_);
     for (Track& track : tracks_) {

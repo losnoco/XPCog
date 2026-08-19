@@ -144,7 +144,7 @@ winget install Xiph.FLAC Gyan.FFmpeg LAME.LAME Mozilla.opus-tools
 `oggenc.exe` (renamed from `oggenc2.exe`) anywhere on `PATH`.
 
 Watch the skip count in `ctest` output, not just the pass rate. With the encoders
-installed a full run is **480 tests, 60 skipped**, and those 60 want something no
+installed a full run is **482 tests, 60 skipped**, and those 60 want something no
 package manager can supply: rips of copyrighted game programs, which cannot be
 committed. Point `XPCOG_PSF_CORPUS`, `XPCOG_VGM_CORPUS`, `XPCOG_SID_CORPUS`,
 `XPCOG_MIDI_CORPUS` or `XPCOG_SC55_ROMS` at one and the matching cases run.

@@ -9,6 +9,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <optional>
 #include <cstring>
 
 namespace xpcog::app {
@@ -86,25 +87,33 @@ void Sc55PanelWidget::tick() {
     if (background_.empty() || !position_) {
         return;
     }
-    auto frames = PanelFeed::instance().take(position_());
-    if (frames.empty()) {
-        // Still worth a repaint while there is no frame: the explanation drawn
-        // in its place can change without any frame ever arriving.
-        if (!haveFrame_) {
+    // Only the last of a batch is drawn. The others are states the panel passed
+    // through since the previous repaint, and at up to two hundred a second
+    // they are not something an eye resolves.
+    std::optional<PanelFrame> draw;
+    if (auto frames = PanelFeed::instance().take(position_()); !frames.empty()) {
+        draw = std::move(frames.back());
+    } else if (!haveFrame_) {
+        // Nothing due yet, and nothing shown yet. Rather than sit blank until
+        // the speaker catches up with a decoder that is seconds ahead, show the
+        // nearest state there is; the next drained frame replaces it and every
+        // one after that is on time. See PanelFeed::peekEarliest().
+        draw = PanelFeed::instance().peekEarliest();
+        if (!draw) {
+            // The explanation drawn in its place can change without any frame
+            // ever arriving, so it is still worth a repaint.
             update();
+            return;
         }
+    } else {
         return;
     }
 
-    // Only the last one is drawn. The others are states the panel passed
-    // through since the previous repaint, and at up to two hundred a second
-    // they are not something an eye resolves.
-    const PanelFrame& newest = frames.back();
-    if (newest.state.size() != sc55_lcd_state_size()) {
+    if (draw->state.size() != sc55_lcd_state_size()) {
         return;
     }
-    sc55_lcd_render_screen(background_.data(), buffer_.data(), newest.state.data(),
-                           newest.state.size());
+    sc55_lcd_render_screen(background_.data(), buffer_.data(), draw->state.data(),
+                           draw->state.size());
     haveFrame_ = true;
     update();
 }

@@ -210,3 +210,38 @@ TEST_CASE("a display can tell 'nothing produces one' from 'nothing yet'",
     CHECK_FALSE(feed.producing());
     feed.clear();
 }
+
+TEST_CASE("a display opening late has something to show at once", "[panelfeed]") {
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+
+    // The decoder runs far ahead of the speaker -- a synthesiser renders much
+    // faster than real time and the engine buffers deeply -- so a panel opened
+    // part-way through a track finds everything queued at a position that has
+    // not been reached. Waiting for one to fall due leaves it blank for
+    // seconds, which is what it looked like on Kevin's machine.
+    const Url one = track("one.mid");
+    feed.setAudibleTrack(one);
+    feed.post(one, 30.0, blob(1));
+    feed.post(one, 31.0, blob(2));
+
+    CHECK(feed.take(2.0).empty());
+
+    const auto seed = feed.peekEarliest();
+    REQUIRE(seed.has_value());
+    CHECK(first(*seed) == 1);
+
+    // Peeked, not taken: the frame is still there to be drained on time, and
+    // showing it early must not consume it.
+    const auto due = feed.take(60.0);
+    REQUIRE(due.size() == 2);
+    CHECK(first(due[0]) == 1);
+}
+
+TEST_CASE("there is nothing to seed a display with before a track is known",
+          "[panelfeed]") {
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+    feed.post(track("early.mid"), 1.0, blob(1));
+    CHECK_FALSE(feed.peekEarliest().has_value());
+}

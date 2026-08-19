@@ -276,9 +276,22 @@ dock’s visibility through showEvent and hideEvent, so the emulator is not
 comparing its panel against the previous state on every sample for a window
 nobody opened.
 
-Only the newest state of each batch is drawn. The others are the panel’s own
+Only the newest state of each batch is drawn. The others are the panel's own
 history between repaints, and at up to two hundred a second they are not
 something an eye resolves.
+
+**The first state shown is early, on purpose.** A synthesiser renders much
+faster than real time and the engine buffers deeply, so a panel opened part-way
+through a track finds everything queued at a position the speaker has not
+reached — and a display that waits for one to fall due sits blank for several
+seconds looking broken. That is what it did. So the first thing drawn is the
+nearest state there is, ahead by however far the decoder has run; the next
+drained frame replaces it and every one after that is on time.
+
+Cog makes the opposite trade and never corrects it: `currentTimestamp` is the
+newest queued event minus its estimate of the device latency, so its panel runs
+ahead of the music for as long as the track plays. This is early once and exact
+afterwards.
 
 ### Missing ROMs fall back rather than refusing
 

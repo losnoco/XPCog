@@ -51,6 +51,7 @@
 #include <cstddef>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -105,6 +106,25 @@ public:
     /// different causes: the first means this track is not on a machine with a
     /// front panel at all.
     [[nodiscard]] bool producing() const noexcept;
+
+    /// The oldest frame still queued for the audible track, without removing
+    /// it. Empty when there is none.
+    ///
+    /// For the moment a display opens. The decoder runs far ahead of the
+    /// speaker -- a synthesiser renders much faster than real time and the
+    /// engine buffers deeply -- so when a panel is opened part-way through a
+    /// track, everything queued is from a position that has not been reached
+    /// yet, and a display that waits for one to become due sits blank for
+    /// several seconds looking broken.
+    ///
+    /// So the first thing shown is the nearest state there is, which is ahead
+    /// by however far the decoder has run. That is a real error and it is
+    /// bounded, visible only until the speaker catches up, and then gone for
+    /// good -- every frame after it is drained on time. Cog makes the opposite
+    /// trade and never corrects: it draws the newest queued state minus its
+    /// estimate of the device latency, which is ahead of the music for as long
+    /// as the track plays.
+    [[nodiscard]] std::optional<PanelFrame> peekEarliest() const;
 
     /// Drops everything. For a seek, where every queued frame describes a
     /// moment that is no longer coming.
