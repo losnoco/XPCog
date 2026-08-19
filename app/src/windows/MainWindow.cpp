@@ -692,6 +692,13 @@ void MainWindow::onSettingChanged(const QString& key) {
     if (key.startsWith(QLatin1String("eq"))) {
         playback_->reloadDsp();
     }
+    // The device and its share mode are read when the device is opened, which
+    // is when a track starts -- so without this, picking a device does nothing
+    // until the next song, which reads as the picker being broken.
+    if (key == QLatin1String("outputDeviceId") ||
+        key == QLatin1String("exclusiveOutput")) {
+        playback_->reopenOutput();
+    }
     // Push for the same reason, and immediate for a better one: every setting
     // here is about what the display *looks* like, and a colour you have to
     // restart to see is not a colour picker, it is a form.

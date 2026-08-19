@@ -91,6 +91,16 @@ public slots:
     /// `seconds` into the audible track.
     void seek(double seconds);
 
+    /// Reopens the audio device, resuming where playback had reached.
+    ///
+    /// For a device or share-mode change, which the engine reads when it opens
+    /// the device and therefore only when a track starts. Cog switches the
+    /// device under the running stream; this restarts the track and seeks back,
+    /// which is a short gap rather than a seam, and is honest about what it is
+    /// doing. Does nothing when nothing is playing -- the next track will pick
+    /// the new device up by itself.
+    void reopenOutput();
+
     /// Asks the engine to re-read the DSP settings, so an equaliser change is
     /// heard on the track already playing rather than the next one.
     void reloadDsp();

@@ -167,6 +167,10 @@ private:
     };
 
     void feederLoop();
+    /// Which device to open: the configured one if it is still there, matched
+    /// by id and then by name, and otherwise the system default.
+    [[nodiscard]] std::string chosenDeviceId() const;
+
     /// Applies a pending seek. Feeder thread only.
     void performSeek(std::int64_t frame);
 

@@ -120,6 +120,18 @@ void PlaybackController::emitState() {
 
 // --- transport ----------------------------------------------------------
 
+void PlaybackController::reopenOutput() {
+    const TrackId current = currentTrack();
+    if (current == kInvalidTrackId || !playing()) {
+        return;
+    }
+    const double resumeAt = position();
+    playTrack(current);
+    if (resumeAt > 0.0) {
+        seek(resumeAt);
+    }
+}
+
 void PlaybackController::playTrack(TrackId id) {
     // A fresh gesture, so the record of what has already failed starts empty.
     failedStarts_.clear();

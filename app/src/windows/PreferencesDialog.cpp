@@ -2,6 +2,7 @@
 
 #include "Appearance.hpp"
 
+#include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/ReplayGain.hpp"
 
 #include <QCheckBox>
@@ -102,6 +103,7 @@ constexpr std::array kCuratedKeys = {
     "alwaysStopAfterCurrent", "readCueSheetsInFolders",
     // Output
     "volumeScaling", "resampling", "enableHDCD", "halveDSDVolume",
+    "outputDeviceId", "outputDeviceName", "exclusiveOutput",
     "enableFSurround",
     "enableFading", "suspendOutputOnPause",
     // MIDI
@@ -387,6 +389,62 @@ QWidget* PreferencesDialog::buildOutputPane() {
     auto* layout = new QFormLayout(pane);
     const RowBuilder row{settings_, layout, changeNotifier()};
 
+    // The device list is read once, when this pane is built. Enumerating spins
+    // up the backend's context, and a picker that re-enumerated on every repaint
+    // would do that while the listener is dragging a slider next to it.
+    auto* deviceBox = new QComboBox;
+    deviceBox->addItem(tr("System default"), QString{});
+    const std::string chosenId = settings_.rawValue("outputDeviceId");
+    for (const DeviceInfo& device : enumerateOutputDevices()) {
+        const QString id = QString::fromStdString(device.id);
+        deviceBox->addItem(QString::fromStdString(device.name), id);
+        if (device.isDefault) {
+            // Named rather than left to be guessed at: "System default" and the
+            // device it currently resolves to are different rows, and which one
+            // is chosen matters when headphones are plugged in later.
+            deviceBox->setItemText(deviceBox->count() - 1,
+                                   tr("%1 (current default)")
+                                       .arg(QString::fromStdString(device.name)));
+        }
+    }
+
+    // A device that is not here right now is still the choice: the engine falls
+    // back to the default until it returns, and the setting is left alone. So
+    // the row is shown rather than silently reset to "System default".
+    int chosenRow = deviceBox->findData(QString::fromStdString(chosenId));
+    if (chosenRow < 0 && !chosenId.empty()) {
+        const std::string name = settings_.rawValue("outputDeviceName");
+        deviceBox->addItem(tr("%1 (not connected)")
+                               .arg(QString::fromStdString(name.empty() ? chosenId : name)),
+                           QString::fromStdString(chosenId));
+        chosenRow = deviceBox->count() - 1;
+    }
+    deviceBox->setCurrentIndex(chosenRow < 0 ? 0 : chosenRow);
+
+    {
+        auto* settings = &settings_;
+        auto  announce = changeNotifier();
+        QObject::connect(deviceBox, &QComboBox::currentIndexChanged, deviceBox,
+                         [settings, announce, deviceBox](int index) {
+                             const QString id = deviceBox->itemData(index).toString();
+                             settings->setRawValue("outputDeviceId", id.toStdString());
+                             // The name travels with it, as the fallback match
+                             // for a device that comes back under a new id.
+                             settings->setRawValue(
+                                 "outputDeviceName",
+                                 id.isEmpty() ? std::string{}
+                                              : deviceBox->itemText(index).toStdString());
+                             announce("outputDeviceId");
+                         });
+    }
+    layout->addRow(tr("Output device"), deviceBox);
+
+    row.toggle(tr("Take the device exclusively"), "exclusiveOutput",
+               tr("Plays at the file's own rate and format instead of the system "
+                  "mixer's, and silences everything else on the machine while it "
+                  "does. Falls back to sharing when the device or the platform "
+                  "will not allow it."));
+
     row.choice(tr("Volume scaling"), "volumeScaling", kVolumeScalingChoices);
     row.choice(tr("Resampler quality"), "resampling", kResamplingChoices);
 
@@ -402,7 +460,8 @@ QWidget* PreferencesDialog::buildOutputPane() {
     row.toggle(tr("Release the audio device while paused"), "suspendOutputOnPause");
 
     row.note(tr("Volume scaling and resampler quality take effect on the next "
-                "track."));
+                "track. Changing the device or exclusive mode restarts what is "
+                "playing, from where it had reached."));
 
     return pane;
 }

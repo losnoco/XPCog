@@ -60,7 +60,22 @@ public:
             deviceConfig.playback.pDeviceID = &deviceId;
         }
 
-        if (ma_device_init(&context_, &deviceConfig, &device_) != MA_SUCCESS) {
+        // Exclusive is asked for, not demanded. WASAPI grants it only when
+        // nothing else holds the device, backends with no such concept return
+        // MA_SHARE_MODE_NOT_SUPPORTED, and either way refusing to play would be
+        // the wrong answer to "I would rather not be resampled".
+        exclusiveHeld_ = false;
+        if (config.exclusive) {
+            deviceConfig.playback.shareMode = ma_share_mode_exclusive;
+            if (ma_device_init(&context_, &deviceConfig, &device_) == MA_SUCCESS) {
+                exclusiveHeld_ = true;
+            } else {
+                deviceConfig.playback.shareMode = ma_share_mode_shared;
+            }
+        }
+
+        if (!exclusiveHeld_ &&
+            ma_device_init(&context_, &deviceConfig, &device_) != MA_SUCCESS) {
             return false;
         }
         deviceValid_ = true;
@@ -117,6 +132,11 @@ public:
         const double frames = device_.playback.internalPeriodSizeInFrames *
                               device_.playback.internalPeriods;
         return frames / format_.sampleRate;
+    }
+
+    [[nodiscard]] bool exclusiveHeld() const override {
+        std::lock_guard lock(deviceMutex_);
+        return deviceValid_ && exclusiveHeld_;
     }
 
     [[nodiscard]] double preferredSampleRate() const override {
@@ -319,6 +339,9 @@ private:
     ma_device          device_{};
     bool               contextValid_ = false;
     bool               deviceValid_  = false;
+    /// Whether the running device was granted exclusively. Not what was asked
+    /// for -- what was given.
+    bool               exclusiveHeld_ = false;
     AudioFormat        format_{};
 
     std::mutex            callbackMutex_;
@@ -336,6 +359,13 @@ private:
 };
 
 }  // namespace
+
+std::vector<DeviceInfo> enumerateOutputDevices() {
+    // Through a throwaway output rather than a second copy of the context
+    // handling: the ring is never touched, because nothing is started.
+    RingBuffer unused{1};
+    return makeMiniaudioOutput(unused)->devices();
+}
 
 std::unique_ptr<IAudioOutput> makeMiniaudioOutput(RingBuffer& sink) {
     return std::make_unique<MiniaudioOutput>(sink);

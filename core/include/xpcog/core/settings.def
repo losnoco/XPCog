@@ -30,6 +30,32 @@ XPCOG_SETTING(Resampling, std::string, "resampling", "high")
 /// Fade on seek and stop, so transport changes do not click.
 XPCOG_SETTING(EnableFading, bool, "enableFading", true)
 
+/// Which device plays. Empty is the system default, and stays the system
+/// default -- following it as the listener plugs in headphones, rather than
+/// pinning whatever was default when the setting was written.
+///
+/// Cog stores a dictionary of name and CoreAudio device ID under `outputDevice`
+/// and matches on either, rewriting the entry when the ID has moved
+/// (Preferences/OutputsArrayController.m). Two keys here instead, because a
+/// setting is a string: the id is what selects, the name is the fallback for
+/// when it no longer resolves and is what the preferences pane can show for a
+/// device that is currently unplugged.
+XPCOG_SETTING(OutputDeviceId, std::string, "outputDeviceId", "")
+XPCOG_SETTING(OutputDeviceName, std::string, "outputDeviceName", "")
+
+/// Take the device exclusively, so nothing is mixed or resampled behind us.
+///
+/// **No Cog counterpart** -- Cog is CoreAudio only, where the equivalent is hog
+/// mode and it does not offer one. What this buys is the device running at the
+/// rate and format the player asked for rather than whatever the system mixer
+/// is set to, which is the difference between a 96 kHz file being played and
+/// being resampled to 48 on the way out.
+///
+/// Not every backend can: WASAPI can, and a backend that cannot falls back to
+/// sharing rather than refusing to play. Off by default, because taking a
+/// device exclusively stops every other sound on the machine.
+XPCOG_SETTING(OutputExclusive, bool, "exclusiveOutput", false)
+
 /// Decode HDCD control codes when present.
 XPCOG_SETTING(EnableHDCD, bool, "enableHDCD", true)
 

@@ -1,3 +1,4 @@
+#include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/AudioChunk.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
@@ -226,4 +227,44 @@ TEST_CASE("float32SampleCount accounts for channels", "[convert]") {
     static_cast<void>(chunk.allocFrames(100));
 
     CHECK(float32SampleCount(chunk) == 200);
+}
+
+// ---------------------------------------------------------------------------
+// Which output device a stored choice means
+// ---------------------------------------------------------------------------
+// The rule is Cog's, and the name half of it is the part worth testing: a USB
+// interface that has been unplugged and put back can present the same hardware
+// under a new id, and matching on id alone would drop the listener back to the
+// laptop speakers without saying anything.
+
+TEST_CASE("a chosen output device is matched by id, then by name", "[audio][device]") {
+    const std::vector<xpcog::DeviceInfo> devices{
+        {"{0.0.0}.{aaa}", "Speakers", true},
+        {"{0.0.0}.{bbb}", "Topping D10", false},
+    };
+
+    SECTION("nothing chosen is the system default") {
+        CHECK(xpcog::resolveOutputDevice(devices, "", "").empty());
+        // A name alone cannot select: the id is what a choice is made of, and a
+        // stored name with no id is a half-written setting.
+        CHECK(xpcog::resolveOutputDevice(devices, "", "Topping D10").empty());
+    }
+
+    SECTION("the id when it is still there") {
+        CHECK(xpcog::resolveOutputDevice(devices, "{0.0.0}.{bbb}", "Topping D10") ==
+              "{0.0.0}.{bbb}");
+        // The id wins even when the name has moved to another device.
+        CHECK(xpcog::resolveOutputDevice(devices, "{0.0.0}.{bbb}", "Speakers") ==
+              "{0.0.0}.{bbb}");
+    }
+
+    SECTION("the name when the id has changed underneath it") {
+        CHECK(xpcog::resolveOutputDevice(devices, "{0.0.0}.{old}", "Topping D10") ==
+              "{0.0.0}.{bbb}");
+    }
+
+    SECTION("neither is the default device, and the setting is not rewritten") {
+        CHECK(xpcog::resolveOutputDevice(devices, "{0.0.0}.{gone}", "Focusrite").empty());
+        CHECK(xpcog::resolveOutputDevice({}, "{0.0.0}.{bbb}", "Topping D10").empty());
+    }
 }

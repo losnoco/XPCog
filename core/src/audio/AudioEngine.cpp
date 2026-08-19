@@ -229,6 +229,8 @@ bool AudioEngine::play(const Url& url) {
     IAudioOutput::Config config;
     config.sampleRate = format_.sampleRate;
     config.channels   = format_.channels;
+    config.deviceId   = chosenDeviceId();
+    config.exclusive  = settings_.OutputExclusive();
 
     // Fill the deep buffer before the device starts. Otherwise the first
     // callbacks land before the feeder has produced anything and are counted as
@@ -626,6 +628,37 @@ void AudioEngine::pollStreamMetadata() {
             delegate_->streamMetadataChanged(track_->url, tags);
         }
     }
+}
+
+std::string AudioEngine::chosenDeviceId() const {
+    const std::string wanted = settings_.OutputDeviceId();
+    if (wanted.empty()) {
+        return {};  // the system default, and it stays the system default
+    }
+    // Enumerating costs a backend context, so it is only done when a device has
+    // actually been chosen. The rule itself is resolveOutputDevice(), which is
+    // where it can be tested without a sound card.
+    return resolveOutputDevice(output_.devices(), wanted, settings_.OutputDeviceName());
+}
+
+std::string resolveOutputDevice(const std::vector<DeviceInfo>& devices,
+                                std::string_view wantedId, std::string_view wantedName) {
+    if (wantedId.empty()) {
+        return {};
+    }
+    for (const DeviceInfo& device : devices) {
+        if (device.id == wantedId) {
+            return device.id;
+        }
+    }
+    if (!wantedName.empty()) {
+        for (const DeviceInfo& device : devices) {
+            if (device.name == wantedName) {
+                return device.id;
+            }
+        }
+    }
+    return {};
 }
 
 void AudioEngine::performSeek(std::int64_t frame) {

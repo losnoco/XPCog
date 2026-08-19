@@ -13,6 +13,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace xpcog {
@@ -32,6 +33,11 @@ public:
         std::uint32_t channels   = 2;
         /// Empty selects the system default device.
         std::string deviceId;
+        /// Ask for the device exclusively. A backend that cannot do it, or a
+        /// device already held by something else, falls back to sharing -- so
+        /// this is a preference rather than a demand, and exclusiveHeld() says
+        /// which way it went.
+        bool exclusive = false;
         /// 0 lets the backend choose. Smaller means lower latency and more
         /// callbacks; the feeder must keep up either way.
         std::uint32_t bufferFrames = 0;
@@ -70,6 +76,10 @@ public:
     /// The rate this output would rather run at, or 0 when it cannot say. Used
     /// when the track's own rate is one supportsSampleRate() has refused.
     [[nodiscard]] virtual double preferredSampleRate() const { return 0.0; }
+
+    /// Whether the running device is actually held exclusively. False when it
+    /// was not asked for, when the backend cannot, and when the device refused.
+    [[nodiscard]] virtual bool exclusiveHeld() const { return false; }
 
     [[nodiscard]] virtual std::vector<DeviceInfo> devices() const = 0;
 
@@ -127,5 +137,29 @@ public:
 /// Reads interleaved float32 from `sink`. The caller owns the ring and must keep
 /// it alive for the lifetime of the returned output.
 [[nodiscard]] std::unique_ptr<IAudioOutput> makeMiniaudioOutput(RingBuffer& sink);
+
+/// The playback devices, without opening one or owning an output.
+///
+/// For the preferences pane, which needs the list to draw a picker and has no
+/// business holding the thing that plays audio. Enumerating means building the
+/// backend's context, so this is a call to make when a dialog opens rather than
+/// one to poll.
+[[nodiscard]] std::vector<DeviceInfo> enumerateOutputDevices();
+
+/// Which of `devices` a stored choice means, or empty for the system default.
+///
+/// By id first and then by name, which is Cog's rule
+/// (Preferences/OutputsArrayController.m) and is not redundancy: a device that
+/// has been unplugged and put back, or a machine that has rebooted, can present
+/// the same hardware under a different id. Matching only on id would silently
+/// drop the listener back to the default speakers; the name is what they know
+/// it by.
+///
+/// A choice that matches nothing returns empty -- the default device, for now.
+/// The stored setting is deliberately left alone, so plugging the device back
+/// in restores it rather than requiring it to be picked again.
+[[nodiscard]] std::string resolveOutputDevice(const std::vector<DeviceInfo>& devices,
+                                              std::string_view wantedId,
+                                              std::string_view wantedName);
 
 }  // namespace xpcog
