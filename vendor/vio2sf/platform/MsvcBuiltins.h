@@ -15,6 +15,9 @@
 // POPCNT instruction and MSVC, unlike GCC, will not fall back when the target
 // CPU lacks it. melonDS's own MSVC path in BitSet.h says exactly this and does
 // the same.
+// C as well as C++: this header is force-included into every source in the
+// target, and vio2sf compiles fatfs, sha1, tiny-AES-c and xxhash as C. So no
+// static_cast and no C++-only syntax here.
 #pragma once
 
 #ifdef _MSC_VER
@@ -25,31 +28,31 @@ static __forceinline int __builtin_popcount(unsigned int value) {
     value = value - ((value >> 1) & 0x55555555u);
     value = (value & 0x33333333u) + ((value >> 2) & 0x33333333u);
     value = (value + (value >> 4)) & 0x0F0F0F0Fu;
-    return static_cast<int>((value * 0x01010101u) >> 24);
+    return (int)((value * 0x01010101u) >> 24);
 }
 
 static __forceinline int __builtin_popcountll(unsigned long long value) {
-    return __builtin_popcount(static_cast<unsigned int>(value)) +
-           __builtin_popcount(static_cast<unsigned int>(value >> 32));
+    return __builtin_popcount((unsigned int)(value)) +
+           __builtin_popcount((unsigned int)(value >> 32));
 }
 
 // Undefined for zero, exactly as the GNU builtins are.
 static __forceinline int __builtin_ctz(unsigned int value) {
     unsigned long index = 0;
     _BitScanForward(&index, value);
-    return static_cast<int>(index);
+    return (int)(index);
 }
 
 static __forceinline int __builtin_ctzll(unsigned long long value) {
     unsigned long index = 0;
     _BitScanForward64(&index, value);
-    return static_cast<int>(index);
+    return (int)(index);
 }
 
 static __forceinline int __builtin_clz(unsigned int value) {
     unsigned long index = 0;
     _BitScanReverse(&index, value);
-    return 31 - static_cast<int>(index);
+    return 31 - (int)(index);
 }
 
 // A control-flow intrinsic rather than a value, so a macro rather than a
@@ -60,7 +63,7 @@ static __forceinline int __builtin_clz(unsigned int value) {
 static __forceinline int __builtin_clzll(unsigned long long value) {
     unsigned long index = 0;
     _BitScanReverse64(&index, value);
-    return 63 - static_cast<int>(index);
+    return 63 - (int)(index);
 }
 
 #endif  // _MSC_VER

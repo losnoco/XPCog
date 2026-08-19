@@ -18,7 +18,8 @@ or reproducible; nothing depends on the session that started it.
 | 4 | snes9x → SNSF, `snsf` + `minisnsf` registered | **done** |
 | 5 | HighlyTheoretical → SSF *and* DSF | **done** |
 | 6 | SSEQPlayer → NCSF, `ncsf` + `minincsf` registered | **done** |
-| 7… | the remaining two cores | not started — see *Which core next* |
+| 7 | HighlyExperimental → PSF *and* PSF2 | **done** |
+| 8 | HighlyQuixotic → QSF | not started — the last one |
 
 Stage 0 registered **nothing** with the plugin registry — deliberately, since a
 decoder that cannot decode is worse than a format the player does not claim.
@@ -122,7 +123,7 @@ Version bytes verified against Cog's `HCDecoder.mm`, not recalled.
 | `0x23` | snsf, minisnsf | snes9x | 18 built | **done** — `vendor/snes9x` |
 | `0x12` | dsf, minidsf | HighlyTheoretical | 7 built | **done** — `vendor/highlytheoretical` |
 | `0x11` | ssf, minissf | HighlyTheoretical | — | **done** — same core, same decoder |
-| `0x01`/`0x02` | psf, psf2 + mini | HighlyExperimental | 25 | vendored in Cog |
+| `0x01`/`0x02` | psf, psf2 + mini | HighlyExperimental | 8 built | **done** — `vendor/highlyexperimental` |
 | `0x41` | qsf, miniqsf | HighlyQuixotic | 11 | vendored in Cog |
 
 Cog's copies live in `~/Projects/Cog/Frameworks/<name>/`. Only **mGBA** and
@@ -136,21 +137,17 @@ hand-written `CMakeLists.txt` since upstream ships only an Xcode project.
 
 ## Which core next
 
-Six of eight, and seven of the ten formats. Two cores remain, both
-vendored-in-Cog and both with nothing in any corpus here:
+Seven of eight, and nine of the ten formats. One core remains:
 
-- **HighlyExperimental → PSF and PSF2**, 25 files, and the format the whole
-  family is named after — two more formats for one core, as HighlyTheoretical
-  was. It needs a PlayStation BIOS image: Cog carries `hebios.bin` beside
-  `HCDecoder.mm`, which is a redistribution question rather than a technical one
-  and should be settled before the work starts. PSF2 additionally needs
-  `psf2fs.c`, already vendored in `vendor/psflib` and so far unused.
 - **HighlyQuixotic → QSF**, 11 files, the smallest of the eight. Its `reserved`
-  section carries a Kabuki decryption key, which no other format here has.
+  section carries a Kabuki decryption key — `qsound_set_kabuki_key()` takes two
+  swap keys, an address key and an XOR key out of an 11-byte blob — which no
+  other format here has. Capcom's QSound hardware, Z80 program plus sample ROM.
 
-Every core so far was proved by listening, and for four of the six the decisive
-material came from outside the main corpus. Nothing in this tree can hear a
-wrong sample rate, a starved stream, or a sequence number that was ignored.
+Every core so far was proved by listening, and for five of the seven the
+decisive material came from outside the main corpus. Nothing in this tree can
+hear a wrong sample rate, a starved stream, a sequence number that was ignored,
+or an instrument bank resolved to the wrong samples.
 
 ## Lessons already paid for
 
@@ -221,6 +218,45 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   to vendored sources are marked in place with an "XPCog local change" comment
   and listed at the top of the core's `CMakeLists.txt`, so a re-vendor does not
   drop them silently.
+
+### From stage 7 (HighlyExperimental → PSF and PSF2)
+
+- **The BIOS is Sony's, and that is a decision rather than a detail.**
+  `vendor/highlyexperimental/Core/hebios.h` is 512 KB of PlayStation 2 BIOS (5.0
+  North American) stripped to the sound modules, and it is required for both
+  formats. Upstream is explicit in `Core/Readme.txt`: *"The unfortunate dirty
+  secret here is that Sony BIOS is used… Making this stuff 100% legal (via IOP
+  kernel and PS1 BIOS HLE) is on the to-do list."* It is vendored because Cog
+  vendors it and this port follows Cog. If that HLE work ever lands upstream,
+  this file is what it replaces; the alternative, if it is ever wanted, is
+  loading the image from a user data directory and declining without it.
+
+- **The two formats load by completely different mechanisms.** A PSF carries a
+  PS-EXE in `exe` — 0x800 bytes of header stating a load address, entry point
+  and stack pointer, then code — which is uploaded into IOP RAM, and the
+  *first* image the chain returns supplies the registers the machine starts
+  from. A PSF2 carries no executable at all: its sections are a **filesystem**,
+  and the emulator reads files out of it on demand through a callback while it
+  runs. This is what `psf2fs.c` has been sitting in `vendor/psflib` for since
+  stage 0. PSF is "load a program and run it"; PSF2 is "boot a machine and let
+  it mount this".
+
+- **Two consoles again, two rates.** `psx_get_state_size(1)` builds a PS1 at
+  44.1 kHz and `(2)` a PS2 at 48 kHz. Same shape as HighlyTheoretical, and the
+  same risk as the GSF rate bug if the version byte is ever ignored.
+
+- **A corpus root can contain orphans, and refusing them is correct.** A
+  mini-PSF separated from its library loads its *tags* fine and fails to load
+  its *program*, which is exactly the contract stage 0 set. A test that takes
+  the first file the directory walk returns will eventually take one of these
+  and read it as a decoder bug — as one here did. Tests now try candidates until
+  a chain resolves.
+
+- **`info` does not prove a core works.** Since stage 1 the cores open lazily, so
+  a sweep built on `xpcog-cli info` only proves the tag block parses — the
+  program is never loaded and no audio is rendered. Sweeps that mean anything
+  have to `decode`. This was noticed here, and applies retroactively to the USF,
+  2SF, SNSF and NCSF sweeps recorded above.
 
 ### From stage 6 (SSEQPlayer → NCSF)
 

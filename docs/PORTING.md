@@ -1368,7 +1368,31 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   and lengths, and play the same music. And it reports a malformed archive by
   throwing rather than returning a status, so the decoder catches.
 
-  The staging plan for the remaining two cores -- what each needs, which
+- **The seventh core: HighlyExperimental, so `psf` and `psf2` play** -- the
+  format the whole family is named after. One core for two consoles again:
+  `psx_get_state_size(1)` builds a PlayStation at 44.1 kHz and `(2)` a
+  PlayStation 2 at 48 kHz.
+
+  The two formats load by different mechanisms, and PSF2's is unlike anything
+  else here. A PSF carries a PS-EXE that is uploaded into IOP RAM, with the
+  first image in the chain supplying the entry point and stack pointer. A PSF2
+  carries no executable at all: its sections are a *filesystem*, and the running
+  machine reads files out of it through a callback. That is what `psf2fs.c` has
+  been waiting in `vendor/psflib` for since the container landed.
+
+  It also needs Sony's BIOS -- 512 KB of PS2 BIOS stripped to the sound modules,
+  required for both formats, and vendored here because Cog vendors it. Upstream
+  calls it "the unfortunate dirty secret" and lists HLE replacement as a to-do.
+  The decision is recorded in `vendor/highlyexperimental/CMakeLists.txt` rather
+  than defended.
+
+  One process lesson came out of it: **`xpcog-cli info` does not prove a core
+  works**. The cores open lazily, so `info` parses the tag block and stops --
+  the program is never loaded and nothing is rendered. Corpus sweeps have to
+  `decode` to mean anything, which applies retroactively to the sweeps recorded
+  for the earlier cores.
+
+  The staging plan for the remaining core -- what each needs, which
   section holds its program, where Cog keeps it, and what a core must implement
   -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
   picked up on another machine.

@@ -63,7 +63,8 @@ if(XPCOG_WITH_PSF)
                                        codecs/test_twosf.cpp
                                        codecs/test_snsf.cpp
                                        codecs/test_sdsf.cpp
-                                       codecs/test_ncsf.cpp)
+                                       codecs/test_ncsf.cpp
+                                       codecs/test_psx.cpp)
     target_link_libraries(xpcog-tests PRIVATE xpcog-codec-psf)
 
     # Same opt-in shape as the vgmstream corpus, and for the same reason: a PSF

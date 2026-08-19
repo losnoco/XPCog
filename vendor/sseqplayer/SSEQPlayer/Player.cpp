@@ -12,8 +12,15 @@
 #include "common.h"
 
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(_LIBCPP_VERSION)
+/* XPCog local change: libc++ declares these two codecvt specialisations without
+   defining their locale::id, so a program using them has to supply it -- which
+   is what these two lines are for. libstdc++ defines them itself, and defining
+   them again is an error there. Guarded rather than deleted, because on macOS
+   they are still required. */
+#ifdef _LIBCPP_VERSION
 std::locale::id std::codecvt<char16_t, char, mbstate_t>::id;
 std::locale::id std::codecvt<char32_t, char, mbstate_t>::id;
+#endif
 #endif
 
 Player::Player() : prio(0), nTracks(0), tempo(0), tempoCount(0), tempoRate(0), masterVol(0), sseqVol(0), sseq(nullptr), sampleRate(0), interpolation(INTERPOLATION_NONE)
