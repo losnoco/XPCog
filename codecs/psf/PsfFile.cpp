@@ -29,9 +29,16 @@ struct PsfHandle {
 
 /// Shared by every callback: the registry to open through, and the directory the
 /// outermost file came from, since `_lib` names are relative to it.
+///
+/// `filesOpened` is how the tag callback tells the file the user chose from the
+/// libraries behind it. psflib passes no depth to that callback, but it does
+/// open each file before reporting its tags and only recurses into `_lib`
+/// afterwards, so the outermost file is always open number one.
 struct PsfContext {
-    const PluginRegistry* registry = nullptr;
+    const PluginRegistry* registry    = nullptr;
     Url                   base;
+    PsfFile*              file        = nullptr;
+    int                   filesOpened = 0;
 };
 
 thread_local PsfContext* tlsContext = nullptr;
@@ -61,6 +68,7 @@ void* psfOpen(const char* path) {
     if (!handle->source || !handle->source->open(url)) {
         return nullptr;  // a library the chain names but nothing holds
     }
+    ++tlsContext->filesOpened;
     return handle.release();
 }
 
@@ -145,15 +153,30 @@ std::optional<double> parsePsfTime(std::string_view text) {
 
 namespace {
 
-/// Collects what the outermost file's tag block says.
+/// Collects what a tag block says.
+///
+/// Normally that is only the outermost file's, which is what psflib reports
+/// unless nested tags were asked for. When they were, a library's tags arrive
+/// here too, and they are strictly a fallback: a `.usflib` shared by fifty
+/// tracks must not be able to give all fifty its own title or length. So
+/// anything the outermost file already said stands, and `length`, `fade` and
+/// `volume` are read from that file alone.
 int psfInfo(void* context, const char* name, const char* value) {
-    auto* file = static_cast<PsfFile*>(context);
-    if (file == nullptr || name == nullptr || value == nullptr) {
+    auto* self = static_cast<PsfContext*>(context);
+    if (self == nullptr || self->file == nullptr || name == nullptr || value == nullptr) {
         return 0;
     }
+    PsfFile* file = self->file;
 
     const std::string key  = codecs::toUtf8(name);
     const std::string text = codecs::toUtf8(value);
+
+    if (self->filesOpened > 1) {
+        if (!file->tags.contains(key)) {
+            file->tags.set(key, text);
+        }
+        return 0;
+    }
 
     if (key == "length") {
         file->length = parsePsfTime(text);
@@ -193,7 +216,8 @@ int psfLoadProgram(void* context, const std::uint8_t* exe, std::size_t exeSize,
 
 [[nodiscard]] std::optional<PsfFile> load(const Url& url,
                                           const PluginRegistry& registry,
-                                          std::uint8_t allowedVersion, bool wantPrograms) {
+                                          std::uint8_t allowedVersion, bool wantPrograms,
+                                          bool wantNestedTags) {
     const auto path = url.localPath();
     if (!path) {
         // psflib addresses libraries by path, so the chain has to start from one.
@@ -202,16 +226,18 @@ int psfLoadProgram(void* context, const std::uint8_t* exe, std::size_t exeSize,
         return std::nullopt;
     }
 
+    PsfFile file;
+
     PsfContext context;
     context.registry = &registry;
     context.base     = url;
+    context.file     = &file;
     const ScopedContext scope{&context};
 
-    PsfFile file;
     const int version = psf_load(pathToUtf8(*path).c_str(), &kCallbacks, allowedVersion,
                                  wantPrograms ? &psfLoadProgram : nullptr,
-                                 wantPrograms ? &file : nullptr, &psfInfo, &file,
-                                 /*info_want_nested_tags=*/0);
+                                 wantPrograms ? &file : nullptr, &psfInfo, &context,
+                                 wantNestedTags ? 1 : 0);
     if (version <= 0) {
         return std::nullopt;
     }
@@ -223,12 +249,15 @@ int psfLoadProgram(void* context, const std::uint8_t* exe, std::size_t exeSize,
 }  // namespace
 
 std::optional<PsfFile> loadPsf(const Url& url, const PluginRegistry& registry,
-                               std::uint8_t allowedVersion) {
-    return load(url, registry, allowedVersion, /*wantPrograms=*/true);
+                               std::uint8_t allowedVersion, bool wantNestedTags) {
+    return load(url, registry, allowedVersion, /*wantPrograms=*/true, wantNestedTags);
 }
 
 std::optional<PsfFile> readPsfTags(const Url& url, const PluginRegistry& registry) {
-    return load(url, registry, /*allowedVersion=*/0, /*wantPrograms=*/false);
+    // Never nested: with no load target psflib stops before following `_lib` at
+    // all, so a library is not opened and there is nothing nested to report.
+    return load(url, registry, /*allowedVersion=*/0, /*wantPrograms=*/false,
+                /*wantNestedTags=*/false);
 }
 
 }  // namespace xpcog::codecs

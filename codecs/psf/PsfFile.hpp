@@ -98,11 +98,21 @@ struct PsfFile {
 /// read wants; a core passes its own version so a mismatched file is refused
 /// rather than fed to the wrong emulator.
 ///
+/// `wantNestedTags` also reports the tags of the libraries the chain walks
+/// through, which some cores need: a USF's `_enablecompare` may sit in the
+/// `.usflib` rather than in the `.miniusf` that names it, and lazyusf2 renders
+/// the wrong thing without it. Off by default because it is only ever the
+/// underscore tags a core is after -- `length`, `fade`, `volume` and everything
+/// shown in the playlist always come from the outermost file, which is the file
+/// the user actually selected. A library that carries its own `length` cannot
+/// overrule the track that names it, whatever this is set to.
+///
 /// Returns nullopt when the file is not a PSF, when a named library is missing,
 /// or when the chain is malformed.
 [[nodiscard]] std::optional<PsfFile> loadPsf(const Url& url,
                                              const PluginRegistry& registry,
-                                             std::uint8_t allowedVersion = 0);
+                                             std::uint8_t allowedVersion = 0,
+                                             bool wantNestedTags = false);
 
 /// Just the tags, without inflating any program image. What a metadata reader
 /// wants, and much cheaper: a `.gsflib` can be megabytes and none of it is

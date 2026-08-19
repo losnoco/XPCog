@@ -12,13 +12,14 @@ or reproducible; nothing depends on the session that started it.
 | stage | what | state |
 |---|---|---|
 | 0 | psflib vendored, PSF container, tests | **done** — `24df743` |
-| 1 | first emulator core | not started — see *Which core next* |
-| 2… | the remaining seven | not started |
+| 1 | lazyusf2 → USF, `usf` + `miniusf` registered | **done** |
+| 2… | the remaining seven cores | not started — see *Which core next* |
 
-Stage 0 registers **nothing** with the plugin registry. That is deliberate: a
-decoder that cannot decode is worse than a format the player does not claim, and
-it is the same rule that keeps the OpenMPT extension list honest. `codecs/psf` is
-a plain library the first core will link.
+Stage 0 registered **nothing** with the plugin registry — deliberately, since a
+decoder that cannot decode is worse than a format the player does not claim.
+Stage 1 is the first core behind that container, so `usf` and `miniusf` are now
+claimed and play. `codecs/psf` remains a plain library; the other seven cores
+link it the same way `codecs/usf` does.
 
 ## Building and testing what exists
 
@@ -26,13 +27,17 @@ a plain library the first core will link.
 cmake --preset windows-debug -DXPCOG_WITH_PSF=ON -DXPCOG_PSF_CORPUS=<folder of rips>
 ```
 
-`XPCOG_WITH_PSF` is `ON` in the presets, so CI builds it on all four jobs and it
-cannot rot before a core arrives. `XPCOG_PSF_CORPUS` is unset everywhere but a
-developer machine: PSF files are rips of copyrighted game programs and cannot be
-committed, so the chain tests skip without it. `tests/codecs/test_psf.cpp`.
+`XPCOG_WITH_PSF` is `ON` in the presets, so CI builds it on all four jobs — one
+switch for HighlyComplete as a whole, container and cores, matching Cog's single
+plugin. `XPCOG_PSF_CORPUS` is unset everywhere but a developer machine: PSF files
+are rips of copyrighted game programs and cannot be committed, so the corpus
+cases skip without it. `tests/codecs/test_psf.cpp` covers the container,
+`test_usf.cpp` the core — the latter decodes, because a core can resolve the
+chain perfectly and still render silence.
 
-The corpus this was developed against is `D:\vgm` on the author's machine —
-5,318 files, of which the PSF family is 1,656:
+The corpus this was developed against is `D:\vgm` on the author's Windows
+machine and `/Volumes/gigante/vgm` on the Mac — the same 5,318 files, of which
+the PSF family is 1,656:
 
 | extension | count | library files |
 |---|---|---|
@@ -47,10 +52,16 @@ relationships, not on specific titles.
 
 `codecs/psf/PsfFile.hpp`:
 
-- `loadPsf(url, registry, allowedVersion)` — walks the `_lib` chain and returns
-  the program images **highest priority first**, which is the order they must be
-  applied in. Pass the core's own version byte so a mismatched file is refused
-  rather than fed to the wrong emulator.
+- `loadPsf(url, registry, allowedVersion, wantNestedTags)` — walks the `_lib`
+  chain and returns the program images **highest priority first**, which is the
+  order they must be applied in. Pass the core's own version byte so a
+  mismatched file is refused rather than fed to the wrong emulator.
+  `wantNestedTags` also reports the libraries' tags, which USF needs: the
+  `_enablecompare` switch belongs to the game, so a set puts it in the `.usflib`
+  rather than in each of its hundred `.miniusf` files. A library's tags are
+  strictly a fallback — `length`, `fade`, `volume` and everything the playlist
+  shows come from the outermost file whatever this is set to, or one `.usflib`
+  would give all fifty of its tracks the same title.
 - `readPsfTags(url, registry)` — tags only, without inflating any program image.
   A `.gsflib` is megabytes and none of it is needed to answer "what is this
   track called", and the scanner asks that for every file in a library.
@@ -93,7 +104,7 @@ Version bytes verified against Cog's `HCDecoder.mm`, not recalled.
 | version | formats | core | files | source |
 |---|---|---|---|---|
 | `0x22` | gsf, minigsf | mGBA | 989 | submodule, `github.com/kode54/mgba` |
-| `0x21` | usf, miniusf | lazyusf2 | 211 | vendored in Cog |
+| `0x21` | usf, miniusf | lazyusf2 | 211 | **done** — `vendor/lazyusf2`, 52 built |
 | `0x24` | 2sf, mini2sf | vio2sf | 255 | vendored in Cog |
 | `0x25` | ncsf, minincsf | SSEQPlayer | 31 | vendored in Cog |
 | `0x23` | snsf, minisnsf | snes9x | 36 | vendored in Cog |
@@ -113,21 +124,32 @@ hand-written `CMakeLists.txt` since upstream ships only an Xcode project.
 
 ## Which core next
 
-Two reasonable first choices, and the trade is size against build risk:
+Stage 1 took **lazyusf2 → USF**, and the reason it was the cheaper of the two
+choices is worth recording, because this document previously argued the
+opposite. See *Lessons* below: the recompiler that made lazyusf2 look risky is
+not compiled at all, on any architecture Cog ships.
 
-- **mGBA → GSF.** The largest share of a typical corpus (783 files here), and
-  the only core with a real upstream and its own CMake, so no build file to
-  write. Against it: 989 files, and a heavier dependency for CI to build on four
-  platforms.
-- **lazyusf2 → USF.** 694 files here and a fifth the size of mGBA, but upstream
-  ships only an Xcode project so the build is hand-written, and lazyusf2 carries
-  a MIPS recompiler that has historically been architecture-sensitive — worth
-  checking it builds for arm64 macOS before committing to it.
+That leaves seven, and the same trade as before:
 
-The smallest cores — HighlyQuixotic at 11 files, HighlyExperimental at 25 —
-would prove the whole shape fastest, but neither has any files in this corpus,
-so nothing could be heard at the end of it. Still the right choice if the goal is
-to de-risk the core contract before taking on a big emulator.
+- **mGBA → GSF.** The largest remaining share of a typical corpus (783 files
+  here), and the only core with a real upstream and its own CMake, so no build
+  file to write. Against it: 989 files and 77 MB, a heavier dependency for CI to
+  build on four platforms, and mGBA's CMake builds a whole frontend ecosystem
+  that has to be switched off option by option.
+- **vio2sf → 2SF.** 179 files here, 255 sources, hand-written build. The middle
+  option in every dimension.
+- The four small ones — HighlyQuixotic at 11 files, HighlyExperimental at 25,
+  HighlyTheoretical at 29, SSEQPlayer at 31. None has a single file in this
+  corpus, so nothing could be heard at the end of any of them, but between them
+  they are five of the eight formats for the size of one mGBA. HighlyExperimental
+  additionally needs a PlayStation BIOS image; Cog carries `hebios.bin` beside
+  `HCDecoder.mm`.
+
+Whichever is next, the shape is now settled and `codecs/usf` is the template:
+vendor under `vendor/`, hand-write a `CMakeLists.txt`, and implement `IDecoder`
+over `loadPsf()`. Nothing about the container had to change for the first core
+beyond `wantNestedTags`, which is the evidence that stage 0 was cut in the right
+place.
 
 ## Lessons already paid for
 
@@ -144,3 +166,53 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   REQUIRED)` directly.
 - A test failing is not the same as the thing under test being broken — see
   *The two sections*.
+
+### From stage 1 (lazyusf2 → USF)
+
+- **lazyusf2 has no architecture problem, because its recompiler is not built.**
+  This document used to warn that lazyusf2 "carries a MIPS recompiler that has
+  historically been architecture-sensitive". It does carry one, in
+  `r4300/x86/` and `r4300/x86_64/`, and it is reached only when `DYNAREC` is
+  defined. Cog defines it for exactly one architecture:
+
+      "GCC_PREPROCESSOR_DEFINITIONS[arch=i386]" = ( "$(inherit)", DYNAREC );
+
+  So x86_64 and arm64 — every architecture Cog actually ships — have been
+  running the interpreter for years. `vendor/lazyusf2` takes that configuration
+  and goes one step further: it compiles no source from either directory and
+  builds upstream's `r4300/empty_dynarec.c` instead, which exists for precisely
+  this case. Their *headers* stay: `r4300/recomp.h` picks one of the two
+  `assemble_struct.h` files unconditionally to size fields in `precomp_block`.
+
+  52 files, clean on arm64, ~28× realtime in a Debug build.
+
+- **`usf_render_resampled()` with a null buffer is not the same as rendering and
+  discarding.** The API documents the null pointer as "render these and throw
+  them away", and it is tempting for seeking. It takes a different path that
+  converts the frame count back into the emulator's own rate with integer
+  arithmetic and skips that many *there* — so it lands somewhere near the
+  requested frame rather than on it. Seeks discard through a real buffer.
+
+- **A seek must consume what the silence trim left behind.** The leading-silence
+  scan (below) leaves a partial block buffered, so the skip loop's "give me 1024
+  frames" can legitimately return 813. Counting the request rather than the
+  answer put every seek several hundred frames early — audible as landing on the
+  wrong beat, invisible to anything short of comparing samples against a
+  straight decode. That comparison is now `tests/codecs/test_usf.cpp`, and it is
+  the test that caught it.
+
+- **A USF starts silent, and how silent varies by rip.** The save state is taken
+  slightly before the sound driver does anything. Cog trims it with a threshold
+  of 8 on a 16-bit sample and a ten-second ceiling, and the threshold is a
+  *delta* from the previous sample rather than a distance from zero — an
+  emulated DAC sitting idle rests on a small non-zero DC level, and a test
+  against zero finds no silence at all in a track that is plainly silent. Left
+  untrimmed, `length` measures from the wrong instant on every track of a set.
+
+- **The scanner opens the decoder regardless**, so no PSF metadata reader was
+  registered. `MetadataReadFn` takes only a `Url` and `readPsfTags()` needs a
+  registry to resolve through, and it would buy nothing anyway:
+  `Scanner::readMetadata` calls `registry_.open()` for the properties whatever
+  the tag readers say. Worth revisiting for the whole PSF family at once — it is
+  an emulator boot per file during a scan — but as a change to the reader
+  contract, not as something one core does.

@@ -19,6 +19,9 @@
 #   psflib/   <- Cog Frameworks/psflib             (M6) -- the PSF container
 #             every HighlyComplete core sits on. Four files; the emulator
 #             cores themselves are far larger and land one at a time.
+#   lazyusf2/ <- Cog Frameworks/lazyusf2            (M6) -- the first of those
+#             cores: mupen64plus cut down to N64 audio, which is what a USF
+#             plays. Seven more to go; see docs/HIGHLYCOMPLETE.md.
 #   fsurround/<- Cog Audio/ThirdParty/fsurround    (M4) -- data only, done
 
 add_subdirectory(fsurround)
@@ -26,4 +29,5 @@ add_subdirectory(hdcd)
 add_subdirectory(miniaudio)
 if(XPCOG_WITH_PSF)
     add_subdirectory(psflib)
+    add_subdirectory(lazyusf2)
 endif()

@@ -1213,10 +1213,10 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   pointer, so the registry reaches them through a thread-local scoped to the one
   `psf_load()` call.
 
-  **Nothing is registered yet.** A decoder that cannot decode is worse than a
-  format the player does not claim -- the same reasoning that keeps the module
-  decoder's extension list honest -- so this is a plain library the first core
-  will link, not an `xpcog_add_codec()`.
+  **The container registered nothing.** A decoder that cannot decode is worse
+  than a format the player does not claim -- the same reasoning that keeps the
+  module decoder's extension list honest -- so it is a plain library a core
+  links, not an `xpcog_add_codec()`.
 
   One thing measured rather than assumed: **which section holds the program
   depends on the console.** GSF puts the GBA image in `exe`; USF leaves `exe`
@@ -1225,10 +1225,37 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   in the corpus while the chain itself was resolving perfectly -- a good
   reminder that a test failing does not mean the thing under test is broken.
 
-  The staging plan for the eight cores -- what each needs, which section holds
-  its program, where Cog keeps it, and what a core must implement -- is
-  [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be picked up
-  on another machine.
+- **The first of the eight cores: lazyusf2, so `usf` and `miniusf` play.** A USF
+  is not a music program but a Project 64 *save state* captured while the game's
+  sound driver was running, plus the ROM words that driver reads; playing one
+  means booting an N64 into that state and recording what the Audio Interface
+  sends out.
+
+  lazyusf2 is vendored (`vendor/lazyusf2`, 52 of its 211 sources built) because
+  upstream ships only an Xcode project. The thing that made it look like the
+  riskier first core -- a MIPS recompiler that emits x86 -- turned out not to be
+  built at all: Cog defines `DYNAREC` for `arch=i386` only, so every architecture
+  it ships has been running the interpreter for years. This build compiles no
+  source from `r4300/x86*/` and uses upstream's `empty_dynarec.c` stubs instead.
+  ~28x realtime in a Debug build on arm64.
+
+  Three things the core has to get right that the container cannot: the program
+  is in `reserved` and not `exe`; `length` is the only thing that ends the track,
+  so the decoder owns the fade as well; and a USF opens with dead air of a
+  length that varies by rip, which has to be trimmed or `length` measures from
+  the wrong instant. All three are asserted in `tests/codecs/test_usf.cpp`
+  against decoded samples -- the seek case in particular, comparing seek output
+  byte-for-byte against a straight decode, caught a skip loop that counted the
+  frames it asked for rather than the ones it got and so landed every seek
+  several hundred frames early.
+
+  Verified across the whole corpus: all 694 `.miniusf` files open and report a
+  duration, none fails.
+
+  The staging plan for the remaining seven cores -- what each needs, which
+  section holds its program, where Cog keeps it, and what a core must implement
+  -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
+  picked up on another machine.
 
   Tests run against the same opt-in corpus mechanism vgmstream introduced
   (`-DXPCOG_PSF_CORPUS=<path>`): chains resolve, tags parse, the tags-only path
