@@ -25,6 +25,24 @@
 # than just the sound chip -- and it makes such a track the sharpest test of the
 # core there is. If the CPU-APU handshake drifts, the stream starves and the
 # vocal breaks up, while every other track in the set plays perfectly.
+#
+# ---------------------------------------------------------------------------
+# Local changes to the vendored sources
+# ---------------------------------------------------------------------------
+# Listed here so a re-vendor does not silently drop them; each is marked in
+# place with an "XPCog local change" comment. All three are the same kind of
+# thing -- a copy that has only ever been built for macOS, meeting cl.exe.
+#
+#   snes9x/port.h       The `#include "windowsh_wrapper.h"` under _WIN32 guarded
+#                       out. That header is in snes9x's win32/ frontend, which
+#                       this subset does not vendor.
+#
+#   snes9x/snes9x.h     `#import` of the three bsnes headers changed to
+#                       `#include`. On MSVC `#import` means "import a COM type
+#                       library", and the header is not one.
+#
+#   snes9x/memmap.h     CMemory::map_mirror returns ptrdiff_t rather than
+#   src/memmap.cpp      ssize_t, which MSVC does not declare.
 add_library(vendor-snes9x STATIC
     src/apu/apu.cpp
     src/apu/bapu/dsp/SPC_DSP.cpp

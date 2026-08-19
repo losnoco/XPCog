@@ -213,6 +213,15 @@ struct S9xState
   }
 };
 
-#import <snes9x/snes.hpp>
-#import <snes9x/smp.hpp>
-#import <snes9x/sdsp.hpp>
+/* XPCog local change: these three were `#import`. Clang treats `#import` as an
+ * include-once `#include`, so on macOS it read as a stylistic Objective-C
+ * habit and nothing more. MSVC gives the directive its original meaning --
+ * import a COM type library -- and reports the header it just found as a
+ * broken .tlb:
+ *
+ *   fatal error C1083: Cannot open type library file: 'snes.hpp'
+ *
+ * All three carry `#pragma once`, so plain `#include` is the same thing. */
+#include <snes9x/snes.hpp>
+#include <snes9x/smp.hpp>
+#include <snes9x/sdsp.hpp>

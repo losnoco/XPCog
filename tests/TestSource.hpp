@@ -13,6 +13,7 @@
 #include "xpcog/core/Url.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -85,9 +86,12 @@ private:
         std::fclose(f);
     }
 
-    /// The URL's body as a filesystem path, whatever its scheme. Only the empty
-    /// authority and the percent-encoding need undoing, both of which
-    /// Url::fromLocalPath() put there.
+    /// The URL's body as a filesystem path, whatever its scheme. The empty
+    /// authority, the percent-encoding and -- on Windows -- the slash before the
+    /// drive letter all need undoing, all three of which Url::fromLocalPath()
+    /// put there. Url::localPath() does exactly this and is not usable here: it
+    /// answers only for scheme "file", and the point of this source is to be
+    /// reached under a scheme of its own.
     [[nodiscard]] static std::filesystem::path pathOf(const Url& url) {
         const std::string text = url.toString();
         const std::size_t colon = text.find(':');
@@ -99,7 +103,18 @@ private:
         while (body.starts_with("//")) {
             body.remove_prefix(1);
         }
-        return std::filesystem::path{percentDecode(body)};
+        std::string decoded = percentDecode(body);
+#ifdef _WIN32
+        // "/C:/music" -> "C:/music". Without this every fixture opened through a
+        // URL rather than a path failed to load, and a source that reads no
+        // bytes looks exactly like a decoder that cannot open the file.
+        if (decoded.size() >= 3 && decoded[0] == '/' &&
+            (std::isalpha(static_cast<unsigned char>(decoded[1])) != 0) &&
+            decoded[2] == ':') {
+            decoded.erase(0, 1);
+        }
+#endif
+        return std::filesystem::path{decoded};
     }
 
     std::vector<std::uint8_t> bytes_;

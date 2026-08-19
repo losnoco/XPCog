@@ -44,6 +44,12 @@
 #                       length is bounded by the capacity given to blip_new, now
 #                       named kBlipBufferSamples and used at both ends.
 #
+#   vio2sf/GPU.h        GPU::VRAMCaptureBlockFlags gained the `{}` every array
+#                       beside it already had. Read before anything sets it, by
+#                       a loop the constructor runs, whose body dereferences a
+#                       renderer that does not exist yet. Zeroed heap hid it on
+#                       macOS and Linux; MSVC's debug heap did not.
+#
 #   src/sha1/sha1.c     Added _WIN32 to the little-endian architecture list. The
 #                       list is BSD vintage -- __i386__, __alpha__, Borland's
 #                       __WIN32__ -- so under cl.exe no arm matched and the
@@ -150,7 +156,17 @@ if(MSVC)
                                                      WIN32_LEAN_AND_MEAN)
     # The GNU bit builtins melonDS uses unguarded; see the header for why this
     # is a force-include rather than edits to the sources.
-    target_compile_options(vendor-vio2sf PRIVATE /w
+    #
+    # PUBLIC rather than PRIVATE, which /w above deliberately is not. The
+    # builtins are not confined to the .cpp files: NonStupidBitfield.h calls
+    # __builtin_ctzll from an inline member, and that header comes in with
+    # <vio2sf/NDS.h>. So the 2SF decoder -- first-party code, compiled at /W4 --
+    # fails on a header it merely includes unless it gets the shim too. Which
+    # is the same argument the header makes for being a shim at all: what MSVC
+    # lacks is a property of everything that reads these sources, not of the
+    # library's own translation units.
+    target_compile_options(vendor-vio2sf PRIVATE /w)
+    target_compile_options(vendor-vio2sf PUBLIC
         "/FI${CMAKE_CURRENT_SOURCE_DIR}/platform/MsvcBuiltins.h")
 else()
     # -fwrapv is upstream's, and PUBLIC there for a reason: the ARM interpreter

@@ -806,7 +806,19 @@ private:
 
     std::unique_ptr<Renderer> Rend = nullptr;
 
-    u16 VRAMCaptureBlockFlags[16];
+    // XPCog local change: the `{}` was missing, alone among the arrays around
+    // it. GPU's constructor ends in SetRenderer(), which opens with
+    // SyncAllVRAMCaptures() -- a loop over these flags that calls through Rend,
+    // still null that early. Zero flags mean the loop body never runs, so the
+    // null is never reached and the omission is invisible; indeterminate ones
+    // enter it and dereference null.
+    //
+    // Which is why it took a Windows build to find. Fresh pages from mmap are
+    // zeroed, so on macOS and Linux this reads as zero by luck; MSVC's debug
+    // heap fills new allocations with 0xCD, and 0xCDCD has the capture bit set.
+    // Reset() and ResetVRAMCache() both memset this, which is what the class
+    // expects of it and what a member with no initializer does not provide.
+    u16 VRAMCaptureBlockFlags[16] {};
 
     u16* VRAMCBF_ABG[0x20] {};
     u16* VRAMCBF_AOBJ[0x10] {};

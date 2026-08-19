@@ -114,13 +114,30 @@ std::filesystem::path buildChainedStream() {
         return {};
     }
 
-    const auto encode = [](const std::string& name, double frequency,
-                           const std::string& title,
-                           double frames) -> std::filesystem::path {
+    // --serial-number, rather than letting the encoder choose. It is what makes
+    // the concatenation below a chain at all: RFC 3533 requires each logical
+    // bitstream in a physical one to have a distinct serial, and that is what
+    // both the chain check and libFLAC's demuxer read to tell the links apart.
+    //
+    // Not a detail worth leaving to the encoder, because the encoders disagree.
+    // Both pick the serial with rand(); what changed is the seed. flac 1.4.3,
+    // which Ubuntu 24.04 ships, calls srand(time(0)) -- whole seconds -- and
+    // three encodes of a one-second tone are three processes inside the same
+    // second, so all three files came out with the same serial. flac 1.5 seeds
+    // from gettimeofday() and they differ.
+    //
+    // The fixture was then not a chain, the file read as one link, and the
+    // failure named the expansion rather than the fixture: green on macOS,
+    // red on Linux, from a difference nothing in the test mentioned.
+    int serial = 0;
+    const auto encode = [&serial](const std::string& name, double frequency,
+                                  const std::string& title,
+                                  double frames) -> std::filesystem::path {
         const auto wav = writeTone(name + ".wav", frequency, frames);
         const auto out = fixtureDir() / (name + ".oga");
         const std::string command =
-            "flac --ogg -s -f --totally-silent -T \"TITLE=" + title +
+            "flac --ogg -s -f --totally-silent --serial-number=" +
+            std::to_string(++serial) + " -T \"TITLE=" + title +
             "\" -T \"ARTIST=" + title + " Artist\" -o \"" + out.string() + "\" \"" +
             wav.string() + "\"" + xpcog::test::kSilenceStderr;
         if (std::system(command.c_str()) != 0 || !std::filesystem::exists(out)) {

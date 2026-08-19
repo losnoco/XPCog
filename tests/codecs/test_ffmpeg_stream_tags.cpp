@@ -630,6 +630,14 @@ TEST_CASE("MPEG-TS timed metadata that repeats is announced once",
     }
     CHECK(announcements == 1);
 
+    // Closed before the file is removed, decoder first because it holds a raw
+    // pointer to the source. Windows refuses to delete a file that is still
+    // open, and std::filesystem::remove throws rather than returning false --
+    // so leaving this to the end of scope failed the test on that platform
+    // alone, after every assertion in it had passed.
+    opened.decoder.reset();
+    opened.source.reset();
+
     // Left behind for any test that runs after this one in the same directory.
     std::filesystem::remove(fixtureDir() / "timed.ts");
 }

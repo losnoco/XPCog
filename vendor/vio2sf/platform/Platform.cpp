@@ -405,6 +405,12 @@ void Mic_Stop(void* userdata)
 int Mic_ReadInput(s16* data, int maxlength, void* userdata)
 {
 	memset(data, 0, maxlength * sizeof(s16));
+	/* XPCog local change: the `return` was missing, and had been since this
+	 * file was vendored. Clang warns and carries on; MSVC makes it C4716 and
+	 * stops. The contract is "samples actually read", and the memset above
+	 * wrote maxlength of them -- silence is still a reading. Returning 0
+	 * would tell Mic::FeedBuffer nothing was written when something was. */
+	return maxlength;
 }
 
 

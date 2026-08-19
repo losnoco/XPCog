@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <cstdint>
 
@@ -86,7 +87,17 @@ struct CMemory
 	void ParseSNESHeader(uint8_t *);
 	void InitROM();
 
-	ssize_t map_mirror(uint32_t, uint32_t);
+	/* XPCog local change: `ssize_t` here and at the definition. It is a POSIX
+	 * type that MSVC does not declare, and the parse failure it causes reads
+	 * as a mangled class body rather than as a missing typedef:
+	 *
+	 *   error C3646: 'map_mirror': unknown override specifier
+	 *
+	 * `ptrdiff_t` rather than a `typedef ... ssize_t` for MSVC, which would
+	 * put a POSIX name in the global namespace of every translation unit that
+	 * reaches this header. The two agree on every platform this builds for,
+	 * and an offset into the ROM is what the return value is. */
+	ptrdiff_t map_mirror(uint32_t, uint32_t);
 	void map_lorom(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 	void map_hirom(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 	void map_lorom_offset(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
