@@ -36,6 +36,8 @@
 
 #pragma once
 
+#include "midi/MidiSynth.hpp"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -53,13 +55,10 @@ enum class OplDriver : std::uint8_t {
     GeneralMidi,
 };
 
-class OplSynth {
+class OplSynth final : public MidiSynth {
 public:
     OplSynth() = default;
-    ~OplSynth();
-
-    OplSynth(const OplSynth&)            = delete;
-    OplSynth& operator=(const OplSynth&) = delete;
+    ~OplSynth() override;
 
     /// Creates the driver and resets the chip. `bank` selects an instrument set
     /// and is clamped to what the driver offers. Returns false if the chip or
@@ -68,17 +67,21 @@ public:
 
     [[nodiscard]] bool isOpen() const noexcept { return synth_ != nullptr; }
 
+    [[nodiscard]] double sampleRate() const noexcept override { return sampleRate_; }
+
+    [[nodiscard]] const char* displayName() const noexcept override;
+
     void close();
 
     /// Delivers one short message, packed status/data0/data1 as
     /// MidiStreamEvent::message holds it. Anything the driver does not
     /// recognise is ignored by the driver itself.
-    void write(std::uint32_t message);
+    void write(std::uint32_t message) override;
 
     /// Renders `frames` stereo frames. The chip runs at a fixed 49716 Hz and a
     /// sinc resampler inside it produces the requested rate, so this is exact
     /// for any `frames` including zero.
-    void render(std::int16_t* out, std::size_t frames);
+    void render(std::int16_t* out, std::size_t frames) override;
 
     /// How many instrument banks `driver` offers: six for Doom, one for the
     /// General MIDI driver. Asked without opening anything, because the setting
@@ -86,7 +89,10 @@ public:
     [[nodiscard]] static unsigned bankCount(OplDriver driver);
 
 private:
-    midisynth* synth_ = nullptr;
+    midisynth* synth_      = nullptr;
+    OplDriver  driver_     = OplDriver::Doom;
+    unsigned   bank_       = 0;
+    double     sampleRate_ = 0.0;
 };
 
 }  // namespace xpcog::codecs

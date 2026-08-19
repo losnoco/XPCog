@@ -6,11 +6,14 @@
 # claiming `.mid` with no synthesiser behind it would put files in the open
 # dialog that open and then sit in silence.
 #
-# `xpcog-codec-midisynth` is what makes the sound, and it registers. Nuked OPL3
-# is the first synthesiser; SpessaSynth and Nuked SC-55 are staged behind the
-# same event stream (docs/MIDI.md) and land as further sources here, chosen by
-# the `midiPlugin` setting -- not as further decoders, since all three answer to
-# the same extensions.
+# `xpcog-codec-midisynth` is what makes the sound, and it registers. Two
+# synthesisers so far -- Nuked OPL3 and Nuked SC-55 -- behind the MidiSynth
+# interface, chosen by the `midiPlugin` setting rather than by registering a
+# decoder each, since all of them answer to the same extensions. SpessaSynth is
+# the third; see docs/MIDI.md.
+#
+# xpcog-archive-reader is here because the SC-55 ROM set is read straight out of
+# the zip it was distributed in.
 add_library(xpcog-codec-midi STATIC MidiFile.cpp)
 target_include_directories(xpcog-codec-midi PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(xpcog-codec-midi
@@ -21,6 +24,7 @@ set_target_properties(xpcog-codec-midi PROPERTIES FOLDER codecs)
 xpcog_add_codec(
     NAME     midisynth
     REGISTER xpcog_register_midi
-    SOURCES  OplSynth.cpp MidiDecoder.cpp
-    DEPS     xpcog-codec-midi vendor-nuked-opl3 xpcog-codec-common
+    SOURCES  OplSynth.cpp Sc55Roms.cpp Sc55Synth.cpp MidiDecoder.cpp
+    DEPS     xpcog-codec-midi vendor-nuked-opl3 vendor-nuked-sc55
+             xpcog-archive-reader xpcog-codec-common
 )

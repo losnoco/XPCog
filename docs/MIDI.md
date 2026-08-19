@@ -66,7 +66,8 @@ player does not claim.
 | 0 | `midi_processing` vendored; container, sequencer, metadata, subsongs. **Registers nothing.** | — | done |
 | 1 | **Nuked OPL3**, via the `opl3*` sources. First audible MIDI, and the decoder that registers. | nothing external | done |
 | 2 | **SpessaSynth**, and a SoundFont setting | a user-supplied `.sf2`/`.sf3` | |
-| 3 | **Nuked SC-55**, and a ROM-directory setting | a user-supplied ROM set | |
+| 3 | **Nuked SC-55**, and a ROM setting | a user-supplied ROM set | audio done |
+| 3b | The SC-55's **front-panel LCD**, in sync with playback | the same ROM set | |
 
 OPL3 is first on purpose: it is the only one of the three that needs no asset
 the user has to find, so stage 1 proves the whole sequencer path — parse, tempo
@@ -117,24 +118,54 @@ commercial ROM; the C64 KERNAL in `codecs/sid` and the PlayStation BIOS in
 `vendor/highlyexperimental` are vendored because Cog vendors them, and this is
 the case where Cog does not.
 
-So stage 3 gets a settings path, an opt-in corpus variable for its tests, and
-skips cleanly when neither is set.
+So there is a settings path (`midiRomPath`), an opt-in variable for the tests
+(`XPCOG_SC55_ROMS`), and a clean skip when neither is set.
 
-`Frameworks/nuked-sc55/nuked-sc55/mcu.cpp:64` holds the romset table. Index 0 is
-SC-55mkII and wants five files, which is what a dumped set provides under part
-numbers — the mapping is by size and is unambiguous:
+### Identified by hash, and this document had it wrong
 
-| nuked-sc55 wants | a dumped mkII set calls it | bytes |
-|---|---|---|
-| `rom1.bin` | `r15199858_main_mcu.bin` | 32,768 |
-| `rom2.bin` | `r00233567_control.bin` | 524,288 |
-| `waverom1.bin` | `r15209359_pcm_1.bin` | 2,097,152 |
-| `waverom2.bin` | `r15279813_pcm_2.bin` | 1,048,576 |
-| `rom_sm.bin` | `r15199880_secondary_mcu.bin` | 4,096 |
+An earlier draft of this file said the mapping from a dumped set's part-number
+filenames to the ones `mcu.cpp`'s romset table asks for "is by size and is
+unambiguous". That was a guess, and Cog does something better:
+`Preferences/MIDIConfig.mm`'s `+nukedRomsets` is a table of **SHA-256 hashes**,
+ten of them, five per supported model. `codecs/midi/Sc55Roms.cpp` carries the
+same table.
 
-Worth deciding at stage 3 whether to accept the part-number names directly
-rather than making everyone rename five files. The sizes identify them exactly,
-and nothing else in a ROM directory has those five sizes.
+The difference is not pedantry. A size match says "a file of the right length";
+a hash match says "the ROM this emulator was written against", and a wrong dump
+does not fail loudly — it boots into a machine that sounds subtly wrong.
+
+The set is also checked for completeness and for belonging to one model. Five
+files of an mkII and one stray mk1 waverom is not a machine.
+
+### It reads the archive directly
+
+Cog's importer accepts `zip`, `rar` or `7z`, hashes the entries, and then
+*copies* the ROMs into its own application-support folder for its player to read
+back by a fixed path. This does the identification and skips the copy: the
+setting names either the folder or the archive, and both are read in place. That
+is one fewer copy of somebody's commercial firmware lying around in a directory
+they did not choose.
+
+libarchive is already in the tree for the archive source, so this cost a static
+library split (`xpcog-archive-reader`) and nothing else.
+
+### What the hardware turns out to dictate
+
+`sc55_get_sample_rate()` reports **66,207 Hz** for the mkII and 64,000 for the
+mk1 — `mcu.cpp:1085`, hard-coded from the real machine's clock. There is no rate
+argument anywhere in `api.h`, so `synthSampleRate` simply does not apply to this
+synthesiser, and every SC-55 track is resampled by the player downstream.
+
+Booting is also real: `sc55_init` loads the ROMs and then the firmware has to
+run its own startup, which Cog spins for seven seconds of emulated time before
+sending a note. That is a fraction of a second of CPU at every track start.
+
+### Missing ROMs fall back rather than refusing
+
+Cog returns `NO` from `-open:` when the ROMs are absent, so the file does not
+play at all. Here the decoder builds the OPL3 instead and the file plays — with
+`TrackProperties::encoding` naming what actually rendered it, which is the only
+way anyone could tell the difference.
 
 ## The corpus
 

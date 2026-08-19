@@ -10,6 +10,8 @@
 #include <QCoreApplication>
 #include <QIcon>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFileDialog>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QFrame>
@@ -67,11 +69,12 @@ constexpr std::array kResamplingChoices = {
 
 /// The synthesisers `midiPlugin` can name, in Cog's own spelling.
 ///
-/// Nuked OPL3 twice over: id's DMX driver, once per instrument bank, and
-/// Nuke.YKT's General MIDI one. The labels are the drivers' own bank names
-/// (vendor/nuked-opl3), spelled out here rather than read back from them so the
-/// dialog does not have to construct a synthesiser to draw a combo box.
-/// SpessaSynth and Nuked SC-55 join the list at their stages; see docs/MIDI.md.
+/// Nuked OPL3 twice over -- id's DMX driver, once per instrument bank, and
+/// Nuke.YKT's General MIDI one -- and then an emulated Roland. The OPL labels
+/// are the drivers' own bank names (vendor/nuked-opl3), spelled out here rather
+/// than read back from them so the dialog does not have to construct a
+/// synthesiser to draw a combo box. SpessaSynth joins the list at its stage;
+/// see docs/MIDI.md.
 constexpr std::array kMidiSynthChoices = {
     Choice{"DOOM0", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX default")},
     Choice{"DOOM1", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX Doom")},
@@ -80,6 +83,7 @@ constexpr std::array kMidiSynthChoices = {
     Choice{"DOOM4", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX Strife")},
     Choice{"DOOM5", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMXOPL")},
     Choice{"OPL3W0", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — General MIDI")},
+    Choice{"NukeSc55", QT_TRANSLATE_NOOP("PreferencesDialog", "Roland SC-55")},
 };
 
 [[nodiscard]] bool isTrue(const std::string& text) {
@@ -98,7 +102,7 @@ constexpr std::array kCuratedKeys = {
     "volumeScaling", "resampling", "enableHDCD", "enableFSurround",
     "enableFading", "suspendOutputOnPause",
     // MIDI
-    "midiPlugin", "synthSampleRate", "synthDefaultSeconds",
+    "midiPlugin", "midiRomPath", "synthSampleRate", "synthDefaultSeconds",
     "synthDefaultFadeSeconds", "synthDefaultLoopCount",
     // Appearance
     // floatingMiniWindow is deliberately absent: the mini player carries its
@@ -203,6 +207,52 @@ public:
                 announce(key);
             });
         layout_->addRow(label, box);
+    }
+
+    /// A path the listener has to supply, with the two ways of choosing one.
+    ///
+    /// Two buttons rather than one because the thing being named may be either
+    /// a folder or a file, and no file dialog on any platform offers both at
+    /// once. The line edit accepts a typed or pasted path either way.
+    void path(const QString& label, const char* key, const QString& archiveFilter,
+              QWidget* parent) const {
+        auto* edit = new QLineEdit(QString::fromStdString(settings_->rawValue(key)));
+        auto* settings = settings_;
+        auto  announce = announce_;
+        QObject::connect(edit, &QLineEdit::editingFinished, edit,
+                         [settings, announce, edit, key] {
+                             settings->setRawValue(key, edit->text().toStdString());
+                             announce(key);
+                         });
+
+        const auto choose = [edit](const QString& chosen) {
+            if (!chosen.isEmpty()) {
+                edit->setText(QDir::toNativeSeparators(chosen));
+                emit edit->editingFinished();
+            }
+        };
+
+        auto* folder = new QPushButton(
+            QCoreApplication::translate("PreferencesDialog", "Folder…"));
+        QObject::connect(folder, &QPushButton::clicked, folder, [parent, choose, label] {
+            choose(QFileDialog::getExistingDirectory(parent, label));
+        });
+
+        auto* archive = new QPushButton(
+            QCoreApplication::translate("PreferencesDialog", "Archive…"));
+        QObject::connect(archive, &QPushButton::clicked, archive,
+                         [parent, choose, label, archiveFilter] {
+                             choose(QFileDialog::getOpenFileName(parent, label, {},
+                                                                 archiveFilter));
+                         });
+
+        auto* row    = new QWidget;
+        auto* layout = new QHBoxLayout(row);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(edit, 1);
+        layout->addWidget(folder);
+        layout->addWidget(archive);
+        layout_->addRow(label, row);
     }
 
     void note(const QString& text) const {
@@ -314,6 +364,8 @@ QWidget* PreferencesDialog::buildMidiPane() {
     const RowBuilder row{settings_, layout, changeNotifier()};
 
     row.choice(tr("Synthesiser"), "midiPlugin", kMidiSynthChoices);
+    row.path(tr("SC-55 ROMs"), "midiRomPath",
+             tr("Archives (*.zip *.rar *.7z);;All files (*)"), pane);
 
     // Cog's clamps, and its labels. The sample rate is the rate a synthesiser
     // renders at rather than the rate the file plays at -- there is no such
@@ -323,9 +375,15 @@ QWidget* PreferencesDialog::buildMidiPane() {
     row.seconds(tr("Default fade time"), "synthDefaultFadeSeconds", 60.0);
     row.number(tr("Default loop count"), "synthDefaultLoopCount", 0, 10);
 
+    row.note(tr("The Roland needs its five ROM files, which are not something "
+                "this player can supply. Name either the folder holding them or "
+                "the archive they came in — they are recognised by content, so "
+                "nothing has to be renamed. Without them a MIDI file still "
+                "plays, on the OPL3."));
     row.note(tr("The sample rate and the defaults below it apply to every "
                 "synthesised format, not only MIDI — a game music rip has no "
-                "length of its own either."));
+                "length of its own either. The Roland ignores the sample rate: "
+                "it renders at the rate its hardware ran at and nothing else."));
 
     return pane;
 }

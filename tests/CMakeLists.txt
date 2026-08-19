@@ -102,8 +102,21 @@ endif()
 
 if(XPCOG_WITH_MIDI)
     target_sources(xpcog-tests PRIVATE codecs/test_midi_container.cpp
-                                       codecs/test_midi_playback.cpp)
+                                       codecs/test_midi_playback.cpp
+                                       codecs/test_midi_sc55.cpp)
     target_link_libraries(xpcog-tests PRIVATE xpcog-codec-midi)
+
+    # The Roland ROM set, which cannot be committed and which nobody can be
+    # pointed at. Either the folder holding the five files or the archive they
+    # arrived in -- the loader takes both, and which one this names decides
+    # which of its two paths the tests exercise.
+    set(XPCOG_SC55_ROMS "" CACHE PATH
+        "SC-55 ROM folder or archive for the MIDI tests; empty to skip")
+    if(XPCOG_SC55_ROMS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_SC55_ROMS=\"${XPCOG_SC55_ROMS}\"")
+        message(STATUS "SC-55 ROM tests: ${XPCOG_SC55_ROMS}")
+    endif()
 
     # Its own corpus variable, like the SID one and for the same reason: a MIDI
     # collection is not a folder of rips of anything else. The formats past

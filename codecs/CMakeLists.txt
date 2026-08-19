@@ -29,6 +29,13 @@ endif()
 if(XPCOG_WITH_APL)
     add_subdirectory(apl)
 endif()
+# Before codecs/midi, which links the libarchive wrapper this builds. The
+# subdirectory is entered for either option: it holds the archive codec, which
+# is XPCOG_WITH_ARCHIVE's, and xpcog-archive-reader, which both want.
+if(XPCOG_WITH_ARCHIVE OR XPCOG_WITH_MIDI)
+    add_subdirectory(archive)
+endif()
+
 if(XPCOG_WITH_MIDI)
     add_subdirectory(midi)
 endif()
@@ -58,9 +65,6 @@ if(XPCOG_WITH_GME)
 endif()
 if(XPCOG_WITH_SID)
     add_subdirectory(sid)
-endif()
-if(XPCOG_WITH_ARCHIVE)
-    add_subdirectory(archive)
 endif()
 if(XPCOG_WITH_VGMSTREAM)
     add_subdirectory(vgmstream)

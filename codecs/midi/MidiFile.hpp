@@ -54,6 +54,19 @@ struct MidiStreamEvent {
     bool         isSysex = false;
 };
 
+/// One system-exclusive message, whole.
+///
+/// Kept out of the event list because these are variable length and most files
+/// have none, while a busy sequence has tens of thousands of short messages.
+/// A synth that cannot receive SysEx ignores this entirely -- Nuked OPL3 has no
+/// register for one -- and a synth that can needs every byte: a GS or XG reset
+/// is how an SC-55 is told which of its instrument maps to use, and without it
+/// a file plays on whatever the machine happened to boot into.
+struct MidiSysex {
+    std::vector<std::uint8_t> data;
+    std::uint8_t              port = 0;
+};
+
 /// A subsong's events, and where it repeats.
 struct MidiStream {
     /// Absent loop point. Both fields hold this when the sequence states no
@@ -61,6 +74,10 @@ struct MidiStream {
     static constexpr std::size_t kNoLoop = static_cast<std::size_t>(-1);
 
     std::vector<MidiStreamEvent> events;
+    /// The payloads a `isSysex` event's `message` indexes. Sparse: an entry the
+    /// stream never refers to is left empty rather than renumbered, so the
+    /// indices stay the ones the library issued.
+    std::vector<MidiSysex> sysex;
     /// Indices into `events`. These come from the library rather than being
     /// recomputed from loop() below, so a player rewinding to `loopStart`
     /// resumes on exactly the event the tempo map says it should.

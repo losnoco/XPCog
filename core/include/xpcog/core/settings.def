@@ -250,6 +250,21 @@ XPCOG_SETTING(SynthDefaultLoopCount, int, "synthDefaultLoopCount", 2)
 /// which does not exist on this platform.
 XPCOG_SETTING(MidiPlugin, std::string, "midiPlugin", "DOOM0")
 
+/// Where the Roland SC-55 ROM set is, for the `NukeSc55` synthesiser.
+///
+/// Either the folder holding the five ROM files or the archive they arrived in;
+/// both are read in place. **No Cog counterpart**, and the difference is
+/// deliberate: Cog has an importer that copies them into its own application
+/// support folder and then reads a fixed path, so the listener ends up with two
+/// copies of 3.6 MB of commercial firmware and no say in where the second one
+/// went. Naming the originals costs a settings row and takes nothing.
+///
+/// The files are identified by SHA-256 rather than by name, so a dump under
+/// Roland part numbers works unrenamed. Empty, or pointing at something that is
+/// not a complete set of one model, falls back to the OPL3 -- the file still
+/// plays, and the track properties say what rendered it.
+XPCOG_SETTING(MidiRomPath, std::string, "midiRomPath", "")
+
 /// Ring size for the HTTP source, in bytes. Must be a power of two between
 /// 64 KiB and 128 MiB; anything else falls back to the default. A slow or
 /// distant station is the reason to raise it.

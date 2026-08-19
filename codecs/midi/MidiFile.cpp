@@ -151,10 +151,10 @@ MidiStream MidiFile::stream(std::size_t subsong, double sampleRate) const {
         // samples belongs here and not in whatever renders it.
         converted.timestampSamples =
             static_cast<std::uint64_t>(event.m_timestamp * sampleRate);
-        // Bit 31 marks a SysEx, and the rest is then an index into `sysex`
-        // above -- which is why that table will have to travel with the stream
-        // once a synth wants one. Nuked OPL3 does not: the chip has no SysEx to
-        // receive, so the first synth behind this drops them.
+        // Bit 31 marks a SysEx, and the rest is then an index into the table
+        // the library filled in beside the stream; the payloads are copied out
+        // below. Nuked OPL3 ignores them -- the chip has no register to receive
+        // one -- but an SC-55 needs them, since a GS reset is a SysEx.
         converted.isSysex = (event.m_event & 0x80000000U) != 0;
         if (converted.isSysex) {
             converted.message = static_cast<std::uint32_t>(event.m_event & 0x7FFFFFFFU);
@@ -164,6 +164,35 @@ MidiStream MidiFile::stream(std::size_t subsong, double sampleRate) const {
                 static_cast<std::uint8_t>((event.m_event >> 24) & 0x7FU);
         }
         out.events.push_back(converted);
+    }
+
+    // Copy out the SysEx payloads the events refer to. The table has no size
+    // accessor, so the highest index the stream actually uses is what says how
+    // big it is -- which is also the only part of it worth carrying.
+    std::size_t highest = 0;
+    bool        anySysex = false;
+    for (const MidiStreamEvent& event : out.events) {
+        if (event.isSysex) {
+            highest  = std::max<std::size_t>(highest, event.message);
+            anySysex = true;
+        }
+    }
+    if (anySysex) {
+        out.sysex.resize(highest + 1);
+        for (const MidiStreamEvent& event : out.events) {
+            if (!event.isSysex || !out.sysex[event.message].data.empty()) {
+                continue;
+            }
+            const std::uint8_t* data = nullptr;
+            std::size_t         size = 0;
+            std::size_t         port = 0;
+            sysex.get_entry(event.message, data, size, port);
+            if (data != nullptr && size > 0) {
+                MidiSysex& entry = out.sysex[event.message];
+                entry.data.assign(data, data + size);
+                entry.port = static_cast<std::uint8_t>(port);
+            }
+        }
     }
 
     // The library signals "no loop" with ~0UL here too, and otherwise gives an

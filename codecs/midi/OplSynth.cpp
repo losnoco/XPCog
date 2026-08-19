@@ -35,7 +35,12 @@ OplSynth::~OplSynth() { close(); }
 
 void OplSynth::close() {
     delete synth_;
-    synth_ = nullptr;
+    synth_     = nullptr;
+    sampleRate_ = 0.0;
+}
+
+const char* OplSynth::displayName() const noexcept {
+    return driver_ == OplDriver::Doom ? "Nuked OPL3 (DMX)" : "Nuked OPL3 (General MIDI)";
 }
 
 bool OplSynth::open(OplDriver driver, unsigned bank, double sampleRate) {
@@ -60,7 +65,10 @@ bool OplSynth::open(OplDriver driver, unsigned bank, double sampleRate) {
                           kExtendedPanning)) {
         return false;
     }
-    synth_ = synth.release();
+    synth_      = synth.release();
+    driver_     = driver;
+    bank_       = bank;
+    sampleRate_ = sampleRate;
     return true;
 }
 

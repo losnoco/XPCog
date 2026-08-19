@@ -38,7 +38,10 @@
 
 #include "common/SourceBytes.hpp"
 #include "midi/MidiFile.hpp"
+#include "midi/MidiSynth.hpp"
 #include "midi/OplSynth.hpp"
+#include "midi/Sc55Roms.hpp"
+#include "midi/Sc55Synth.hpp"
 
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
@@ -49,6 +52,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -68,11 +74,14 @@ constexpr int kMaxLoopCount = 10;
 
 /// What `midiPlugin` names, resolved.
 struct SynthChoice {
-    codecs::OplDriver driver = codecs::OplDriver::Doom;
-    unsigned          bank   = 0;
+    enum class Backend : std::uint8_t { Opl, Sc55 };
+
+    Backend           backend = Backend::Opl;
+    codecs::OplDriver driver  = codecs::OplDriver::Doom;
+    unsigned          bank    = 0;
 };
 
-/// Reads the setting's `DOOM<n>` / `OPL3W<n>` vocabulary.
+/// Reads the setting's `DOOM<n>` / `OPL3W<n>` / `NukeSc55` vocabulary.
 ///
 /// Anything else -- an AudioUnit component code from a macOS Cog, or a synth
 /// whose stage has not landed -- falls back to the default rather than refusing
@@ -87,8 +96,12 @@ struct SynthChoice {
 
     SynthChoice      choice;
     std::string_view rest;
-    // OPL3W first: DOOM is not a prefix of it, but testing the longer name
-    // first is the habit that keeps that from mattering.
+    if (setting == "NukeSc55") {
+        choice.backend = SynthChoice::Backend::Sc55;
+        return choice;
+    }
+    // OPL3W before DOOM: neither is a prefix of the other, but testing the
+    // longer name first is the habit that keeps that from mattering.
     if (starts("OPL3W")) {
         choice.driver = codecs::OplDriver::GeneralMidi;
         rest          = setting.substr(5);
@@ -170,21 +183,25 @@ public:
             return false;
         }
 
-        sampleRate_ = kDefaultSampleRate;
-        if (settings_ != nullptr) {
-            const auto configured = static_cast<double>(settings_->SynthSampleRate());
-            if (configured >= kMinSampleRate && configured <= kMaxSampleRate) {
-                sampleRate_ = configured;
-            }
+        choice_ = parseSynthChoice(
+            settings_ != nullptr ? settings_->MidiPlugin() : std::string{"DOOM0"});
+
+        // The SC-55's ROMs are read once and kept, not re-read on every seek:
+        // going backwards means booting a fresh machine, and that should not
+        // also mean hashing 3.6 MB off disk again.
+        roms_.reset();
+        if (choice_.backend == SynthChoice::Backend::Sc55 && settings_ != nullptr) {
+            roms_ = codecs::loadSc55Roms(
+                std::filesystem::path{settings_->MidiRomPath()});
         }
 
-        const SynthChoice choice = parseSynthChoice(
-            settings_ != nullptr ? settings_->MidiPlugin() : std::string{"DOOM0"});
-        driver_ = choice.driver;
-        bank_   = choice.bank;
-        if (!synth_.open(driver_, bank_, sampleRate_)) {
+        if (!buildSynth()) {
             return false;
         }
+        // Taken from whichever synthesiser was actually built. For the OPL it is
+        // the setting; for the SC-55 it is the hardware's, which is neither
+        // 44100 nor negotiable.
+        sampleRate_ = synth_->sampleRate();
 
         stream_ = file_.stream(subsong_, sampleRate_);
         tags_   = file_.metadata(subsong_);
@@ -210,7 +227,10 @@ public:
         props.seekable    = true;
         props.lossless    = false;
         props.codec       = "MIDI";
-        props.encoding    = "synthesized";
+        // Which synthesiser actually ran, not which one was asked for -- a
+        // configured SC-55 with no ROMs plays on the OPL, and this is where
+        // that shows.
+        props.encoding    = (synth_ != nullptr) ? synth_->displayName() : "synthesized";
         return props;
     }
 
@@ -220,7 +240,7 @@ public:
         // Asked per read rather than latched at open: the listener can switch
         // repeat-one on part-way through and expects the fade to stop coming.
         const bool endless = looped_ && loopForever(settings_);
-        if (!synth_.isOpen() || (!endless && framePos_ >= totalFrames_)) {
+        if (synth_ == nullptr || (!endless && framePos_ >= totalFrames_)) {
             return false;
         }
 
@@ -253,7 +273,7 @@ public:
 
     std::int64_t seek(std::int64_t frame) override {
         frame = std::clamp<std::int64_t>(frame, 0, totalFrames_);
-        if (!synth_.isOpen()) {
+        if (synth_ == nullptr) {
             return -1;
         }
 
@@ -280,14 +300,48 @@ public:
     }
 
     void close() override {
-        synth_.close();
+        synth_.reset();
         stream_ = codecs::MidiStream{};
         tags_.clear();
     }
 
 private:
+    /// Constructs the synthesiser the setting asked for, or the one that can
+    /// actually run.
+    ///
+    /// A configured SC-55 with no ROMs falls back to the OPL rather than
+    /// refusing the file, which is the same call parseSynthChoice makes about a
+    /// name it does not recognise. Refusing would mean a `.mid` that will not
+    /// open at all until five files nobody can be pointed at are found -- and
+    /// the fallback is visible, since properties() reports what actually ran.
+    bool buildSynth() {
+        synth_.reset();
+
+        if (choice_.backend == SynthChoice::Backend::Sc55 && roms_) {
+            auto sc55 = std::make_unique<codecs::Sc55Synth>();
+            if (sc55->open(*roms_)) {
+                synth_ = std::move(sc55);
+                return true;
+            }
+        }
+
+        double rate = kDefaultSampleRate;
+        if (settings_ != nullptr) {
+            const auto configured = static_cast<double>(settings_->SynthSampleRate());
+            if (configured >= kMinSampleRate && configured <= kMaxSampleRate) {
+                rate = configured;
+            }
+        }
+        auto opl = std::make_unique<codecs::OplSynth>();
+        if (!opl->open(choice_.driver, choice_.bank, rate)) {
+            return false;
+        }
+        synth_ = std::move(opl);
+        return true;
+    }
+
     bool restart() {
-        if (!synth_.open(driver_, bank_, sampleRate_)) {
+        if (!buildSynth()) {
             return false;
         }
         eventIndex_ = 0;
@@ -374,19 +428,29 @@ private:
                 run = frames - produced;
             }
 
-            synth_.render(out + produced * 2, static_cast<std::size_t>(run));
+            synth_->render(out + produced * 2, static_cast<std::size_t>(run));
             produced += static_cast<std::size_t>(run);
             seqSample_ += run;
         }
     }
 
     void dispatch(const codecs::MidiStreamEvent& event) {
-        // No SysEx path on an OPL3 and no second chip to be a second port; see
-        // OplSynth.hpp. Both are what Cog's MSPlayer does with them.
-        if (event.isSysex || event.port != 0) {
+        // One synthesiser, so one port. A file naming a second wants a second
+        // machine, which is what Cog builds for it and what this does not.
+        if (event.port != 0) {
             return;
         }
-        synth_.write(event.message);
+        if (!event.isSysex) {
+            synth_->write(event.message);
+            return;
+        }
+        // A synthesiser with nowhere to put a SysEx ignores it; the OPL is one.
+        if (event.message < stream_.sysex.size()) {
+            const codecs::MidiSysex& sysex = stream_.sysex[event.message];
+            if (sysex.port == 0 && !sysex.data.empty()) {
+                synth_->writeSysex(sysex.data);
+            }
+        }
     }
 
     void applyFade(std::int16_t* frames, std::size_t count) {
@@ -417,12 +481,14 @@ private:
 
     const Settings* settings_ = nullptr;
 
-    codecs::MidiFile   file_;
-    codecs::MidiStream stream_;
-    codecs::OplSynth   synth_;
+    codecs::MidiFile                  file_;
+    codecs::MidiStream                stream_;
+    std::unique_ptr<codecs::MidiSynth> synth_;
 
-    codecs::OplDriver driver_ = codecs::OplDriver::Doom;
-    unsigned          bank_   = 0;
+    SynthChoice                       choice_;
+    /// Kept for the lifetime of the decoder so a backwards seek can boot a
+    /// fresh machine without going back to disk.
+    std::optional<codecs::Sc55RomSet> roms_;
 
     std::size_t subsong_    = 0;
     AudioFormat format_{};
