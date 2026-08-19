@@ -228,6 +228,28 @@ XPCOG_SETTING(SynthDefaultFadeSeconds, double, "synthDefaultFadeSeconds", 8.0)
 /// total length. Cog clamps to 0..10.
 XPCOG_SETTING(SynthDefaultLoopCount, int, "synthDefaultLoopCount", 2)
 
+/// Which synthesiser renders MIDI.
+///
+/// A MIDI file is a score, not a recording, so this setting decides what it
+/// actually sounds like -- more than any other setting in this file. Cog's
+/// `midiPlugin` key, and deliberately Cog's vocabulary too, so a settings file
+/// carried over from Cog keeps naming the same synthesiser:
+///
+///   `DOOM0`..`DOOM5`  Nuked OPL3 through id's DMX driver, one per instrument
+///                     bank -- DMX default, Doom 1, Doom 2, Raptor, Strife,
+///                     DMXOPL.
+///   `OPL3W0`          Nuked OPL3 through Nuke.YKT's General MIDI driver.
+///
+/// Cog also accepts `SpessaSynth`, `NukeSc55` and a four-plus-four character
+/// AudioUnit component code. The first two arrive with their stages (see
+/// docs/MIDI.md); the third is macOS-only and is not being ported. Anything
+/// unrecognised falls back to the default rather than refusing to play.
+///
+/// The default is a Sound Blaster because it is the one synthesiser here that
+/// needs nothing the listener has to supply. Cog's own default is an AudioUnit,
+/// which does not exist on this platform.
+XPCOG_SETTING(MidiPlugin, std::string, "midiPlugin", "DOOM0")
+
 /// Ring size for the HTTP source, in bytes. Must be a power of two between
 /// 64 KiB and 128 MiB; anything else falls back to the default. A slow or
 /// distant station is the reason to raise it.

@@ -47,8 +47,12 @@ The extensions Cog actually claims are
 they are reached by content, not by name.
 
 Note `mus` and `lds` overlap with things this tree already claims — `mus` by the
-SID decoder, `lds` by nothing yet but by AdPlug in Cog. Priority ordering will
-need stating, the same way `.ahx` needs it between vgmstream and Hively.
+SID decoder, `lds` by nothing yet but by AdPlug in Cog. Settled by content
+rather than by priority in the end: both claimants sit at the default, MIDI is
+registered first, midi_processing sniffs the file, and a Commodore 64 `.mus`
+fails to parse here and falls through to the SID decoder. The container path
+does the same, since returning the URL unchanged is how a container declines.
+That leaves `.ahx` between vgmstream and Hively still needing a decision.
 
 ## Stages
 
@@ -57,16 +61,52 @@ synth exists to answer it — the rule stage 0 of HighlyComplete established, an
 for the same reason: a decoder that cannot decode is worse than a format the
 player does not claim.
 
-| stage | what | needs |
-|---|---|---|
-| 0 | `midi_processing` vendored; container, decoder shell, sequencer, metadata. **Registers nothing.** | — |
-| 1 | **Nuked OPL3**, via `MSPlayer` and the `opl3*` sources. First audible MIDI. | nothing external |
-| 2 | **SpessaSynth**, and a SoundFont setting | a user-supplied `.sf2`/`.sf3` |
-| 3 | **Nuked SC-55**, and a ROM-directory setting | a user-supplied ROM set |
+| stage | what | needs | |
+|---|---|---|---|
+| 0 | `midi_processing` vendored; container, sequencer, metadata, subsongs. **Registers nothing.** | — | done |
+| 1 | **Nuked OPL3**, via the `opl3*` sources. First audible MIDI, and the decoder that registers. | nothing external | done |
+| 2 | **SpessaSynth**, and a SoundFont setting | a user-supplied `.sf2`/`.sf3` | |
+| 3 | **Nuked SC-55**, and a ROM-directory setting | a user-supplied ROM set | |
 
 OPL3 is first on purpose: it is the only one of the three that needs no asset
 the user has to find, so stage 1 proves the whole sequencer path — parse, tempo
 map, event delivery, rendering, seeking — with nothing else able to be blamed.
+
+## What stage 1 turned out to be
+
+Two things came out differently from what the table above assumed, and both are
+worth stating because the next two stages inherit them.
+
+**`MIDIPlayer` was not ported, and `MSPlayer` only half was.** Cog's
+`MIDIPlayer.cpp` is no longer a sequencer at all: it is a shell over
+`SS_Sequencer` from `spessasynth_core`, so porting it at stage 1 would have
+dragged in the whole of stage 2 to make an OPL3 chip play a note. But
+`midi_processing` already serialises a subsong to a flat event stream with
+timestamps in seconds and a tempo map applied — which is what the older
+`MIDIPlayer` did with it, and is all a callback-mode backend needs. So
+`MidiDecoder.cpp` drives the synth from that stream directly.
+`MSPlayer.cpp` survives only as `OplSynth`, the wrapper around `midisynth`.
+
+The event loop is sample-accurate rather than chunked. Cog quantises to 256
+frames because its backends want driving that way; nothing here does, and asking
+an OPL3 for four samples is free.
+
+**There are two OPL drivers, not one.** `MSPlayer` selects between
+`getsynth_doom()` and `getsynth_opl3w()`, and they are genuinely different
+instruments over the same chip: id's DMX driver with the six banks Doom, Doom II,
+Raptor and Strife shipped, and Nuke.YKT's own General MIDI driver. Both are
+exposed, through Cog's own `midiPlugin` vocabulary — `DOOM0`..`DOOM5` and
+`OPL3W0` — so a settings file carried over from Cog keeps naming the same one.
+An unrecognised value, which is what a macOS Cog's AudioUnit component code will
+look like, falls back to the default rather than refusing the file.
+
+`vendor/nuked-opl3` carries one local change, in both drivers: their `fm_chip *`
+member is deleted by the destructor and set only by `midi_init()`, so
+constructing a synth merely to read its bank names frees an indeterminate
+pointer. Cog's `MSPlayer::enum_synthesizers` does exactly that and gets away with
+it because a fresh page on macOS reads as zero. MSVC's debug heap fills new
+memory with 0xCD, and it crashed on the first corpus file. Same shape as the
+`vendor/vio2sf` GPU.h fix, and found the same way.
 
 ## The SC-55 ROMs are the user's, not ours
 
@@ -124,6 +164,12 @@ misnamed files and refusing those is correct, so the test requires a majority to
 parse rather than all of them — what would be a failure is a format whose
 processor never runs at all.
 
+Stage 1 adds a second sweep that *renders* rather than parses, over `mid` and
+`mus` — the two worlds the drivers were written for. Twelve of each, five seconds
+apiece, and it is the level that is checked: a file that parses and then plays
+silence is the failure this catches, and the only one the parsing sweep cannot.
+Both formats currently come back twelve of twelve audible.
+
 ## Where each piece should live
 
 `midi_processing` and `nuked-sc55` are Cog's own trees with no separate
@@ -131,3 +177,9 @@ upstream release, and `spessasynth_core` sits inside the plugin — so all three
 are [`../vendor/`](../vendor) cases by the rule in
 [`../ports/README.md`](../ports/README.md), not overlay ports. The OPL3 sources
 live in the plugin directory in Cog and are small enough to vendor beside it.
+
+Landed so far: [`../vendor/midi_processing`](../vendor/midi_processing) and
+[`../vendor/nuked-opl3`](../vendor/nuked-opl3), the latter keeping Cog's own
+`fmopl3lib` / `synthlib_doom` / `synthlib_opl3w` directory names so the sources'
+`../interface.h` includes resolve unchanged and the provenance stays greppable.
+`nuked-sc55` and `spessasynth_core` go beside them at stages 3 and 2.

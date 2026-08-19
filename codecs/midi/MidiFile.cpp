@@ -59,6 +59,32 @@ double MidiFile::duration(std::size_t subsong) const {
     return impl_->container.get_timestamp_end(index, /*seconds=*/true);
 }
 
+MidiLoop MidiFile::loop(std::size_t subsong) const {
+    MidiLoop result;
+    if (!valid() || subsong >= subsongCount()) {
+        return result;
+    }
+    const auto index = impl_->container.get_subsong(static_cast<unsigned long>(subsong));
+
+    // The library reports "no loop point" by returning ~0UL, cast to double --
+    // so the test is against that value and not against zero, which is a
+    // perfectly ordinary loop start.
+    constexpr double kUnset = static_cast<double>(~0UL);
+
+    const double start = impl_->container.get_timestamp_loop_start(index, /*seconds=*/true);
+    const double end   = impl_->container.get_timestamp_loop_end(index, /*seconds=*/true);
+    if (start == kUnset && end == kUnset) {
+        return result;
+    }
+
+    // Either endpoint alone is a loop. A stated end with no start means "repeat
+    // from the beginning"; a stated start with no end means "repeat to the end".
+    result.valid = true;
+    result.start = (start == kUnset) ? 0.0 : start;
+    result.end   = (end == kUnset) ? duration(subsong) : end;
+    return result;
+}
+
 MetadataMap MidiFile::metadata(std::size_t subsong) const {
     MetadataMap tags;
     if (!valid() || subsong >= subsongCount()) {
@@ -103,9 +129,8 @@ MetadataMap MidiFile::metadata(std::size_t subsong) const {
     return tags;
 }
 
-std::vector<MidiStreamEvent> MidiFile::stream(std::size_t subsong,
-                                              double      sampleRate) const {
-    std::vector<MidiStreamEvent> out;
+MidiStream MidiFile::stream(std::size_t subsong, double sampleRate) const {
+    MidiStream out;
     if (!valid() || subsong >= subsongCount() || sampleRate <= 0.0) {
         return out;
     }
@@ -118,7 +143,7 @@ std::vector<MidiStreamEvent> MidiFile::stream(std::size_t subsong,
     unsigned long                  loopEnd   = 0;
     impl_->container.serialize_as_stream(index, events, sysex, loopStart, loopEnd, 0);
 
-    out.reserve(events.size());
+    out.events.reserve(events.size());
     for (const midi_stream_event& event : events) {
         MidiStreamEvent converted;
         // m_timestamp is seconds, as a double -- serialize_as_stream builds it
@@ -126,27 +151,30 @@ std::vector<MidiStreamEvent> MidiFile::stream(std::size_t subsong,
         // samples belongs here and not in whatever renders it.
         converted.timestampSamples =
             static_cast<std::uint64_t>(event.m_timestamp * sampleRate);
-        converted.message = static_cast<std::uint32_t>(event.m_event & 0x7FFFFFFFU);
-        // Bit 31 marks a SysEx, and the rest is then an index into the table
+        // Bit 31 marks a SysEx, and the rest is then an index into `sysex`
         // above -- which is why that table will have to travel with the stream
-        // once a synth wants one.
+        // once a synth wants one. Nuked OPL3 does not: the chip has no SysEx to
+        // receive, so the first synth behind this drops them.
         converted.isSysex = (event.m_event & 0x80000000U) != 0;
-        out.push_back(converted);
+        if (converted.isSysex) {
+            converted.message = static_cast<std::uint32_t>(event.m_event & 0x7FFFFFFFU);
+        } else {
+            converted.message = static_cast<std::uint32_t>(event.m_event & 0x00FFFFFFU);
+            converted.port =
+                static_cast<std::uint8_t>((event.m_event >> 24) & 0x7FU);
+        }
+        out.events.push_back(converted);
+    }
+
+    // The library signals "no loop" with ~0UL here too, and otherwise gives an
+    // index into the stream it just built.
+    if (loopStart != ~0UL && loopStart < out.events.size()) {
+        out.loopStart = static_cast<std::size_t>(loopStart);
+    }
+    if (loopEnd != ~0UL && loopEnd <= out.events.size()) {
+        out.loopEnd = static_cast<std::size_t>(loopEnd);
     }
     return out;
-}
-
-std::vector<std::uint8_t> readAllBytes(ISource& source) {
-    std::vector<std::uint8_t> bytes;
-    std::uint8_t              buffer[16384];
-    for (;;) {
-        const std::int64_t got = source.read(buffer, sizeof(buffer));
-        if (got <= 0) {
-            break;
-        }
-        bytes.insert(bytes.end(), buffer, buffer + got);
-    }
-    return bytes;
 }
 
 }  // namespace xpcog::codecs

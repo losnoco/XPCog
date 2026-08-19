@@ -2210,7 +2210,9 @@ All of these are also documented at the call site.
 **Not ported**
 
 Mac App Store sandbox, AudioUnit MIDI instrument hosting, AppleScript, Spotlight,
-the MCP server, Sparkle, Sentry. Cog also does **not** write tags —
+the MCP server, Sparkle, Sentry. AudioUnit hosting is one of Cog’s four MIDI
+backends and not MIDI itself — the other three are portable and are staged in
+[MIDI.md](MIDI.md). Cog also does **not** write tags —
 `PluginController -putMetadataInURL:` is stubbed `return 0`, the facade has no
 callers and `TagEditorController` is fully commented out. Tag writing is therefore a
 new feature, not port work, and is deferred.

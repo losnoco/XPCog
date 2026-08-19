@@ -101,7 +101,8 @@ if(XPCOG_WITH_VGMSTREAM)
 endif()
 
 if(XPCOG_WITH_MIDI)
-    target_sources(xpcog-tests PRIVATE codecs/test_midi_container.cpp)
+    target_sources(xpcog-tests PRIVATE codecs/test_midi_container.cpp
+                                       codecs/test_midi_playback.cpp)
     target_link_libraries(xpcog-tests PRIVATE xpcog-codec-midi)
 
     # Its own corpus variable, like the SID one and for the same reason: a MIDI

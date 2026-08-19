@@ -21,8 +21,8 @@ from a single codebase.
 > stream survives its own track changes. Breadth since: archives played in
 > place, tracker modules, game music rips, vgmstream's console formats, the
 > whole PSF family on all eight of its emulator cores, Commodore 64 tunes,
-> Musepack, and Monkey's Audio Link files.
-> **831 extensions** across 22 decoders.
+> Musepack, Monkey's Audio Link files, and MIDI on a Sound Blaster's OPL3.
+> **842 extensions** across 23 decoders.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
 
@@ -143,10 +143,11 @@ winget install Xiph.FLAC Gyan.FFmpeg LAME.LAME Mozilla.opus-tools
 `oggenc.exe` (renamed from `oggenc2.exe`) anywhere on `PATH`.
 
 Watch the skip count in `ctest` output, not just the pass rate. With the encoders
-installed a full run is **452 tests, 50 skipped**, and those 50 want something no
+installed a full run is **464 tests, 52 skipped**, and those 52 want something no
 package manager can supply: rips of copyrighted game programs, which cannot be
-committed. Point `XPCOG_PSF_CORPUS`, `XPCOG_VGM_CORPUS` or `XPCOG_SID_CORPUS` at a
-folder of them and the matching cases run. Without the encoders, 41 more go quiet.
+committed. Point `XPCOG_PSF_CORPUS`, `XPCOG_VGM_CORPUS`, `XPCOG_SID_CORPUS` or
+`XPCOG_MIDI_CORPUS` at a folder of them and the matching cases run. Without the
+encoders, 41 more go quiet.
 
 Note that the encoders alone were not enough before the fixture commands stopped
 assuming a POSIX shell: `2>/dev/null` under `cmd.exe` fails the whole command,
@@ -195,13 +196,19 @@ TAK, TTA, APE, PCM and the MP4/MKV/ASF containers.
 Beyond those: tracker modules (libopenmpt), chiptune rips (Game_Music_Emu),
 console streamed audio (vgmstream), the PSF family on all eight of the emulator
 cores behind it — USF, GSF, 2SF, SNSF, SSF/DSF, NCSF, PSF/PSF2 and QSF — and
-Commodore 64 tunes (libsidplayfp). Archives are a *source* rather than a format,
+Commodore 64 tunes (libsidplayfp). MIDI is its own thing again: a score rather
+than a recording, so what it sounds like is a choice of synthesiser. Fourteen
+extensions -- `.mid` and `.midi` among them, with HMI, XMI, Doom's MUS and
+Loudness LDS each reaching their own parser in midi_processing -- render on
+Nuked OPL3, an emulated Sound Blaster.
+
+Archives are a *source* rather than a format,
 so a `.zip` of FLAC plays without being unpacked first, and a Monkey's Audio Link
 (`.apl`) is a *range* within one -- the same shape as a cue sheet track, which is
 how a single-file CD rip becomes an album.
 
-`xpcog-cli codecs` prints what a given build claims; a default one is 22 decoders
-and 831 extensions. Cog recognises around 900 across ~35 decoders.
+`xpcog-cli codecs` prints what a given build claims; a default one is 23 decoders
+and 842 extensions. Cog recognises around 900 across ~35 decoders.
 
 Selection follows Cog's rules: extension first, then MIME type, with several
 claimants tried in descending priority. FFmpeg registers *below* default priority,
@@ -273,12 +280,12 @@ never confused with the expected tail.
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
 | ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
-| 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores, SID, Musepack and APL all done; DSD/DoP, the remaining decoders, `cogimport`, HRTF, scrobbling and global hotkeys to come |
+| 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores, SID, Musepack, APL and MIDI on OPL3 all done; the two remaining MIDI synthesisers, DSD/DoP, the remaining decoders, `cogimport`, HRTF, scrobbling and global hotkeys to come |
 
 Milestone 1's formats were FLAC, MP3, Vorbis, Opus, AAC/ALAC and WavPack, with APE
 and Musepack arriving through FFmpeg rather than their own decoders; Musepack has
 its own now, and APE still does not, because Cog has none either. M6 has taken the
-recognised extension count from 30-odd to **831**, against the roughly 900 Cog
+recognised extension count from 30-odd to **842**, against the roughly 900 Cog
 recognises across ~35 decoders. Getting the rest is the remainder of M6 and beyond,
 and the architecture is sized for it — each additional decoder is one
 `xpcog_add_codec()` call, never a refactor, and every one added so far has cost
@@ -290,6 +297,10 @@ The Mac App Store sandbox (`SandboxBroker`, security-scoped bookmarks), AudioUni
 instrument hosting, AppleScript, Spotlight integration and the MCP server are macOS-only
 and are not being ported. A no-op `IFileAccess` seam preserves the sandbox call sites in
 case that changes.
+
+AudioUnit hosting is one of Cog's four MIDI backends, not MIDI itself — `.mid` and
+its dozen relatives play here through Nuked OPL3, and the two portable backends
+still to land are staged in [`docs/MIDI.md`](docs/MIDI.md).
 
 ## Relationship to upstream Cog
 
