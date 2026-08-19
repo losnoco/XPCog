@@ -37,6 +37,18 @@
 #                       which has no GNU inline-asm syntax. It is a compiler
 #                       barrier working around a video artifact under LTO on
 #                       aarch64, and this build renders no video.
+#
+#   src/SPU.cpp         SPU::BufferAudio sized its read buffer with a
+#                       variable-length array. VLAs are C99, allowed in C++ only
+#                       as a GCC/Clang extension, and MSVC has neither. The
+#                       length is bounded by the capacity given to blip_new, now
+#                       named kBlipBufferSamples and used at both ends.
+#
+#   src/sha1/sha1.c     Added _WIN32 to the little-endian architecture list. The
+#                       list is BSD vintage -- __i386__, __alpha__, Borland's
+#                       __WIN32__ -- so under cl.exe no arm matched and the
+#                       file's own "Undefined or invalid BYTE_ORDER" #error
+#                       fired.
 
 find_package(ZLIB REQUIRED)
 

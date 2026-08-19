@@ -35,6 +35,10 @@ namespace melonDS
 using Platform::Log;
 using Platform::LogLevel;
 
+// XPCog local change: the capacity handed to blip_new, named so that
+// BufferAudio's fixed-size read buffer below cannot drift away from it.
+static constexpr int kBlipBufferSamples = 512;
+
 
 // SPU TODO
 // * capture addition modes, overflow bugs
@@ -215,8 +219,8 @@ SPU::SPU(melonDS::NDS& nds, AudioBitDepth bitdepth, AudioInterpolation interpola
     ApplyBias = true;
     Degrade10Bit = false;
 
-    BlipLeft = blip_new(512);
-    BlipRight = blip_new(512);
+    BlipLeft = blip_new(kBlipBufferSamples);
+    BlipRight = blip_new(kBlipBufferSamples);
 
     OutputBufferReadPos = 0;
     OutputBufferWritePos = 0;
@@ -1025,7 +1029,11 @@ void SPU::BufferAudio()
     BlipTimer = 0;
 
     int avail = blip_samples_avail(BlipLeft);
-    s16 temp[avail * 2];
+    // XPCog local change: was `s16 temp[avail * 2]`, a variable-length array.
+    // C99 by way of a GCC/Clang extension in C++; MSVC implements neither.
+    // BlipLeft holds at most kBlipBufferSamples, blip_buf's documented bound,
+    // so this fixed buffer is the same bound stated up front.
+    s16 temp[kBlipBufferSamples * 2];
     blip_read_samples(BlipLeft, temp, avail, true);
     blip_read_samples(BlipRight, temp + 1, avail, true);
 

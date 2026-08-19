@@ -43,10 +43,14 @@ A million repetitions of "a"
 #define	BIG_ENDIAN	4321	/* most-significant byte first (IBM, net) */
 #define	PDP_ENDIAN	3412	/* LSB first in word, MSW first in long (pdp)*/
 
+/* XPCog local change: MSVC spells none of the names below. The list is BSD
+ * vintage and reaches for GNU architecture macros and Borland's __WIN32__;
+ * cl.exe defines _WIN32 and _M_* instead, so on MSVC no arm matched and the
+ * #error further down fired. Every target Windows runs on is little-endian. */
 #if defined(vax) || defined(ns32000) || defined(sun386) || defined(__i386__) || \
     defined(MIPSEL) || defined(_MIPSEL) || defined(BIT_ZERO_ON_RIGHT) || \
     defined(__alpha__) || defined(__alpha) || \
-    defined(__WIN32__)
+    defined(__WIN32__) || defined(_WIN32)
 #define BYTE_ORDER	LITTLE_ENDIAN
 #endif
 
