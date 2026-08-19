@@ -760,6 +760,74 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   extension check avoids opening normal files, while an extensionless URL gets
   one source open so its response type can identify the container.
 
+- **HTTP Live Streaming.** Port of Cog `Plugins/HLS/`. HLS is not an audio
+  format -- an `.m3u8` is a manifest naming a sequence of ordinary media files --
+  so the decoder does no decoding: it parses the manifest, follows a master
+  playlist to its highest-bandwidth rendition, keeps a fetch thread a few
+  segments ahead, and feeds the concatenated bytes to whichever decoder claims
+  the segment format. Four pieces, split along the same line as the HTTP source:
+  `HlsPlaylist` is the manifest (pure text in, segment list out), `HlsMemorySource`
+  is the blocking queue between the fetcher and the decoder, `HlsSegmentManager`
+  is the thread, and `HlsDecoder` is the wiring.
+
+  **The segment format is sniffed, not asked for.** Cog picks the inner decoder
+  from the segment's `Content-Type`, falling back to `audio/mpeg` when there is
+  none -- and origins overwhelmingly label segments `application/octet-stream`,
+  so that fallback names the one thing an MPEG-TS segment is not. The first
+  segment is already in memory before any decoder is chosen, so its bytes answer
+  the question outright: two `0x47` sync bytes 188 apart is a transport stream,
+  `ftyp`/`styp` is fragmented MP4, and the ADTS-versus-MPEG-frame ambiguity is
+  settled by the layer field, which ADTS always reports as zero. Packed-audio
+  segments carry an ID3 tag in front for their timestamp, so the tag is skipped
+  before sniffing -- otherwise the renditions most likely to be raw AAC are
+  exactly the ones that identify as nothing.
+
+  **The registry chooses the inner decoder, not `NSClassFromString`.** Cog
+  instantiates `FFMPEGDecoder` by name because its extension lookup routes
+  nothing to MPEG-TS. Here the memory source is given the identity of what was
+  actually fetched -- a filename and a MIME type -- and normal selection
+  applies, so an MP3 rendition reaches mpg123 and a future dedicated decoder
+  needs no change here. That does mean something has to claim MPEG-TS, so `ts`,
+  `m2ts`, `mts` and `video/mp2t` were added to the FFmpeg decoder, which could
+  always read one. When the bytes identify nothing the fake name is left
+  *extensionless* on purpose: leaving the manifest's own `.m3u8` there would
+  select this decoder again, recursively.
+
+  **Declining a container has to return the URL, not nothing.** The M3U container
+  already recognised an HLS manifest and stepped aside for the decoder layer --
+  by returning an empty list, which `expandContainer()` reads as "expanded to
+  zero tracks". The manifest therefore vanished from the playlist entirely
+  instead of reaching any decoder, so the bug was invisible until something
+  wanted to play one. Returning the URL unchanged is the contract the scanner
+  already handles; `PluginRegistry::expandContainer()` had the same hole for a
+  claimed extension whose source will not open, and its own test was failing on
+  it.
+
+  Departures from Cog, both small. Any scheme is accepted rather than http(s)
+  only, since segments are fetched through the registry like every other URL --
+  which is also what makes an offline end-to-end test possible. And a read that
+  already has bytes returns them short instead of blocking for the caller's full
+  request, which Cog's does; at the tail of the queue that stalls a decoder that
+  already had most of what it asked for.
+
+  Encrypted segments are refused, as in Cog. `EXT-X-KEY` is parsed rather than
+  ignored so the refusal is specific and applies from the tag that declared it,
+  which is the forward-application rule that decides whether a stream is turned
+  away or handed ciphertext one segment later.
+
+  Checked with an ffmpeg-built VOD stream decoded end to end -- four seconds of
+  AAC in one-second MPEG-TS segments, verified per channel by frequency and
+  level so a segment stitched in at the wrong offset shows up, plus a seek two
+  seconds in compared against the same audio decoded straight through. Seeking
+  cannot be sample-exact: the landing point comes from the durations the
+  manifest declares, so the tolerance is scaled to one sample of shift, and the
+  test also asserts that being half a second out fails it. The live path has its
+  own test, because a live playlist repeats the segments still in its window on
+  every reload and re-appending them does not fail -- it just plays the last few
+  seconds over and over. Confirmed by breaking the sequence-number dedup and
+  watching that test go red. Also run against a real public HLS master playlist
+  over HTTPS.
+
 - **A repeating playlist of undecodable tracks now stops instead of spinning.**
   Found by inspection while wiring the above, before any user hit it: the
   feeder's advance loop asks the delegate for the next track and retries on

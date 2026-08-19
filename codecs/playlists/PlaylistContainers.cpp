@@ -58,12 +58,15 @@ std::vector<Url> expandM3u(const Url& url, ISource& source,
 
     std::vector<Url> entries;
     for (const std::string& line : codecs::splitLines(text)) {
-        // An HLS manifest is a very different thing wearing the same extension.
-        // Cog hands those to FFmpeg rather than treating them as a track list;
-        // returning nothing here lets the decoder layer claim the URL instead.
+        // An HLS manifest is a very different thing wearing the same extension:
+        // its lines name segments of one stream, not tracks. Returning the URL
+        // unchanged is how a container declines -- expandContainer()'s contract,
+        // and what leaves the HLS decoder to claim it. Returning nothing instead
+        // made the manifest vanish from the playlist entirely, because the
+        // scanner adds what expansion returns.
         if (line.starts_with("#EXT-X-MEDIA-SEQUENCE") ||
             line.starts_with("#EXT-X-STREAM-INF") || line.starts_with("#EXT-X-TARGETDURATION")) {
-            return {};
+            return {url};
         }
         if (line.starts_with('#')) {
             continue;  // #EXTINF and friends carry only display metadata

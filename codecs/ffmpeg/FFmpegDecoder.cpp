@@ -541,7 +541,13 @@ constexpr std::string_view kExtensions[] = {
     "aac", "ac3", "aif", "aifc", "aiff", "alac", "amr", "ape", "asf", "au",
     "caf", "dts", "eac3", "m4a", "m4b",  "mka",  "mkv", "mp4", "mpc", "oma",
     "opus", "ra", "rm",  "tak",  "tta",  "wav",  "wma", "wv",  "flac", "mp3",
-    "ogg", "webm"};
+    "ogg", "webm",
+    // MPEG-TS. Cog claims none of these and its HLS plugin works around that by
+    // instantiating FFMPEGDecoder by class name; here the HLS decoder names what
+    // it fetched and lets the registry choose, so the transport stream has to be
+    // claimed by whoever can actually demux it. A local .ts plays as a side
+    // effect, which it should -- FFmpeg has always been able to read one.
+    "ts", "m2ts", "mts"};
 
 constexpr std::string_view kMimeTypes[] = {
     "audio/aac",  "audio/mp4", "audio/x-ms-wma", "audio/ac3",
@@ -549,7 +555,10 @@ constexpr std::string_view kMimeTypes[] = {
     // audio/aacp is what an AAC+ radio station announces. A stream URL usually
     // has no extension, so the MIME type is the only thing that names the codec
     // and a missing entry means the stream simply will not play.
-    "audio/aacp"};
+    "audio/aacp",
+    // The MIME half of the MPEG-TS entry above, for a segment whose name says
+    // nothing.
+    "video/mp2t", "audio/mp2t"};
 
 }  // namespace
 }  // namespace xpcog

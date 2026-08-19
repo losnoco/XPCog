@@ -125,7 +125,13 @@ std::vector<Url> PluginRegistry::expandContainer(const Url& url) const {
             }
             SourcePtr source = makeSource(url);
             if (!source || !source->open(url)) {
-                return {};
+                // Unopenable, so nothing is known about it. Returning the URL
+                // unchanged is the same answer the MIME path below gives, and
+                // the one callers can apply uniformly -- returning nothing
+                // instead deletes the entry, which for a file that is merely
+                // missing or locked turns a row that would report an error into
+                // a row that silently is not there.
+                return {url};
             }
             return descriptor.expand(url, *source, *this);
         }

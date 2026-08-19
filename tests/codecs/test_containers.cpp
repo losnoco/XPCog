@@ -146,12 +146,16 @@ TEST_CASE("M3U declines HLS manifests", "[containers]") {
 
     // An HLS manifest wears the same extension but is not a track list; it must
     // fall through to the decoder layer rather than being torn into segments.
-    const auto entries = expand(writeFile("hls.m3u8",
-                                          "#EXTM3U\n"
-                                          "#EXT-X-TARGETDURATION:10\n"
-                                          "#EXT-X-MEDIA-SEQUENCE:0\n"
-                                          "segment0.ts\n"));
-    CHECK(entries.empty());
+    // Declining means returning the URL unchanged: returning nothing would make
+    // the manifest disappear, since the scanner adds what expansion returns.
+    const auto path    = writeFile("hls.m3u8",
+                                   "#EXTM3U\n"
+                                   "#EXT-X-TARGETDURATION:10\n"
+                                   "#EXT-X-MEDIA-SEQUENCE:0\n"
+                                   "segment0.ts\n");
+    const auto entries = expand(path);
+    REQUIRE(entries.size() == 1);
+    CHECK(entries[0] == Url::fromLocalPath(path));
 }
 
 TEST_CASE("M3U handles CRLF and a UTF-8 BOM", "[containers]") {

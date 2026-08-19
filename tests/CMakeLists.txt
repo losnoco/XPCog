@@ -33,6 +33,12 @@ if(XPCOG_WITH_HTTP)
     target_sources(xpcog-tests PRIVATE codecs/test_httpsource.cpp)
 endif()
 
+# Guarded for the same reason as the HTTP source: without HLS the headers under
+# codecs/hls are not on the include path.
+if(XPCOG_WITH_HLS)
+    target_sources(xpcog-tests PRIVATE codecs/test_hls.cpp)
+endif()
+
 if(XPCOG_WITH_VGMSTREAM)
     target_sources(xpcog-tests PRIVATE
         codecs/test_vgmstream.cpp
