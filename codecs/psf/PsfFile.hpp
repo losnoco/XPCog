@@ -51,8 +51,11 @@ enum class PsfVersion : std::uint8_t {
     NcsfDs        = 0x25,  ///< ncsf, minincsf
 };
 
-/// One program image from the chain, in the order psflib handed it over --
-/// highest priority first, which is the order a core must apply them in.
+/// One program image from the chain, in the order psflib handed it over, which
+/// is load order and not priority order: `_lib` and its own chain come first,
+/// then the file itself, then `_lib2`, `_lib3` and so on. A core applies them
+/// in exactly this order and lets each write over what came before, so the
+/// main file overrides its `_lib` by arriving later.
 ///
 /// Which of the two sections carries the program depends on the console, and it
 /// is not a detail a core can ignore: GSF puts the GBA image in `exe`, while USF

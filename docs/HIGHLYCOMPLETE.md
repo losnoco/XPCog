@@ -19,7 +19,7 @@ or reproducible; nothing depends on the session that started it.
 | 5 | HighlyTheoretical → SSF *and* DSF | **done** |
 | 6 | SSEQPlayer → NCSF, `ncsf` + `minincsf` registered | **done** |
 | 7 | HighlyExperimental → PSF *and* PSF2 | **done** |
-| 8 | HighlyQuixotic → QSF | not started — the last one |
+| 8 | HighlyQuixotic → QSF, `qsf` + `miniqsf` registered | **done** — all eight |
 
 Stage 0 registered **nothing** with the plugin registry — deliberately, since a
 decoder that cannot decode is worse than a format the player does not claim.
@@ -124,7 +124,7 @@ Version bytes verified against Cog's `HCDecoder.mm`, not recalled.
 | `0x12` | dsf, minidsf | HighlyTheoretical | 7 built | **done** — `vendor/highlytheoretical` |
 | `0x11` | ssf, minissf | HighlyTheoretical | — | **done** — same core, same decoder |
 | `0x01`/`0x02` | psf, psf2 + mini | HighlyExperimental | 8 built | **done** — `vendor/highlyexperimental` |
-| `0x41` | qsf, miniqsf | HighlyQuixotic | 11 | vendored in Cog |
+| `0x41` | qsf, miniqsf | HighlyQuixotic | 4 built | **done** — `vendor/highlyquixotic` |
 
 Cog's copies live in `~/Projects/Cog/Frameworks/<name>/`. Only **mGBA** and
 AdPlug are git submodules with a real upstream; the rest are kode54's code
@@ -135,19 +135,27 @@ hand-written `CMakeLists.txt` since upstream ships only an Xcode project.
 `HighlyExperimental` also needs a PlayStation BIOS image; Cog carries
 `hebios.bin` beside `HCDecoder.mm`.
 
-## Which core next
+## All eight
 
-Seven of eight, and nine of the ten formats. One core remains:
+Ten formats, eight cores, and the container they share. Nothing in
+HighlyComplete is left unported.
 
-- **HighlyQuixotic → QSF**, 11 files, the smallest of the eight. Its `reserved`
-  section carries a Kabuki decryption key — `qsound_set_kabuki_key()` takes two
-  swap keys, an address key and an XOR key out of an 11-byte blob — which no
-  other format here has. Capcom's QSound hardware, Z80 program plus sample ROM.
+| what it is | proved by |
+|---|---|
+| USF | N64 rips across the corpus, seek verified sample-exact |
+| GSF | 783 files swept for sample rate; a half-speed bug caught by ear |
+| 2SF | Super Mario 64 DS and others |
+| SNSF | Tales of Phantasia's *Yume wa Owaranai*, vocal intact |
+| SSF / DSF | Sonic Shuffle and NiGHTS, 100 files |
+| NCSF | Mario & Luigi: Bowser's Inside Story |
+| PSF / PSF2 | soss-psf and Final Fantasy X, 184 files |
+| QSF | Street Fighter Alpha 2, 59 files |
 
-Every core so far was proved by listening, and for five of the seven the
-decisive material came from outside the main corpus. Nothing in this tree can
-hear a wrong sample rate, a starved stream, a sequence number that was ignored,
-or an instrument bank resolved to the wrong samples.
+Every core was proved by listening, and for six of the eight the decisive
+material came from outside the main corpus. Nothing in this tree can hear a
+wrong sample rate, a starved stream, a sequence number that was ignored, or an
+instrument bank resolved to the wrong samples — so a green test run has never
+been the last step for any of them.
 
 ## Lessons already paid for
 
@@ -218,6 +226,33 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   to vendored sources are marked in place with an "XPCog local change" comment
   and listed at the top of the core's `CMakeLists.txt`, so a re-vendor does not
   drop them silently.
+
+### From stage 8 (HighlyQuixotic → QSF)
+
+- **`PsfProgram`'s ordering comment was wrong, and had been since stage 0.** It
+  said psflib hands the chain over "highest priority first". It does not: the
+  callback order is load order — `_lib` and its own chain, then the file itself,
+  then `_lib2` onwards — and a core applies them in that order letting each write
+  over the last, so the main file overrides its library by arriving *later*.
+  Every core had the code right and only the comment wrong, which is exactly the
+  kind of error that survives: nothing fails until someone believes it.
+- **QSF is where believing it would have cost something.** A miniqsf's entire
+  contribution is usually one byte written over the library's Z80 image, and it
+  is the track number. Apply the chain backwards and every file in the set still
+  opens, still reports its tags and duration, and still plays — the same track,
+  fifty-nine times over. Reversing the loop deliberately confirmed this: four of
+  the five QSF tests still passed, and only *two QSFs from one library play
+  different tracks* caught it.
+- **The Kabuki key is not in `reserved`.** This document previously said it was.
+  It arrives as an optional 11-byte `KEY` section in the program image, beside
+  `Z80` and `SMP`, and a rip whose ROMs were already decrypted simply omits it —
+  Street Fighter Alpha 2 does. A zero key is upstream's own signal to run the
+  ROM as it stands, so the interesting path here is the *absent* one.
+- **The one core that boots nothing.** Every other core here starts a machine:
+  a BIOS, a firmware, a cartridge header. A CPS-2 sound board is a Z80 and a
+  DSP, and a QSF carries both ROMs outright, so the file is the whole machine.
+  It was also the only core to build and produce correct audio on the first
+  attempt.
 
 ### From stage 7 (HighlyExperimental → PSF and PSF2)
 

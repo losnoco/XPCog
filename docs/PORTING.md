@@ -1196,15 +1196,21 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   whole of it. Cog's HighlyComplete is one decoder driving *eight* emulator
   cores -- mGBA for GSF, lazyusf2 for USF, vio2sf for 2SF, SSEQPlayer for NCSF,
   HighlyExperimental, HighlyTheoretical, HighlyQuixotic and snes9x for the rest
-  -- around 1,600 source files, of which mGBA alone is 989. That does not land in
-  one go, and pretending otherwise would mean a long-lived branch.
+  -- around 1,600 source files, of which mGBA alone is 989. That did not land in
+  one go, and pretending otherwise would have meant a long-lived branch: the
+  container went in first and the eight cores followed it one at a time, each
+  through to audible playback before the next was started. All eight are in.
 
   What *does* land in one go is the part all eight share. A PSF is a header, a
   deflated program image and a tag block, and the interesting piece is the `_lib`
   tag: a `.minigsf` is a few hundred bytes of override naming a `.gsflib` that
   holds the game's whole program. In the corpus this was written against, 783
-  `.minigsf` resolve to 12 `.gsflib`. psflib walks that chain and returns the
-  images highest-priority-first, which is the order a core must apply them in.
+  `.minigsf` resolve to 12 `.gsflib`. psflib walks that chain and hands the
+  images back in *load* order -- `_lib` and its own chain, then the file itself,
+  then `_lib2` onwards -- and a core applies them in that order, letting each
+  write over the last. So the main file overrides its library by arriving later,
+  not earlier. (This paragraph said "highest-priority-first" until stage 8,
+  which was backwards; every core had the code right and only the prose wrong.)
 
   Cog's `psflib` is vendored -- four files, and its `psf_file_callbacks` is
   stdio-shaped, so an `ISource` drops in the same way it did for vgmstream. The

@@ -73,8 +73,14 @@ constexpr bool kHaveCorpus = false;
         std::string extension = entry.path().extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (extension == ".minigsf" || extension == ".miniusf" ||
-            extension == ".mini2sf") {
+        // All ten spellings. This list held only the first three formats
+        // ported and was never extended, so a corpus of, say, PSF and QSF rips
+        // looked empty to these tests.
+        if (extension == ".minipsf" || extension == ".minipsf2" ||
+            extension == ".minissf" || extension == ".minidsf" ||
+            extension == ".miniusf" || extension == ".minigsf" ||
+            extension == ".minisnsf" || extension == ".mini2sf" ||
+            extension == ".minincsf" || extension == ".miniqsf") {
             found.push_back(entry.path());
         }
     }
@@ -89,7 +95,11 @@ TEST_CASE("a mini-PSF pulls in the library it names", "[psf][corpus]") {
     }
 
     const auto minis = findMiniPsfs(6);
-    REQUIRE_FALSE(minis.empty());
+    if (minis.empty()) {
+        // A corpus with no chained rips in it is a corpus this case has nothing
+        // to say about, not a failure of the container.
+        SKIP("corpus holds no mini-PSF files");
+    }
 
     for (const fs::path& path : minis) {
         INFO(path.filename().string());
@@ -129,7 +139,9 @@ TEST_CASE("tags come from the outermost file", "[psf][corpus]") {
     }
 
     const auto minis = findMiniPsfs(20);
-    REQUIRE_FALSE(minis.empty());
+    if (minis.empty()) {
+        SKIP("corpus holds no mini-PSF files");
+    }
 
     // Not every rip is tagged, so this asserts across the sample rather than
     // per file: a corpus where nothing at all carried a title or a length would
@@ -157,7 +169,9 @@ TEST_CASE("reading tags does not inflate the program", "[psf][corpus]") {
     }
 
     const auto minis = findMiniPsfs(1);
-    REQUIRE_FALSE(minis.empty());
+    if (minis.empty()) {
+        SKIP("corpus holds no mini-PSF files");
+    }
 
     // A .gsflib can be megabytes and none of it is needed to answer "what is
     // this track called". The scanner reads tags for every file in a library, so
@@ -177,7 +191,9 @@ TEST_CASE("a missing library is a failure, not a partial load", "[psf][corpus]")
     }
 
     const auto minis = findMiniPsfs(1);
-    REQUIRE_FALSE(minis.empty());
+    if (minis.empty()) {
+        SKIP("corpus holds no mini-PSF files");
+    }
 
     // Copied away from its library, a mini-PSF names something that is not
     // there. Loading it "successfully" with only its own few hundred bytes
