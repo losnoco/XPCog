@@ -855,6 +855,53 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   own `hls.c` demuxer, which XPCog never uses, since the HLS decoder here
   replaces it and hands FFmpeg raw concatenated segments instead.
 
+- **Looping formats play for ever under repeat-one, as in Cog.** Sequenced,
+  chiptune and emulated formats mostly do not end: a tracker module repeats, a
+  chiptune's play routine is called until something stops it, and a game rip
+  loops its music section because the game did. What ends them here is a length
+  and a fade this player invents from the rip's tags or from a setting -- so
+  "the track is over" was always a decision, and repeat-one is the listener
+  overruling it. That is the only way to actually sit and listen to a piece of
+  game music.
+
+  `LoopPolicy` + `loopsForever()` read the same `repeat` setting key Cog's
+  `IsRepeatOneSet()` reads. The policy is threaded through
+  `PluginRegistry::open()` and `makeDecoder()`, set on the decoder by the
+  registry, and stored on `IDecoder` itself rather than by each decoder -- a
+  dozen copies of one bool is a dozen chances to forget one. `MultiDecoder`
+  forwards it, without which every format with more than one claimant would
+  silently revert to the default.
+
+  **Answered live, not latched.** The listener can switch repeat-one on part-way
+  through a piece and expects the fade to stop coming, so the decoders ask per
+  read. Cog re-checks per read for the same reason. The exception is vgmstream,
+  where play-forever is a property of the configuration a stream is created with
+  and cannot change afterwards, so that one latches at open and takes effect the
+  next time the track starts.
+
+  **And a way to say no.** `LoopPolicy::Never` beats the setting outright, for
+  callers that are not a listener: a converter or a disk writer asking for a
+  track wants the track, and would otherwise produce an endless file because
+  whoever ran it happened to leave repeat-one on.
+
+  Eleven decoders act on it. The eight PSF variants and SID stop clamping the
+  read to the invented length and stop fading; OpenMPT passes -1 to
+  `set_repeat_count`, which loops inside libopenmpt; vgmstream sets
+  `play_forever` (with `allow_play_forever`, which the library makes a client opt
+  into). Game_Music_Emu is the odd one: Cog disables the fade with
+  `gme_set_fade_msecs(emu, -1, 0)`, a call that does not exist in 0.6.3, and the
+  one that does takes a *start* time -- which -1 turns into a fade that has
+  already finished, ending the track instantly rather than never. The fade start
+  is pushed ahead of the play position instead, and pushed again next read.
+
+  **Coverage is honest about its limits.** The plumbing is tested directly, and
+  a real looping game rip is checked end to end from the vgmstream corpus -- the
+  test finds its own subject, since nothing in `TrackProperties` reports a loop
+  flag, so a file whose endless decode outruns its finite one is by definition a
+  looping one. The other ten decoders have no behavioural coverage of this,
+  because PSF and SID decode tests are corpus-gated and GME and OpenMPT have no
+  decode tests at all.
+
 - **MP3 moves to minimp3, which is what Cog decodes with.** Port of Cog
   `Plugins/minimp3/MP3Decoder.m`, replacing libmpg123. The headers are Cog's own
   vendored copies, and that is the point: this is the decoder a Cog library has

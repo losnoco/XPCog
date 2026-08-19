@@ -217,7 +217,8 @@ SourcePtr PluginRegistry::makeSource(const Url& url) const {
     return source;
 }
 
-DecoderPtr PluginRegistry::makeDecoder(const ISource& source, SkipCue skipCue) const {
+DecoderPtr PluginRegistry::makeDecoder(const ISource& source, SkipCue skipCue,
+                                      LoopPolicy loop) const {
     const auto matching = [&](auto&& claims, std::string_view key) {
         std::vector<const DecoderDescriptor*> found;
         if (key.empty()) {
@@ -254,6 +255,7 @@ DecoderPtr PluginRegistry::makeDecoder(const ISource& source, SkipCue skipCue) c
         if (decoder) {
             decoder->setRegistry(this);
             decoder->setSettings(settings_);
+            decoder->setLoopPolicy(loop);
         }
         return decoder;
     }
@@ -261,11 +263,13 @@ DecoderPtr PluginRegistry::makeDecoder(const ISource& source, SkipCue skipCue) c
     if (multi) {
         multi->setRegistry(this);
         multi->setSettings(settings_);
+        multi->setLoopPolicy(loop);
     }
     return multi;
 }
 
-PluginRegistry::OpenResult PluginRegistry::open(const Url& url, SkipCue skipCue) const {
+PluginRegistry::OpenResult PluginRegistry::open(const Url& url, SkipCue skipCue,
+                                               LoopPolicy loop) const {
     OpenResult result;
 
     result.source = makeSource(url);
@@ -273,7 +277,7 @@ PluginRegistry::OpenResult PluginRegistry::open(const Url& url, SkipCue skipCue)
         return {};
     }
 
-    result.decoder = makeDecoder(*result.source, skipCue);
+    result.decoder = makeDecoder(*result.source, skipCue, loop);
     if (!result.decoder || !result.decoder->open(result.source.get())) {
         return {};
     }

@@ -18,8 +18,11 @@
 // is seven minutes long, and decoding the lot would turn a test run into a
 // coffee break.
 
+#include "xpcog/core/LoopPolicy.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Url.hpp"
+#include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -220,4 +223,83 @@ TEST_CASE("a rip's reported duration matches what it decodes",
     // under the config it was given. A mismatch means the loop and fade settings
     // the decoder asks for are not the ones it decodes under.
     CHECK(decoded == claimed);
+}
+
+TEST_CASE("a looping stream plays for ever under repeat-one",
+          "[vgmstream][corpus][loop]") {
+    if (!kHaveCorpus) {
+        SKIP("no corpus: configure with -DXPCOG_VGM_CORPUS=<path> to run this");
+    }
+
+    // Game music loops because the game did, and one loop then stop is what a
+    // playlist wants. Repeat-one is the listener saying otherwise, and this is
+    // the only place in the suite where that can be checked against a stream
+    // that actually declares a loop point -- synthetic fixtures have none.
+    //
+    // The test finds its own subject: a file whose endless decode outruns its
+    // finite one is, by definition, a looping one. Nothing in TrackProperties
+    // reports a loop flag, so asking the decoder twice is the question.
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setRepeatMode(static_cast<int>(RepeatMode::One));
+
+    PluginRegistry registry;
+    registerAllCodecs(registry);
+    registry.setSettings(&settings);
+
+    constexpr std::size_t kProbeFrames = 48000 * 30;  ///< 30 s at 48 kHz
+    constexpr int         kMaxFiles    = 12;
+
+    const auto readUpTo = [](IDecoder& decoder, std::size_t limit) {
+        std::size_t frames = 0;
+        AudioChunk  chunk;
+        while (frames < limit && decoder.readAudio(chunk)) {
+            frames += chunk.frameCount();
+        }
+        return frames;
+    };
+
+    int examined = 0;
+    for (const auto& [format, paths] : findSamples()) {
+        for (const fs::path& path : paths) {
+            if (examined >= kMaxFiles) {
+                break;
+            }
+            const Url url = Url::fromLocalPath(path);
+
+            // Never, so this half is unaffected by the repeat setting above --
+            // which is also the override a converter would pass.
+            auto finite = registry.open(url, SkipCue::No, LoopPolicy::Never);
+            if (!finite) {
+                continue;
+            }
+            const std::size_t finiteFrames = readUpTo(*finite.decoder, kProbeFrames);
+            if (finiteFrames == 0 || finiteFrames >= kProbeFrames) {
+                continue;  // empty, or too long to establish an ending cheaply
+            }
+            ++examined;
+
+            auto endless = registry.open(url);
+            REQUIRE(endless);
+            const std::size_t endlessFrames =
+                readUpTo(*endless.decoder, finiteFrames + 48000);
+
+            if (endlessFrames <= finiteFrames) {
+                continue;  // this one simply has no loop point
+            }
+
+            INFO("looping stream: " << path.filename().string());
+            // It outran its own ending, which only a loop can do.
+            CHECK(endlessFrames > finiteFrames);
+            // And the reported length is unchanged: repeat-one makes a track
+            // play on, it does not make it claim to be longer. Cog behaves the
+            // same, and a length that grew would move the seek bar under the
+            // listener.
+            CHECK(endless.decoder->properties().totalFrames ==
+                  finite.decoder->properties().totalFrames);
+            return;
+        }
+    }
+
+    SKIP("no looping stream found in the corpus");
 }

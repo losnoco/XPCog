@@ -8,6 +8,7 @@
 #pragma once
 
 #include "xpcog/core/AudioChunk.hpp"
+#include "xpcog/core/LoopPolicy.hpp"
 #include "xpcog/core/MetadataMap.hpp"
 #include "xpcog/core/TrackProperties.hpp"
 #include "xpcog/core/Url.hpp"
@@ -132,6 +133,16 @@ public:
     /// Borrowed and read live. See ISource::setSettings.
     virtual void setSettings(const Settings* /*settings*/) {}
 
+    /// Whether this decoder may play a looping track for ever. Set by the
+    /// registry immediately after construction, from the argument its caller
+    /// passed to open()/makeDecoder().
+    ///
+    /// Not virtual, and stored here rather than by each decoder: every looping
+    /// format needs the same answer to the same question, and a dozen copies of
+    /// one bool is a dozen chances for one of them to be forgotten.
+    void setLoopPolicy(LoopPolicy policy) noexcept { loopPolicy_ = policy; }
+    [[nodiscard]] LoopPolicy loopPolicy() const noexcept { return loopPolicy_; }
+
     /// Replaces the KVO on @"properties"/@"metadata" that Cog's InputNode
     /// registers (Audio/Chain/InputNode.m). Called from the decode thread.
     using ChangeCallback = std::function<void(bool propertiesChanged,
@@ -148,8 +159,17 @@ protected:
         }
     }
 
+    /// True when this track should loop for ever instead of fading out: the
+    /// player is repeating this one track and nothing has forbidden it.
+    ///
+    /// Ask on every read rather than once at open. The listener can turn
+    /// repeat-one on part-way through a piece of game music and expects the fade
+    /// to stop coming; Cog re-checks per read for the same reason.
+    [[nodiscard]] bool loopForever(const Settings* settings) const;
+
 private:
     ChangeCallback onChange_;
+    LoopPolicy     loopPolicy_ = LoopPolicy::Player;
 };
 
 using DecoderPtr = std::unique_ptr<IDecoder>;

@@ -248,13 +248,21 @@ public:
     [[nodiscard]] MetadataMap metadata() const override { return tags_; }
 
     bool readAudio(AudioChunk& out) override {
-        if (!engine_ || framePos_ >= totalFrames_) {
+        // Asked per read, not latched at open: the listener can switch
+        // repeat-one on part-way through a tune and expects the fade to stop
+        // coming. A SID has no length of its own -- the play routine is called
+        // until something stops it -- so the length being overrun here is one
+        // this player invented in the first place.
+        const bool endless = loopForever(settings_);
+        if (!engine_ || (!endless && framePos_ >= totalFrames_)) {
             return false;
         }
 
-        const auto want = static_cast<std::size_t>(
-            std::min<std::int64_t>(static_cast<std::int64_t>(kFramesPerRead),
-                                   totalFrames_ - framePos_));
+        const auto want =
+            endless ? static_cast<std::size_t>(kFramesPerRead)
+                    : static_cast<std::size_t>(std::min<std::int64_t>(
+                          static_cast<std::int64_t>(kFramesPerRead),
+                          totalFrames_ - framePos_));
         scratch_.resize(want * channels_);
 
         const std::size_t got = render(scratch_.data(), want);
@@ -355,7 +363,10 @@ private:
     }
 
     void applyGain(std::int16_t* frames, std::size_t count) {
-        const std::int64_t fadeLength = totalFrames_ - fadeStart_;
+        // No fade while looping for ever: the fade is what turns a tune that
+        // never ends into a track that does.
+        const std::int64_t fadeLength =
+            loopForever(settings_) ? 0 : totalFrames_ - fadeStart_;
         if (fadeLength <= 0 ||
             framePos_ + static_cast<std::int64_t>(count) <= fadeStart_) {
             return;

@@ -248,13 +248,21 @@ public:
     [[nodiscard]] MetadataMap metadata() const override { return tags_; }
 
     bool readAudio(AudioChunk& out) override {
-        if (framePos_ >= totalFrames_ || !start()) {
+        // Asked per read, not latched at open: the listener can switch
+        // repeat-one on part-way through a piece of game music and expects the
+        // fade to stop coming.
+        const bool endless = loopForever(settings_);
+        if ((!endless && framePos_ >= totalFrames_) || !start()) {
             return false;
         }
 
-        const auto want = static_cast<std::size_t>(
-            std::min<std::int64_t>(static_cast<std::int64_t>(kFramesPerRead),
-                                   totalFrames_ - framePos_));
+        // Endless means exactly that: nothing bounds the read, so the rip keeps
+        // being rendered past the length this player invented for it.
+        const auto want =
+            endless ? static_cast<std::size_t>(kFramesPerRead)
+                    : static_cast<std::size_t>(std::min<std::int64_t>(
+                          static_cast<std::int64_t>(kFramesPerRead),
+                          totalFrames_ - framePos_));
         scratch_.resize(want * kChannels);
         const std::size_t got = render(scratch_.data(), want);
         if (got == 0) {
@@ -386,7 +394,11 @@ private:
     }
 
     void applyGain(std::int16_t* frames, std::size_t count) {
-        const std::int64_t fadeLength = totalFrames_ - fadeStart_;
+        // No fade while looping for ever -- the fade is the thing that turns a
+        // rip which never ends into a track that does, and repeat-one is the
+        // listener saying they did not want that.
+        const std::int64_t fadeLength =
+            loopForever(settings_) ? 0 : totalFrames_ - fadeStart_;
         const bool         fading =
             fadeLength > 0 && framePos_ + static_cast<std::int64_t>(count) > fadeStart_;
         if (!fading && volume_ == 1.0) {

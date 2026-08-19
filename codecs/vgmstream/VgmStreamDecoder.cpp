@@ -23,10 +23,16 @@
 // archive or over HTTP as it does on disk. Cog reaches for its own file layer
 // here; passing the registry keeps the seam.
 //
-// **Loops are declined.** Game music loops, often forever, and vgmstream will
-// happily render an endless stream. A track that never ends reports no duration
-// and never advances the playlist, which is the same reason the module decoder
-// passes 0 for its repeat count. The playlist repeats things here.
+// **Loops play once, unless the listener asked otherwise.** Game music loops,
+// often forever, and vgmstream will happily render an endless stream -- which
+// reports no duration and never advances the playlist, so one loop and a stop is
+// the default. Under repeat-one it plays for ever instead, which is Cog's
+// behaviour and the only way to actually sit and listen to a loop.
+//
+// Alone among the looping decoders here, this one cannot change its mind
+// part-way through: play-forever is a property of the configuration a stream is
+// created with, so the answer is latched at open. Toggling repeat-one during a
+// track takes effect the next time it starts.
 
 #include "common/SourceBytes.hpp"
 #include "common/TextEncoding.hpp"
@@ -210,6 +216,7 @@ public:
     ~VgmStreamDecoder() override { VgmStreamDecoder::close(); }
 
     void setRegistry(const PluginRegistry* registry) override { registry_ = registry; }
+    void setSettings(const Settings* settings) override { settings_ = settings; }
 
     bool open(ISource* source) override {
         close();
@@ -223,10 +230,18 @@ public:
         }
 
         libvgmstream_config_t config{};
-        // One loop and no fade, then stop. See the note at the top: an endless
-        // track reports no duration and never advances the playlist.
-        config.loop_count  = 1.0;
-        config.ignore_fade = true;
+        // One loop and no fade, then stop -- unless the listener is repeating
+        // this one track, in which case the loop is the point. See the note at
+        // the top for why this is decided here and not per read.
+        //
+        // allow_play_forever has to be set as well: vgmstream makes a client opt
+        // in, because a .txtp can ask for an endless stream and not every caller
+        // can cope with one. A file without a loop point ignores the request and
+        // simply plays through, so this is safe to ask for unconditionally.
+        config.allow_play_forever = true;
+        config.play_forever       = loopForever(settings_);
+        config.loop_count         = 1.0;
+        config.ignore_fade        = true;
         // Everything is rendered as float, so there is one conversion path
         // rather than four, and the engine's chain is float already.
         config.force_sfmt = LIBVGMSTREAM_SFMT_FLOAT;
@@ -344,6 +359,7 @@ public:
 
 private:
     const PluginRegistry* registry_ = nullptr;
+    const Settings*       settings_ = nullptr;
     libvgmstream_t*       lib_      = nullptr;
 
     AudioFormat        format_{};

@@ -9,6 +9,7 @@ add_executable(xpcog-tests
     core/test_gapless.cpp
     core/test_m1c.cpp
     core/test_library.cpp
+    core/test_loop_policy.cpp
     core/test_playlist.cpp
     core/test_paths.cpp
     core/test_playlistfile.cpp

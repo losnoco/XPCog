@@ -32,6 +32,7 @@ add_library(xpcog-core STATIC
     src/MetadataMap.cpp
     src/NaturalOrder.cpp
     src/Sha256.cpp
+    src/LoopPolicy.cpp
     src/MultiDecoder.cpp
     src/PluginRegistry.cpp
     src/Settings.cpp

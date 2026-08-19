@@ -192,7 +192,8 @@ public:
     /// When several decoders claim the input they are returned wrapped so each is
     /// tried in descending priority order, matching Cog's CogDecoderMulti.
     [[nodiscard]] DecoderPtr makeDecoder(const ISource& source,
-                                         SkipCue skipCue = SkipCue::No) const;
+                                         SkipCue skipCue = SkipCue::No,
+                                         LoopPolicy loop = LoopPolicy::Player) const;
 
     /// Opens `url` and returns a source/decoder pair ready to read, or {nullptr,
     /// nullptr} on failure. The decoder borrows the source, so the returned pair
@@ -204,7 +205,13 @@ public:
             return source != nullptr && decoder != nullptr;
         }
     };
-    [[nodiscard]] OpenResult open(const Url& url, SkipCue skipCue = SkipCue::No) const;
+    /// `loop` decides whether a format that declares a loop may play it for
+    /// ever when the player is repeating one track. Leave it alone for playback;
+    /// pass Never from anything that needs the track to end, such as a converter
+    /// or a disk writer, which would otherwise produce an endless file because
+    /// whoever ran it had repeat-one switched on.
+    [[nodiscard]] OpenResult open(const Url& url, SkipCue skipCue = SkipCue::No,
+                                  LoopPolicy loop = LoopPolicy::Player) const;
 
     /// Tags for `url`, merged across every reader that claims it in ascending
     /// priority, so a higher-priority reader's values win. Cog stops at the

@@ -182,6 +182,19 @@ public:
 
     void setSettings(const Settings* settings) override { settings_ = settings; }
 
+    /// -1 makes libopenmpt loop the module inside itself for ever, which is what
+    /// Cog does under repeat-one; 0 plays it once and stops.
+    ///
+    /// Re-applied every read rather than latched at open, so switching repeat-one
+    /// on part-way through a module takes effect at the end of the pattern it is
+    /// already playing rather than at the end of the track. Cog re-applies it per
+    /// read for the same reason.
+    void applyRepeat() {
+        if (module_) {
+            module_->set_repeat_count(loopForever(settings_) ? -1 : 0);
+        }
+    }
+
     bool open(ISource* source) override {
         close();
         if (source == nullptr) {
@@ -198,13 +211,7 @@ public:
         try {
             module_->select_subsong(subsongFromFragment(source->url()));
 
-            // Cog passes -1 here under repeat-one, which makes the module loop
-            // inside libopenmpt for ever. A decoder here cannot see the
-            // playlist's repeat mode, and an endless track is a poor thing to
-            // default to: it reports no duration and never advances. Repeat is
-            // the playlist's job in XPCog, and it can repeat this like anything
-            // else.
-            module_->set_repeat_count(0);
+            applyRepeat();
 
             module_->set_render_param(
                 openmpt::module::RENDER_MASTERGAIN_MILLIBEL, 0);
@@ -255,6 +262,8 @@ public:
         if (!module_) {
             return false;
         }
+
+        applyRepeat();
 
         std::size_t rendered = 0;
         try {

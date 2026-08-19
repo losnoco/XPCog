@@ -320,7 +320,8 @@ public:
         // into a track with a length, so the reported duration has to include
         // the fade tail or playback would be cut off mid-fade.
         const int fadeMs = fadeLengthMs(settings_);
-        gme_set_fade(emu_.get(), playMs);
+        fadeStartMs_ = playMs;
+        gme_set_fade(emu_.get(), fadeStartMs_);
         durationMs_ = playMs + fadeMs;
 
         format_.sampleRate    = static_cast<double>(rate_);
@@ -347,10 +348,35 @@ public:
 
     [[nodiscard]] MetadataMap metadata() const override { return tags_; }
 
+    /// Keeps the fade where it belongs, which is the only thing standing between
+    /// a chiptune and playing for ever: Game_Music_Emu ends a track when the fade
+    /// reaches silence, and does not end it otherwise.
+    ///
+    /// Cog disables the fade outright with gme_set_fade_msecs(emu, -1, 0). That
+    /// call does not exist in Game_Music_Emu 0.6.3, and the one that does takes a
+    /// start time, which -1 turns into a fade that has *already* finished -- the
+    /// track would end instantly rather than never. So the start is pushed ahead
+    /// of the play position instead, and pushed again on the next read.
+    ///
+    /// Re-applied every read rather than latched, so turning repeat-one on
+    /// part-way through a tune stops the fade that was coming, and turning it off
+    /// puts it back.
+    void applyFade() {
+        const bool endless = loopForever(settings_);
+        if (endless) {
+            gme_set_fade(emu_.get(), gme_tell(emu_.get()) + kFadeHorizonMs);
+        } else if (fadeSuspended_) {
+            gme_set_fade(emu_.get(), fadeStartMs_);
+        }
+        fadeSuspended_ = endless;
+    }
+
     bool readAudio(AudioChunk& out) override {
         if (!emu_ || gme_track_ended(emu_.get()) != 0) {
             return false;
         }
+
+        applyFade();
 
         if (gme_play(emu_.get(), static_cast<int>(kFramesPerRead * kChannels),
                      scratch_.data()) != nullptr) {
@@ -428,10 +454,17 @@ private:
 
     EmuPtr       emu_{nullptr, &gme_delete};
     AudioFormat  format_{};
-    int          rate_       = kDefaultRate;
-    int          track_      = 0;
-    int          durationMs_ = 0;
-    std::int64_t framePos_   = 0;
+    /// Far enough ahead that the fade never begins, near enough that
+    /// Game_Music_Emu's millisecond-to-sample arithmetic stays well inside a
+    /// 32-bit long, which is what `blargg_long` is on Windows.
+    static constexpr int kFadeHorizonMs = 10 * 60 * 1000;
+
+    int          rate_        = kDefaultRate;
+    int          track_       = 0;
+    int          durationMs_  = 0;
+    int          fadeStartMs_ = 0;
+    bool         fadeSuspended_ = false;
+    std::int64_t framePos_    = 0;
     std::string  codec_;
     MetadataMap  tags_;
 

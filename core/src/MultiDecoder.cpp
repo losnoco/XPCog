@@ -29,6 +29,9 @@ public:
             decoder->setChangeCallback(onChange_);
             decoder->setRegistry(registry_);
             decoder->setSettings(settings_);
+            // Forwarded, not defaulted: whichever candidate wins is the one that
+            // has to know whether it may loop for ever.
+            decoder->setLoopPolicy(loopPolicy());
             if (decoder->open(source)) {
                 active_ = std::move(decoder);
                 return true;
