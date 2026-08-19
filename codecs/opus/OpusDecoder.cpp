@@ -3,6 +3,7 @@
 // Opus always decodes at 48 kHz regardless of the original sample rate; that is a
 // property of the format, not a resampling choice made here.
 
+#include "../common/OggChain.hpp"
 #include "../common/VorbisComments.hpp"
 
 #include "xpcog/core/Plugin.hpp"
@@ -59,6 +60,29 @@ public:
             return false;
         }
 
+        // A chained file is a container and each link is a track; the fragment
+        // says which. op_link_count() answers 1 for a stream, where the links
+        // are not known in advance and are played through instead -- so this
+        // turns itself off there without asking whether the source seeks.
+        if (const int links = op_link_count(opus_); links > 1) {
+            const auto index = static_cast<int>(
+                std::min<std::size_t>(codecs::oggLinkFromFragment(source_->url()),
+                                      static_cast<std::size_t>(links) - 1));
+
+            linkStart_ = 0;
+            for (int i = 0; i < index; ++i) {
+                linkStart_ += op_pcm_total(opus_, i);
+            }
+            linkFrames_ = op_pcm_total(opus_, index);
+
+            // Seek first, so the head, tags and bitrate below describe this link
+            // rather than the file's first.
+            if (op_pcm_seek(opus_, linkStart_) != 0) {
+                return false;
+            }
+            currentLink_ = index;
+        }
+
         const OpusHead* head = op_head(opus_, -1);
         if (head == nullptr) {
             return false;
@@ -70,7 +94,7 @@ public:
         format_.bitsPerSample = 32;
         format_.channelConfig = guessChannelConfig(format_.channels);
 
-        totalFrames_ = op_pcm_total(opus_, -1);
+        totalFrames_ = (linkFrames_ >= 0) ? linkFrames_ : op_pcm_total(opus_, -1);
         seekable_    = op_seekable(opus_) != 0;
         bitrateKbps_ = static_cast<std::int32_t>(op_bitrate(opus_, -1) / 1000);
         framePos_    = 0;
@@ -83,15 +107,47 @@ public:
         const double timestamp = static_cast<double>(framePos_) / kOpusSampleRate;
         const auto   channels  = static_cast<int>(format_.channels);
 
-        planar_.resize(static_cast<std::size_t>(kFramesPerRead) * channels);
+        // One link only, when the URL named one. Left unclamped the read would
+        // run straight into the next track: opusfile decodes a chain
+        // continuously, which is what makes it right for a stream and wrong for
+        // a track inside a file.
+        std::int64_t wanted = kFramesPerRead;
+        if (linkFrames_ >= 0) {
+            const std::int64_t remaining = linkFrames_ - framePos_;
+            if (remaining <= 0) {
+                return false;
+            }
+            wanted = std::min<std::int64_t>(wanted, remaining);
+        }
+
+        planar_.resize(static_cast<std::size_t>(wanted) * channels);
         interleaved_.resize(planar_.size());
 
         // op_read_float returns already-interleaved samples in Vorbis channel
         // order, so only the permutation is needed, not a transpose.
-        const int got = op_read_float(opus_, planar_.data(),
-                                      static_cast<int>(planar_.size()), nullptr);
+        int       link = currentLink_;
+        const int got  = op_read_float(opus_, planar_.data(),
+                                       static_cast<int>(planar_.size()), &link);
         if (got <= 0) {
             return false;
+        }
+
+        // A link boundary. Only reachable while playing a chain through -- a
+        // track inside a file stops at its own end above -- which is the stream
+        // case: a new link there is the next song starting. Nothing here
+        // reported that before, so a chained Opus stream played on with the
+        // opening track's name for ever.
+        if (link != currentLink_) {
+            currentLink_ = link;
+            if (const OpusHead* next = op_head(opus_, link);
+                next != nullptr &&
+                static_cast<std::uint32_t>(next->channel_count) != format_.channels) {
+                format_.channels      = static_cast<std::uint32_t>(next->channel_count);
+                format_.channelConfig = guessChannelConfig(format_.channels);
+                notifyChanged(true, false);
+            }
+            readTags();
+            notifyChanged(false, true);
         }
 
         if (channels <= kMaxMappedChannels) {
@@ -119,7 +175,8 @@ public:
     }
 
     std::int64_t seek(std::int64_t frame) override {
-        if (opus_ == nullptr || op_pcm_seek(opus_, frame) != 0) {
+        // Frames are the link's own; the file's sample space starts earlier.
+        if (opus_ == nullptr || op_pcm_seek(opus_, linkStart_ + frame) != 0) {
             return -1;
         }
         framePos_ = frame;
@@ -198,6 +255,12 @@ private:
     std::vector<float> interleaved_;
     std::int64_t       totalFrames_ = 0;
     std::int64_t       framePos_    = 0;
+    /// The chain link this decoder was opened for. `linkFrames_` is -1 when the
+    /// whole file or stream is the track, which is every unchained file and
+    /// every live stream.
+    std::int64_t       linkStart_   = 0;
+    std::int64_t       linkFrames_  = -1;
+    int                currentLink_ = 0;
     std::int32_t       bitrateKbps_ = 0;
     bool               seekable_    = false;
 

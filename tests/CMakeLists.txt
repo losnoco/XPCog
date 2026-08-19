@@ -41,6 +41,10 @@ if(XPCOG_WITH_FLAC)
     target_sources(xpcog-tests PRIVATE codecs/test_flac_chained.cpp)
 endif()
 
+if(XPCOG_WITH_VORBIS AND XPCOG_WITH_OPUS AND XPCOG_WITH_OGGCHAIN)
+    target_sources(xpcog-tests PRIVATE codecs/test_ogg_chained.cpp)
+endif()
+
 if(XPCOG_WITH_FFMPEG)
     find_package(FFMPEG REQUIRED)
     target_sources(xpcog-tests PRIVATE codecs/test_ffmpeg_stream_tags.cpp)

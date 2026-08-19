@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <string_view>
 
 namespace xpcog::codecs {
 namespace {
@@ -58,29 +59,54 @@ constexpr std::int64_t kTailWindow = 128 * 1024;
 
 }  // namespace
 
-bool isOggFlacStream(ISource& source) {
-    std::array<std::uint8_t, kPageHeaderSize + 1> header{};
-    if (!readAt(source, 0, header.data(), static_cast<std::int64_t>(header.size()))) {
-        return false;
-    }
-    if (!isPageHeader(header.data())) {
-        return false;
+OggCodec oggCodecAt(ISource& source, std::int64_t offset) {
+    std::array<std::uint8_t, kPageHeaderSize> header{};
+    if (!readAt(source, offset, header.data(),
+                static_cast<std::int64_t>(header.size())) ||
+        !isPageHeader(header.data())) {
+        return OggCodec::Unknown;
     }
 
-    // The first packet of an Ogg FLAC stream is the mapping header: 0x7F then
-    // "FLAC". Ogg Vorbis puts 0x01 "vorbis" here and Opus puts "OpusHead".
     const std::size_t segments = header[26];
     if (segments == 0) {
-        return false;
+        return OggCodec::Unknown;
     }
 
-    std::array<std::uint8_t, 5> packet{};
-    const std::int64_t payload =
-        static_cast<std::int64_t>(kPageHeaderSize) + static_cast<std::int64_t>(segments);
-    if (!readAt(source, payload, packet.data(), static_cast<std::int64_t>(packet.size()))) {
-        return false;
+    // Every Ogg mapping names itself in the first bytes of its first packet.
+    std::array<std::uint8_t, 8> packet{};
+    const std::int64_t          payload = offset +
+                                 static_cast<std::int64_t>(kPageHeaderSize) +
+                                 static_cast<std::int64_t>(segments);
+    if (!readAt(source, payload, packet.data(),
+                static_cast<std::int64_t>(packet.size()))) {
+        return OggCodec::Unknown;
     }
-    return packet[0] == 0x7F && std::memcmp(packet.data() + 1, "FLAC", 4) == 0;
+
+    if (packet[0] == 0x7F && std::memcmp(packet.data() + 1, "FLAC", 4) == 0) {
+        return OggCodec::Flac;
+    }
+    if (packet[0] == 0x01 && std::memcmp(packet.data() + 1, "vorbis", 6) == 0) {
+        return OggCodec::Vorbis;
+    }
+    if (std::memcmp(packet.data(), "OpusHead", 8) == 0) {
+        return OggCodec::Opus;
+    }
+    if (std::memcmp(packet.data(), "Speex   ", 8) == 0) {
+        return OggCodec::Speex;
+    }
+    return OggCodec::Unknown;
+}
+
+std::size_t oggLinkFromFragment(const Url& url) {
+    const std::string_view fragment = url.fragment();
+    std::size_t            value    = 0;
+    for (const char c : fragment) {
+        if (c < '0' || c > '9') {
+            return 0;
+        }
+        value = value * 10 + static_cast<std::size_t>(c - '0');
+    }
+    return value;
 }
 
 bool looksChained(ISource& source) {

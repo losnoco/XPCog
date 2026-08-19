@@ -855,6 +855,43 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   own `hls.c` demuxer, which XPCog never uses, since the HLS decoder here
   replaces it and hands FFmpeg raw concatenated segments instead.
 
+- **Chained Vorbis and Opus, the same two answers.** Both libraries already
+  chained: `ov_read_float` and `op_read_float` decode straight across a link
+  boundary, so unlike FLAC these never stopped. What they did instead was
+  present a file of several tracks as one nameless run of everything -- the
+  summed length, and the first link's title for all of it.
+
+  So the split is by where the bytes come from, not by codec. **A file is a
+  container**: `ov_streams()` / `op_link_count()` say how many links there are,
+  and each becomes a track that decodes only its own range -- its own tags from
+  its own comment header, its own length, its own seek bar. **A stream is not**:
+  its links arrive one at a time and are played straight through, with the new
+  link's tags announced when it starts. That falls out for free rather than
+  needing a seekability test, because both functions answer 1 for a
+  non-seekable source.
+
+  **One container for all three.** Chaining is a property of Ogg, not of what is
+  inside it: the page structure that says where a link begins is identical
+  whether the packets are FLAC, Vorbis or Opus. So `codecs/oggchain` counts
+  links with no codec knowledge at all, and the Ogg walker moved to
+  `codecs/common`. The one thing it does look at is the first link's mapping
+  header, to leave alone a chain of something this build cannot decode --
+  expanding that would replace one entry that fails to open with several.
+
+  **Opus said nothing when the track changed.** `op_read_float` reports the
+  current link through an out-parameter that was being passed `nullptr`, so a
+  chained Opus stream played on under the opening track's name for ever. Vorbis
+  did notice the boundary and re-read its tags -- but never announced them, so
+  they sat in the decoder and never reached the screen. Both now report the
+  change the same way FLAC and FFmpeg do, and there is a test per codec that
+  fails without it.
+
+  Worth noting what this did *not* need: none of the byte-range windowing the
+  FLAC path uses. libvorbisfile and opusfile both index links themselves and
+  address samples across the whole chain, so a link is a sample range and the
+  library does the rest. FLAC needed the window because libFLAC exposes link
+  lengths only after indexing the file and per-link metadata not at all.
+
 - **A chained Ogg FLAC file is a container: one track per link.** The same shape
   as the stream above, but on disk, where the whole chain is visible in advance.
   Each link is a complete stream with its own STREAMINFO, Vorbis comment and
@@ -886,11 +923,14 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   knowing that the container work started by fixing the plain case.
 
   **A container that declines now falls through to the next claimant.** `.ogg`
-  is claimed by this container and by FFmpeg's chapter container, and returning
-  the URL unchanged is already how a container declines; without a fall-through
-  the higher-priority one silently answered for both, so a chaptered Ogg Vorbis
-  file would have lost its chapters to a chain check that had nothing to say
-  about it.
+  is claimed by the chain container and by FFmpeg's chapter container, and
+  returning the URL unchanged is already how a container declines; without a
+  fall-through the higher-priority one silently answered for both, so a
+  chaptered Ogg Vorbis file would have lost its chapters to a chain check that
+  had nothing to say about it.
+
+  The container itself is `codecs/oggchain` and serves all three Ogg codecs --
+  see the entry below.
 
   Honest note on the link window: of its three parts -- positioning at the link's
   start, clamping reads to its end, and offsetting seeks -- only the first is

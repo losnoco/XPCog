@@ -1,6 +1,6 @@
 #include "FlacDecoder.hpp"
 
-#include "OggChain.hpp"
+#include "../common/OggChain.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -31,21 +31,6 @@ constexpr std::size_t kMaxBlockBytes = 65535U * 8U * 4U;
         return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     });
     return out;
-}
-
-/// The chain link a fragment names. Numbered from zero, and an unfragmented URL
-/// means the first -- matching every other subsong container here, so opening a
-/// chained file directly plays its first track rather than failing.
-[[nodiscard]] std::size_t linkFromFragment(const Url& url) {
-    const std::string_view fragment = url.fragment();
-    std::size_t            value    = 0;
-    for (const char c : fragment) {
-        if (c < '0' || c > '9') {
-            return 0;
-        }
-        value = value * 10 + static_cast<std::size_t>(c - '0');
-    }
-    return value;
 }
 
 [[nodiscard]] std::optional<float> parseFloat(std::string_view text) {
@@ -369,7 +354,7 @@ bool FlacDecoder::open(ISource* source) {
         const std::vector<codecs::OggLink> links = codecs::readOggLinks(*source_);
         if (links.size() > 1) {
             const std::size_t index =
-                std::min(linkFromFragment(source_->url()), links.size() - 1);
+                std::min(codecs::oggLinkFromFragment(source_->url()), links.size() - 1);
             linkBegin_ = links[index].begin;
             linkEnd_   = links[index].end;
             fileSize_  = linkEnd_ - linkBegin_;

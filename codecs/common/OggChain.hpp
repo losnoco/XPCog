@@ -19,7 +19,9 @@
 #pragma once
 
 #include "xpcog/core/Plugin.hpp"
+#include "xpcog/core/Url.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -32,10 +34,22 @@ struct OggLink {
     std::uint32_t serial = 0;
 };
 
-/// True when `source` starts with an Ogg page whose first packet is the Ogg FLAC
-/// mapping header. Distinguishes an Ogg FLAC file from Ogg Vorbis or Opus, which
-/// wear the same extensions. Leaves the read position at the start.
-[[nodiscard]] bool isOggFlacStream(ISource& source);
+/// What a logical bitstream carries, read from the first packet of the page at
+/// `offset`. Ogg is a container: `.ogg` and `.oga` are worn by all of these, and
+/// nothing outside the stream itself says which is inside.
+enum class OggCodec : std::uint8_t { Unknown, Flac, Vorbis, Opus, Speex };
+
+[[nodiscard]] OggCodec oggCodecAt(ISource& source, std::int64_t offset);
+
+/// Shorthand for the file's first link.
+[[nodiscard]] inline bool isOggFlacStream(ISource& source) {
+    return oggCodecAt(source, 0) == OggCodec::Flac;
+}
+
+/// The chain link a fragment names, numbered from zero. An unfragmented URL
+/// means the first, so opening a chained file directly plays its opening track
+/// rather than failing -- which is what every other subsong container here does.
+[[nodiscard]] std::size_t oggLinkFromFragment(const Url& url);
 
 /// Whether the file plausibly holds more than one logical bitstream, decided by
 /// comparing the first page's serial number with the last page's.

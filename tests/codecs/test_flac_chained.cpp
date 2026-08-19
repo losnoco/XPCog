@@ -23,6 +23,7 @@
 #include "xpcog/core/audio/SampleConvert.hpp"
 
 #include "../TestShell.hpp"
+#include "../TestSource.hpp"
 #include "../TestSignal.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -145,77 +146,6 @@ std::filesystem::path buildChainedStream() {
     }
     std::fclose(out);
     return chained;
-}
-
-/// A file that presents itself the way a live HTTP stream does: seekable() is
-/// false, because the response has no length and there is no end to seek to,
-/// while a small rewind still works -- HttpSource answers seek() from its ring.
-/// That distinction is the whole point: the decoder peeks four bytes for the Ogg
-/// magic and rewinds, so a source that refused every seek would fail before
-/// reaching the case under test, and one that claimed to be seekable would be a
-/// file rather than a stream.
-class StreamingFileSource final : public ISource {
-public:
-    explicit StreamingFileSource(const std::filesystem::path& path)
-        : bytes_(readBytes(path)) {}
-
-    bool open(const Url& url) override {
-        url_ = url;
-        return !bytes_.empty();
-    }
-    [[nodiscard]] bool seekable() const override { return false; }
-
-    bool seek(std::int64_t offset, int whence) override {
-        if (whence == SEEK_END) {
-            return false;  // no length to measure against
-        }
-        const std::int64_t target = (whence == SEEK_CUR) ? position_ + offset : offset;
-        if (target < 0 || target > static_cast<std::int64_t>(bytes_.size())) {
-            return false;
-        }
-        position_ = target;
-        return true;
-    }
-
-    [[nodiscard]] std::int64_t tell() const override { return position_; }
-
-    std::int64_t read(void* out, std::int64_t wanted) override {
-        const auto available = static_cast<std::int64_t>(bytes_.size()) - position_;
-        const auto take      = std::min(wanted, available);
-        if (take <= 0) {
-            return 0;
-        }
-        std::memcpy(out, bytes_.data() + position_, static_cast<std::size_t>(take));
-        position_ += take;
-        return take;
-    }
-
-    void close() override {}
-    [[nodiscard]] const Url& url() const override { return url_; }
-
-private:
-    std::vector<std::uint8_t> bytes_;
-    std::int64_t              position_ = 0;
-    Url                       url_;
-};
-
-/// Dominant frequency by zero crossings over the steady middle of a span.
-double frequencyOf(std::span<const float> mono) {
-    if (mono.size() < 1024) {
-        return 0.0;
-    }
-    const std::size_t begin = mono.size() / 4;
-    const std::size_t end   = mono.size() * 3 / 4;
-
-    std::size_t crossings = 0;
-    float       previous  = 0.0F;
-    for (std::size_t i = begin; i < end; ++i) {
-        if (i > begin && ((previous < 0.0F) != (mono[i] < 0.0F))) {
-            ++crossings;
-        }
-        previous = mono[i];
-    }
-    return static_cast<double>(crossings) * kRate / (2.0 * static_cast<double>(end - begin));
 }
 
 PluginRegistry& registry() {
@@ -384,7 +314,7 @@ TEST_CASE("each chain link decodes as its own track", "[flac][chained]") {
         // append the next track's tone to this one.
         CHECK(static_cast<double>(pcm.size()) ==
               Catch::Approx(want.frames).margin(kRate * 0.05));
-        CHECK(frequencyOf(std::span<const float>{pcm}) ==
+        CHECK(xpcog::test::dominantFrequency(std::span<const float>{pcm}, kRate) ==
               Catch::Approx(want.frequency).margin(15.0));
     }
 }
@@ -416,14 +346,14 @@ TEST_CASE("seeking within a chain link stays inside it", "[flac][chained]") {
     // Half of the second link and nothing after it.
     CHECK(static_cast<double>(pcm.size()) ==
           Catch::Approx(kRate / 2).margin(kRate * 0.05));
-    CHECK(frequencyOf(std::span<const float>{pcm}) == Catch::Approx(880.0).margin(15.0));
+    CHECK(xpcog::test::dominantFrequency(std::span<const float>{pcm}, kRate) == Catch::Approx(880.0).margin(15.0));
 }
 
 TEST_CASE("a chained Ogg FLAC stream plays past the track change", "[flac][chained]") {
     const auto path = buildChainedStream();
     if (path.empty()) SKIP("the flac encoder is not available to build a fixture");
 
-    StreamingFileSource source{path};
+    xpcog::test::StreamingFileSource source{path};
     REQUIRE(source.open(*Url::parse("http://station.example/flac")));
 
     FlacDecoder decoder;
@@ -460,16 +390,16 @@ TEST_CASE("a chained Ogg FLAC stream plays past the track change", "[flac][chain
     const auto                   third  = static_cast<std::size_t>(kRate * 2);
     REQUIRE(pcm.size() > third);
     const std::span<const float> all{pcm};
-    CHECK(frequencyOf(all.subspan(0, second)) == Catch::Approx(440.0).margin(15.0));
-    CHECK(frequencyOf(all.subspan(second, second)) == Catch::Approx(880.0).margin(15.0));
-    CHECK(frequencyOf(all.subspan(third)) == Catch::Approx(330.0).margin(15.0));
+    CHECK(xpcog::test::dominantFrequency(all.subspan(0, second), kRate) == Catch::Approx(440.0).margin(15.0));
+    CHECK(xpcog::test::dominantFrequency(all.subspan(second, second), kRate) == Catch::Approx(880.0).margin(15.0));
+    CHECK(xpcog::test::dominantFrequency(all.subspan(third), kRate) == Catch::Approx(330.0).margin(15.0));
 }
 
 TEST_CASE("a chained link's tags replace the finished track's", "[flac][chained]") {
     const auto path = buildChainedStream();
     if (path.empty()) SKIP("the flac encoder is not available to build a fixture");
 
-    StreamingFileSource source{path};
+    xpcog::test::StreamingFileSource source{path};
     REQUIRE(source.open(*Url::parse("http://station.example/flac")));
 
     FlacDecoder decoder;

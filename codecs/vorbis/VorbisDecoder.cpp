@@ -1,5 +1,6 @@
 // Port of Cog Plugins/Vorbis/VorbisDecoder.m.
 
+#include "../common/OggChain.hpp"
 #include "../common/VorbisComments.hpp"
 
 #include "xpcog/core/Plugin.hpp"
@@ -7,6 +8,7 @@
 
 #include <vorbis/vorbisfile.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <string_view>
@@ -55,6 +57,29 @@ public:
         }
         opened_ = true;
 
+        // A chained file is a container and each link is a track; the fragment
+        // says which. ov_streams() answers 1 for a stream, where the links are
+        // not known in advance and are played through instead -- so this turns
+        // itself off there without needing to ask whether the source seeks.
+        if (const long links = ov_streams(&vorbis_); links > 1) {
+            const auto index = static_cast<long>(
+                std::min<std::size_t>(codecs::oggLinkFromFragment(source_->url()),
+                                      static_cast<std::size_t>(links) - 1));
+
+            linkStart_ = 0;
+            for (long i = 0; i < index; ++i) {
+                linkStart_ += static_cast<std::int64_t>(ov_pcm_total(&vorbis_, i));
+            }
+            linkFrames_ = static_cast<std::int64_t>(ov_pcm_total(&vorbis_, index));
+
+            // Seek first, so every question below -- format, tags, bitrate --
+            // is answered about this link rather than about the file's first.
+            if (ov_pcm_seek(&vorbis_, linkStart_) != 0) {
+                return false;
+            }
+            currentSection_ = static_cast<int>(index);
+        }
+
         const vorbis_info* info = ov_info(&vorbis_, -1);
         if (info == nullptr) {
             return false;
@@ -68,7 +93,9 @@ public:
 
         bitrateKbps_ = static_cast<std::int32_t>(info->bitrate_nominal / 1000);
         seekable_    = ov_seekable(&vorbis_) != 0;
-        totalFrames_ = static_cast<std::int64_t>(ov_pcm_total(&vorbis_, -1));
+        totalFrames_ = (linkFrames_ >= 0)
+                           ? linkFrames_
+                           : static_cast<std::int64_t>(ov_pcm_total(&vorbis_, -1));
         framePos_    = 0;
 
         readTags();
@@ -81,19 +108,33 @@ public:
                                      : 0.0;
 
         const auto channels = static_cast<int>(format_.channels);
-        interleaved_.resize(static_cast<std::size_t>(kFramesPerRead) * channels);
+
+        // One link only, when the URL named one. Left unclamped the read would
+        // run straight into the next track: vorbisfile decodes a chain
+        // continuously, which is what makes it right for a stream and wrong for
+        // a track inside a file.
+        int wanted = kFramesPerRead;
+        if (linkFrames_ >= 0) {
+            const std::int64_t remaining = linkFrames_ - framePos_;
+            if (remaining <= 0) {
+                return false;
+            }
+            wanted = static_cast<int>(std::min<std::int64_t>(wanted, remaining));
+        }
+        interleaved_.resize(static_cast<std::size_t>(wanted) * channels);
 
         int total = 0;
         for (;;) {
             float** pcm     = nullptr;
             int     section = currentSection_;
-            const long got  = ov_read_float(&vorbis_, &pcm, kFramesPerRead - total,
-                                            &section);
+            const long got  = ov_read_float(&vorbis_, &pcm, wanted - total, &section);
             if (got <= 0) {
                 break;
             }
 
-            // Chained stream: the format can change between links.
+            // A link boundary. Only reachable while playing a chain through --
+            // a track inside a file stops at its own end above -- which is the
+            // stream case: a new link there is the next song starting.
             if (section != currentSection_) {
                 currentSection_ = section;
                 if (const vorbis_info* info = ov_info(&vorbis_, -1)) {
@@ -106,6 +147,10 @@ public:
                     }
                 }
                 readTags();
+                // Announced, not merely stored: without this the tags change
+                // and nothing above ever asks again, so a station's new title
+                // sits in the decoder and never reaches the screen.
+                notifyChanged(false, true);
                 if (total > 0) {
                     break;
                 }
@@ -123,7 +168,7 @@ public:
             }
 
             total += static_cast<int>(got);
-            if (total >= kFramesPerRead) {
+            if (total >= wanted) {
                 break;
             }
         }
@@ -144,7 +189,8 @@ public:
     }
 
     std::int64_t seek(std::int64_t frame) override {
-        if (!opened_ || ov_pcm_seek(&vorbis_, frame) != 0) {
+        // Frames are the link's own; the file's sample space starts earlier.
+        if (!opened_ || ov_pcm_seek(&vorbis_, linkStart_ + frame) != 0) {
             return -1;
         }
         framePos_ = frame;
@@ -225,6 +271,11 @@ private:
     std::vector<float> interleaved_;
     std::int64_t       totalFrames_    = 0;
     std::int64_t       framePos_       = 0;
+    /// The chain link this decoder was opened for. `linkFrames_` is -1 when the
+    /// whole file or stream is the track, which is every unchained file and
+    /// every live stream.
+    std::int64_t       linkStart_      = 0;
+    std::int64_t       linkFrames_     = -1;
     std::int32_t       bitrateKbps_    = 0;
     int                currentSection_ = 0;
     bool               seekable_       = false;
