@@ -54,7 +54,27 @@ set(XPCOG_APP_SOURCES
 # starting a window. A QAbstractItemModel is exactly the kind of code that
 # breaks silently -- a sort that scrambles rows looks like a redraw glitch --
 # and it is not reachable from xpcog-cli, which links no Qt.
+# The SC-55's front panel, and the photograph of the hardware it is drawn onto.
+# Conditional because both come from the MIDI build: without XPCOG_WITH_MIDI
+# there is no emulator to render a panel state and nothing that produces one.
+if(XPCOG_WITH_MIDI)
+    list(APPEND XPCOG_APP_SOURCES
+        src/windows/Sc55PanelWidget.cpp
+        src/windows/Sc55PanelWidget.hpp)
+endif()
+
 qt_add_library(xpcog-appcore STATIC ${XPCOG_APP_SOURCES})
+
+if(XPCOG_WITH_MIDI)
+    target_compile_definitions(xpcog-appcore PUBLIC XPCOG_HAVE_SC55_PANEL=1)
+    # 776 KiB of raw RGBA, compiled in rather than found at runtime: it is part
+    # of the emulator the way its ROMs are not -- shippable, and useless on its
+    # own.
+    qt_add_resources(xpcog-appcore "sc55panel"
+        PREFIX "/sc55"
+        BASE "${CMAKE_SOURCE_DIR}/vendor/nuked-sc55/data"
+        FILES "${CMAKE_SOURCE_DIR}/vendor/nuked-sc55/data/back.data")
+endif()
 
 target_include_directories(xpcog-appcore PUBLIC src)
 

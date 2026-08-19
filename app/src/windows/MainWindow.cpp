@@ -14,6 +14,9 @@
 #include "ScanTask.hpp"
 #include "SeekSlider.hpp"
 #include "SpectrumWidget.hpp"
+#ifdef XPCOG_HAVE_SC55_PANEL
+#include "Sc55PanelWidget.hpp"
+#endif
 #include "StatusPresence.hpp"
 #include "PreferencesDialog.hpp"
 
@@ -251,6 +254,23 @@ void MainWindow::buildUi() {
     // labels, where the spectrum and the equaliser are wide and short. Cog makes
     // it a floating HUD it positions to the right of the main window by hand --
     // a right-hand dock is where that lands anyway, minus the arithmetic.
+#ifdef XPCOG_HAVE_SC55_PANEL
+    // The SC-55's front panel. Hidden, and not in the default layout: it is one
+    // synthesiser of three, for one format among many, and a photograph of a
+    // 1993 sound module is not what someone who opened a music player asked to
+    // look at. Nothing is even produced until this is shown -- the widget's
+    // showEvent is what switches the feed on.
+    sc55Panel_          = new Sc55PanelWidget(
+        [this] { return playback_ ? playback_->position() : 0.0; }, this);
+    auto* sc55PanelDock = new QDockWidget(tr("SC-55 Panel"), this);
+    sc55PanelDock->setObjectName(QStringLiteral("sc55PanelDock"));
+    sc55PanelDock->setWidget(sc55Panel_);
+    sc55PanelDock->setAllowedAreas(Qt::AllDockWidgetAreas);
+    addDockWidget(Qt::BottomDockWidgetArea, sc55PanelDock);
+    sc55PanelDock->hide();
+    sc55PanelDock_ = sc55PanelDock;
+#endif
+
     info_          = new InfoPanel(library_.get(), this);
     auto* infoDock = new QDockWidget(tr("Info"), this);
     infoDock->setObjectName(QStringLiteral("infoDock"));
@@ -403,6 +423,22 @@ void MainWindow::wireUp() {
         connect(equalizerDock_, &QDockWidget::visibilityChanged, command,
                 &QAction::setChecked);
     }
+
+#ifdef XPCOG_HAVE_SC55_PANEL
+    if (QAction* command = actions_->action(ActionId::ViewSc55Panel);
+        command != nullptr) {
+        connect(command, &QAction::toggled, sc55PanelDock_, &QWidget::setVisible);
+        connect(sc55PanelDock_, &QDockWidget::visibilityChanged, command,
+                &QAction::setChecked);
+    }
+#else
+    // Nothing to show it, so nothing to offer. Disabled rather than removed, so
+    // the View menu keeps the same shape between builds.
+    if (QAction* command = actions_->action(ActionId::ViewSc55Panel);
+        command != nullptr) {
+        command->setEnabled(false);
+    }
+#endif
 
     if (QAction* command = actions_->action(ActionId::ViewInfo); command != nullptr) {
         connect(command, &QAction::toggled, infoDock_, &QWidget::setVisible);

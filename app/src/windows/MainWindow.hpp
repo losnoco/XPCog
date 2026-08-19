@@ -216,6 +216,10 @@ private:
     EqualizerPanel* equalizer_     = nullptr;
     QDockWidget*    equalizerDock_ = nullptr;
     InfoPanel*      info_          = nullptr;
+#ifdef XPCOG_HAVE_SC55_PANEL
+    class Sc55PanelWidget* sc55Panel_ = nullptr;
+    QDockWidget*    sc55PanelDock_ = nullptr;
+#endif
     QDockWidget*    infoDock_      = nullptr;
 
     QProgressBar* scanBar_    = nullptr;

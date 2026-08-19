@@ -44,6 +44,7 @@ constexpr MenuItem kMenuLayout[] = {
     {nullptr, ActionId::ViewInfo, true},
     {nullptr, ActionId::ViewSpectrum},
     {nullptr, ActionId::ViewEqualizer},
+    {nullptr, ActionId::ViewSc55Panel},
     {nullptr, ActionId::ViewMiniPlayer, true},
 
     {QT_TRANSLATE_NOOP("ActionRegistry", "&Edit"), ActionId::EditUndo},
@@ -145,6 +146,15 @@ ActionRegistry::ActionRegistry(QObject* parent) : QObject(parent) {
                              QKeySequence(Qt::CTRL | Qt::Key_E));
     equalizer->setCheckable(true);
     equalizer->setChecked(false);
+
+    // The SC-55's front panel. Unchecked, and no shortcut: it is worth having
+    // and it is not worth a key -- one synthesiser of three, for one format.
+    // Present even in a build without MIDI, where it simply never finds a dock
+    // to toggle; an action that appears and disappears with a compile flag is
+    // worse than one that is occasionally inert.
+    QAction* sc55 = add(ActionId::ViewSc55Panel, tr("SC-55 &Panel"));
+    sc55->setCheckable(true);
+    sc55->setChecked(false);
 
     QAction* mini = add(ActionId::ViewMiniPlayer, tr("&Mini Player"),
                         QKeySequence(Qt::CTRL | Qt::Key_M));

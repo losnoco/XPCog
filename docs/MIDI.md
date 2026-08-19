@@ -264,11 +264,21 @@ previous state stamped with the previous timestamp, one throttle window behind,
 which is defensible but means a panel that goes quiet never shows its final
 state until something else changes.
 
-The widget itself is what remains, and one thing about it is already decided:
-**it is not docked by default.** A front panel for one synthesiser of three, for
-one format among many, is not something to put in everyone's window — it is a
-View menu item that starts hidden, and `PanelFeed::wanted()` follows its
-visibility so nothing is produced until it is shown.
+`app/windows/Sc55PanelWidget` is the widget, and it is thin: the emulator
+draws the panel itself, so all it does is drain the feed against
+`PlaybackController::position()` thirty times a second, keep the newest state,
+hand it to `sc55_lcd_render_screen()` and blit the result.
+
+**It is not docked by default.** A front panel for one synthesiser of three,
+for one format among many, is not something to put in everyone’s window — it is
+a View menu item that starts hidden, and `PanelFeed::wanted()` follows the
+dock’s visibility through showEvent and hideEvent, so the emulator is not
+comparing its panel against the previous state on every sample for a window
+nobody opened.
+
+Only the newest state of each batch is drawn. The others are the panel’s own
+history between repaints, and at up to two hundred a second they are not
+something an eye resolves.
 
 ### Missing ROMs fall back rather than refusing
 

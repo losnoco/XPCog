@@ -1,5 +1,7 @@
 #include "PlaybackController.hpp"
 
+#include "xpcog/core/audio/PanelFeed.hpp"
+
 #include <QMetaObject>
 
 #include <algorithm>
@@ -328,6 +330,12 @@ std::optional<Url> PlaybackController::nextTrack() {
 }
 
 void PlaybackController::trackBegan(const Url& url) {
+    // Said here rather than on the GUI thread below, because it is what makes a
+    // front panel show the right track's display: across a gapless seam two
+    // decoders are producing at once, and until this lands the queue does not
+    // know which of them is being heard.
+    PanelFeed::instance().setAudibleTrack(url);
+
     // The seam reached the speaker. Find which entry that was and tell the GUI
     // thread; QueuedConnection is what moves the work across.
     const std::string text = url.toString();

@@ -54,6 +54,7 @@ enum class ActionId {
     ViewSpectrum,
     ViewEqualizer,
     ViewInfo,
+    ViewSc55Panel,
     ViewMiniPlayer,
 
     HelpAbout,
