@@ -10,7 +10,7 @@
 //   * Cog reaches for FFMPEGDecoder by name (NSClassFromString) because its
 //     extension lookup routes nothing to MPEG-TS. Here the memory source is
 //     given the identity of what was actually fetched -- a filename and a MIME
-//     type -- and the registry chooses, so an MP3 rendition reaches mpg123 and a
+//     type -- and the registry chooses, so an MP3 rendition reaches minimp3 and a
 //     future dedicated decoder is picked up with no change here.
 //   * Cog refuses anything that is not http(s). The segments are fetched through
 //     the registry like any other URL, so the scheme is not this decoder's

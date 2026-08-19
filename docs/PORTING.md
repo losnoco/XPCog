@@ -188,7 +188,7 @@ bundle.
   `IAudioOutput` with a lock-free SPSC ring and feeder thread from day one. FLAC
   decode is byte-exact against `flac -d`.
 - **M1b** — `AudioEngine` with gapless handoff, verified sample-exact against
-  separately-decoded references. Decoders: FLAC, Vorbis, Opus, MP3 (mpg123), WavPack,
+  separately-decoded references. Decoders: FLAC, Vorbis, Opus, MP3 (minimp3), WavPack,
   FFmpeg (AAC/ALAC/WMA/AC3/…). Containers: M3U, PLS, cue sheets.
 - **M1c** — ReplayGain, `Settings`, `AudioConverter` with soxr (a track at a
   different sample rate joins gaplessly), HDCD gated to Red Book format and verified
@@ -855,6 +855,55 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   own `hls.c` demuxer, which XPCog never uses, since the HLS decoder here
   replaces it and hands FFmpeg raw concatenated segments instead.
 
+- **MP3 moves to minimp3, which is what Cog decodes with.** Port of Cog
+  `Plugins/minimp3/MP3Decoder.m`, replacing libmpg123. The headers are Cog's own
+  vendored copies, and that is the point: this is the decoder a Cog library has
+  been listened to through, including on the malformed MP3s that exist in
+  quantity. It is also CC0 and header-only, so it drops a vcpkg dependency
+  rather than adding one.
+
+  **Two decoders, chosen by whether the source can seek**, which is Cog's design
+  rather than an accident. A file goes through minimp3-ex's stream parser --
+  frames indexed, Xing/Info/LAME header read, length and gapless padding known
+  before the first sample. A stream cannot be indexed at all, so it is decoded a
+  frame at a time out of a sliding buffer with plain minimp3, which needs
+  nothing but the bytes in hand. The conformance harness only ever reached the
+  first, because it decodes files.
+
+  **Gapless has two conventions and they do not count from the same place.**
+  LAME writes its delay in the Xing header, measured from the first frame, and
+  minimp3-ex applies it. iTunes writes its own as an `iTunSMPB` comment in the
+  ID3v2 tag -- which minimp3 skips without reading -- measured from the start of
+  the *decoded* signal, which is 528 samples of decoder delay plus one further
+  along. Use one convention with the other's numbers and the track moves by
+  twelve milliseconds: a click on a gapless album, and invisible to any test
+  that counts frames or measures pitch, since neither changes.
+
+  That last point took a second attempt to test. The first version of the bounds
+  test passed with the bounds removed, because an out-of-range padding makes the
+  decoder skip past the end of the file and fail to open -- at which point
+  `MultiDecoder` quietly hands it to FFmpeg, which reports the same length from
+  the same Xing header. Naming the expected codec is what turned that from a
+  test of nothing into a test of something, and each bound now has its own
+  fixture, since a tag breaking two at once passes with either check gone.
+
+  **Reading `iTunSMPB` needed the ID3v2 parser to stop discarding names.** A
+  `COMM` frame carries a description, and the parser was filing every comment
+  under `comment` and throwing the description away. Named comments are now keyed
+  by their name, as FFmpeg does -- so `iTunSMPB` is findable, and a line of hex
+  stops appearing where a listener expects prose.
+
+  Checked against real encodes from FFmpeg's FATE suite rather than only against
+  fixtures this repository wrote, because a synthetic tag proves the parse and
+  not the field layout. `gapless.mp3` decodes to 682880 frames, which is what
+  ffmpeg decodes it to; `gapless-itunes.mp3` decodes to 418950, which is the
+  number written in its own `iTunSMPB` field. ffmpeg gives 421632 for that one
+  -- 2682 samples more -- because it applies the Xing delay and never reads
+  `iTunSMPB`, which is the entire reason this parsing exists. A test that simply
+  compared against ffmpeg would have called the bug correct. The fixtures are
+  not vendored: `-DXPCOG_FATE_SUITE=/path/to/fate-suite` points at a copy that
+  already exists, and the cases skip when it is unset.
+
 - **Chained Vorbis and Opus, the same two answers.** Both libraries already
   chained: `ov_read_float` and `op_read_float` decode straight across a link
   boundary, so unlike FLAC these never stopped. What they did instead was
@@ -1033,7 +1082,7 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   instantiates `FFMPEGDecoder` by name because its extension lookup routes
   nothing to MPEG-TS. Here the memory source is given the identity of what was
   actually fetched -- a filename and a MIME type -- and normal selection
-  applies, so an MP3 rendition reaches mpg123 and a future dedicated decoder
+  applies, so an MP3 rendition reaches minimp3 and a future dedicated decoder
   needs no change here. That does mean something has to claim MPEG-TS, so `ts`,
   `m2ts`, `mts` and `video/mp2t` were added to the FFmpeg decoder, which could
   always read one. When the bytes identify nothing the fake name is left
@@ -1442,7 +1491,7 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   **Priority is below default**, which is the design decision here. vgmstream
   claims `wav`, `ogg` and `mp3` among its hundreds of extensions, because a game
   archive may hold any of them. Left at kDefaultPriority it would win ties
-  against FLAC, FFmpeg and mpg123 for ordinary music, and a library would still
+  against FLAC, FFmpeg and minimp3 for ordinary music, and a library would still
   play -- through the wrong decoder, with different metadata. Registered lower,
   it is what catches the file a dedicated decoder declined, which is the
   MultiDecoder fallback doing exactly what it was written for.

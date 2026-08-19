@@ -26,6 +26,7 @@
 
 add_subdirectory(fsurround)
 add_subdirectory(hdcd)
+add_subdirectory(minimp3)
 add_subdirectory(miniaudio)
 if(XPCOG_WITH_PSF)
     add_subdirectory(psflib)

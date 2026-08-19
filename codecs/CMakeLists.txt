@@ -17,8 +17,8 @@ endif()
 if(XPCOG_WITH_OGGCHAIN)
     add_subdirectory(oggchain)
 endif()
-if(XPCOG_WITH_MPG123)
-    add_subdirectory(mpg123)
+if(XPCOG_WITH_MINIMP3)
+    add_subdirectory(minimp3)
 endif()
 if(XPCOG_WITH_WAVPACK)
     add_subdirectory(wavpack)
@@ -68,7 +68,7 @@ if(XPCOG_WITH_PSF)
     add_subdirectory(qsf)
 endif()
 
-# M1b onward: ffmpeg, vorbis, opus, mpg123, wavpack, ape, musepack, taglib,
+# M1b onward: ffmpeg, vorbis, opus, minimp3, wavpack, ape, musepack, taglib,
 # cuesheet, m3u, pls, xmlplaylist. M6: the remaining ~27 Cog decoders.
 
 # ---------------------------------------------------------------------------

@@ -221,6 +221,24 @@ TEST_CASE("ID3v2 skips the language code on a comment", "[id3v2]") {
     CHECK(tags.first("comment") == "Recorded live");
 }
 
+TEST_CASE("ID3v2 files a named comment under its name", "[id3v2]") {
+    // iTunes puts its gapless information in a COMM frame described as
+    // "iTunSMPB". Filed under "comment" it is both unreadable prose and
+    // unfindable by the decoder that needs it.
+    std::vector<std::uint8_t> payload{0x03, 'e', 'n', 'g'};
+    const std::string         description = "iTunSMPB";
+    payload.insert(payload.end(), description.begin(), description.end());
+    payload.push_back(0x00);
+    const std::string value = " 00000000 00000210 00000AC0 0000000000A2F930";
+    payload.insert(payload.end(), value.begin(), value.end());
+
+    MetadataMap tags;
+    REQUIRE(parseId3v2(bytesOf(TagBuilder{4}.frame("COMM", payload).build()), tags));
+    CHECK(tags.first("itunsmpb") == value);
+    // And it is not also sitting under the generic name.
+    CHECK_FALSE(tags.contains("comment"));
+}
+
 TEST_CASE("ID3v2 ignores PRIV frames", "[id3v2]") {
     // Every HLS transport-stream segment carries
     // com.apple.streaming.transportStreamTimestamp in one, and its value moves

@@ -364,16 +364,26 @@ bool parseId3v2(std::span<const std::byte> data, MetadataMap& out) {
             }
             key = lowercased(values.front());
             values.erase(values.begin());
+        } else if (isComment) {
+            if (values.size() < 2) {
+                continue;
+            }
+            const std::string description = std::move(values.front());
+            values.erase(values.begin());
+            // A named comment is not a comment: iTunes stores its gapless
+            // information in a COMM frame described as "iTunSMPB", and filing
+            // that under "comment" both loses the name a reader needs and puts
+            // a line of hex where a listener expects prose. FFmpeg keys these
+            // by description too; only an unnamed one is the comment.
+            key = description.empty() ? std::string{"comment"} : lowercased(description);
+        } else if (isLyrics) {
+            if (values.size() < 2) {
+                continue;
+            }
+            values.erase(values.begin());  // the description, not the words
+            key = "lyrics";
         } else if (const std::string_view mapped = keyForFrame(identifier); !mapped.empty()) {
             key = std::string{mapped};
-            if (isComment || isLyrics) {
-                // The leading value is the description, which is usually empty
-                // and is never the comment itself.
-                if (values.size() < 2) {
-                    continue;
-                }
-                values.erase(values.begin());
-            }
         } else if (isText) {
             // An unrecognised text frame still carries something; FFmpeg keeps
             // these under the lowercased frame name and so does this.

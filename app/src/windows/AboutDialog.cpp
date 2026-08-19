@@ -28,7 +28,7 @@ constexpr std::array kComponents = {
     Component{"FLAC", "BSD-3-Clause", "FLAC decoding"},
     Component{"libvorbis / libogg", "BSD-3-Clause", "Ogg Vorbis decoding"},
     Component{"Opus / opusfile", "BSD-3-Clause", "Opus decoding"},
-    Component{"mpg123", "LGPL-2.1", "MP3 decoding"},
+    Component{"minimp3", "CC0-1.0", "MP3 decoding"},
     Component{"WavPack", "BSD-3-Clause", "WavPack decoding"},
     Component{"FFmpeg", "LGPL-2.1", "AAC, ALAC, WMA and more"},
     Component{"TagLib", "LGPL-2.1 / MPL-1.1", "tag reading"},

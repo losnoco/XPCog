@@ -37,6 +37,24 @@ endif()
 # The mid-stream tag tests build their own MPEG-TS fixture with libavformat:
 # only the mpegts demuxer ever produces a timed-ID3 stream, so there is nothing
 # to feed the muxer from through the ffmpeg binary.
+if(XPCOG_WITH_MINIMP3)
+    target_sources(xpcog-tests PRIVATE codecs/test_mp3.cpp)
+
+    # Gapless is decided by fields no synthetic fixture can vouch for: a test
+    # that writes the tag it then parses proves only that it is self-consistent.
+    # FFmpeg's FATE suite has real iTunes and LAME encodes, and it is not ours
+    # to vendor -- so point at a copy that already exists on the machine:
+    #   -DXPCOG_FATE_SUITE=/path/to/fate-suite
+    # Unset, the cases skip and every other clone is unaffected.
+    set(XPCOG_FATE_SUITE "" CACHE PATH
+        "FFmpeg FATE suite, for decode fixtures that cannot be committed; empty to skip")
+    if(XPCOG_FATE_SUITE)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_FATE_SUITE=\"${XPCOG_FATE_SUITE}\"")
+        message(STATUS "FATE suite tests: ${XPCOG_FATE_SUITE}")
+    endif()
+endif()
+
 if(XPCOG_WITH_FLAC)
     target_sources(xpcog-tests PRIVATE codecs/test_flac_chained.cpp)
 endif()

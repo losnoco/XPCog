@@ -179,7 +179,7 @@ real albums:
 
 ### Formats
 
-Dedicated decoders for FLAC, Ogg Vorbis, Opus, MP3 (libmpg123) and WavPack, plus
+Dedicated decoders for FLAC, Ogg Vorbis, Opus, MP3 (minimp3) and WavPack, plus
 FFmpeg as the catch-all for AAC, ALAC, WMA, AC3, DTS, TAK, TTA, APE, PCM and the
 MP4/MKV/ASF containers — 30-odd extensions in total.
 

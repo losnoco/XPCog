@@ -10,7 +10,7 @@
 //
 // **Priority is below default.** vgmstream claims `wav`, `ogg`, `mp3` and other
 // extensions it can technically read, because a game archive may hold any of
-// them. Left at the default it would win ties against FLAC, FFmpeg and mpg123
+// them. Left at the default it would win ties against FLAC, FFmpeg and minimp3
 // for ordinary music files. Registered lower, the dedicated decoder is tried
 // first and vgmstream is what catches the file it declined -- which is the
 // MultiDecoder fallback doing exactly what it was written for.
