@@ -37,8 +37,15 @@
   static void fesetround(eRoundType RoundType)
   {
     static const unsigned int msRound[4] = { _RC_NEAR, _RC_CHOP, _RC_UP, _RC_DOWN };
-    unsigned int oldX87, oldSSE2;
-    __control87_2(msRound[RoundType], _MCW_RC, &oldX87, &oldSSE2);
+    /* XPCog local change: was __control87_2(), which the MSVC CRT provides only
+       for 32-bit x86 -- it exists to set the x87 and SSE2 control words
+       separately, and x64 has no x87 state to set. Linking x64 fails with an
+       unresolved __control87_2. _controlfp_s() is the supported spelling and
+       sets the same rounding bits on both architectures. Upstream never hit
+       this because Cog builds lazyusf2 for macOS only, where this whole branch
+       is #else'd out. */
+    unsigned int previous;
+    _controlfp_s(&previous, msRound[RoundType], _MCW_RC);
   }
   static __inline double round(double x) { return floor(x + 0.5); }
   static __inline float roundf(float x) { return (float) floor(x + 0.5); }

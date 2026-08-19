@@ -209,6 +209,18 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   against zero finds no silence at all in a track that is plainly silent. Left
   untrimmed, `length` measures from the wrong instant on every track of a set.
 
+- **Cog's cores have never been linked on Windows, and it shows at link time,
+  not compile time.** lazyusf2's `r4300/fpu.h` sets the FPU rounding mode
+  through `__control87_2()` on MSVC, which the CRT provides only for 32-bit
+  x86 — it exists to set the x87 and SSE2 control words separately and x64 has
+  no x87 state — so the x64 job compiled every file cleanly and then failed with
+  one unresolved external. `_controlfp_s()` is the supported spelling on both.
+  Cog builds these for macOS alone, where the entire `_MSC_VER` branch is
+  compiled out, so expect one of these per core rather than none. Local changes
+  to vendored sources are marked in place with an "XPCog local change" comment
+  and listed at the top of the core's `CMakeLists.txt`, so a re-vendor does not
+  drop them silently.
+
 - **The scanner opens the decoder regardless**, so no PSF metadata reader was
   registered. `MetadataReadFn` takes only a `Url` and `readPsfTags()` needs a
   registry to resolve through, and it would buy nothing anyway:

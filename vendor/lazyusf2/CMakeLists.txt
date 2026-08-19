@@ -31,6 +31,17 @@
 # the caller allocates, so nothing here is a singleton and two tracks can decode
 # at once.
 
+# ---------------------------------------------------------------------------
+# Local changes to the vendored sources
+# ---------------------------------------------------------------------------
+# Kept to a minimum and listed here so a re-vendor does not silently drop them.
+# Each is marked in place with an "XPCog local change" comment.
+#
+#   r4300/fpu.h  __control87_2() -> _controlfp_s(). The MSVC CRT provides
+#                __control87_2 only for 32-bit x86, so an x64 link fails on it.
+#                Cog builds this for macOS alone, where the whole MSVC branch is
+#                compiled out, so upstream has never linked it on Windows.
+
 # zlib, and not transitively. `r4300/interpreter_tlb.def` -- included into both
 # cached_interp.c and pure_interp.c -- checksums each TLB-mapped code page with
 # adler32() to notice self-modifying code. It is the library's only zlib call and
@@ -103,7 +114,12 @@ add_library(vendor-lazyusf2 STATIC
 # "usf/usf.h" and "api/m64p_types.h" among themselves, which only resolves from
 # inside the tree.
 target_link_libraries(vendor-lazyusf2 PUBLIC ZLIB::ZLIB)
-target_include_directories(vendor-lazyusf2 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+# SYSTEM for consumers, plain for this target. Without it, codecs/usf compiles
+# lazyusf2's headers under XPCog's own warning flags: usf.h defines
+# _CRT_SECURE_NO_WARNINGS, XPCog::warnings passes it on the command line, and
+# MSVC reports the redefinition against our source file. The tree being
+# warning-free is a statement about our code, so third-party headers say so.
+target_include_directories(vendor-lazyusf2 SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(vendor-lazyusf2 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/lazyusf2")
 set_target_properties(vendor-lazyusf2 PROPERTIES FOLDER vendor)
 
