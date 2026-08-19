@@ -15,7 +15,7 @@
 #   hdcd/     <- Cog Audio/ThirdParty/hdcd         (M1c) -- done
 #   miniaudio/  vendored                           (M1a) -- done
 #   pffft/    <- Cog Audio/ThirdParty/deadbeef     (M5)
-#   dsd2pcm/  <- extracted from Cog ChunkList.m    (M6)
+#   dsd2pcm/  <- extracted from Cog ChunkList.m    (M6) -- done
 #   psflib/   <- Cog Frameworks/psflib             (M6) -- the PSF container
 #             every HighlyComplete core sits on. Four files; the emulator
 #             cores themselves are far larger and land one at a time.
@@ -24,6 +24,7 @@
 #             plays. Seven more to go; see docs/HIGHLYCOMPLETE.md.
 #   fsurround/<- Cog Audio/ThirdParty/fsurround    (M4) -- data only, done
 
+add_subdirectory(dsd2pcm)
 add_subdirectory(fsurround)
 add_subdirectory(hdcd)
 add_subdirectory(minimp3)

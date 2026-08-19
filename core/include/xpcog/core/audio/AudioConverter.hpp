@@ -70,6 +70,15 @@ public:
     /// range the format actually carries.
     void setHdcdEnabled(bool enabled) noexcept { hdcdEnabled_ = enabled; }
 
+    /// Halve DSD on the way to PCM.
+    ///
+    /// The decimation filter has an overall gain of 2.0, which is deliberate:
+    /// DSD's practical ceiling is about 50% modulation, so 2.0 puts *that* at
+    /// full scale rather than 6 dB below it. A recording that goes higher
+    /// clips, and this is the escape. Cog's `halveDSDVolume`, and off for the
+    /// same reason it is off there.
+    void setHalveDsd(bool enabled) noexcept { halveDsd_ = enabled; }
+
     /// True once HDCD codes have actually been seen in this stream. Cog surfaces
     /// the same thing as an indicator in the UI.
     [[nodiscard]] bool hdcdDetected() const noexcept { return hdcdDetected_; }
@@ -80,6 +89,10 @@ public:
 private:
     /// Rebuilds the resampler when the input format changes mid-stream.
     bool configureFor(const AudioFormat& input);
+
+    /// Turns one chunk of DSD into float in `decoded_`. False if the filters
+    /// could not be built.
+    bool decimateDsd(const AudioChunk& in, std::size_t frames);
 
     /// The channel count everything before the upmixer works in: two when the
     /// upmixer is running, the output count otherwise.
@@ -103,6 +116,12 @@ private:
     std::uint32_t inChannels_ = 0;
 
     float gain_ = 1.0F;
+
+    /// One decimation filter per channel, built when DSD first arrives and
+    /// reset on seek. Opaque so the vendored header stays out of this one.
+    struct DsdFilters;
+    std::unique_ptr<DsdFilters> dsd_;
+    bool                        halveDsd_ = false;
 
     bool hdcdEnabled_  = true;
     bool hdcdDetected_ = false;

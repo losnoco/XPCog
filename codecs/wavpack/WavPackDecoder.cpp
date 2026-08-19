@@ -42,8 +42,15 @@ public:
         char error[80] = {0};
         // No correction file: .wvc would need a second source, which the plugin
         // API has no way to request. Cog has the same limitation.
+        // OPEN_DSD_NATIVE, not OPEN_DSD_AS_PCM: a DSD `.wv` comes out as the
+        // one-bit stream it is, eight samples to a byte, and the decimation to
+        // PCM happens once in AudioConverter with a filter chosen for it.
+        // libwavpack's own decimator is a shorter one and would run per
+        // decoder. OPEN_ALT_TYPES is what lets a DSD file open at all.
         context_ = WavpackOpenFileInputEx(&reader_, source_, nullptr, error,
-                                          OPEN_NORMALIZE | OPEN_TAGS, 0);
+                                          OPEN_NORMALIZE | OPEN_TAGS |
+                                              OPEN_DSD_NATIVE | OPEN_ALT_TYPES,
+                                          0);
         if (context_ == nullptr) {
             return false;
         }
@@ -59,7 +66,24 @@ public:
         // it here mislabelled every 16-bit file as float32.
         isFloat_ = (mode & MODE_FLOAT) != 0;
 
-        if (isFloat_) {
+        // DSD announces itself by disagreeing with itself: for a one-bit stream
+        // libwavpack reports the *byte* rate here and the real one from
+        // GetNativeSampleRate, eight times higher. Cog tests the same pair
+        // (WavPackDecoder.m:185).
+        //
+        // The byte rate is what this decoder keeps, and deliberately: one frame
+        // is one byte per channel, so the duration arithmetic everything else
+        // does stays true, and the decimation filter downstream produces
+        // exactly one float per byte -- 705,600 Hz of DSD128 in, 705,600 Hz of
+        // PCM out, and then the ordinary resampler.
+        isDsd_ = !isFloat_ && bitsPerSample_ == 8 &&
+                 static_cast<double>(WavpackGetNativeSampleRate(context_)) !=
+                     format_.sampleRate;
+
+        if (isDsd_) {
+            format_.format        = SampleFormat::DSD;
+            format_.bitsPerSample = 1;
+        } else if (isFloat_) {
             format_.format = SampleFormat::F32;
             format_.bitsPerSample = 32;
         } else if (bitsPerSample_ <= 8) {
@@ -126,6 +150,9 @@ public:
                 std::memcpy(dst + i * 2, &v, 2);
             }
         } else {
+            // Eight-bit samples and DSD bytes both land here: one byte each,
+            // and for DSD the byte is eight one-bit samples rather than a
+            // number, so narrowing it is a copy and not a conversion.
             for (std::size_t i = 0; i < samples; ++i) {
                 const auto v = static_cast<std::int8_t>(raw_[i]);
                 std::memcpy(dst + i, &v, 1);
@@ -218,6 +245,7 @@ private:
     std::int64_t              framePos_      = 0;
     std::int32_t              bitrateKbps_   = 0;
     int                       bitsPerSample_ = 0;
+    bool                      isDsd_         = false;
     bool                      lossless_      = true;
     bool                      isFloat_       = false;
 };

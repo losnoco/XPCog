@@ -1951,9 +1951,32 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
 
 **Then:**
 
-- The rest of M6 — DSD/DoP, the remaining decoders and their libraries (one
+- The rest of M6 — the remaining decoders and their libraries (one
   `xpcog_add_codec()` plus one vcpkg overlay port each), `cogimport`, HRTF,
   Last.fm, global hotkeys.
+
+  **DSD plays; DoP does not.** The decimation filter is
+  [`vendor/dsd2pcm`](../vendor/dsd2pcm) — Sebastian Gesemann's, lifted out of
+  `ChunkList.m` where Cog keeps it inline — and `AudioConverter` runs one
+  instance per channel ahead of everything else, for the same reason HDCD lives
+  there: it is stateful across chunks, so it cannot go in the stateless sample
+  conversion. WavPack reports the format (`OPEN_DSD_NATIVE`), and a `.wv` of
+  DSD128 arrives at 705,600 Hz with one byte per channel per frame, which the
+  filter turns into one float each and the resampler takes to the device.
+
+  Keeping the *byte* rate rather than the 5.6 MHz bit rate is the decision that
+  makes the rest ordinary: duration, seeking and the frame arithmetic
+  everywhere else stay true, and only the sample format says DSD. Cog instead
+  reports the native rate and multiplies its frame counts by eight.
+
+  DoP — packing DSD back into 24-bit PCM frames with 0x05/0xFA markers so a
+  capable DAC can play the bits untouched — is written in `ChunkList.m` and is
+  **not** ported, because there is no device here to verify it against. A DoP
+  path that has never locked a real DAC is a guess with a test around it.
+
+  Still to come on the decoder side: `.dsf` and `.dff`, which Cog reads through
+  FFmpeg's raw DSD packets rather than its DSD decoders (`FFMPEGDecoder.m:259`)
+  — the same one-bit stream, arriving from a different container.
 
 Milestone 1's narrow format scope was a fastest-path-to-execution choice, not the
 destination. The architecture is sized for full Cog parity throughout: if adding a

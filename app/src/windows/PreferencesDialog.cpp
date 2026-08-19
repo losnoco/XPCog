@@ -101,7 +101,8 @@ constexpr std::array kCuratedKeys = {
     // Playlist
     "alwaysStopAfterCurrent", "readCueSheetsInFolders",
     // Output
-    "volumeScaling", "resampling", "enableHDCD", "enableFSurround",
+    "volumeScaling", "resampling", "enableHDCD", "halveDSDVolume",
+    "enableFSurround",
     "enableFading", "suspendOutputOnPause",
     // MIDI
     "midiPlugin", "midiRomPath", "soundFontPath", "synthSampleRate",
@@ -392,6 +393,10 @@ QWidget* PreferencesDialog::buildOutputPane() {
     row.toggle(tr("Decode HDCD"), "enableHDCD",
                tr("Only affects 16-bit 44.1 kHz stereo lossless material, and is "
                   "bit-transparent on files carrying no HDCD codes."));
+    row.toggle(tr("Halve the volume of DSD"), "halveDSDVolume",
+               tr("DSD is converted with a filter whose gain puts half "
+                  "modulation — as loud as most SACDs go — at full scale. Turn "
+                  "this on if a recording that goes louder is clipping."));
     row.toggle(tr("FreeSurround stereo-to-surround upmix"), "enableFSurround");
     row.toggle(tr("Fade on seek and stop"), "enableFading");
     row.toggle(tr("Release the audio device while paused"), "suspendOutputOnPause");

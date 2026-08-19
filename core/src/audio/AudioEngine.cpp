@@ -173,6 +173,7 @@ bool AudioEngine::play(const Url& url) {
     converter_.setFreeSurround(wantFreeSurround);
     converter_.reset();
     converter_.setHdcdEnabled(settings_.EnableHDCD());
+    converter_.setHalveDsd(settings_.HalveDsdVolume());
     applyReplayGain(firstProps);
 
     // The chain runs at the device format, so it is sized here rather than per

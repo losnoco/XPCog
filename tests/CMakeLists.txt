@@ -2,6 +2,7 @@ find_package(Catch2 3 REQUIRED)
 
 add_executable(xpcog-tests
     core/test_audio.cpp
+    core/test_dsd.cpp
     core/test_dsp.cpp
     core/test_fft.cpp
     core/test_realfft.cpp
@@ -99,6 +100,16 @@ if(XPCOG_WITH_VGMSTREAM)
             PRIVATE "XPCOG_VGM_CORPUS=\"${XPCOG_VGM_CORPUS}\"")
         message(STATUS "vgmstream corpus tests: ${XPCOG_VGM_CORPUS}")
     endif()
+endif()
+
+# One DSD file, for the case that proves a decoder actually reports the format.
+# A `.wv` carrying DSD is what this was written against; an SACD rip is several
+# gigabytes and is nobody's to commit.
+set(XPCOG_DSD_FILE "" CACHE FILEPATH
+    "A DSD file for the conversion tests; empty to skip")
+if(XPCOG_DSD_FILE)
+    target_compile_definitions(xpcog-tests PRIVATE "XPCOG_DSD_FILE=\"${XPCOG_DSD_FILE}\"")
+    message(STATUS "DSD file tests: ${XPCOG_DSD_FILE}")
 endif()
 
 if(XPCOG_WITH_MIDI)
