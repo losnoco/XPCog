@@ -63,9 +63,8 @@ EqualizerPanel::EqualizerPanel(Settings& settings, QWidget* parent)
     connect(flat, &QPushButton::clicked, this, &EqualizerPanel::flatten);
 
     auto* note = new QLabel(
-        tr("31 bands at Cog's frequencies and Q, ±20 dB. Changes apply to the "
-           "track already playing. A boost can clip; the preamp is the headroom "
-           "for it."),
+        tr("31 bands, ±20 dB. Changes apply to the track already playing. "
+           "A boost can clip; the preamp is the headroom for it."),
         this);
     note->setWordWrap(true);
     note->setEnabled(false);

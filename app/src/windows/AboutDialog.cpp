@@ -78,14 +78,14 @@ AboutDialog::AboutDialog(const PluginRegistry& registry, QWidget* parent)
     auto* about = new QTextBrowser;
     about->setOpenExternalLinks(true);
     about->setHtml(
-        tr("<p>A cross-platform port of <b>Cog</b>, the macOS audio player, to Qt.</p>"
+        tr("<p>An audio player for Windows, macOS and Linux.</p>"
            "<p>Copyright © 2026 the XPCog authors.<br>"
            "Copyright © 2005–2026 Vincent Spader, Christopher Snowhill and the Cog "
            "authors.</p>"
            "<p>XPCog is free software, licensed under the "
            "<b>GNU General Public License, version 2 or later</b>. It comes with "
            "absolutely no warranty.</p>"
-           "<p>Upstream Cog: <a href=\"https://cog.losno.co/\">cog.losno.co</a><br>"
+           "<p>Cog: <a href=\"https://cog.losno.co/\">cog.losno.co</a><br>"
            "Source: <a href=\"https://github.com/losnoco/XPCog\">github.com/losnoco/XPCog</a></p>"));
     tabs->addTab(about, tr("About"));
 

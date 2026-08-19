@@ -7,6 +7,7 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QIcon>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -29,6 +30,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -63,6 +65,23 @@ constexpr std::array kResamplingChoices = {
     Choice{"best", QT_TRANSLATE_NOOP("PreferencesDialog", "Best")},
 };
 
+/// The synthesisers `midiPlugin` can name, in Cog's own spelling.
+///
+/// Nuked OPL3 twice over: id's DMX driver, once per instrument bank, and
+/// Nuke.YKT's General MIDI one. The labels are the drivers' own bank names
+/// (vendor/nuked-opl3), spelled out here rather than read back from them so the
+/// dialog does not have to construct a synthesiser to draw a combo box.
+/// SpessaSynth and Nuked SC-55 join the list at their stages; see docs/MIDI.md.
+constexpr std::array kMidiSynthChoices = {
+    Choice{"DOOM0", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX default")},
+    Choice{"DOOM1", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX Doom")},
+    Choice{"DOOM2", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX Doom II")},
+    Choice{"DOOM3", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX Raptor")},
+    Choice{"DOOM4", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMX Strife")},
+    Choice{"DOOM5", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — DMXOPL")},
+    Choice{"OPL3W0", QT_TRANSLATE_NOOP("PreferencesDialog", "OPL3 — General MIDI")},
+};
+
 [[nodiscard]] bool isTrue(const std::string& text) {
     // Cog's plist stores YES/NO; Settings accepts both those and true/false.
     return text == "1" || text == "true" || text == "YES";
@@ -73,11 +92,22 @@ constexpr std::array kResamplingChoices = {
 /// otherwise a curated combo box and a raw text box for the same key sit two
 /// clicks apart, disagreeing about what the value should look like.
 constexpr std::array kCuratedKeys = {
-    "volumeScaling",   "resampling",             "enableHDCD",
-    "enableFading",    "suspendOutputOnPause",   "alwaysStopAfterCurrent",
-    "readCueSheetsInFolders", "widgetStyle",           "closeToTray",
-    "spectrumBarColor", "spectrumDotColor",     "spectrumFreqMode",
-    "spectrumFloorDb",  "spectrumShowPeaks",
+    // Playlist
+    "alwaysStopAfterCurrent", "readCueSheetsInFolders",
+    // Output
+    "volumeScaling", "resampling", "enableHDCD", "enableFSurround",
+    "enableFading", "suspendOutputOnPause",
+    // MIDI
+    "midiPlugin", "synthSampleRate", "synthDefaultSeconds",
+    "synthDefaultFadeSeconds", "synthDefaultLoopCount",
+    // Appearance
+    // floatingMiniWindow is deliberately absent: the mini player carries its
+    // own checkbox for it and applies it as it is clicked, so a second one
+    // here would be the copy that does nothing until the window is rebuilt.
+    "widgetStyle", "closeToTray",
+    // Spectrum
+    "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode",
+    "spectrumFloorDb", "spectrumShowPeaks",
 };
 
 /// Not settings at all, but internal state that happens to live in the same
@@ -93,6 +123,104 @@ constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsK
     return std::ranges::any_of(keys,
                                [key](const char* candidate) { return key == candidate; });
 }
+
+/// Adds curated rows to one pane's form.
+///
+/// A struct rather than a lambda per pane because there are now four panes
+/// wanting the same four kinds of row, and four copies of "read the raw value,
+/// write it back, announce it" is four chances for one of them to forget the
+/// announcement. It reports changes through a callback rather than emitting the
+/// dialog's signal itself, which is not something a helper should be reaching
+/// into.
+class RowBuilder {
+public:
+    using Announce = std::function<void(const char*)>;
+
+    RowBuilder(Settings& settings, QFormLayout* layout, Announce announce)
+        : settings_(&settings), layout_(layout), announce_(std::move(announce)) {}
+
+    void choice(const QString& label, const char* key,
+                std::span<const Choice> choices) const {
+        auto* box = new QComboBox;
+        for (const Choice& option : choices) {
+            box->addItem(QCoreApplication::translate("PreferencesDialog", option.label),
+                         QString::fromLatin1(option.value));
+        }
+        // A stored value this build does not offer -- a settings file carried
+        // over from a macOS Cog naming an AudioUnit, say -- selects the first
+        // entry, which is the same fallback the decoder reading it applies.
+        const auto current = QString::fromStdString(settings_->rawValue(key));
+        box->setCurrentIndex(std::max(0, box->findData(current)));
+
+        QObject::connect(box, &QComboBox::currentIndexChanged, box,
+                         [settings = settings_, announce = announce_, box, key](int) {
+                             settings->setRawValue(
+                                 key, box->currentData().toString().toStdString());
+                             announce(key);
+                         });
+        layout_->addRow(label, box);
+    }
+
+    void toggle(const QString& label, const char* key,
+                const QString& hint = {}) const {
+        auto* box = new QCheckBox(label);
+        box->setChecked(isTrue(settings_->rawValue(key)));
+        if (!hint.isEmpty()) {
+            box->setToolTip(hint);
+        }
+        QObject::connect(box, &QCheckBox::toggled, box,
+                         [settings = settings_, announce = announce_, key](bool on) {
+                             settings->setRawValue(key, on ? "true" : "false");
+                             announce(key);
+                         });
+        layout_->addRow(QString{}, box);
+    }
+
+    void number(const QString& label, const char* key, int minimum, int maximum,
+                const QString& suffix = {}) const {
+        auto* box = new QSpinBox;
+        box->setRange(minimum, maximum);
+        box->setSuffix(suffix);
+        box->setValue(QString::fromStdString(settings_->rawValue(key)).toInt());
+        QObject::connect(box, &QSpinBox::valueChanged, box,
+                         [settings = settings_, announce = announce_, key](int value) {
+                             settings->setRawValue(key, std::to_string(value));
+                             announce(key);
+                         });
+        layout_->addRow(label, box);
+    }
+
+    void seconds(const QString& label, const char* key, double maximum) const {
+        auto* box = new QDoubleSpinBox;
+        box->setRange(0.0, maximum);
+        box->setDecimals(1);
+        box->setSuffix(QCoreApplication::translate("PreferencesDialog", " s"));
+        box->setValue(QString::fromStdString(settings_->rawValue(key)).toDouble());
+        QObject::connect(
+            box, &QDoubleSpinBox::valueChanged, box,
+            [settings = settings_, announce = announce_, key](double value) {
+                settings->setRawValue(key, std::to_string(value));
+                announce(key);
+            });
+        layout_->addRow(label, box);
+    }
+
+    void note(const QString& text) const {
+        auto* label = new QLabel(text);
+        label->setWordWrap(true);
+        label->setEnabled(false);
+        layout_->addRow(label);
+    }
+
+private:
+    // Held by pointer, and every connection captures the pointer rather than
+    // `this`: a RowBuilder is a local in the function that builds a pane and is
+    // gone by the time anyone clicks anything, while the settings object and the
+    // callback both outlive the dialog.
+    Settings*    settings_;
+    QFormLayout* layout_;
+    Announce     announce_;
+};
 
 [[nodiscard]] bool hasCuratedRow(std::string_view key) {
     // Every equaliser key -- eqPreamp and the 31 bands -- has a slider of its
@@ -120,8 +248,11 @@ PreferencesDialog::PreferencesDialog(Settings& settings, QWidget* parent)
         sidebar->addItem(name);
         panes->addWidget(pane);
     };
-    addPane(tr("Playback"), buildPlaybackPane());
+    // Cog's order, with its unported panes taken out rather than reshuffled.
+    addPane(tr("Playlist"), buildPlaylistPane());
+    addPane(tr("Output"), buildOutputPane());
     addPane(tr("Appearance"), buildAppearancePane());
+    addPane(tr("MIDI"), buildMidiPane());
     addPane(tr("Spectrum"), buildSpectrumPane());
     addPane(tr("Advanced"), buildAdvancedPane());
 
@@ -141,57 +272,60 @@ PreferencesDialog::PreferencesDialog(Settings& settings, QWidget* parent)
     layout->addWidget(buttons);
 }
 
-QWidget* PreferencesDialog::buildPlaybackPane() {
+std::function<void(const char*)> PreferencesDialog::changeNotifier() {
+    return [this](const char* key) { emit settingChanged(QString::fromLatin1(key)); };
+}
+
+QWidget* PreferencesDialog::buildPlaylistPane() {
     auto* pane   = new QWidget(this);
     auto* layout = new QFormLayout(pane);
+    const RowBuilder row{settings_, layout, changeNotifier()};
 
-    const auto addChoice = [this, layout](const QString& label, const char* key,
-                                          std::span<const Choice> choices) {
-        auto* box = new QComboBox;
-        for (const Choice& choice : choices) {
-            box->addItem(tr(choice.label), QString::fromLatin1(choice.value));
-        }
-        const auto current = QString::fromStdString(settings_.rawValue(key));
-        box->setCurrentIndex(std::max(0, box->findData(current)));
+    row.toggle(tr("Stop after every track"), "alwaysStopAfterCurrent");
+    row.toggle(tr("Read cue sheets when adding folders"), "readCueSheetsInFolders");
 
-        connect(box, &QComboBox::currentIndexChanged, this, [this, box, key](int) {
-            settings_.setRawValue(key, box->currentData().toString().toStdString());
-            emit settingChanged(QString::fromLatin1(key));
-        });
-        layout->addRow(label, box);
-    };
+    return pane;
+}
 
-    addChoice(tr("Volume scaling"), "volumeScaling", kVolumeScalingChoices);
-    addChoice(tr("Resampler quality"), "resampling", kResamplingChoices);
+QWidget* PreferencesDialog::buildOutputPane() {
+    auto* pane   = new QWidget(this);
+    auto* layout = new QFormLayout(pane);
+    const RowBuilder row{settings_, layout, changeNotifier()};
 
-    const auto addToggle = [this, layout](const QString& label, const char* key,
-                                          const QString& hint = {}) {
-        auto* box = new QCheckBox(label);
-        box->setChecked(isTrue(settings_.rawValue(key)));
-        if (!hint.isEmpty()) {
-            box->setToolTip(hint);
-        }
-        connect(box, &QCheckBox::toggled, this, [this, key](bool on) {
-            settings_.setRawValue(key, on ? "true" : "false");
-            emit settingChanged(QString::fromLatin1(key));
-        });
-        layout->addRow(QString{}, box);
-    };
+    row.choice(tr("Volume scaling"), "volumeScaling", kVolumeScalingChoices);
+    row.choice(tr("Resampler quality"), "resampling", kResamplingChoices);
 
-    addToggle(tr("Decode HDCD"), "enableHDCD",
-              tr("Only affects 16-bit 44.1 kHz stereo lossless material, and is "
-                 "bit-transparent on files carrying no HDCD codes."));
-    addToggle(tr("Fade on seek and stop"), "enableFading");
-    addToggle(tr("Release the audio device while paused"), "suspendOutputOnPause");
-    addToggle(tr("Stop after every track"), "alwaysStopAfterCurrent");
-    addToggle(tr("Read cue sheets when adding folders"), "readCueSheetsInFolders");
+    row.toggle(tr("Decode HDCD"), "enableHDCD",
+               tr("Only affects 16-bit 44.1 kHz stereo lossless material, and is "
+                  "bit-transparent on files carrying no HDCD codes."));
+    row.toggle(tr("FreeSurround stereo-to-surround upmix"), "enableFSurround");
+    row.toggle(tr("Fade on seek and stop"), "enableFading");
+    row.toggle(tr("Release the audio device while paused"), "suspendOutputOnPause");
 
-    auto* note = new QLabel(
-        tr("Volume scaling and resampler quality take effect on the next track."),
-        pane);
-    note->setWordWrap(true);
-    note->setEnabled(false);
-    layout->addRow(note);
+    row.note(tr("Volume scaling and resampler quality take effect on the next "
+                "track."));
+
+    return pane;
+}
+
+QWidget* PreferencesDialog::buildMidiPane() {
+    auto* pane   = new QWidget(this);
+    auto* layout = new QFormLayout(pane);
+    const RowBuilder row{settings_, layout, changeNotifier()};
+
+    row.choice(tr("Synthesiser"), "midiPlugin", kMidiSynthChoices);
+
+    // Cog's clamps, and its labels. The sample rate is the rate a synthesiser
+    // renders at rather than the rate the file plays at -- there is no such
+    // thing as the second one for a score.
+    row.number(tr("Sample rate"), "synthSampleRate", 8000, 192000, tr(" Hz"));
+    row.seconds(tr("Default play time"), "synthDefaultSeconds", 3600.0);
+    row.seconds(tr("Default fade time"), "synthDefaultFadeSeconds", 60.0);
+    row.number(tr("Default loop count"), "synthDefaultLoopCount", 0, 10);
+
+    row.note(tr("The sample rate and the defaults below it apply to every "
+                "synthesised format, not only MIDI — a game music rip has no "
+                "length of its own either."));
 
     return pane;
 }
@@ -241,9 +375,8 @@ QWidget* PreferencesDialog::buildAppearancePane() {
     layout->addRow(QString{}, closeToTray);
 
     auto* note = new QLabel(
-        tr("The list is what this build of Qt offers. On Windows, \"Windows 11\" "
-           "is the WinUI-style chrome and \"Windows Vista\" the older Win32 look; "
-           "\"Fusion\" is Qt's own, and identical on every platform."),
+        tr("On Windows, \"Windows 11\" is the modern chrome and \"Windows Vista\" "
+           "the older look. \"Fusion\" is the same on every platform."),
         pane);
     note->setWordWrap(true);
     note->setEnabled(false);
@@ -350,13 +483,10 @@ QWidget* PreferencesDialog::buildSpectrumPane() {
     layout->addRow(tr("Quietest level shown"), floorDb);
 
     auto* note = new QLabel(
-        tr("The note scale is Cog's own: bars sit on semitones from C0, so a "
-           "spectrum of music lines up with the notes being played. Below a few "
-           "hundred hertz several bars share one analysis bin and move together — "
-           "that is the resolution of the window, not a fault.\n\n"
-           "Colours import from a Cog preferences file by key but not by value: "
-           "Cog stores them in an archived Mac format, so an import leaves these "
-           "at Cog's own defaults."),
+        tr("Bars sit on semitones from C0, so a spectrum of music lines up with "
+           "the notes being played. Below a few hundred hertz several bars share "
+           "one analysis bin and move together — that is the resolution of the "
+           "window, not a fault."),
         pane);
     note->setWordWrap(true);
     note->setEnabled(false);
@@ -424,8 +554,7 @@ QWidget* PreferencesDialog::buildAdvancedPane() {
         if (contains(kInternalKeys, descriptor.key)) {
             editor->setEnabled(false);
             editor->setToolTip(
-                tr("Maintained by XPCog. Changing it would make the settings "
-                   "migrations re-run or be skipped."));
+                tr("Maintained automatically, and not meant to be edited."));
         }
         layout->addRow(label, editor);
     }
