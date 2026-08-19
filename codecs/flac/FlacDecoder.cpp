@@ -1,5 +1,7 @@
 #include "FlacDecoder.hpp"
 
+#include "OggChain.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -31,6 +33,21 @@ constexpr std::size_t kMaxBlockBytes = 65535U * 8U * 4U;
     return out;
 }
 
+/// The chain link a fragment names. Numbered from zero, and an unfragmented URL
+/// means the first -- matching every other subsong container here, so opening a
+/// chained file directly plays its first track rather than failing.
+[[nodiscard]] std::size_t linkFromFragment(const Url& url) {
+    const std::string_view fragment = url.fragment();
+    std::size_t            value    = 0;
+    for (const char c : fragment) {
+        if (c < '0' || c > '9') {
+            return 0;
+        }
+        value = value * 10 + static_cast<std::size_t>(c - '0');
+    }
+    return value;
+}
+
 [[nodiscard]] std::optional<float> parseFloat(std::string_view text) {
     try {
         return std::stof(std::string{text});
@@ -51,8 +68,28 @@ FLAC__StreamDecoderReadStatus FlacDecoder::readCb(const FLAC__StreamDecoder*,
                                                   void*        client) {
     auto* self = static_cast<FlacDecoder*>(client);
 
-    const std::int64_t got =
-        self->source_->read(buffer, static_cast<std::int64_t>(*bytes));
+    // Clamped to the link being decoded. Together with the offsets in seekCb,
+    // tellCb and lengthCb this presents libFLAC with a virtual file containing
+    // exactly this link, so a read or a seek cannot leave it by construction.
+    //
+    // Belt and braces, and worth knowing which: libFLAC would stop at the link's
+    // end anyway, because chained decoding is off here and its demuxer ignores
+    // pages carrying another serial number. Removing this clamp changes nothing
+    // observable on a well-formed file -- verified, not assumed. It is kept
+    // because that leaves containment resting on a rule of the Ogg spec and on
+    // libFLAC's enforcement of it, where this makes it structural.
+    auto want = static_cast<std::int64_t>(*bytes);
+    if (self->linkEnd_ >= 0) {
+        const std::int64_t remaining = self->linkEnd_ - self->source_->tell();
+        if (remaining <= 0) {
+            *bytes             = 0;
+            self->endOfStream_ = true;
+            return FLAC__STREAM_DECODER_READ_STATUS_END_OF_STREAM;
+        }
+        want = std::min(want, remaining);
+    }
+
+    const std::int64_t got = self->source_->read(buffer, want);
     if (got < 0) {
         *bytes = 0;
         return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
@@ -70,7 +107,10 @@ FLAC__StreamDecoderSeekStatus FlacDecoder::seekCb(const FLAC__StreamDecoder*,
                                                   FLAC__uint64 offset,
                                                   void*        client) {
     auto* self = static_cast<FlacDecoder*>(client);
-    if (!self->source_->seek(static_cast<std::int64_t>(offset), SEEK_SET)) {
+    // Offsets are the link's, not the file's: libFLAC is decoding what it
+    // believes is a whole stream starting at zero.
+    if (!self->source_->seek(self->linkBegin_ + static_cast<std::int64_t>(offset),
+                             SEEK_SET)) {
         return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
     }
     self->endOfStream_ = false;
@@ -81,7 +121,7 @@ FLAC__StreamDecoderTellStatus FlacDecoder::tellCb(const FLAC__StreamDecoder*,
                                                   FLAC__uint64* offset,
                                                   void*         client) {
     auto*              self = static_cast<FlacDecoder*>(client);
-    const std::int64_t pos  = self->source_->tell();
+    const std::int64_t pos  = self->source_->tell() - self->linkBegin_;
     if (pos < 0) {
         return FLAC__STREAM_DECODER_TELL_STATUS_ERROR;
     }
@@ -96,6 +136,11 @@ FLAC__StreamDecoderLengthStatus FlacDecoder::lengthCb(const FLAC__StreamDecoder*
     if (!self->source_->seekable()) {
         *length = 0;
         return FLAC__STREAM_DECODER_LENGTH_STATUS_ERROR;
+    }
+
+    if (self->linkEnd_ >= 0) {
+        *length = static_cast<FLAC__uint64>(self->linkEnd_ - self->linkBegin_);
+        return FLAC__STREAM_DECODER_LENGTH_STATUS_OK;
     }
 
     const std::int64_t saved = self->source_->tell();
@@ -305,12 +350,39 @@ bool FlacDecoder::open(ISource* source) {
     }
     source_->seek(0, SEEK_SET);
 
+    const bool seekable = source_->seekable();
+
+    // A chained file is a container: every link is a whole track with its own
+    // headers, and the URL's fragment says which one to play. Handing libFLAC
+    // just that link's bytes means it reads an ordinary single stream, so the
+    // link's own STREAMINFO, Vorbis comment, length and seek table all arrive
+    // through the paths that already work -- which decoding the chain
+    // end-to-end would not give, since seeking into a link does not re-deliver
+    // its headers.
+    //
+    // looksChained() first: it is two reads, where readOggLinks() walks every
+    // page header in the file. An ordinary single-stream .ogg must not pay for
+    // that at every open.
+    linkBegin_ = 0;
+    linkEnd_   = -1;
+    if (isOggFlac && seekable && codecs::looksChained(*source_)) {
+        const std::vector<codecs::OggLink> links = codecs::readOggLinks(*source_);
+        if (links.size() > 1) {
+            const std::size_t index =
+                std::min(linkFromFragment(source_->url()), links.size() - 1);
+            linkBegin_ = links[index].begin;
+            linkEnd_   = links[index].end;
+            fileSize_  = linkEnd_ - linkBegin_;
+        }
+    }
+    if (!source_->seek(linkBegin_, SEEK_SET)) {
+        return false;
+    }
+
     decoder_ = FLAC__stream_decoder_new();
     if (decoder_ == nullptr) {
         return false;
     }
-
-    const bool seekable = source_->seekable();
 
     if (!seekable) {
         FLAC__stream_decoder_set_md5_checking(decoder_, 0);
@@ -324,11 +396,10 @@ bool FlacDecoder::open(ISource* source) {
     // END_OF_LINK state the read loop handles is only ever reported when this
     // is on, so without it that branch is unreachable.
     //
-    // Streams only. A seekable chained file would additionally need its length
-    // summed across links (FLAC__stream_decoder_find_total_samples) and seeking
-    // taught to cross them; today it plays the first link and reports a length
-    // that matches, which is at least self-consistent. Those files are rare and
-    // this is not the bug being fixed.
+    // Streams only. A seekable chained file is expanded into one track per link
+    // instead (see above and OggChain.hpp), which gives each its own name and
+    // length; decoding the chain straight through would give one nameless track
+    // of everything.
     if (isOggFlac && !seekable) {
         FLAC__stream_decoder_set_decode_chained_stream(decoder_, 1);
     }

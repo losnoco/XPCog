@@ -65,6 +65,12 @@ private:
     AudioFormat  format_{};
     std::int64_t totalFrames_ = 0;
     std::int64_t fileSize_    = 0;
+    /// The byte range of the chain link being decoded. `linkEnd_` is -1 when the
+    /// whole source is the stream, which is every unchained file and every live
+    /// stream; otherwise reads and seeks are confined to this window so libFLAC
+    /// sees one complete Ogg stream.
+    std::int64_t linkBegin_   = 0;
+    std::int64_t linkEnd_     = -1;
     std::int64_t framePos_    = 0;
     double       seconds_     = 0.0;
 

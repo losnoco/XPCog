@@ -133,7 +133,17 @@ std::vector<Url> PluginRegistry::expandContainer(const Url& url) const {
                 // a row that silently is not there.
                 return {url};
             }
-            return descriptor.expand(url, *source, *this);
+
+            std::vector<Url> expanded = descriptor.expand(url, *source, *this);
+            // The input back unchanged is how a container declines, so a second
+            // claimant on the same extension gets its turn. Several formats
+            // share one -- an .ogg holding chained FLAC is one container's
+            // business and an .ogg holding chapters is another's -- and without
+            // this the higher-priority one silently answers for both.
+            if (expanded.size() == 1 && expanded.front() == url) {
+                break;
+            }
+            return expanded;
         }
     }
 

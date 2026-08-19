@@ -855,6 +855,52 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   own `hls.c` demuxer, which XPCog never uses, since the HLS decoder here
   replaces it and hands FFmpeg raw concatenated segments instead.
 
+- **A chained Ogg FLAC file is a container: one track per link.** The same shape
+  as the stream above, but on disk, where the whole chain is visible in advance.
+  Each link is a complete stream with its own STREAMINFO, Vorbis comment and
+  sample count, which is a container in exactly the sense the registry already
+  means -- so `album.oga` expands to `album.oga#0`, `#1`, ... and every track
+  gets its own name, length and seek bar rather than one nameless run of
+  everything.
+
+  **Each link is handed to libFLAC as the ordinary single stream it is.** The
+  decoder confines its reads and seeks to that link's byte range, so the link's
+  own headers, length and seeking all arrive through the paths that already
+  work. Decoding the chain end to end could not give that: libFLAC reports link
+  lengths only after indexing the whole file, and per-link *metadata* not at all,
+  because seeking into a link does not re-deliver its headers.
+
+  **The chain check is two reads, not a walk.** `looksChained()` compares the
+  first page's serial number with the last page's; only when they differ does
+  anything walk the page table. Otherwise every `.ogg` and `.oga` in a library
+  would be read end to end at scan time to learn it has one link. This is sound
+  because RFC 3533 requires distinct serial numbers per logical bitstream -- and
+  that same rule is what libFLAC's demuxer uses to ignore another link's pages,
+  so a file breaking it (`cat x.oga x.oga`, which repeats the serial instead of
+  choosing a new one) has no correct reading available here at all. It reads as
+  unchained and plays as its first link, which is pinned by a test so the
+  behaviour is a decision rather than an accident.
+
+  **Ogg FLAC files now play at all.** `.oga` was claimed only by Vorbis, so an
+  Ogg FLAC file under that name found no decoder and failed to open -- worth
+  knowing that the container work started by fixing the plain case.
+
+  **A container that declines now falls through to the next claimant.** `.ogg`
+  is claimed by this container and by FFmpeg's chapter container, and returning
+  the URL unchanged is already how a container declines; without a fall-through
+  the higher-priority one silently answered for both, so a chaptered Ogg Vorbis
+  file would have lost its chapters to a chain check that had nothing to say
+  about it.
+
+  Honest note on the link window: of its three parts -- positioning at the link's
+  start, clamping reads to its end, and offsetting seeks -- only the first is
+  observable. Removing either of the others changes nothing on a well-formed
+  file, because libFLAC stops at the link's end regardless and ignores pages
+  carrying another serial. That was verified by mutation rather than assumed.
+  They are kept because together they present libFLAC with a virtual file
+  containing exactly one link, which makes containment structural instead of
+  resting on a spec rule and one library's enforcement of it.
+
 - **Chained Ogg FLAC, so a FLAC station survives its own track changes.** An
   Icecast station serving FLAC does not send one endless bitstream: at every
   track change the encoder ends the Ogg stream and begins another, with a fresh
@@ -872,10 +918,8 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   the code that looked like chained-stream support was unreachable.
 
   **Streams only, on purpose.** The flag is set when the container is Ogg and the
-  source is not seekable. A seekable chained *file* would also need its length
-  summed across links (`FLAC__stream_decoder_find_total_samples`) and seeking
-  taught to cross them; today it plays the first link and reports a length that
-  matches, which is at least self-consistent. That predicate works because
+  source is not seekable. A seekable chained *file* is expanded into one track
+  per link instead -- see the entry below. That predicate works because
   `HttpSource` distinguishes the two questions properly: `seekable()` is false
   for a response with no length, while `seek()` still rewinds inside its ring --
   which the FLAC decoder depends on separately, since it peeks four bytes for the

@@ -6,6 +6,6 @@ find_package(FLAC CONFIG REQUIRED GLOBAL)
 xpcog_add_codec(
     NAME     flac
     REGISTER xpcog_register_flac
-    SOURCES  FlacDecoder.cpp Register.cpp
+    SOURCES  FlacDecoder.cpp OggChain.cpp Register.cpp
     DEPS     FLAC::FLAC
 )
