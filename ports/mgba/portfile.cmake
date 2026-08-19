@@ -36,6 +36,20 @@ vcpkg_from_github(
 # rather than left to default because a default that changes upstream would
 # reintroduce a dependency silently.
 #
+# On the install layout, since it looks wrong and is deliberately left alone:
+# mGBA uses GNUInstallDirs only `if(UNIX OR WIN32_UNIX_PATHS)` and otherwise
+# sets CMAKE_INSTALL_LIBDIR to ".", so on Windows the archive installs as
+# `<triplet>/mgba.lib` rather than under lib/. find_library resolves it either
+# way through vcpkg's prefix paths.
+#
+# Do not "fix" this with -DLIBDIR=lib. LIBDIR is guarded by `if(NOT DEFINED
+# LIBDIR)` so the cache does win, but mGBA then re-declares it with `set(LIBDIR
+# "${LIBDIR}" CACHE PATH ...)`, and CMake rewrites a relative PATH cache entry
+# into an absolute one -- the install lands in `<builddir>/lib`, outside the
+# package tree, and the port silently installs headers and no library.
+# -DWIN32_UNIX_PATHS=ON is the option that would do it properly, if it ever
+# needs doing.
+#
 # The patch above is the price of not using LIBMGBA_ONLY. mGBA refuses to
 # configure for Windows unless one of LIBMGBA_ONLY, SKIP_LIBRARY or USE_EPOXY is
 # set -- libepoxy being how it reaches OpenGL there. That guard is about the GL
