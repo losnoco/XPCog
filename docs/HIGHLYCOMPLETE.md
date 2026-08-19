@@ -16,7 +16,8 @@ or reproducible; nothing depends on the session that started it.
 | 2 | mGBA → GSF, `gsf` + `minigsf` registered | **done** |
 | 3 | melonDS → 2SF, `2sf` + `mini2sf` registered | **done** |
 | 4 | snes9x → SNSF, `snsf` + `minisnsf` registered | **done** |
-| 5… | the remaining four cores | not started — see *Which core next* |
+| 5 | HighlyTheoretical → SSF *and* DSF | **done** |
+| 6… | the remaining three cores | not started — see *Which core next* |
 
 Stage 0 registered **nothing** with the plugin registry — deliberately, since a
 decoder that cannot decode is worse than a format the player does not claim.
@@ -118,8 +119,8 @@ Version bytes verified against Cog's `HCDecoder.mm`, not recalled.
 | `0x24` | 2sf, mini2sf | **melonDS**, not vio2sf | 44 built | **done** — `vendor/vio2sf` |
 | `0x25` | ncsf, minincsf | SSEQPlayer | 31 | vendored in Cog |
 | `0x23` | snsf, minisnsf | snes9x | 18 built | **done** — `vendor/snes9x` |
-| `0x12` | dsf, minidsf | HighlyTheoretical | 29 | vendored in Cog |
-| `0x11` | ssf, minissf | HighlyTheoretical | — | same core |
+| `0x12` | dsf, minidsf | HighlyTheoretical | 7 built | **done** — `vendor/highlytheoretical` |
+| `0x11` | ssf, minissf | HighlyTheoretical | — | **done** — same core, same decoder |
 | `0x01`/`0x02` | psf, psf2 + mini | HighlyExperimental | 25 | vendored in Cog |
 | `0x41` | qsf, miniqsf | HighlyQuixotic | 11 | vendored in Cog |
 
@@ -134,33 +135,22 @@ hand-written `CMakeLists.txt` since upstream ships only an Xcode project.
 
 ## Which core next
 
-Four of eight are in. The corpus at `/Volumes/gigante/vgm` is entirely covered
-by the first three; SNSF was added against a separate set (Tales of Phantasia,
-373 tracks against one 6.3 MB `.snsflib`) and is the first core whose defining
-test case came from outside it.
+Five of eight, covering six of the ten formats. Three cores remain:
 
-Templates: `codecs/usf`, `codecs/twosf` and `codecs/snsf` are cores with no
-usable upstream — vendored under `vendor/`, hand-written `CMakeLists.txt`.
-`codecs/gsf` is one that has an upstream — a vcpkg overlay port under `ports/`,
-which CI binary-caches. Prefer the port when the choice exists.
-
-The four left, all vendored-in-Cog:
-
-- **HighlyTheoretical → DSF and SSF**, 29 files, two formats for one core
-  (Dreamcast and Saturn), so the best remaining value per core.
 - **SSEQPlayer → NCSF**, 31 files. A *sequence* player rather than an emulator,
-  so the core contract will fit it differently — worth reading before assuming
-  the shape of the other four transfers.
-- **HighlyExperimental → PSF and PSF2**, 25 files, and the format the whole
-  family is named after. Needs a PlayStation BIOS image; Cog carries
-  `hebios.bin` beside `HCDecoder.mm`, which is a redistribution question rather
-  than a technical one. PSF2 additionally needs `psf2fs.c`, already vendored in
-  `vendor/psflib`.
+  so read it before assuming the shape of the other five transfers.
+- **HighlyExperimental → PSF and PSF2**, 25 files, and the format the family is
+  named after — two more formats for one core, as HighlyTheoretical was. Needs a
+  PlayStation BIOS image; Cog carries `hebios.bin` beside `HCDecoder.mm`, which
+  is a redistribution question rather than a technical one. PSF2 additionally
+  needs `psf2fs.c`, already vendored in `vendor/psflib`.
 - **HighlyQuixotic → QSF**, 11 files, the smallest.
 
-Rips to test them against are worth more than any of the four. SNSF is the
-evidence: the core was written in an afternoon and the thing that proved it was
-one particular track someone knew to reach for.
+On test material: every core so far was proved by listening, and twice the
+decisive track came from outside the main corpus — Tales of Phantasia for SNSF,
+Sonic Shuffle and NiGHTS for DSF and SSF. Nothing in this tree can hear a wrong
+sample rate or a starved stream. Rips for the three remaining formats are worth
+more than starting any of them blind.
 
 ## Lessons already paid for
 
@@ -231,6 +221,35 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   to vendored sources are marked in place with an "XPCog local change" comment
   and listed at the top of the core's `CMakeLists.txt`, so a re-vendor does not
   drop them silently.
+
+### From stage 5 (HighlyTheoretical → SSF and DSF)
+
+- **One core, two consoles, and the version byte is the switch rather than a
+  check.** `sega_get_state_size(version - 0x10)` builds a Saturn for `0x11` and
+  a Dreamcast for `0x12`. They share a library because they share a sound chip:
+  the Saturn's SCSP and the Dreamcast's AICA are the same Yamaha design, and
+  `yam.c` is it. What differs is the processor feeding it — a 68000 on Saturn,
+  an ARM7 on Dreamcast — so `codecs/sdsf` registers four extensions and builds
+  whichever machine the file asks for.
+
+- **A fourth section layout, and the only one whose origin moves.** An SSF/DSF
+  section is a four-byte little-endian load address followed by data, and
+  sections merge into a single image that can grow at *either* end: a section
+  starting before everything merged so far shifts the existing data up,
+  zero-fills the gap and rewrites the address at the head. Every other core's
+  loader fixes the origin from the first section and only ever writes within it.
+
+- **`_lib` chains go deeper than two.** The NiGHTS set names six libraries from
+  a single track — `_lib` through `_lib6`, 177 `.ssflib` behind 30 `.minissf`.
+  psflib handles the numbered form (`_lib%u`) and returns the images highest
+  priority first; merging them in any other order assembles the track from the
+  wrong overlays, which plays, and plays the wrong music. `test_sdsf.cpp`
+  asserts the chain returns at least as many programs as the file names.
+
+- **The DSP is not optional.** `sega_enable_dsp()` switches on the effects
+  processor where a Saturn or Dreamcast soundtrack's reverb and filtering live;
+  without it the notes play and the mix does not. Its dynamic recompiler is
+  switched off, as every recompiler in this tree is.
 
 ### From stage 4 (snes9x → SNSF)
 

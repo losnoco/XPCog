@@ -386,7 +386,14 @@ template<bool mosaic>
 void SoftRenderer2D::DrawBG_Text(u32 line, u32 bgnum)
 {
     // workaround for backgrounds missing on aarch64 with lto build
+    // XPCog local change: guarded for MSVC, which has no GNU `asm volatile`
+    // syntax at all. This is a compiler barrier working around a *video*
+    // artifact under LTO on aarch64 -- doubly irrelevant to a build that
+    // renders no graphics -- so it is left exactly as it was everywhere it
+    // currently applies rather than replaced with a portable fence.
+#ifndef _MSC_VER
     asm volatile ("" : : : "memory");
+#endif
 
     u16 bgcnt = GPU2D.BGCnt[bgnum];
 

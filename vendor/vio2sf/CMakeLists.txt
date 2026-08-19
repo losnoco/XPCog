@@ -27,6 +27,17 @@
 # surface for a player whose job here is to render a few minutes of DS audio,
 # and none of it is needed while the interpreter keeps up. Revisit if it stops
 # keeping up -- the sources are all still here, behind ENABLE_JIT upstream.
+# ---------------------------------------------------------------------------
+# Local changes to the vendored sources
+# ---------------------------------------------------------------------------
+# Listed here so a re-vendor does not silently drop them; each is marked in
+# place with an "XPCog local change" comment.
+#
+#   src/GPU2D_Soft.cpp  `asm volatile ("" : : : "memory")` guarded out for MSVC,
+#                       which has no GNU inline-asm syntax. It is a compiler
+#                       barrier working around a video artifact under LTO on
+#                       aarch64, and this build renders no video.
+
 find_package(ZLIB REQUIRED)
 
 add_library(vendor-vio2sf STATIC
@@ -117,8 +128,12 @@ if(MSVC)
     #
     # XPCog::warnings sets it for first-party targets, and vendored code
     # deliberately does not link that -- so it has to be stated here.
+    # _USE_MATH_DEFINES because <cmath> on MSVC does not declare M_PI without
+    # it, and GBACartMotionPak.cpp uses it. Another of the "Cog only ever built
+    # this for macOS" gaps rather than anything subtle.
     target_compile_definitions(vendor-vio2sf PRIVATE _CRT_SECURE_NO_WARNINGS
                                                      _CRT_NONSTDC_NO_WARNINGS
+                                                     _USE_MATH_DEFINES
                                                      NOMINMAX
                                                      WIN32_LEAN_AND_MEAN)
     # The GNU bit builtins melonDS uses unguarded; see the header for why this
