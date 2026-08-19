@@ -36,6 +36,83 @@ namespace {
 /// itself, so a custom AVIOContext is installed. 64 KiB matches Cog's buffer.
 constexpr int kIoBufferSize = 64 * 1024;
 
+static int readPacket(void* client, std::uint8_t* buffer, int size) {
+    auto*              self = static_cast<ISource*>(client);
+    const std::int64_t got  = self->read(buffer, size);
+    if (got <= 0) {
+        return AVERROR_EOF;
+    }
+    return static_cast<int>(got);
+}
+
+static std::int64_t seekIo(void* client, std::int64_t offset, int whence) {
+    auto* self = static_cast<ISource*>(client);
+
+    if (whence == AVSEEK_SIZE) {
+        if (!self->seekable()) {
+            return -1;
+        }
+        const std::int64_t saved = self->tell();
+        self->seek(0, SEEK_END);
+        const std::int64_t size = self->tell();
+        self->seek(saved, SEEK_SET);
+        return size;
+    }
+
+    // FFmpeg may OR in AVSEEK_FORCE, which carries no meaning for us.
+    whence &= ~AVSEEK_FORCE;
+    if (!self->seek(offset, whence)) {
+        return -1;
+    }
+    return self->tell();
+}
+
+bool openFormatContext(ISource* source, AVIOContext*& ioContext, AVFormatContext*& formatContext) {
+    auto* ioBuffer = static_cast<unsigned char*>(av_malloc(kIoBufferSize));
+    if (ioBuffer == nullptr) {
+        return false;
+    }
+
+    ioContext = avio_alloc_context(ioBuffer, kIoBufferSize, 0, source,
+                                   &readPacket, nullptr,
+                                   source->seekable() ? &seekIo : nullptr);
+    if (ioContext == nullptr) {
+        av_free(ioBuffer);
+        return false;
+    }
+    ioContext->seekable = source->seekable() ? AVIO_SEEKABLE_NORMAL : 0;
+
+    formatContext     = avformat_alloc_context();
+    if (formatContext == nullptr) {
+        return false;
+    }
+    formatContext->pb = ioContext;
+    formatContext->flags |= AVFMT_FLAG_CUSTOM_IO;
+
+    if (avformat_open_input(&formatContext, "", nullptr, nullptr) != 0) {
+        formatContext = nullptr;  // avformat_open_input frees it on failure
+        return false;
+    }
+    if (avformat_find_stream_info(formatContext, nullptr) < 0) {
+        return false;
+    }
+
+    return true;
+}
+
+/// The subsong a fragment names. We number subsongs starting from zero.
+[[nodiscard]] unsigned int songFromFragment(const Url& url) {
+    const std::string_view fragment = url.fragment();
+    unsigned int           value    = 0;
+    for (const char c : fragment) {
+        if (c < '0' || c > '9') {
+            return 0;
+        }
+        value = value * 10 + static_cast<unsigned int>(c - '0');
+    }
+    return value;
+}
+
 class FFmpegDecoder final : public IDecoder {
 public:
     ~FFmpegDecoder() override { FFmpegDecoder::close(); }
@@ -55,32 +132,7 @@ public:
             return false;
         }
 
-        auto* ioBuffer = static_cast<unsigned char*>(av_malloc(kIoBufferSize));
-        if (ioBuffer == nullptr) {
-            return false;
-        }
-
-        io_ = avio_alloc_context(ioBuffer, kIoBufferSize, 0, source_,
-                                 &FFmpegDecoder::readPacket, nullptr,
-                                 source_->seekable() ? &FFmpegDecoder::seekIo : nullptr);
-        if (io_ == nullptr) {
-            av_free(ioBuffer);
-            return false;
-        }
-        io_->seekable = source_->seekable() ? AVIO_SEEKABLE_NORMAL : 0;
-
-        format_ctx_     = avformat_alloc_context();
-        if (format_ctx_ == nullptr) {
-            return false;
-        }
-        format_ctx_->pb = io_;
-        format_ctx_->flags |= AVFMT_FLAG_CUSTOM_IO;
-
-        if (avformat_open_input(&format_ctx_, "", nullptr, nullptr) != 0) {
-            format_ctx_ = nullptr;  // avformat_open_input frees it on failure
-            return false;
-        }
-        if (avformat_find_stream_info(format_ctx_, nullptr) < 0) {
+        if (!openFormatContext(source, io_, format_ctx_)) {
             return false;
         }
 
@@ -121,6 +173,16 @@ public:
                                       AV_TIME_BASE);
         }
 
+        subsongIndex_ = songFromFragment(source->url());
+        if (subsongIndex_ < format_ctx_->nb_chapters) {
+            AVRational tb = {1, codec_ctx_->sample_rate};
+            AVChapter *chapter = format_ctx_->chapters[subsongIndex_];
+            startFrames_ = av_rescale_q(chapter->start, chapter->time_base, tb);
+            endFrames_   = av_rescale_q(chapter->end, chapter->time_base, tb);
+            skipFrames_  = startFrames_;
+            totalFrames_ = endFrames_ - startFrames_;
+        }
+
         bitrateKbps_ = static_cast<std::int32_t>(
             (codec_ctx_->bit_rate ? codec_ctx_->bit_rate : format_ctx_->bit_rate) / 1000);
 
@@ -134,14 +196,14 @@ public:
         }
 
         readTags();
-        framePos_ = 0;
+        framePos_ = startFrames_;
         return audioFormat_.valid();
     }
 
     bool readAudio(AudioChunk& out) override {
         const double timestamp =
             (audioFormat_.sampleRate > 0.0)
-                ? static_cast<double>(framePos_) / audioFormat_.sampleRate
+                ? static_cast<double>(framePos_ - startFrames_) / audioFormat_.sampleRate
                 : 0.0;
 
         for (;;) {
@@ -191,6 +253,13 @@ public:
                     skipFrames_ = 0;
                 }
 
+                if (endFrames_ && framePos_ + frames > endFrames_) {
+                    frames = endFrames_ - framePos_;
+                    if (frames <= 0) {
+                        return false;
+                    }
+                }
+
                 out.clear();
                 out.setFormat(audioFormat_);
                 out.lossless        = lossless_;
@@ -233,6 +302,9 @@ public:
             return -1;
         }
 
+        // Offset by current chapter start
+        frame += startFrames_;
+
         AVStream* stream = format_ctx_->streams[streamIndex_];
 
         // Seek behind the target and decode forward into it. Codecs with
@@ -255,7 +327,7 @@ public:
         resolveSeek_ = true;
         skipFrames_  = 0;
         framePos_    = frame;
-        return frame;
+        return frame - startFrames_;
     }
 
     void close() override {
@@ -306,37 +378,6 @@ public:
     [[nodiscard]] MetadataMap metadata() const override { return tags_; }
 
 private:
-    static int readPacket(void* client, std::uint8_t* buffer, int size) {
-        auto*              self = static_cast<ISource*>(client);
-        const std::int64_t got  = self->read(buffer, size);
-        if (got <= 0) {
-            return AVERROR_EOF;
-        }
-        return static_cast<int>(got);
-    }
-
-    static std::int64_t seekIo(void* client, std::int64_t offset, int whence) {
-        auto* self = static_cast<ISource*>(client);
-
-        if (whence == AVSEEK_SIZE) {
-            if (!self->seekable()) {
-                return -1;
-            }
-            const std::int64_t saved = self->tell();
-            self->seek(0, SEEK_END);
-            const std::int64_t size = self->tell();
-            self->seek(saved, SEEK_SET);
-            return size;
-        }
-
-        // FFmpeg may OR in AVSEEK_FORCE, which carries no meaning for us.
-        whence &= ~AVSEEK_FORCE;
-        if (!self->seek(offset, whence)) {
-            return -1;
-        }
-        return self->tell();
-    }
-
     [[nodiscard]] static bool isLosslessCodec(AVCodecID id) {
         switch (id) {
             case AV_CODEC_ID_FLAC:
@@ -384,7 +425,7 @@ private:
         tags_.clear();
         replayGain_ = {};
 
-        const auto harvest = [&](AVDictionary* dict) {
+        const auto harvest = [&](AVDictionary* dict, bool global) {
             const AVDictionaryEntry* entry = nullptr;
             while ((entry = av_dict_iterate(dict, entry)) != nullptr) {
                 std::string key{entry->key};
@@ -392,23 +433,32 @@ private:
                     return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 });
 
-                if (key == "replaygain_track_gain") {
+                if (key == "replaygain_track_gain" ||
+                    (!global && key == "replaygain_gain")) {
                     replayGain_.trackGain = std::strtof(entry->value, nullptr);
-                } else if (key == "replaygain_album_gain") {
+                } else if (key == "replaygain_album_gain" ||
+                           (global && key == "replaygain_gain")) {
                     replayGain_.albumGain = std::strtof(entry->value, nullptr);
-                } else if (key == "replaygain_track_peak") {
+                } else if (key == "replaygain_track_peak" ||
+                           (!global && key == "replaygain_peak")) {
                     replayGain_.trackPeak = std::strtof(entry->value, nullptr);
-                } else if (key == "replaygain_album_peak") {
+                } else if (key == "replaygain_album_peak" ||
+                           (global && key == "replaygain_peak")) {
                     replayGain_.albumPeak = std::strtof(entry->value, nullptr);
+                } else if (global && key == "title") {
+                    tags_.add("album", entry->value);
                 } else {
                     tags_.add(key, entry->value);
                 }
             }
         };
 
-        harvest(format_ctx_->metadata);
+        harvest(format_ctx_->metadata, subsongIndex_ < format_ctx_->nb_chapters);
         if (streamIndex_ >= 0) {
-            harvest(format_ctx_->streams[streamIndex_]->metadata);
+            harvest(format_ctx_->streams[streamIndex_]->metadata, false);
+        }
+        if (subsongIndex_ < format_ctx_->nb_chapters) {
+            harvest(format_ctx_->chapters[subsongIndex_]->metadata, false);
         }
     }
 
@@ -421,6 +471,11 @@ private:
     AVFrame*         frame_       = nullptr;
     int              streamIndex_ = -1;
     bool             drained_     = false;
+
+    // Chapter bookkeeping, also used for gaplessness in some containers
+    std::int64_t startFrames_  = 0;
+    std::int64_t endFrames_    = 0;
+    unsigned int subsongIndex_ = 0;
 
     // Sample-accurate seek bookkeeping.
     std::int64_t seekTarget_  = 0;
@@ -438,6 +493,43 @@ private:
     MetadataMap    tags_;
     ReplayGainInfo replayGain_;
 };
+
+/// A tune with multiple chapters expands to one URL per song, numbered from zero.
+std::vector<Url> expandTune(const Url& url, ISource& source,
+                            const PluginRegistry& /*registry*/) {
+    if (!url.fragment().empty()) {
+        return {url};
+    }
+
+    AVIOContext*     io          = nullptr;
+    AVFormatContext* format_ctx  = nullptr;
+
+    unsigned int subsongs = 1;
+    if (openFormatContext(&source, io, format_ctx) &&
+        format_ctx->nb_chapters > 1) {
+        subsongs = format_ctx->nb_chapters;
+    }
+
+    if (format_ctx != nullptr) {
+        avformat_close_input(&format_ctx);
+    }
+    if (io != nullptr) {
+        // avio owns the buffer, which it may have reallocated.
+        av_freep(&io->buffer);
+        avio_context_free(&io);
+    }
+
+    if (subsongs <= 1) {
+        return {url};
+    }
+
+    std::vector<Url> songs;
+    songs.reserve(subsongs);
+    for (unsigned int i = 0; i < subsongs; ++i) {
+        songs.push_back(url.withFragment(std::to_string(i)));
+    }
+    return songs;
+}
 
 // Deliberately broad: FFmpeg is the fallback for everything without a dedicated
 // decoder. Formats that do have one (flac, ogg, opus, mp3, wv) are still listed
@@ -461,6 +553,14 @@ constexpr std::string_view kMimeTypes[] = {
 }  // namespace xpcog
 
 void xpcog_register_ffmpeg(xpcog::PluginRegistry& r) {
+    r.addContainer({
+        .name       = "FFmpegContainer",
+        .priority   = 0.5F,
+        .extensions = xpcog::kExtensions,
+        .mimeTypes  = xpcog::kMimeTypes,
+        .expand     = &xpcog::expandTune,
+    });
+
     r.addDecoder({
         // Below default, so any dedicated decoder is tried first.
         .name       = "FFmpegDecoder",
