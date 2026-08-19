@@ -179,7 +179,6 @@ public:
             AVChapter *chapter = format_ctx_->chapters[subsongIndex_];
             startFrames_ = av_rescale_q(chapter->start, chapter->time_base, tb);
             endFrames_   = av_rescale_q(chapter->end, chapter->time_base, tb);
-            skipFrames_  = startFrames_;
             totalFrames_ = endFrames_ - startFrames_;
         }
 
@@ -196,7 +195,10 @@ public:
         }
 
         readTags();
-        framePos_ = startFrames_;
+        framePos_ = 0;
+        if (startFrames_) {
+            seek(0);
+        }
         return audioFormat_.valid();
     }
 
