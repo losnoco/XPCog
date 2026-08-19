@@ -124,29 +124,72 @@ std::filesystem::path referenceWav() {
     return out;
 }
 
-/// An ID3v2.4 tag carrying one TITLE frame, which is the shape a packed-audio
-/// segment leads with. Sizes are syncsafe -- seven bits per byte, high bit
-/// always clear, so the tag can never be mistaken for an audio sync word.
-std::vector<std::uint8_t> id3v2TitleTag(std::string_view title) {
-    const auto syncsafe = [](std::size_t value, std::vector<std::uint8_t>& out) {
-        out.push_back(static_cast<std::uint8_t>((value >> 21) & 0x7F));
-        out.push_back(static_cast<std::uint8_t>((value >> 14) & 0x7F));
-        out.push_back(static_cast<std::uint8_t>((value >> 7) & 0x7F));
-        out.push_back(static_cast<std::uint8_t>(value & 0x7F));
-    };
+void appendSyncsafe(std::vector<std::uint8_t>& out, std::size_t value) {
+    out.push_back(static_cast<std::uint8_t>((value >> 21) & 0x7F));
+    out.push_back(static_cast<std::uint8_t>((value >> 14) & 0x7F));
+    out.push_back(static_cast<std::uint8_t>((value >> 7) & 0x7F));
+    out.push_back(static_cast<std::uint8_t>(value & 0x7F));
+}
 
+/// One ID3v2.4 frame, header included.
+std::vector<std::uint8_t> id3v2Frame(std::string_view identifier,
+                                     const std::vector<std::uint8_t>& payload) {
     std::vector<std::uint8_t> frame;
-    frame.insert(frame.end(), {'T', 'I', 'T', '2'});
-    syncsafe(title.size() + 1, frame);            // + the encoding byte
-    frame.insert(frame.end(), {0x00, 0x00});      // frame flags
-    frame.push_back(0x03);                        // UTF-8
-    frame.insert(frame.end(), title.begin(), title.end());
+    frame.insert(frame.end(), identifier.begin(), identifier.end());
+    appendSyncsafe(frame, payload.size());
+    frame.insert(frame.end(), {0x00, 0x00});  // frame flags
+    frame.insert(frame.end(), payload.begin(), payload.end());
+    return frame;
+}
+
+std::vector<std::uint8_t> id3v2TextFrame(std::string_view identifier,
+                                         std::string_view text) {
+    std::vector<std::uint8_t> payload{0x03};  // UTF-8
+    payload.insert(payload.end(), text.begin(), text.end());
+    return id3v2Frame(identifier, payload);
+}
+
+/// The PRIV frame every HLS segment carries, whose value is that segment's own
+/// timestamp and therefore differs on every one.
+std::vector<std::uint8_t> id3v2TimestampFrame(std::uint64_t timestamp) {
+    const std::string         owner = "com.apple.streaming.transportStreamTimestamp";
+    std::vector<std::uint8_t> payload(owner.begin(), owner.end());
+    payload.push_back(0x00);
+    for (int i = 7; i >= 0; --i) {
+        payload.push_back(static_cast<std::uint8_t>((timestamp >> (8 * i)) & 0xFF));
+    }
+    return id3v2Frame("PRIV", payload);
+}
+
+/// An ID3v2.4 tag around the given frames. Sizes are syncsafe -- seven bits per
+/// byte, high bit always clear, so a tag can never be mistaken for an audio sync
+/// word.
+std::vector<std::uint8_t> id3v2Tag(const std::vector<std::vector<std::uint8_t>>& frames) {
+    std::vector<std::uint8_t> body;
+    for (const auto& frame : frames) {
+        body.insert(body.end(), frame.begin(), frame.end());
+    }
 
     std::vector<std::uint8_t> tag;
     tag.insert(tag.end(), {'I', 'D', '3', 0x04, 0x00, 0x00});
-    syncsafe(frame.size(), tag);
-    tag.insert(tag.end(), frame.begin(), frame.end());
+    appendSyncsafe(tag, body.size());
+    tag.insert(tag.end(), body.begin(), body.end());
     return tag;
+}
+
+/// The shape a packed-audio segment leads with, reduced to the one frame most
+/// of these tests care about.
+std::vector<std::uint8_t> id3v2TitleTag(std::string_view title) {
+    return id3v2Tag({id3v2TextFrame("TIT2", title)});
+}
+
+/// What a real station sends: the title repeated in every segment, each tag
+/// carrying several stable frames alongside a timestamp that moves.
+std::vector<std::uint8_t> id3v2BroadcastTag(std::string_view artist,
+                                            std::string_view title,
+                                            std::uint64_t    timestamp) {
+    return id3v2Tag({id3v2TextFrame("TPE1", artist), id3v2TextFrame("TIT2", title),
+                     id3v2TextFrame("TALB", "Live"), id3v2TimestampFrame(timestamp)});
 }
 
 /// The offset of the first ADTS frame that starts at or after `at`. Walking the
@@ -579,4 +622,72 @@ TEST_CASE("MPEG-TS timed metadata that repeats is announced once",
 
     // Left behind for any test that runs after this one in the same directory.
     std::filesystem::remove(fixtureDir() / "timed.ts");
+}
+
+TEST_CASE("a broadcast that repeats its title is announced once", "[ffmpeg][streamtags]") {
+    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+
+    // Taken from a real station, whose segments each lead with the same artist,
+    // title and album plus Apple's per-segment timestamp. Nothing about the
+    // programme has changed, but two separate things make it look as though it
+    // has, and either one alone renames the playing track every ten seconds for
+    // the length of the broadcast -- repainting the playlist row and refiring
+    // every now-playing surface each time:
+    //
+    //   * the timestamp PRIV differs on every segment, so the tags genuinely are
+    //     not byte-identical;
+    //   * FFmpeg's av_dict replaces a value by swapping its last element into
+    //     the vacated slot, so re-reading an unchanged dictionary yields the
+    //     same tags rotated by one.
+    //
+    // Hence dropping that one PRIV, and comparing content rather than position.
+    const auto path = fixtureDir() / "broadcast.aac";
+    if (buildTaggedStream().empty()) SKIP("ffmpeg not available to build an ADTS fixture");
+
+    const std::vector<std::uint8_t> audio = readBytes(fixtureDir() / "plain.aac");
+    constexpr int                   kSegments = 5;
+
+    std::vector<std::uint8_t> out;
+    std::size_t               begin = adtsFrameBoundary(audio, 0);
+    REQUIRE(begin < audio.size());
+
+    for (int i = 0; i < kSegments; ++i) {
+        const std::size_t wanted = audio.size() * static_cast<std::size_t>(i + 1) / kSegments;
+        const std::size_t end =
+            (i + 1 == kSegments) ? audio.size() : adtsFrameBoundary(audio, wanted);
+        REQUIRE(end > begin);
+
+        // The last segment is the only one where the programme actually moves on.
+        const bool changed = (i + 1 == kSegments);
+        const auto tag     = id3v2BroadcastTag(changed ? "Second Artist" : "First Artist",
+                                               changed ? "Second Song" : "First Song",
+                                               0x0d0000ULL + static_cast<std::uint64_t>(i) * 0x1000ULL);
+        out.insert(out.end(), tag.begin(), tag.end());
+        out.insert(out.end(), audio.begin() + static_cast<std::ptrdiff_t>(begin),
+                   audio.begin() + static_cast<std::ptrdiff_t>(end));
+        begin = end;
+    }
+    writeBytes(path, out);
+
+    auto opened = registry().open(Url::fromLocalPath(path));
+    REQUIRE(opened);
+    CHECK(opened.decoder->metadata().first("title") == "First Song");
+    // Dropped rather than shown: it names nothing a listener reads, and it is
+    // the reason an unchanging broadcast looks like it is changing.
+    CHECK_FALSE(opened.decoder->metadata().contains(
+        "id3v2_priv.com.apple.streaming.transportstreamtimestamp"));
+
+    std::vector<std::string> titles;
+    opened.decoder->setChangeCallback([&](bool, bool metadataChanged) {
+        if (metadataChanged) {
+            titles.emplace_back(opened.decoder->metadata().first("title"));
+        }
+    });
+
+    AudioChunk chunk;
+    while (opened.decoder->readAudio(chunk)) {
+    }
+
+    CHECK(titles == std::vector<std::string>{"Second Song"});
+    CHECK(opened.decoder->metadata().first("artist") == "Second Artist");
 }

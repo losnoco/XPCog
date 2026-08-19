@@ -66,6 +66,17 @@ public:
     [[nodiscard]] friend bool operator==(const MetadataMap&,
                                          const MetadataMap&) = default;
 
+    /// Same keys with the same values, in any order -- unlike operator==, which
+    /// compares position too.
+    ///
+    /// This is the question "did the tags change", and it needs its own answer
+    /// because the order can move without anything changing. FFmpeg's av_dict
+    /// replaces a value by swapping the last element into the vacated slot, so
+    /// re-reading an unchanged dictionary yields the same tags rotated by one --
+    /// and a positional comparison calls that a new track, once per HLS segment,
+    /// for the length of the broadcast.
+    [[nodiscard]] bool sameContentAs(const MetadataMap& other) const;
+
     /// Lowercases; also maps '.' to U+2024 ONE DOT LEADER exactly as Cog does
     /// (FlacDecoder.m:186), because '.' is a key-path separator in Cocoa bindings.
     /// Kept for tag-name compatibility with libraries written by Cog.

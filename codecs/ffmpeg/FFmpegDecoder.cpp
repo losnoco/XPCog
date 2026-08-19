@@ -461,7 +461,22 @@ private:
         if (!takeMetadataEvents()) {
             return;
         }
+
+        // Compared, not just re-read. A station repeats the current title in
+        // every segment, so the demuxer raises the flag on each one whether or
+        // not the programme moved on -- and announcing that renames the playing
+        // track every ten seconds for the whole broadcast, repainting the
+        // playlist row and refiring every now-playing surface each time.
+        MetadataMap          previousTags = tags_;
+        const ReplayGainInfo previousGain = replayGain_;
         readTags();
+        if (tags_.sameContentAs(previousTags) && replayGain_ == previousGain) {
+            // Put the old map back, so an unchanged broadcast does not quietly
+            // reshuffle the order the tags are displayed in either.
+            tags_ = std::move(previousTags);
+            return;
+        }
+
         // Properties are unchanged: a tag block does not alter the format, and
         // saying it did makes the chain re-evaluate the stream for nothing.
         notifyChanged(false, true);
@@ -495,7 +510,7 @@ private:
                                 updated)) {
             return;
         }
-        if (updated == tags_) {
+        if (updated.sameContentAs(tags_)) {
             return;
         }
         tags_ = std::move(updated);
@@ -536,6 +551,16 @@ private:
                 std::transform(key.begin(), key.end(), key.begin(), [](char c) {
                     return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 });
+
+                // Every HLS segment carries this, and it is specified to hold
+                // that segment's own timestamp -- so it differs on every one. It
+                // names nothing a listener reads, and keeping it would make the
+                // comparison in harvestMidStreamTags() find a change in each
+                // segment of an unchanging broadcast, which is the whole reason
+                // that comparison exists.
+                if (key == "id3v2_priv.com.apple.streaming.transportstreamtimestamp") {
+                    continue;
+                }
 
                 if (key == "replaygain_track_gain" ||
                     (!global && key == "replaygain_gain")) {

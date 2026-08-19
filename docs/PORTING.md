@@ -779,6 +779,25 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   time, which downstream reads as a new track. The second test exists only to
   pin that down -- an unconditional harvest passes the first test too.
 
+  **And only when the tags actually changed**, which took two guards and a real
+  station to find. Audacy's KROQ repeats the current artist and title in every
+  ten-second segment, so the demuxer raises the flag on each one; announcing that
+  renamed the playing track six times per minute of an unchanging broadcast,
+  repainting the playlist row and refiring every now-playing surface each time.
+  Two separate things made an unchanged tag look new:
+
+  * Apple's `com.apple.streaming.transportStreamTimestamp` PRIV frame is in every
+    segment and holds *that segment's* timestamp, so the tags genuinely are not
+    byte-identical. Dropped in `readTags()`; it names nothing a listener reads.
+  * FFmpeg's `av_dict_set` replaces a value by swapping the dictionary's last
+    element into the vacated slot, so re-reading an unchanged dictionary returns
+    the same tags rotated by one. Hence `MetadataMap::sameContentAs()`, which
+    compares keys and values without position -- `operator==` compares order too,
+    which is right for a value type and wrong for "did this change".
+
+  Removing either guard puts the spurious renames back, and there is a test that
+  fails for each.
+
   `AVStream::event_flags` is checked as well as the container's, because a
   chained Ogg announces its new comment header on the stream rather than on the
   file (`libavformat/oggparsevorbis.c`). And the flag is cleared once at the end

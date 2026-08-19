@@ -26,6 +26,23 @@ std::string MetadataMap::normalizeKey(std::string_view key) {
     return out;
 }
 
+bool MetadataMap::sameContentAs(const MetadataMap& other) const {
+    // Keys are unique within a map, so matching sizes plus every key found with
+    // an equal value is enough; no need to check the other direction.
+    if (entries_.size() != other.entries_.size()) {
+        return false;
+    }
+    for (const Entry& mine : entries_) {
+        const auto theirs =
+            std::find_if(other.entries_.begin(), other.entries_.end(),
+                         [&](const Entry& entry) { return entry.key == mine.key; });
+        if (theirs == other.entries_.end() || !(theirs->value == mine.value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 MetadataMap::Entry* MetadataMap::findEntry(std::string_view normalizedKey) {
     const auto it = std::find_if(entries_.begin(), entries_.end(),
                                  [&](const Entry& e) { return e.key == normalizedKey; });
