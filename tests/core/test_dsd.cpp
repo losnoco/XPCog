@@ -35,6 +35,10 @@
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/AudioConverter.hpp"
+#include "xpcog/core/audio/AudioEngine.hpp"
+#include "xpcog/core/audio/OfflineOutput.hpp"
+#include "xpcog/core/audio/RingBuffer.hpp"
+#include "xpcog/core/Settings.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -43,7 +47,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
+#include <thread>
 #include <vector>
 
 using Catch::Approx;
@@ -220,6 +226,53 @@ TEST_CASE("a DSD file reaches the converter as DSD", "[audio][dsd]") {
     // is played as PCM -- which would sit near full scale everywhere.
     const float peak = peakOf(out);
     INFO("peak " << peak);
+    CHECK(peak > 0.001F);
+    CHECK(peak < 4.0F);
+}
+
+TEST_CASE("a DSD track actually plays", "[audio][dsd]") {
+    if (!kHaveDsdFile || !fs::exists(dsdFile())) {
+        SKIP("no DSD file: configure with -DXPCOG_DSD_FILE=<path to a DSD .wv>");
+    }
+
+    // The case the conversion tests above could not fail on, and the one that
+    // was wrong: everything from the decoder to the filter was right, and the
+    // track still would not play, because the engine ran the device at the
+    // track's own rate -- 705,600 Hz, which no backend will open. play()
+    // returned false and nothing said why.
+    //
+    // Note what this can and cannot prove. The offline output takes any rate at
+    // all, so it cannot refuse the way miniaudio does; what is asserted instead
+    // is the rate the engine *chose*, which is where the decision lives.
+    xpcog::PluginRegistry registry;
+    xpcog::registerAllCodecs(registry);
+
+    xpcog::RingBuffer ring(48000 * 2);
+    auto              output = xpcog::makeOfflineOutput(ring);
+    auto              store  = xpcog::makeMemorySettingsStore();
+    xpcog::Settings   settings(*store);
+    xpcog::AudioEngine engine(registry, *output, ring, settings);
+
+    REQUIRE(engine.play(xpcog::Url::fromLocalPath(dsdFile())));
+
+    // miniaudio refuses anything above 384,000 (miniaudio.h:126), so this is
+    // the assertion that fails on the bug rather than on its symptom.
+    const double deviceRate = output->negotiatedFormat().sampleRate;
+    INFO("device rate " << deviceRate);
+    CHECK(deviceRate <= 384000.0);
+    CHECK(deviceRate > 0.0);
+
+    // A second of it is plenty; this is a twenty-minute side.
+    for (int spin = 0; spin < 200 && xpcog::capturedAudio(*output).size() < 44100 * 2;
+         ++spin) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    const std::vector<float> played = xpcog::capturedAudio(*output);
+    engine.stop();
+
+    REQUIRE_FALSE(played.empty());
+    const float peak = peakOf(played);
+    INFO("peak " << peak << " over " << played.size() << " samples");
     CHECK(peak > 0.001F);
     CHECK(peak < 4.0F);
 }

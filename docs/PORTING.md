@@ -187,6 +187,15 @@ bundle.
   `TrackProperties`), `FileSource`, `FlacDecoder`, miniaudio output behind
   `IAudioOutput` with a lock-free SPSC ring and feeder thread from day one. FLAC
   decode is byte-exact against `flac -d`.
+
+  **miniaudio is a stopgap**, and this is the first place it is written down.
+  Native backends — WASAPI and CoreAudio, as Cog uses `OutputCoreAudio.m`
+  directly — replace it; `IAudioOutput` is the seam that makes that a swap
+  rather than a rewrite. So a miniaudio limitation belongs behind that
+  interface and never in the engine: `supportsSampleRate()` exists because
+  miniaudio tops out at 384,000 Hz (miniaudio.h:126) and a native backend
+  driving a DoP-capable DAC will not. DSD found this the hard way — see the DSD
+  note under "Then".
 - **M1b** — `AudioEngine` with gapless handoff, verified sample-exact against
   separately-decoded references. Decoders: FLAC, Vorbis, Opus, MP3 (minimp3), WavPack,
   FFmpeg (AAC/ALAC/WMA/AC3/…). Containers: M3U, PLS, cue sheets.
@@ -1968,6 +1977,18 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   makes the rest ordinary: duration, seeking and the frame arithmetic
   everywhere else stay true, and only the sample format says DSD. Cog instead
   reports the native rate and multiplies its frame counts by eight.
+
+  **The device cannot run at that rate, and that took a second pass to find.**
+  The engine opens the device at the first track's rate, which is right for
+  every PCM file and impossible for DSD: miniaudio refuses anything above
+  384,000 Hz, so `play()` returned false and the track was silent with nothing
+  said. The answer was in Cog all along — its output keeps the *device's* format
+  and resamples everything into it (`OutputCoreAudio.m`,
+  `-outputFormatForInputFormat:`), raising the rate only for a DoP carrier the
+  device has confirmed. So the engine now asks the output what it can run
+  (`IAudioOutput::supportsSampleRate`) and falls back to the device's own rate.
+  Asking rather than assuming is what keeps miniaudio's ceiling out of the
+  engine, which matters because miniaudio is temporary.
 
   DoP — packing DSD back into 24-bit PCM frames with 0x05/0xFA markers so a
   capable DAC can play the bits untouched — is written in `ChunkList.m` and is

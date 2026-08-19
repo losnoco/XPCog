@@ -119,6 +119,30 @@ public:
         return frames / format_.sampleRate;
     }
 
+    [[nodiscard]] double preferredSampleRate() const override {
+        std::lock_guard lock(deviceMutex_);
+        auto*           self = const_cast<MiniaudioOutput*>(this);
+        if (!self->ensureContextLocked()) {
+            return 0.0;
+        }
+        // The default playback device, since nothing selects another one yet.
+        // A null id is what miniaudio takes to mean the default.
+        ma_device_info info{};
+        if (ma_context_get_device_info(&self->context_, ma_device_type_playback,
+                                       nullptr, &info) != MA_SUCCESS) {
+            return 0.0;
+        }
+        // The first native format is the one the backend is actually running --
+        // on a shared-mode WASAPI device that is the mix format, which is what
+        // the listener has set in Windows.
+        for (ma_uint32 i = 0; i < info.nativeDataFormatCount; ++i) {
+            if (info.nativeDataFormats[i].sampleRate != 0) {
+                return static_cast<double>(info.nativeDataFormats[i].sampleRate);
+            }
+        }
+        return 0.0;
+    }
+
     [[nodiscard]] std::vector<DeviceInfo> devices() const override {
         std::lock_guard lock(deviceMutex_);
         auto*           self = const_cast<MiniaudioOutput*>(this);

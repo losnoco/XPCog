@@ -49,6 +49,28 @@ public:
 
     [[nodiscard]] virtual double latencySeconds() const = 0;
 
+    /// Whether this output can be asked to run at `sampleRate`.
+    ///
+    /// The default is the range every current device backend accepts, and it is
+    /// stated here rather than in the engine because it is a property of the
+    /// backend: miniaudio documents 8,000 to 384,000 (miniaudio.h:126), and the
+    /// native outputs that will replace it may answer differently -- a DAC fed
+    /// DoP runs at 352,800 or 705,600, which is the whole reason this question
+    /// is asked out loud.
+    ///
+    /// It is asked because DSD does not arrive at a rate a device will run:
+    /// 352,800 or 705,600 Hz, one byte per channel per frame. Cog never asks
+    /// either -- its output keeps the device's own format and resamples
+    /// everything into it (OutputCoreAudio.m, -outputFormatForInputFormat:),
+    /// raising the rate only for a DoP carrier the device has confirmed.
+    [[nodiscard]] virtual bool supportsSampleRate(double sampleRate) const {
+        return sampleRate >= 8000.0 && sampleRate <= 384000.0;
+    }
+
+    /// The rate this output would rather run at, or 0 when it cannot say. Used
+    /// when the track's own rate is one supportsSampleRate() has refused.
+    [[nodiscard]] virtual double preferredSampleRate() const { return 0.0; }
+
     [[nodiscard]] virtual std::vector<DeviceInfo> devices() const = 0;
 
     /// Linear gain applied in the callback. Read atomically; safe to call from

@@ -150,6 +150,21 @@ bool AudioEngine::play(const Url& url) {
     format_.format        = SampleFormat::F32;
     format_.bitsPerSample = 32;
 
+    // Unless the output will not run it. DSD arrives at 352,800 or 705,600 Hz --
+    // one byte per channel per frame, eight one-bit samples in each -- and no
+    // current backend opens a device there, so asking fails the device open and
+    // the track simply does not play. That was the first shape of DSD playback
+    // here, and it failed silently: play() returned false and said nothing.
+    //
+    // The output is asked rather than told, because which rates are reachable
+    // belongs to the backend -- see IAudioOutput::supportsSampleRate. Cog never
+    // asks at all: its device keeps its own format and everything is resampled
+    // into it (OutputCoreAudio.m, -outputFormatForInputFormat:).
+    if (!output_.supportsSampleRate(format_.sampleRate)) {
+        const double preferred = output_.preferredSampleRate();
+        format_.sampleRate = output_.supportsSampleRate(preferred) ? preferred : 48000.0;
+    }
+
     // FreeSurround is decided here, and only here, for the same reason the rate
     // is: it widens the device from two channels to six, and the device is
     // opened once. A later track that is already multichannel is fitted to
