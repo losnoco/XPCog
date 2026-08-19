@@ -19,11 +19,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <string>
-
-#include <pthread.h>
+#include <thread>
 
 #include <vio2sf/Platform.h>
 #include <vio2sf/SPI_Firmware.h>
@@ -187,190 +188,137 @@ void Log(LogLevel level, const char* fmt, ...)
 #endif
 }
 
+// XPCog: threading and timing on the C++ standard library rather than pthreads.
+//
+// Cog's version of this file is POSIX throughout -- pthread_create, a
+// condition-variable semaphore, usleep, clock_gettime -- which is unremarkable
+// for a player that ships on macOS alone and does not build at all under MSVC.
+// The primitives melonDS asks for map onto <thread>, <mutex> and <chrono>
+// one for one, so the standard library is both the portable answer and the
+// shorter one.
+//
+// Note that in this build none of it does much work: the ARM recompiler and
+// the threaded software renderer are both off, so the emulator runs on the
+// calling thread and these exist to be linked against rather than used.
+
 Thread* Thread_Create(std::function<void()> func)
 {
-	pthread_t t;
-	// Allocate the function on the heap so it can be passed through void*
-	std::function<void()>* heapFunc = new std::function<void()>(std::move(func));
-	int rc = pthread_create(&t, NULL, [](void* arg) -> void* {
-		std::function<void()>* func = (std::function<void()>*) arg;
-		(*func)();
-		delete func;
-		return nullptr;
-	}, heapFunc);
-	if (rc != 0) {
-		delete heapFunc;
-		return nullptr;
-	}
-	return (Thread*) t;
+    return reinterpret_cast<Thread*>(new std::thread(std::move(func)));
 }
 
 void Thread_Free(Thread* thread)
 {
-	pthread_t t = (pthread_t) thread;
-	pthread_join(t, NULL);
+    auto* t = reinterpret_cast<std::thread*>(thread);
+    if (!t) return;
+    // Joinable is checked rather than assumed: Thread_Wait may already have
+    // joined, and std::thread throws where pthread_join merely misbehaved.
+    if (t->joinable()) t->join();
+    delete t;
 }
 
 void Thread_Wait(Thread* thread)
 {
-	pthread_join((pthread_t)thread, NULL);
+    auto* t = reinterpret_cast<std::thread*>(thread);
+    if (t && t->joinable()) t->join();
 }
 
-typedef struct
+// A counting semaphore, which C++ did not have until <semaphore> in C++20.
+struct PlatformSemaphore
 {
-	pthread_mutex_t count_lock;
-	pthread_cond_t  count_bump;
-	unsigned count;
-}
-bosal_sem_t;
+    std::mutex              lock;
+    std::condition_variable bump;
+    unsigned                count = 0;
+};
 
 Semaphore* Semaphore_Create()
 {
-	bosal_sem_t* sem = new bosal_sem_t;
-	int rc = pthread_mutex_init(&sem->count_lock, NULL);
-	if (rc != 0) {
-		delete sem;
-		return nullptr;
-	}
-	rc = pthread_cond_init(&sem->count_bump, NULL);
-	if (rc != 0) {
-		pthread_mutex_destroy(&sem->count_lock);
-		delete sem;
-		return nullptr;
-	}
-	sem->count = 0;
-	return (Semaphore*)sem;
+    return reinterpret_cast<Semaphore*>(new PlatformSemaphore);
 }
 
 void Semaphore_Free(Semaphore* sema)
 {
-	bosal_sem_t* sem = (bosal_sem_t*) sema;
-	pthread_mutex_destroy(&sem->count_lock);
-	pthread_cond_destroy(&sem->count_bump);
-    delete sem;
+    delete reinterpret_cast<PlatformSemaphore*>(sema);
 }
 
 void Semaphore_Reset(Semaphore* sema)
 {
-	bosal_sem_t* sem = (bosal_sem_t*) sema;
-	pthread_mutex_lock(&sem->count_lock);
-	sem->count = 0;
-	pthread_mutex_unlock(&sem->count_lock);
+    auto* sem = reinterpret_cast<PlatformSemaphore*>(sema);
+    std::lock_guard<std::mutex> guard(sem->lock);
+    sem->count = 0;
 }
 
 void Semaphore_Wait(Semaphore* sema)
 {
-	bosal_sem_t* sem = (bosal_sem_t*) sema;
-	int xresult;
-	int result = pthread_mutex_lock(&sem->count_lock);
-	if (result)
-		return;
-	xresult = 0;
-	if (sem->count == 0) {
-		xresult = pthread_cond_wait(&sem->count_bump, &sem->count_lock);
-	}
-	if (!xresult) {
-		if (sem->count > 0)
-			sem->count--;
-	}
-	pthread_mutex_unlock(&sem->count_lock);
+    auto* sem = reinterpret_cast<PlatformSemaphore*>(sema);
+    std::unique_lock<std::mutex> guard(sem->lock);
+    sem->bump.wait(guard, [sem] { return sem->count > 0; });
+    --sem->count;
 }
 
 bool Semaphore_TryWait(Semaphore* sema, int timeout_ms)
 {
-	bosal_sem_t* sem = (bosal_sem_t*) sema;
-	struct timespec timeout = { timeout_ms / 1000, (timeout_ms % 1000) * 1000000 };
-	int result, xresult;
-	
-	result = pthread_mutex_lock(&sem->count_lock);
-	if (result)
-		return false;
-
-	xresult = 0;
-
-	if (sem->count == 0) {
-		if (!timeout_ms)
-			xresult = EAGAIN;
-		else
-			xresult = pthread_cond_timedwait(&sem->count_bump, &sem->count_lock, &timeout);
-	}
-
-	if (!xresult) {
-		if (sem->count > 0)
-			sem->count--;
-	}
-
-	pthread_mutex_unlock(&sem->count_lock);
-
-	return !xresult;
+    auto* sem = reinterpret_cast<PlatformSemaphore*>(sema);
+    std::unique_lock<std::mutex> guard(sem->lock);
+    if (!sem->bump.wait_for(guard, std::chrono::milliseconds(timeout_ms),
+                            [sem] { return sem->count > 0; }))
+        return false;
+    --sem->count;
+    return true;
 }
 
 void Semaphore_Post(Semaphore* sema, int count)
 {
-	bosal_sem_t* sem = (bosal_sem_t*) sema;
-	int result;
-
-	result = pthread_mutex_lock(&sem->count_lock);
-	if (result)
-		return;
-
-	sem->count += count;
-
-	pthread_cond_signal(&sem->count_bump);
-
-	pthread_mutex_unlock(&sem->count_lock);
+    auto* sem = reinterpret_cast<PlatformSemaphore*>(sema);
+    {
+        std::lock_guard<std::mutex> guard(sem->lock);
+        sem->count += static_cast<unsigned>(count);
+    }
+    // Post takes a count, so more than one waiter can be released.
+    sem->bump.notify_all();
 }
 
 Mutex* Mutex_Create()
 {
-	pthread_mutex_t *m = new pthread_mutex_t;
-	int rc = pthread_mutex_init(m, NULL);
-	if (rc) {
-		delete m;
-		return nullptr;
-	}
-    return (Mutex*)m;
+    return reinterpret_cast<Mutex*>(new std::mutex);
 }
 
 void Mutex_Free(Mutex* mutex)
 {
-	pthread_mutex_t *m = (pthread_mutex_t*) mutex;
-	pthread_mutex_destroy(m);
-	delete m;
+    delete reinterpret_cast<std::mutex*>(mutex);
 }
 
 void Mutex_Lock(Mutex* mutex)
 {
-	pthread_mutex_lock((pthread_mutex_t*)mutex);
+    reinterpret_cast<std::mutex*>(mutex)->lock();
 }
 
 void Mutex_Unlock(Mutex* mutex)
 {
-	pthread_mutex_unlock((pthread_mutex_t*)mutex);
+    reinterpret_cast<std::mutex*>(mutex)->unlock();
 }
 
 bool Mutex_TryLock(Mutex* mutex)
 {
-	return !pthread_mutex_trylock((pthread_mutex_t*)mutex);
+    return reinterpret_cast<std::mutex*>(mutex)->try_lock();
 }
 
 void Sleep(u64 usecs)
 {
-	usleep(usecs);
+    std::this_thread::sleep_for(std::chrono::microseconds(usecs));
 }
 
+// steady_clock is the monotonic one, which is what CLOCK_MONOTONIC was for:
+// these feed frame pacing, so a wall clock that can step backwards will not do.
 u64 GetMSCount()
 {
-	struct timespec tp;
-	clock_gettime(CLOCK_MONOTONIC, &tp);
-	return tp.tv_sec * 1000 + tp.tv_nsec / 1000000ULL;
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
 u64 GetUSCount()
 {
-	struct timespec tp;
-	clock_gettime(CLOCK_MONOTONIC, &tp);
-    return tp.tv_sec * 1000000ULL + tp.tv_nsec / 1000;
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
 

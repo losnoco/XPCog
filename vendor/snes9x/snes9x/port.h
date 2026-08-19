@@ -14,9 +14,12 @@
 #include <cstdint>
 #include <sys/types.h>
 
-#ifdef _WIN32
-# include "windowsh_wrapper.h"
-#endif
+/* XPCog local change: was `#include "windowsh_wrapper.h"` under _WIN32. That
+ * header lives in snes9x's win32/ frontend, which this subset does not vendor
+ * -- eighteen sound sources, no frontend at all -- and nothing left in the
+ * subset calls a Win32 API. Cog never hit this because it builds snes9x for
+ * macOS alone. The _MAX_PATH the block below wants comes from <stdlib.h> on
+ * MSVC regardless. */
 
 #ifndef _WIN32
 # ifndef PATH_MAX
