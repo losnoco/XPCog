@@ -1332,8 +1332,27 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   passed by ear. Worth stating plainly after the GSF episode: the automated
   checks here establish that a core runs, not that it sounds right.
 
-  -- what each needs, which section holds its program, where Cog keeps it, and
-  what a core must implement -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
+- **The fifth core: HighlyTheoretical, so `ssf` and `dsf` play.** One core and
+  one decoder for two consoles: the Saturn's SCSP and the Dreamcast's AICA are
+  the same Yamaha sound chip, so the library shares `yam.c` and differs only in
+  the processor driving it -- a 68000 on Saturn, an ARM7 on Dreamcast. The
+  version byte selects which, through `sega_get_state_size(version - 0x10)`, so
+  it is the switch rather than a validity check.
+
+  Seven sources built, from a tree that also ships two further 68000
+  implementations nobody compiles. Its sections are a fourth layout again: a
+  four-byte load address then data, merging into an image that grows at *either*
+  end and re-bases itself when a section starts earlier than everything before
+  it.
+
+  It produced the deepest `_lib` chain of any set here -- NiGHTS names six
+  libraries from one track, 177 `.ssflib` behind 30 `.minissf`. psflib handles
+  the numbered form and returns them highest priority first; merging them in any
+  other order assembles the wrong track and plays it happily.
+
+  The staging plan for the remaining three cores -- what each needs, which
+  section holds its program, where Cog keeps it, and what a core must implement
+  -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
   picked up on another machine.
 
   Tests run against the same opt-in corpus mechanism vgmstream introduced
