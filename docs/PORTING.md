@@ -900,7 +900,19 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   number written in its own `iTunSMPB` field. ffmpeg gives 421632 for that one
   -- 2682 samples more -- because it applies the Xing delay and never reads
   `iTunSMPB`, which is the entire reason this parsing exists. A test that simply
-  compared against ffmpeg would have called the bug correct. The fixtures are
+  compared against ffmpeg would have called the bug correct.
+
+  That difference is permanent, not a version to re-check. A patch teaching
+  `libavformat/mp3dec.c` to read `iTunSMPB` went to ffmpeg-devel in January 2022
+  and was never accepted; it survives as Cog's
+  `ThirdParty/ffmpeg/patches/0005-*`. The patch also added this file's FATE
+  reference, so the fixture landed upstream while the code did not -- which is
+  why the suite carries a gapless MP3 that ffmpeg itself decodes wrongly.
+
+  Nothing here needs that patch. FFmpeg is only the fallback claimant for `mp3`
+  (priority 0.5 against minimp3's 2.0), so the file reaches a decoder that reads
+  the tag natively; vendoring an FFmpeg overlay port to fix a decoder that never
+  runs would be twenty files of maintenance for no behaviour change. The fixtures are
   not vendored: `-DXPCOG_FATE_SUITE=/path/to/fate-suite` points at a copy that
   already exists, and the cases skip when it is unset.
 
