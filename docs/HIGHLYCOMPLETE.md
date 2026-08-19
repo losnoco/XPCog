@@ -13,7 +13,8 @@ or reproducible; nothing depends on the session that started it.
 |---|---|---|
 | 0 | psflib vendored, PSF container, tests | **done** — `24df743` |
 | 1 | lazyusf2 → USF, `usf` + `miniusf` registered | **done** |
-| 2… | the remaining seven cores | not started — see *Which core next* |
+| 2 | mGBA → GSF, `gsf` + `minigsf` registered | **done** |
+| 3… | the remaining six cores | not started — see *Which core next* |
 
 Stage 0 registered **nothing** with the plugin registry — deliberately, since a
 decoder that cannot decode is worse than a format the player does not claim.
@@ -47,6 +48,11 @@ the PSF family is 1,656:
 
 Any equivalent collection works; the tests find files by extension and assert on
 relationships, not on specific titles.
+
+Sweeps over the whole corpus, which is how each core was checked beyond the
+tests: all 694 `.miniusf` open and report a duration, and all 783 `.minigsf` do,
+none failing. The GSF sweep also collected sample rates, and they are not
+uniform — 546 files at 65536 Hz and 237 at 32768 Hz. See *From stage 2*.
 
 ## What stage 0 gives a core
 
@@ -103,7 +109,7 @@ Version bytes verified against Cog's `HCDecoder.mm`, not recalled.
 
 | version | formats | core | files | source |
 |---|---|---|---|---|
-| `0x22` | gsf, minigsf | mGBA | 989 | submodule, `github.com/kode54/mgba` |
+| `0x22` | gsf, minigsf | mGBA | 989 | **done** — overlay port, `kode54/mgba` |
 | `0x21` | usf, miniusf | lazyusf2 | 211 | **done** — `vendor/lazyusf2`, 52 built |
 | `0x24` | 2sf, mini2sf | vio2sf | 255 | vendored in Cog |
 | `0x25` | ncsf, minincsf | SSEQPlayer | 31 | vendored in Cog |
@@ -124,32 +130,27 @@ hand-written `CMakeLists.txt` since upstream ships only an Xcode project.
 
 ## Which core next
 
-Stage 1 took **lazyusf2 → USF**, and the reason it was the cheaper of the two
-choices is worth recording, because this document previously argued the
-opposite. See *Lessons* below: the recompiler that made lazyusf2 look risky is
-not compiled at all, on any architecture Cog ships.
+Two of eight are in, and between them they cover 1,477 of this corpus's 1,656
+PSF-family files. The shape is settled and there are now two templates:
+`codecs/usf` for a core with no upstream (vendored under `vendor/`, hand-written
+`CMakeLists.txt`), and `codecs/gsf` for one that has an upstream (a vcpkg
+overlay port under `ports/`, which CI binary-caches).
 
-That leaves seven, and the same trade as before:
+Prefer the port. `ports/README.md` already said so; stage 2 confirmed it is also
+the cheaper answer for a large core, because the port is built once per platform
+and restored from the cache thereafter rather than compiled on every push.
 
-- **mGBA → GSF.** The largest remaining share of a typical corpus (783 files
-  here), and the only core with a real upstream and its own CMake, so no build
-  file to write. Against it: 989 files and 77 MB, a heavier dependency for CI to
-  build on four platforms, and mGBA's CMake builds a whole frontend ecosystem
-  that has to be switched off option by option.
-- **vio2sf → 2SF.** 179 files here, 255 sources, hand-written build. The middle
-  option in every dimension.
-- The four small ones — HighlyQuixotic at 11 files, HighlyExperimental at 25,
-  HighlyTheoretical at 29, SSEQPlayer at 31. None has a single file in this
-  corpus, so nothing could be heard at the end of any of them, but between them
-  they are five of the eight formats for the size of one mGBA. HighlyExperimental
-  additionally needs a PlayStation BIOS image; Cog carries `hebios.bin` beside
-  `HCDecoder.mm`.
+The six left:
 
-Whichever is next, the shape is now settled and `codecs/usf` is the template:
-vendor under `vendor/`, hand-write a `CMakeLists.txt`, and implement `IDecoder`
-over `loadPsf()`. Nothing about the container had to change for the first core
-beyond `wantNestedTags`, which is the evidence that stage 0 was cut in the right
-place.
+- **vio2sf → 2SF.** 179 files here, 255 sources, vendored — the largest
+  remaining share and the same shape as `codecs/usf`.
+- **The four small ones** — HighlyQuixotic at 11 files, HighlyExperimental at 25,
+  HighlyTheoretical at 29, SSEQPlayer at 31. Five formats between them for the
+  size of one mGBA, but nothing in this corpus exercises any of them, so
+  correctness would rest on "it did not crash". HighlyExperimental additionally
+  needs a PlayStation BIOS image; Cog carries `hebios.bin` beside `HCDecoder.mm`,
+  which is a redistribution question rather than a technical one.
+- **snes9x → SNSF.** 36 files, vendored, nothing in this corpus.
 
 ## Lessons already paid for
 
@@ -241,6 +242,54 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
 
   **GSF is the exception**, in Cog and so here too: `-open:` initialises it
   eagerly because the sample rate comes from the core rather than from a tag.
+
+### From stage 2 (mGBA → GSF)
+
+- **A core's public headers may not describe the library that was built.** This
+  cost most of the stage and produced a crash that looks like nothing else.
+  mGBA's `struct mCore` — the vtable every call goes through — declares its
+  members inside `#ifdef ENABLE_VFS`, `#if defined(ENABLE_VFS) &&
+  defined(ENABLE_DIRECTORIES)`, `#ifndef MINIMAL_CORE`. mGBA passes those as
+  `-D` on its own targets, and `mgba-util/common.h`, which every public header
+  goes through, includes the C library and none of mGBA's own configuration. So
+  a consumer compiles a *different struct* — it builds, it links, and then it
+  reads every function pointer from the wrong offset. Here that was address zero
+  inside the first `core->init()`.
+
+  `mgba/flags.h` is the generated header that appears to solve this and does
+  not: at the pinned commit it reports `ENABLE_DIRECTORIES`, `ENABLE_VFS_FD` and
+  `USE_MINIZIP` as undefined while the library is compiled with all three.
+  `codecs/gsf/CMakeLists.txt` states the set on the imported target instead, and
+  records how to re-derive it from the port's own `build.ninja`. **Check this
+  first for every remaining core that has a real upstream.**
+
+- **A GBA has no sample rate.** The sound hardware runs at
+  `0x200 >> SOUNDBIAS.resolution` cycles per sample — 32768 Hz out of reset, and
+  the *game* writes that register during its own startup. So the answer does not
+  exist until the ROM has been loaded, reset and run far enough to configure its
+  audio, which is why GSF starts its emulator in `open()` while USF does not.
+
+  Cog declares a constant 65536 with an `// XXX` beside it and the
+  `audioSampleRate()` call left commented out. Across the 783 `.minigsf` here,
+  546 do run at 65536 and **237 run at 32768** — Mario Kart: Super Circuit and
+  the whole Super Mario Advance series — so that constant plays 30% of this
+  corpus an octave high. The rate is read from the core instead, which is what
+  the commented-out line was going to do.
+
+- **mGBA is told a power-of-two ROM size and allocated ten bytes more.** It masks
+  cartridge addresses against the size rather than bounds-checking them, so a
+  size that is not a power of two makes an ordinary read land outside the buffer;
+  the ten bytes beyond are for the ARM7 prefetching past the end of a ROM. Cog
+  allocates `rsize + 10` and passes `rsize`, and conflating the two is a SIGBUS
+  rather than a wrong note.
+
+- **`LIBMGBA_ONLY` is the obvious switch and the wrong one.** It forces
+  `DISABLE_DEPS`, which turns `USE_ZLIB` off, and mGBA without zlib compiles its
+  own `crc32()` with zlib's exact signature — which collides at link time with
+  the real zlib that psflib and lazyusf2 pull in. Both `set()` calls are plain
+  rather than cached, so `-DUSE_ZLIB=ON` cannot win; the port sets the
+  individual switches instead. Expect this from any core that bundles its
+  dependencies.
 
 - **No PSF metadata reader is registered.** `MetadataReadFn` takes only a `Url`
   and `readPsfTags()` needs a registry to resolve through. With `open()` now

@@ -16,6 +16,12 @@ carries (vgmstream, OpenMPT, GME, libsidplayfp, the emulator cores) as they land
 M6 — each becomes one directory here with a `portfile.cmake` and a `vcpkg.json`,
 plus a hand-written `CMakeLists.txt` where upstream ships only an Xcode project.
 
+Prefer it even when the dependency is large. mGBA is the case that settled it:
+989 sources, and as a port CI compiles them once per platform and restores from
+the binary cache thereafter rather than rebuilding on every push, with none of
+it in the tree. Cog carries mGBA as a submodule because Cog has no package
+manager; that is not a reason to copy the choice.
+
 Use [`../vendor/`](../vendor) instead when the code is a single file, has been
 modified by Cog, or has no usable upstream — for example Cog's `lpc.c`,
 `hdcd_decode2.c`, and the `dsd2pcm` filter extracted from `ChunkList.m`.
@@ -37,3 +43,4 @@ further ports here need no change.
 | `libmpcdec` | Not in vcpkg. Note that vcpkg's `mpc` port is GNU MPC, an unrelated multiprecision library — an easy and costly mistake. Build from Cog's `Frameworks/MPCDec`. | M1b |
 | `signalsmith-stretch` | Header-only, not packaged upstream. | M4 |
 | `vgmstream` | Not in vcpkg. Needs one patch: on MSVC the static target and the shared target's import library are both `src/libvgmstream.lib`, which ninja refuses. | M6 |
+| `mgba` | Not in vcpkg. The GBA core behind GSF, from kode54's fork at the commit Cog pins. Two traps, both recorded in the portfile: `LIBMGBA_ONLY` forces zlib off and mGBA then compiles its own colliding `crc32()`, and the generated `mgba/flags.h` misreports three of the feature macros that decide `struct mCore`'s layout — see `codecs/gsf/CMakeLists.txt`. | M6 |

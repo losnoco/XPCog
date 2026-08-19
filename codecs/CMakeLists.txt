@@ -50,6 +50,7 @@ endif()
 if(XPCOG_WITH_PSF)
     add_subdirectory(psf)
     add_subdirectory(usf)
+    add_subdirectory(gsf)
 endif()
 
 # M1b onward: ffmpeg, vorbis, opus, mpg123, wavpack, ape, musepack, taglib,

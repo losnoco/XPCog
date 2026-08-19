@@ -40,6 +40,12 @@
         "vgmstream"
       ]
     },
+    "mgba": {
+      "description": "mGBA: the Game Boy Advance core behind GSF, one of HighlyComplete's eight",
+      "dependencies": [
+        "mgba"
+      ]
+    },
     "ffmpeg": {
       "description": "FFmpeg decoder: AAC, ALAC, WMA, AC3, DTS, TAK, and more (long build)",
       "dependencies": [

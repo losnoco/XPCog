@@ -1,0 +1,11 @@
+{
+  "name": "mgba",
+  "version-string": "0.11-kode54-f6b1854",
+  "description": "mGBA Game Boy Advance emulator, library only. kode54's fork, pinned to the commit Cog's HighlyComplete is built against.",
+  "homepage": "https://mgba.io",
+  "license": "MPL-2.0",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    "zlib"
+  ]
+}

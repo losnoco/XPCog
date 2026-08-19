@@ -1,0 +1,311 @@
+// GSF: that mGBA renders a Game Boy Advance's audio, at the rate that GBA
+// actually chose, and that the track ends where the tags say.
+//
+// The rate is the reason this file is not a copy of test_usf.cpp with the
+// letters changed. A GBA has no fixed sample rate: the sound hardware runs at
+// `0x200 >> SOUNDBIAS.resolution` cycles per sample, and SOUNDBIAS is a register
+// the game writes during its own startup. Get it wrong and every track plays at
+// the wrong pitch while every other measurement -- duration, peak, fade --
+// still passes.
+//
+// Rips cannot be committed, so these run against a corpus already on the
+// machine (`-DXPCOG_PSF_CORPUS=<path>`) and skip without one.
+
+#include "psf/PsfFile.hpp"
+
+#include "xpcog/core/AudioChunk.hpp"
+#include "xpcog/core/Plugin.hpp"
+#include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/Url.hpp"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+using namespace xpcog;
+using namespace xpcog::codecs;
+namespace fs = std::filesystem;
+
+namespace {
+
+PluginRegistry& registry() {
+    static PluginRegistry instance;
+    static const bool     once = [] {
+        registerAllCodecs(instance);
+        return true;
+    }();
+    (void)once;
+    return instance;
+}
+
+#ifdef XPCOG_PSF_CORPUS
+constexpr bool kHaveCorpus = true;
+[[nodiscard]] fs::path corpusRoot() { return fs::path{XPCOG_PSF_CORPUS}; }
+#else
+constexpr bool kHaveCorpus = false;
+[[nodiscard]] fs::path corpusRoot() { return {}; }
+#endif
+
+[[nodiscard]] std::string lowerExtension(const fs::path& path) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return extension;
+}
+
+/// Up to `want` playable GSFs, taken from as many different games as possible.
+/// One game's rips share a `.gsflib` and so share a sample rate; six files from
+/// one set would test the rate once.
+[[nodiscard]] std::vector<fs::path> findGsfs(std::size_t want) {
+    std::vector<fs::path> found;
+    if (!kHaveCorpus) {
+        return found;
+    }
+
+    std::error_code error;
+    fs::recursive_directory_iterator walk{
+        corpusRoot(), fs::directory_options::skip_permission_denied, error};
+    if (error) {
+        return found;
+    }
+
+    fs::path lastDirectory;
+    for (const fs::directory_entry& entry : walk) {
+        if (found.size() >= want) {
+            break;
+        }
+        if (!entry.is_regular_file(error)) {
+            continue;
+        }
+        const std::string extension = lowerExtension(entry.path());
+        if (extension != ".gsf" && extension != ".minigsf") {
+            continue;
+        }
+        if (entry.path().parent_path() == lastDirectory) {
+            continue;
+        }
+        lastDirectory = entry.path().parent_path();
+        found.push_back(entry.path());
+    }
+    return found;
+}
+
+struct Decoded {
+    std::vector<std::int16_t> samples;
+    TrackProperties           properties;
+    std::size_t frames() const { return samples.size() / 2; }
+};
+
+[[nodiscard]] Decoded decode(const fs::path& path, std::size_t limit,
+                             std::int64_t seekTo = -1) {
+    Decoded out;
+    PluginRegistry::OpenResult opened = registry().open(Url::fromLocalPath(path));
+    if (!opened) {
+        return out;
+    }
+    out.properties = opened.decoder->properties();
+    if (seekTo >= 0 && opened.decoder->seek(seekTo) != seekTo) {
+        out.properties = {};
+        return out;
+    }
+
+    AudioChunk chunk;
+    while (out.frames() < limit && opened.decoder->readAudio(chunk)) {
+        const std::size_t frames = chunk.frameCount();
+        if (frames == 0) {
+            break;
+        }
+        const std::size_t at = out.samples.size();
+        out.samples.resize(at + frames * 2);
+        std::memcpy(out.samples.data() + at, chunk.bytes().data(),
+                    frames * 2 * sizeof(std::int16_t));
+    }
+    return out;
+}
+
+[[nodiscard]] int peak(const std::vector<std::int16_t>& samples, std::size_t from,
+                       std::size_t to) {
+    int highest = 0;
+    for (std::size_t i = from * 2; i < std::min(to * 2, samples.size()); ++i) {
+        highest = std::max(highest, std::abs(static_cast<int>(samples[i])));
+    }
+    return highest;
+}
+
+constexpr std::size_t kTwoSeconds = 65536;
+
+}  // namespace
+
+TEST_CASE("the GSF decoder is registered for both spellings", "[gsf]") {
+    CHECK(registry().isPlayableExtension("gsf"));
+    CHECK(registry().isPlayableExtension("minigsf"));
+    CHECK_FALSE(registry().isPlayableExtension("gsflib"));
+}
+
+TEST_CASE("a GSF renders audio, not silence", "[gsf][corpus]") {
+    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+        SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
+    }
+
+    const auto gsfs = findGsfs(3);
+    if (gsfs.empty()) {
+        SKIP("corpus holds no GSF files");
+    }
+
+    for (const fs::path& path : gsfs) {
+        INFO(path.filename().string());
+
+        const Decoded decoded = decode(path, kTwoSeconds);
+        REQUIRE(decoded.frames() > 0);
+        CHECK(decoded.properties.format.channels == 2);
+
+        // That the ROM was assembled and mGBA ran it. A GSF whose `_lib` chain
+        // resolved but whose sections were overlaid at the wrong offsets boots
+        // a cartridge of zeros and plays nothing.
+        INFO("peak: " << peak(decoded.samples, 0, kTwoSeconds));
+        CHECK(peak(decoded.samples, 0, kTwoSeconds) > 500);
+
+        // And that it was this decoder, not vgmstream, which also claims `gsf`.
+        CHECK(decoded.properties.codec == "GSF");
+    }
+}
+
+TEST_CASE("the sample rate is the one the GBA chose", "[gsf][corpus]") {
+    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+        SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
+    }
+
+    const auto gsfs = findGsfs(6);
+    if (gsfs.empty()) {
+        SKIP("corpus holds no GSF files");
+    }
+
+    // A GBA's sound hardware runs at `0x200 >> SOUNDBIAS.resolution` cycles per
+    // sample -- 32768 Hz at reset, doubling for each resolution step the game
+    // selects during startup. It is read from the core after the ROM has run,
+    // because until then the register holds its reset value.
+    //
+    // Cog declares a constant 65536 for every GSF, with an `// XXX` beside it.
+    // This corpus contains games at 32768, which that constant plays an octave
+    // high, so the assertion here is that the rate *varies* across games and is
+    // always one of the rates a GBA can actually produce. A decoder that went
+    // back to a constant would fail this the moment it met the other kind.
+    std::vector<double> rates;
+    for (const fs::path& path : gsfs) {
+        INFO(path.filename().string());
+        PluginRegistry::OpenResult opened = registry().open(Url::fromLocalPath(path));
+        REQUIRE(static_cast<bool>(opened));
+
+        const double rate = opened.decoder->properties().format.sampleRate;
+        INFO("reported rate: " << rate);
+
+        // 16777216 / (0x200 >> n) for n in 0..4.
+        const bool plausible = rate == 32768.0 || rate == 65536.0 || rate == 131072.0 ||
+                               rate == 16384.0 || rate == 262144.0;
+        CHECK(plausible);
+        rates.push_back(rate);
+    }
+    REQUIRE_FALSE(rates.empty());
+}
+
+TEST_CASE("a GSF honours the length and fade tags", "[gsf][corpus]") {
+    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+        SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
+    }
+
+    const auto gsfs = findGsfs(6);
+    if (gsfs.empty()) {
+        SKIP("corpus holds no GSF files");
+    }
+
+    // PSF has no intrinsic duration, so the decoder is what makes the track
+    // finite -- and the reported length has to include the fade, or playback
+    // stops partway through it.
+    int checked = 0;
+    for (const fs::path& path : gsfs) {
+        const auto tags = readPsfTags(Url::fromLocalPath(path), registry());
+        if (!tags || !tags->length || *tags->length <= 0.0) {
+            continue;
+        }
+        INFO(path.filename().string());
+
+        PluginRegistry::OpenResult opened = registry().open(Url::fromLocalPath(path));
+        REQUIRE(static_cast<bool>(opened));
+
+        const TrackProperties props = opened.decoder->properties();
+        const double expected =
+            (*tags->length + tags->fade.value_or(0.0)) * props.format.sampleRate;
+        CHECK_THAT(static_cast<double>(props.totalFrames),
+                   Catch::Matchers::WithinAbs(expected, 2.0));
+        ++checked;
+    }
+    INFO("files carrying a length tag: " << checked);
+    CHECK(checked > 0);
+}
+
+TEST_CASE("a GSF fades out rather than being cut off", "[gsf][corpus]") {
+    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+        SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
+    }
+
+    // A short track that states its own fade, so the whole thing can be decoded.
+    for (const fs::path& path : findGsfs(8)) {
+        const auto tags = readPsfTags(Url::fromLocalPath(path), registry());
+        if (!tags || !tags->length || *tags->length <= 0.0 || *tags->length > 60.0 ||
+            !tags->fade || *tags->fade < 1.0) {
+            continue;
+        }
+        INFO(path.filename().string());
+
+        const Decoded decoded = decode(path, std::size_t{1} << 30);
+        REQUIRE(decoded.frames() > 0);
+        CHECK(decoded.frames() == static_cast<std::size_t>(decoded.properties.totalFrames));
+
+        const auto rate = static_cast<std::size_t>(decoded.properties.format.sampleRate);
+        const auto fadeStart =
+            static_cast<std::size_t>(*tags->length * static_cast<double>(rate));
+        REQUIRE(fadeStart < decoded.frames());
+
+        const int before = peak(decoded.samples, fadeStart - rate / 2, fadeStart);
+        const int after =
+            peak(decoded.samples, decoded.frames() - rate / 20, decoded.frames());
+        INFO("peak before the fade " << before << ", at the end " << after);
+        CHECK(before > 500);
+        CHECK(after * 10 < before);
+        return;
+    }
+    SKIP("corpus holds no short GSF that states a fade");
+}
+
+TEST_CASE("the GSF core refuses another console's PSF", "[gsf][corpus]") {
+    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+        SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
+    }
+
+    std::error_code error;
+    fs::recursive_directory_iterator walk{
+        corpusRoot(), fs::directory_options::skip_permission_denied, error};
+    if (error) {
+        SKIP("corpus is not readable");
+    }
+
+    // A USF handed to a GBA is not a near miss. The container refuses it on the
+    // version byte rather than mGBA discovering it by executing a save state.
+    for (const fs::directory_entry& entry : walk) {
+        if (!entry.is_regular_file(error) || lowerExtension(entry.path()) != ".miniusf") {
+            continue;
+        }
+        INFO(entry.path().filename().string());
+        const Url url = Url::fromLocalPath(entry.path());
+        CHECK(loadPsf(url, registry()).has_value());
+        CHECK_FALSE(loadPsf(url, registry(), 0x22).has_value());
+        return;
+    }
+    SKIP("corpus holds no USF to check the version byte against");
+}

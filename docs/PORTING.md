@@ -1252,7 +1252,37 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   Verified across the whole corpus: all 694 `.miniusf` files open and report a
   duration, none fails.
 
-  The staging plan for the remaining seven cores -- what each needs, which
+- **The second core: mGBA, so `gsf` and `minigsf` play.** A GSF
+  is closer to an ordinary program than a USF: `exe` holds a fragment of
+  cartridge ROM behind a twelve-byte header saying where it belongs, a set's
+  `.gsflib` carries the whole game, and each `.minigsf` overlays the handful of
+  bytes the game reads as its song index. Build the ROM, hand it to mGBA as a
+  cartridge, record the output.
+
+  mGBA arrives as a **vcpkg overlay port** rather than the submodule Cog uses.
+  That is what [`ports/README.md`](../ports/README.md) already prescribed, and
+  it answers the objection that made mGBA look expensive: CI binary-caches
+  ports, so 989 sources compile once per platform and are restored thereafter
+  instead of rebuilt on every push, with none of it in the tree.
+
+  Three things cost time, all recorded in
+  [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md). The one worth repeating here is that
+  **a library's public headers need not describe the library that was built**:
+  mGBA declares `struct mCore`'s members inside `#ifdef ENABLE_VFS` and friends,
+  passes those defines as `-D` on its own targets, and does not set them in any
+  header a consumer sees. Compiling against a different set produces a struct
+  with different offsets — no compile error, no link error, and a jump to
+  address zero on the first call through it. The generated `mgba/flags.h` looks
+  like the fix and misreports three of the macros. This is a trap for every
+  remaining core with a real upstream, not a quirk of this one.
+
+  Also: a GBA has no fixed sample rate. It is `0x200 >> SOUNDBIAS.resolution`
+  cycles per sample, and the game writes that register during startup, so the
+  rate is read from the core after the ROM has run rather than declared. Cog
+  hardcodes 65536 with an `// XXX`; this corpus contains games at 32768, which
+  that constant plays an octave high.
+
+  The staging plan for the remaining six cores -- what each needs, which
   section holds its program, where Cog keeps it, and what a core must implement
   -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
   picked up on another machine.
