@@ -4,6 +4,28 @@
 # submodule the way Cog carries it -- see that portfile for why. It ships no
 # CMake config package, so the target is assembled here the same way libgme's is
 # in ../gme/CMakeLists.txt.
+# mGBA's own link libraries, which an imported target assembled by hand does not
+# inherit. This is the trap already recorded in ../gme/CMakeLists.txt for libgme
+# and zlib, and it bites the same way: the omission is invisible wherever some
+# other target happens to pull the library in first, and a hard error where
+# nothing does. Windows is where it showed up --
+#
+#   mgba.lib(config.c.obj) : error LNK2019: unresolved external symbol
+#   __imp_PathRemoveFileSpecW referenced in function mCoreConfigPortableIniPath
+#
+# -- PathRemoveFileSpecW and PathIsRelativeW being shlwapi. Taken from mGBA's own
+# CMakeLists: `list(APPEND OS_LIB ws2_32 shlwapi)` on Win32, Foundation on Apple,
+# libm everywhere else, and zlib because the port builds with USE_ZLIB=ON.
+find_package(ZLIB REQUIRED)
+set(XPCOG_MGBA_LINK ZLIB::ZLIB)
+if(WIN32)
+    list(APPEND XPCOG_MGBA_LINK ws2_32 shlwapi)
+elseif(APPLE)
+    list(APPEND XPCOG_MGBA_LINK "-framework Foundation")
+else()
+    list(APPEND XPCOG_MGBA_LINK m)
+endif()
+
 find_path(MGBA_INCLUDE_DIR NAMES mgba/core/core.h REQUIRED)
 find_library(MGBA_LIBRARY_RELEASE NAMES mgba REQUIRED)
 find_library(MGBA_LIBRARY_DEBUG NAMES mgba
@@ -49,6 +71,7 @@ if(NOT TARGET mGBA::mgba)
     set_target_properties(mGBA::mgba PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${MGBA_INCLUDE_DIR}"
         INTERFACE_COMPILE_DEFINITIONS "${XPCOG_MGBA_DEFINES}"
+        INTERFACE_LINK_LIBRARIES "${XPCOG_MGBA_LINK}"
         IMPORTED_LOCATION "${MGBA_LIBRARY_RELEASE}")
     if(MGBA_LIBRARY_DEBUG)
         set_target_properties(mGBA::mgba PROPERTIES

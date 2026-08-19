@@ -301,6 +301,15 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   allocates `rsize + 10` and passes `rsize`, and conflating the two is a SIGBUS
   rather than a wrong note.
 
+- **An imported target assembled by hand inherits none of the library's own link
+  libraries.** mGBA declares `ws2_32 shlwapi` on Win32, `-framework Foundation`
+  on Apple, libm elsewhere, and zlib. Omitting them links fine anywhere another
+  target happens to pull the same library in first, and fails hard where nothing
+  does — Windows, on `PathRemoveFileSpecW` and `PathIsRelativeW` from shlwapi.
+  Exactly the failure `codecs/gme/CMakeLists.txt` already records for libgme and
+  zlib, so treat it as the default expectation for every core that ships no
+  CMake config package: read the platform blocks of its build and copy them.
+
 - **`LIBMGBA_ONLY` is the obvious switch and the wrong one.** It forces
   `DISABLE_DEPS`, which turns `USE_ZLIB` off, and mGBA without zlib compiles its
   own `crc32()` with zlib's exact signature — which collides at link time with
