@@ -309,12 +309,11 @@ Trimming is on post rather than on Cog's thirty-second timer: what is being
 bounded is a panel nobody is draining, and a paused player drains nothing, so a
 timer would be the one thing that could fall behind.
 
-### Drawing it is the part still to come
+### Drawing it
 
-Capture is done and positioned; what remains is the widget. Cog has both halves
-already -- `Audio/Visualization/MIDIVisualizationController.m` and
-`Visualization/SCView.m`, 1,224 lines between them -- and one design decision in
-there does not transfer.
+Cog has both halves already -- `Audio/Visualization/MIDIVisualizationController.m`
+and `Visualization/SCView.m`, 1,224 lines between them -- and one design decision
+in there does not transfer.
 
 `AudioTap`, which feeds the spectrum, gets its sync for free by being filled in
 the *device callback*: what is written is what is about to be heard, so the
@@ -338,10 +337,10 @@ hand it to `sc55_lcd_render_screen()` and blit the result.
 
 **It is not docked by default.** A front panel for one synthesiser of three,
 for one format among many, is not something to put in everyone’s window — it is
-a View menu item that starts hidden, and `PanelFeed::wanted()` follows the
-dock’s visibility through showEvent and hideEvent, so the emulator is not
-comparing its panel against the previous state on every sample for a window
-nobody opened.
+a View menu item that starts hidden. What the dock’s visibility switches is only
+the repaint timer, deliberately: an earlier version switched *capture* off with
+it, which is what made a panel opened part-way through a track come up empty and
+stay that way. See the history note below.
 
 Only the newest state of each batch is drawn. The others are the panel's own
 history between repaints, and at up to two hundred a second they are not
