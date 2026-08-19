@@ -35,11 +35,20 @@
 namespace xpcog {
 namespace {
 
-/// The MP3 decoder's own delay, in samples, plus the one sample every encoder
-/// adds. iTunes counts its padding from the start of the decoded signal while
-/// LAME counts it from the start of the first frame, so the two differ by
-/// exactly this -- and using one convention with the other's numbers moves the
-/// track by 12 milliseconds.
+/// The inherent delay of a conforming MP3 decoder, in samples. Not an iTunes
+/// number and not an encoder's: any standard decoder for the format exhibits it,
+/// which is why the same figure turns up across unrelated implementations.
+///
+/// It matters here because the two gapless conventions count from different
+/// places. LAME's header measures its delay from the first frame; iTunes
+/// measures its padding from the start of the *decoded* signal, so the two are
+/// offset by exactly this. Use one convention with the other's numbers and the
+/// track moves by twelve milliseconds.
+///
+/// Written 528 + 1 rather than 529 because that is the form it appears in
+/// wherever it is written down at all -- which is rarely. It is folklore that
+/// implementations copy from each other rather than derive, so leaving the
+/// arithmetic visible is the closest thing to a citation available.
 constexpr std::uint32_t kDecoderDelay = 528 + 1;
 
 /// Bounds from Cog, and from what the format can express: padding longer than a

@@ -874,10 +874,13 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   LAME writes its delay in the Xing header, measured from the first frame, and
   minimp3-ex applies it. iTunes writes its own as an `iTunSMPB` comment in the
   ID3v2 tag -- which minimp3 skips without reading -- measured from the start of
-  the *decoded* signal, which is 528 samples of decoder delay plus one further
-  along. Use one convention with the other's numbers and the track moves by
-  twelve milliseconds: a click on a gapless album, and invisible to any test
-  that counts frames or measures pitch, since neither changes.
+  the *decoded* signal. The two are offset by 528 + 1 samples: the inherent
+  delay of a conforming MP3 decoder, which is not an iTunes number and not an
+  encoder's -- any standard decoder for the format exhibits it, and it is barely
+  documented anywhere, so implementations copy the literal from each other
+  rather than derive it. Use one convention with the other's numbers and the
+  track moves by twelve milliseconds: a click on a gapless album, and invisible
+  to any test that counts frames or measures pitch, since neither changes.
 
   That last point took a second attempt to test. The first version of the bounds
   test passed with the bounds removed, because an out-of-range padding makes the
