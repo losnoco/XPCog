@@ -255,13 +255,6 @@ public:
             return false;
         }
 
-        // Asked per read rather than latched: switching the panel on should
-        // show something without waiting for the next track. Reading an atomic
-        // once per thousand frames is not a cost worth avoiding.
-        if (sc55_ != nullptr) {
-            sc55_->setCaptureLcd(PanelFeed::instance().wanted());
-        }
-
         scratch_.resize(want * 2);
         render(scratch_.data(), want);
         applyFade(scratch_.data(), want);
@@ -302,7 +295,6 @@ public:
         // Nothing rendered from here to the target is ever heard, so nothing
         // about it belongs on the panel. Capture goes off for the discard and
         // whatever was already queued for this track goes with it.
-        const bool wasCapturing = (sc55_ != nullptr) && sc55_->capturingLcd();
         if (sc55_ != nullptr) {
             sc55_->setCaptureLcd(false);
         }
@@ -317,7 +309,7 @@ public:
         }
         if (sc55_ != nullptr) {
             (void)sc55_->takeLcdFrames();
-            sc55_->setCaptureLcd(wasCapturing);
+            sc55_->setCaptureLcd(true);
         }
         return framePos_;
     }
@@ -345,6 +337,14 @@ private:
         if (choice_.backend == SynthChoice::Backend::Sc55 && roms_) {
             auto sc55 = std::make_unique<codecs::Sc55Synth>();
             if (sc55->open(*roms_)) {
+                // Captured from the first sample, whether or not anything is
+                // displaying it. A panel opened part-way through a track has to
+                // be able to look *back* to the moment being heard, and that is
+                // only possible if the states were recorded all along -- which
+                // is what Cog does. The cost is a comparison against the
+                // previous panel state per rendered sample, inside an emulator
+                // already running a whole CPU per sample.
+                sc55->setCaptureLcd(true);
                 sc55_  = sc55.get();
                 synth_ = std::move(sc55);
                 return true;

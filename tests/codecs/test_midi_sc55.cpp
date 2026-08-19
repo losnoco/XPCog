@@ -326,7 +326,7 @@ TEST_CASE("panel positions do not depend on how the audio was chunked",
     CHECK(whole == split);
 }
 
-TEST_CASE("decoding an SC-55 track feeds the panel, positioned in the track",
+TEST_CASE("decoding an SC-55 track records its panel, positioned in the track",
           "[midi][sc55]") {
     if (!kHaveRoms || !fs::exists(romPath())) {
         SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
@@ -334,7 +334,6 @@ TEST_CASE("decoding an SC-55 track feeds the panel, positioned in the track",
 
     PanelFeed& feed = PanelFeed::instance();
     feed.clear();
-    feed.setWanted(true);
 
     Harness harness;
     harness.settings.setMidiPlugin("NukeSc55");
@@ -347,25 +346,22 @@ TEST_CASE("decoding an SC-55 track feeds the panel, positioned in the track",
     const Decoded decoded = decode(harness.registry, url, 4 * 64000);
     REQUIRE_FALSE(decoded.samples.empty());
 
-    // Everything the panel did during a one-second track, drained as if the
-    // speaker had reached the end of it.
-    const auto frames = feed.take(60.0);
-    feed.setWanted(false);
-    feed.clear();
+    // Recorded without anything asking to see it, which is what makes a panel
+    // opened later able to look back at all.
+    REQUIRE(feed.producing());
 
-    REQUIRE_FALSE(frames.empty());
-    for (const PanelFrame& frame : frames) {
-        INFO("panel frame at " << frame.seconds << "s");
-        // Inside the track, not seven seconds into it -- the same api.h trap the
-        // synthesiser's own tests cover, checked again here because this is the
-        // path a display actually takes and the two could drift apart.
-        CHECK(frame.seconds >= 0.0);
-        CHECK(frame.seconds <= 5.0);
-        CHECK_FALSE(frame.state.empty());
-    }
+    const auto atEnd = feed.stateAt(60.0);
+    REQUIRE(atEnd.has_value());
+    // Inside the track, not seven seconds into it -- the api.h trap the
+    // synthesiser's own tests cover, checked again on the path a display takes.
+    CHECK(atEnd->seconds >= 0.0);
+    CHECK(atEnd->seconds <= 5.0);
+    CHECK_FALSE(atEnd->state.empty());
+
+    feed.clear();
 }
 
-TEST_CASE("nothing feeds the panel when nothing is displaying it",
+TEST_CASE("a panel opened part-way through finds the moment being heard",
           "[midi][sc55]") {
     if (!kHaveRoms || !fs::exists(romPath())) {
         SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
@@ -373,36 +369,6 @@ TEST_CASE("nothing feeds the panel when nothing is displaying it",
 
     PanelFeed& feed = PanelFeed::instance();
     feed.clear();
-    feed.setWanted(false);
-
-    Harness harness;
-    harness.settings.setMidiPlugin("NukeSc55");
-    harness.settings.setMidiRomPath(romPath().string());
-
-    const auto path = writeFixture("sc55-nopanel.mid", tinyMidi());
-    const Url  url  = Url::fromLocalPath(path);
-    feed.setAudibleTrack(url);
-
-    const Decoded decoded = decode(harness.registry, url, 4 * 64000);
-    REQUIRE_FALSE(decoded.samples.empty());
-
-    // The emulator compares the panel against its previous state on every
-    // sample it renders when capture is on. A player with no panel on screen
-    // should not be paying for that, and "not paying" is only observable as
-    // nothing arriving.
-    CHECK(feed.take(60.0).empty());
-    feed.clear();
-}
-
-TEST_CASE("opening the panel part-way through a track starts feeding it",
-          "[midi][sc55]") {
-    if (!kHaveRoms || !fs::exists(romPath())) {
-        SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
-    }
-
-    PanelFeed& feed = PanelFeed::instance();
-    feed.clear();
-    feed.setWanted(false);
 
     Harness harness;
     harness.settings.setMidiPlugin("NukeSc55");
@@ -412,28 +378,17 @@ TEST_CASE("opening the panel part-way through a track starts feeding it",
     const Url  url  = Url::fromLocalPath(path);
     feed.setAudibleTrack(url);
 
-    PluginRegistry::OpenResult opened = harness.registry.open(url);
-    REQUIRE(opened);
+    // Decode the whole track with nothing displaying anything -- the ordinary
+    // case, and the one that used to leave a panel opened afterwards frozen on
+    // whatever arrived next.
+    const Decoded decoded = decode(harness.registry, url, 4 * 64000);
+    REQUIRE_FALSE(decoded.samples.empty());
 
-    // Play a little with the display closed, which is the ordinary case: a
-    // panel nobody has opened costs the emulator nothing.
-    AudioChunk chunk;
-    REQUIRE(opened.decoder->readAudio(chunk));
-    CHECK(feed.take(60.0).empty());
+    // Now ask what the panel looked like early on. There is an answer because
+    // it was recorded all along.
+    const auto early = feed.stateAt(0.2);
+    REQUIRE(early.has_value());
+    CHECK(early->seconds <= 0.2 + 0.001);
 
-    // Now open it. The decoder asks per read rather than latching at open, so
-    // this has to start working without waiting for the next track -- which is
-    // the whole reason it is asked per read.
-    feed.setWanted(true);
-    for (int i = 0; i < 200 && !feed.producing(); ++i) {
-        if (!opened.decoder->readAudio(chunk)) {
-            break;
-        }
-    }
-
-    CHECK(feed.producing());
-    CHECK_FALSE(feed.take(60.0).empty());
-
-    feed.setWanted(false);
     feed.clear();
 }

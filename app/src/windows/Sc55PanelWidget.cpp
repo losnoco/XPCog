@@ -70,16 +70,15 @@ QSize Sc55PanelWidget::sizeHint() const {
 
 void Sc55PanelWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    // Producing costs the emulator a comparison per rendered sample, so it only
-    // happens while this is on screen.
-    PanelFeed::instance().setWanted(true);
+    // Nothing is switched on here. States are recorded from the start of the
+    // track regardless, which is what lets this show the right one immediately
+    // rather than the first one that happens to arrive next.
     timer_->start();
 }
 
 void Sc55PanelWidget::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
     timer_->stop();
-    PanelFeed::instance().setWanted(false);
     haveFrame_ = false;
 }
 
@@ -87,25 +86,15 @@ void Sc55PanelWidget::tick() {
     if (background_.empty() || !position_) {
         return;
     }
-    // Only the last of a batch is drawn. The others are states the panel passed
-    // through since the previous repaint, and at up to two hundred a second
-    // they are not something an eye resolves.
-    std::optional<PanelFrame> draw;
-    if (auto frames = PanelFeed::instance().take(position_()); !frames.empty()) {
-        draw = std::move(frames.back());
-    } else if (!haveFrame_) {
-        // Nothing due yet, and nothing shown yet. Rather than sit blank until
-        // the speaker catches up with a decoder that is seconds ahead, show the
-        // nearest state there is; the next drained frame replaces it and every
-        // one after that is on time. See PanelFeed::peekEarliest().
-        draw = PanelFeed::instance().peekEarliest();
-        if (!draw) {
-            // The explanation drawn in its place can change without any frame
-            // ever arriving, so it is still worth a repaint.
+    // A lookup, not a drain: what did the panel look like at the moment now
+    // being heard. See PanelFeed::stateAt().
+    const std::optional<PanelFrame> draw = PanelFeed::instance().stateAt(position_());
+    if (!draw) {
+        // The explanation drawn in its place can change without any state ever
+        // arriving, so it is still worth a repaint.
+        if (!haveFrame_) {
             update();
-            return;
         }
-    } else {
         return;
     }
 

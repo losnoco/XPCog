@@ -72,59 +72,40 @@ public:
     /// The one shared instance. See the header comment for why it is one.
     [[nodiscard]] static PanelFeed& instance();
 
-    /// True while something is actually displaying a panel.
+    /// Whether anything has been recorded for the audible track.
     ///
-    /// Producing costs real work -- for the SC-55 it is a comparison against
-    /// the previous panel state on every emulated sample -- so nothing is
-    /// produced unless someone is looking. A producer is expected to ask often
-    /// enough that switching the display on takes effect promptly.
-    [[nodiscard]] bool wanted() const noexcept;
-    void               setWanted(bool wanted) noexcept;
+    /// A blank display has two causes that look identical and mean opposite
+    /// things: this track is not playing on a machine with a front panel at
+    /// all -- an OPL3 has none -- or it is and nothing has happened yet.
+    [[nodiscard]] bool producing() const;
 
-    /// Appends a frame for `track`. Called from the decode thread.
+    /// Appends a state for `track`. Called from the decode thread.
     void post(const Url& track, double seconds, std::span<const std::byte> state);
 
-    /// Says which track the speaker has reached. Frames for anything else are
+    /// Says which track the speaker has reached. States for anything else are
     /// held until it becomes the audible one, and discarded if it never does.
     void setAudibleTrack(const Url& track);
 
-    /// Removes and returns every frame of the audible track at or before
-    /// `seconds`, oldest first.
+    /// What the panel looked like at `seconds` into the audible track.
     ///
-    /// `seconds` is a position within the track, and the caller is expected to
-    /// pass one derived from audio already delivered to the device --
-    /// AudioEngine::trackPositionSeconds(). That is the one difference from Cog,
-    /// which has no such clock to hand and instead takes the newest queued
-    /// frame's timestamp and subtracts its estimate of the output latency. Both
-    /// answer the same question; this one does not have to estimate.
-    [[nodiscard]] std::vector<PanelFrame> take(double seconds);
-
-    /// Whether anything has ever been posted since the display was switched on.
+    /// A *lookup into history*, not a queue drain, and that is the whole design
+    /// -- it is how Cog does it, and the reason is what happens when a display
+    /// is opened part-way through a track. Draining gives a display only what
+    /// arrives after it opens, which is everything the decoder produced from
+    /// wherever it had run ahead to; there is nothing at the position actually
+    /// being heard, so the display shows one state and then sits frozen until
+    /// the speaker catches up seconds later.
     ///
-    /// For telling "nothing is producing" apart from "producing, nothing due
-    /// yet" -- which from a blank panel look identical, and have completely
-    /// different causes: the first means this track is not on a machine with a
-    /// front panel at all.
-    [[nodiscard]] bool producing() const noexcept;
-
-    /// The oldest frame still queued for the audible track, without removing
-    /// it. Empty when there is none.
+    /// Looking back has an answer immediately, and the right one. States are
+    /// kept from the start of the track rather than from the moment something
+    /// asked to see them.
     ///
-    /// For the moment a display opens. The decoder runs far ahead of the
-    /// speaker -- a synthesiser renders much faster than real time and the
-    /// engine buffers deeply -- so when a panel is opened part-way through a
-    /// track, everything queued is from a position that has not been reached
-    /// yet, and a display that waits for one to become due sits blank for
-    /// several seconds looking broken.
-    ///
-    /// So the first thing shown is the nearest state there is, which is ahead
-    /// by however far the decoder has run. That is a real error and it is
-    /// bounded, visible only until the speaker catches up, and then gone for
-    /// good -- every frame after it is drained on time. Cog makes the opposite
-    /// trade and never corrects: it draws the newest queued state minus its
-    /// estimate of the device latency, which is ahead of the music for as long
-    /// as the track plays.
-    [[nodiscard]] std::optional<PanelFrame> peekEarliest() const;
+    /// Returns the newest state at or before `seconds`. Before the first one --
+    /// which is only the opening moment of a track -- the oldest is returned
+    /// instead, so a display has something rather than nothing. Everything
+    /// older than what is returned is dropped, since nothing can ask for it
+    /// again without seeking, and a seek discards the lot.
+    [[nodiscard]] std::optional<PanelFrame> stateAt(double seconds);
 
     /// Drops everything. For a seek, where every queued frame describes a
     /// moment that is no longer coming.
@@ -158,8 +139,6 @@ private:
     std::deque<Track>  tracks_;
     Url                audible_;
     bool               haveAudible_ = false;
-    std::atomic<bool>  wanted_{false};
-    std::atomic<bool>  produced_{false};
 };
 
 }  // namespace xpcog

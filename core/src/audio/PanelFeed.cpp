@@ -1,6 +1,7 @@
 #include "xpcog/core/audio/PanelFeed.hpp"
 
 #include <algorithm>
+#include <type_traits>
 
 namespace xpcog {
 
@@ -13,25 +14,58 @@ PanelFeed& PanelFeed::instance() {
     return *feed;
 }
 
-bool PanelFeed::producing() const noexcept {
-    return produced_.load(std::memory_order_relaxed);
-}
+namespace {
 
-bool PanelFeed::wanted() const noexcept {
-    return wanted_.load(std::memory_order_relaxed);
-}
-
-void PanelFeed::setWanted(bool wanted) noexcept {
-    wanted_.store(wanted, std::memory_order_relaxed);
-    if (!wanted) {
-        // Drop the queued states, which describe a panel nobody is looking at
-        // -- but keep knowing which track is audible. Forgetting that as well
-        // meant a display closed and reopened during one track stayed empty
-        // until the *next* track began, because nothing else ever says which
-        // one is playing.
-        flush();
-        produced_.store(false, std::memory_order_relaxed);
+/// The audible track's entry, or null.
+template <typename Tracks, typename Url>
+auto* findAudible(Tracks& tracks, const Url& audible, bool have) {
+    using Entry = std::remove_reference_t<decltype(*tracks.begin())>;
+    if (!have) {
+        return static_cast<Entry*>(nullptr);
     }
+    for (Entry& entry : tracks) {
+        if (entry.url == audible) {
+            return &entry;
+        }
+    }
+    return static_cast<Entry*>(nullptr);
+}
+
+}  // namespace
+
+bool PanelFeed::producing() const {
+    std::lock_guard lock(mutex_);
+    const auto* entry = findAudible(tracks_, audible_, haveAudible_);
+    return entry != nullptr && !entry->frames.empty();
+}
+
+std::optional<PanelFrame> PanelFeed::stateAt(double seconds) {
+    std::lock_guard lock(mutex_);
+    auto* entry = findAudible(tracks_, audible_, haveAudible_);
+    if (entry == nullptr || entry->frames.empty()) {
+        return std::nullopt;
+    }
+
+    // The newest state at or before `seconds`. Walking from the front is right
+    // rather than merely convenient: a display asks roughly thirty times a
+    // second and everything before its answer is dropped, so each state is
+    // stepped over once in the life of a track.
+    std::size_t chosen = 0;
+    for (std::size_t i = 0; i < entry->frames.size(); ++i) {
+        if (entry->frames[i].seconds > seconds) {
+            break;
+        }
+        chosen = i;
+    }
+
+    PanelFrame frame = entry->frames[chosen];
+    // Everything before the answer is unreachable now: positions only advance,
+    // and the one thing that could go backwards -- a seek -- throws the whole
+    // track's history away anyway.
+    for (std::size_t i = 0; i < chosen; ++i) {
+        entry->frames.pop_front();
+    }
+    return frame;
 }
 
 void PanelFeed::post(const Url& track, double seconds,
@@ -50,15 +84,14 @@ void PanelFeed::post(const Url& track, double seconds,
         it = std::prev(tracks_.end());
     }
 
-    produced_.store(true, std::memory_order_relaxed);
-
     PanelFrame frame;
     frame.seconds = seconds;
     frame.state.assign(state.begin(), state.end());
     it->frames.push_back(std::move(frame));
 
-    // Trimmed here rather than on a timer: a panel nobody is draining is
-    // exactly the case this bounds, and a paused player drains nothing.
+    // Trimmed here rather than on a timer: what is bounded is the history of a
+    // track nobody is looking at, and a timer is the one thing that could fall
+    // behind a decoder running far ahead of real time.
     const double oldest = seconds - kMaxHistorySeconds;
     while (!it->frames.empty() && it->frames.front().seconds < oldest) {
         it->frames.pop_front();
@@ -75,41 +108,6 @@ void PanelFeed::setAudibleTrack(const Url& track) {
     while (!tracks_.empty() && !(tracks_.front().url == track)) {
         tracks_.pop_front();
     }
-}
-
-std::vector<PanelFrame> PanelFeed::take(double seconds) {
-    std::lock_guard lock(mutex_);
-    std::vector<PanelFrame> out;
-    if (!haveAudible_) {
-        return out;
-    }
-
-    auto it = std::find_if(tracks_.begin(), tracks_.end(), [this](const Track& entry) {
-        return entry.url == audible_;
-    });
-    if (it == tracks_.end()) {
-        return out;
-    }
-
-    while (!it->frames.empty() && it->frames.front().seconds <= seconds) {
-        out.push_back(std::move(it->frames.front()));
-        it->frames.pop_front();
-    }
-    return out;
-}
-
-std::optional<PanelFrame> PanelFeed::peekEarliest() const {
-    std::lock_guard lock(mutex_);
-    if (!haveAudible_) {
-        return std::nullopt;
-    }
-    const auto it = std::find_if(tracks_.begin(), tracks_.end(), [this](const Track& entry) {
-        return entry.url == audible_;
-    });
-    if (it == tracks_.end() || it->frames.empty()) {
-        return std::nullopt;
-    }
-    return it->frames.front();
 }
 
 void PanelFeed::flush() {
@@ -133,7 +131,6 @@ void PanelFeed::clear() {
     tracks_.clear();
     audible_     = Url{};
     haveAudible_ = false;
-    produced_.store(false, std::memory_order_relaxed);
 }
 
 }  // namespace xpcog

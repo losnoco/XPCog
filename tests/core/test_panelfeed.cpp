@@ -39,7 +39,8 @@ namespace {
 
 }  // namespace
 
-TEST_CASE("frames come back in order, and only once they are due", "[panelfeed]") {
+TEST_CASE("the state shown is the one that was current at that moment",
+          "[panelfeed]") {
     PanelFeed& feed = PanelFeed::instance();
     feed.clear();
 
@@ -49,19 +50,61 @@ TEST_CASE("frames come back in order, and only once they are due", "[panelfeed]"
     feed.post(one, 1.5, blob(2));
     feed.post(one, 2.5, blob(3));
 
-    // A display asks "what had happened by now", so the boundary is inclusive
-    // and everything past it stays queued.
-    auto due = feed.take(1.5);
-    REQUIRE(due.size() == 2);
-    CHECK(first(due[0]) == 1);
-    CHECK(first(due[1]) == 2);
+    // The newest at or before the moment being heard -- not the oldest not yet
+    // shown, which is what a queue would give. A panel holds its last state
+    // until something changes it, so "what did it look like at 2.0" is the
+    // state set at 1.5.
+    auto now = feed.stateAt(2.0);
+    REQUIRE(now.has_value());
+    CHECK(first(*now) == 2);
 
-    // Drained, not copied: a panel state is shown once.
-    CHECK(feed.take(1.5).empty());
+    // Asked again at the same moment, the same answer: this is a lookup, and
+    // a display that repaints thirty times a second must not consume history.
+    now = feed.stateAt(2.0);
+    REQUIRE(now.has_value());
+    CHECK(first(*now) == 2);
 
-    due = feed.take(10.0);
-    REQUIRE(due.size() == 1);
-    CHECK(first(due[0]) == 3);
+    now = feed.stateAt(60.0);
+    REQUIRE(now.has_value());
+    CHECK(first(*now) == 3);
+}
+
+TEST_CASE("a display opening late finds the moment being heard", "[panelfeed]") {
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+
+    // This is the case that made the panel look broken. States are recorded
+    // from the start of the track, so a display opened thirty seconds in has
+    // thirty seconds of history to look back into and answers immediately --
+    // where draining would have handed it whatever the decoder produced next,
+    // from wherever it had run ahead to, and then sat frozen until the speaker
+    // caught up.
+    const Url one = track("one.mid");
+    feed.setAudibleTrack(one);
+    for (int i = 0; i < 40; ++i) {
+        feed.post(one, static_cast<double>(i), blob(static_cast<unsigned char>(i)));
+    }
+
+    const auto now = feed.stateAt(30.4);
+    REQUIRE(now.has_value());
+    CHECK(first(*now) == 30);
+}
+
+TEST_CASE("before the first state there is still something to show",
+          "[panelfeed]") {
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+
+    // Only the opening moment of a track: the machine has booted and the music
+    // has not changed the panel yet. The oldest is the best answer there is,
+    // and it beats a blank window.
+    const Url one = track("one.mid");
+    feed.setAudibleTrack(one);
+    feed.post(one, 5.0, blob(7));
+
+    const auto now = feed.stateAt(0.0);
+    REQUIRE(now.has_value());
+    CHECK(first(*now) == 7);
 }
 
 TEST_CASE("a gapless seam does not show the wrong track's panel", "[panelfeed]") {
@@ -70,9 +113,8 @@ TEST_CASE("a gapless seam does not show the wrong track's panel", "[panelfeed]")
 
     // The engine opens the next track's decoder "while its audio is still
     // playing out", so both are producing at once and both count from zero
-    // within themselves. Without the keying, the second track's frames would
-    // be drained against the first track's position and the panel would run
-    // ahead into music nobody has heard yet.
+    // within themselves. Without the keying, the second track's states would be
+    // read against the first track's position.
     const Url playing = track("playing.mid");
     const Url next    = track("next.mid");
     feed.setAudibleTrack(playing);
@@ -81,28 +123,27 @@ TEST_CASE("a gapless seam does not show the wrong track's panel", "[panelfeed]")
     feed.post(next, 0.1, blob(20));
     feed.post(next, 0.2, blob(21));
 
-    const auto due = feed.take(5.0);
-    REQUIRE(due.size() == 1);
-    CHECK(first(due[0]) == 10);
+    auto now = feed.stateAt(5.0);
+    REQUIRE(now.has_value());
+    CHECK(first(*now) == 10);
 
-    // And when the seam is reached, the one that was waiting is what plays.
     feed.setAudibleTrack(next);
-    const auto after = feed.take(5.0);
-    REQUIRE(after.size() == 2);
-    CHECK(first(after[0]) == 20);
-    CHECK(first(after[1]) == 21);
+    now = feed.stateAt(5.0);
+    REQUIRE(now.has_value());
+    CHECK(first(*now) == 21);
 }
 
-TEST_CASE("nothing is drained before the speaker has reached a track",
+TEST_CASE("nothing is shown before the speaker has reached a track",
           "[panelfeed]") {
     PanelFeed& feed = PanelFeed::instance();
     feed.clear();
 
     feed.post(track("early.mid"), 1.0, blob(1));
-    CHECK(feed.take(60.0).empty());
+    CHECK_FALSE(feed.stateAt(60.0).has_value());
+    CHECK_FALSE(feed.producing());
 }
 
-TEST_CASE("a seek drops the panel states it skipped past", "[panelfeed]") {
+TEST_CASE("a seek drops the history it skipped past", "[panelfeed]") {
     PanelFeed& feed = PanelFeed::instance();
     feed.clear();
 
@@ -111,137 +152,48 @@ TEST_CASE("a seek drops the panel states it skipped past", "[panelfeed]") {
     feed.post(one, 1.0, blob(1));
     feed.post(one, 2.0, blob(2));
 
-    // Every queued frame describes a moment that is no longer coming.
+    // Every recorded state describes a moment that is no longer coming.
     feed.forget(one);
-    CHECK(feed.take(60.0).empty());
+    CHECK_FALSE(feed.stateAt(60.0).has_value());
 
-    // And the track is still the audible one afterwards, so what is produced
-    // next arrives normally rather than being held.
+    // The track is still the audible one, so what is recorded next arrives
+    // normally rather than being held.
     feed.post(one, 3.0, blob(3));
-    const auto due = feed.take(60.0);
-    REQUIRE(due.size() == 1);
-    CHECK(first(due[0]) == 3);
+    const auto now = feed.stateAt(60.0);
+    REQUIRE(now.has_value());
+    CHECK(first(*now) == 3);
 }
 
-TEST_CASE("an undrained panel does not grow without bound", "[panelfeed]") {
+TEST_CASE("history does not grow without bound", "[panelfeed]") {
     PanelFeed& feed = PanelFeed::instance();
     feed.clear();
 
-    // Nobody is draining -- paused, or the display was hidden -- and the
-    // decoder keeps producing. What is kept is the recent history, not all of
-    // it: two minutes at two hundred frames a second is already 24,000 states.
+    // Nobody is looking -- the panel is closed -- and the decoder keeps
+    // recording, because that history is the whole point. What is kept is the
+    // recent past, not all of it.
     const Url one = track("long.mid");
     feed.setAudibleTrack(one);
     for (int i = 0; i < 400; ++i) {
         feed.post(one, static_cast<double>(i), blob(static_cast<unsigned char>(i)));
     }
 
-    const auto due = feed.take(1000.0);
-    CHECK(due.size() < 400);
-    REQUIRE_FALSE(due.empty());
-    // The newest is always kept; it is the oldest that goes.
-    CHECK(due.back().seconds == 399.0);
-    CHECK(due.front().seconds >= 399.0 - 120.0);
+    // Far enough back to have been trimmed: the answer is the oldest kept.
+    const auto old = feed.stateAt(10.0);
+    REQUIRE(old.has_value());
+    CHECK(old->seconds >= 399.0 - 120.0);
 }
 
-TEST_CASE("switching the display off stops the feed and empties it",
+TEST_CASE("a display can tell 'no panel at all' from 'nothing yet'",
           "[panelfeed]") {
     PanelFeed& feed = PanelFeed::instance();
     feed.clear();
-
-    CHECK_FALSE(feed.wanted());
-    feed.setWanted(true);
-    CHECK(feed.wanted());
-
-    const Url one = track("one.mid");
-    feed.setAudibleTrack(one);
-    feed.post(one, 1.0, blob(1));
-
-    // A producer reads wanted() and stops producing; what was already queued
-    // describes a panel nobody is looking at any more.
-    feed.setWanted(false);
-    CHECK_FALSE(feed.wanted());
-    CHECK(feed.take(60.0).empty());
-}
-
-TEST_CASE("closing and reopening the display during a track still shows it",
-          "[panelfeed]") {
-    PanelFeed& feed = PanelFeed::instance();
-    feed.clear();
-
-    const Url one = track("one.mid");
-    feed.setWanted(true);
-    feed.setAudibleTrack(one);
-    feed.post(one, 1.0, blob(1));
-    CHECK(feed.take(60.0).size() == 1);
-
-    // Switching off drops what was queued -- nobody is looking at it. What it
-    // must not drop is *which track is playing*: nothing else ever says so
-    // except a track beginning, so forgetting it here left a panel that had
-    // been closed and reopened mid-track empty until the next track started.
-    feed.setWanted(false);
-    feed.setWanted(true);
-
-    feed.post(one, 2.0, blob(2));
-    const auto due = feed.take(60.0);
-    REQUIRE(due.size() == 1);
-    CHECK(first(due[0]) == 2);
-
-    feed.setWanted(false);
-    feed.clear();
-}
-
-TEST_CASE("a display can tell 'nothing produces one' from 'nothing yet'",
-          "[panelfeed]") {
-    PanelFeed& feed = PanelFeed::instance();
-    feed.clear();
-    feed.setWanted(true);
 
     // The two look identical on screen -- a blank panel -- and mean completely
-    // different things: one is a track on a synthesiser with no display at all.
+    // different things: one is a track on a synthesiser with no display.
     CHECK_FALSE(feed.producing());
 
     const Url one = track("one.mid");
     feed.setAudibleTrack(one);
     feed.post(one, 1.0, blob(1));
     CHECK(feed.producing());
-
-    feed.setWanted(false);
-    CHECK_FALSE(feed.producing());
-    feed.clear();
-}
-
-TEST_CASE("a display opening late has something to show at once", "[panelfeed]") {
-    PanelFeed& feed = PanelFeed::instance();
-    feed.clear();
-
-    // The decoder runs far ahead of the speaker -- a synthesiser renders much
-    // faster than real time and the engine buffers deeply -- so a panel opened
-    // part-way through a track finds everything queued at a position that has
-    // not been reached. Waiting for one to fall due leaves it blank for
-    // seconds, which is what it looked like on Kevin's machine.
-    const Url one = track("one.mid");
-    feed.setAudibleTrack(one);
-    feed.post(one, 30.0, blob(1));
-    feed.post(one, 31.0, blob(2));
-
-    CHECK(feed.take(2.0).empty());
-
-    const auto seed = feed.peekEarliest();
-    REQUIRE(seed.has_value());
-    CHECK(first(*seed) == 1);
-
-    // Peeked, not taken: the frame is still there to be drained on time, and
-    // showing it early must not consume it.
-    const auto due = feed.take(60.0);
-    REQUIRE(due.size() == 2);
-    CHECK(first(due[0]) == 1);
-}
-
-TEST_CASE("there is nothing to seed a display with before a track is known",
-          "[panelfeed]") {
-    PanelFeed& feed = PanelFeed::instance();
-    feed.clear();
-    feed.post(track("early.mid"), 1.0, blob(1));
-    CHECK_FALSE(feed.peekEarliest().has_value());
 }

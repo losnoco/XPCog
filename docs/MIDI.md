@@ -280,18 +280,28 @@ Only the newest state of each batch is drawn. The others are the panel's own
 history between repaints, and at up to two hundred a second they are not
 something an eye resolves.
 
-**The first state shown is early, on purpose.** A synthesiser renders much
-faster than real time and the engine buffers deeply, so a panel opened part-way
-through a track finds everything queued at a position the speaker has not
-reached — and a display that waits for one to fall due sits blank for several
-seconds looking broken. That is what it did. So the first thing drawn is the
-nearest state there is, ahead by however far the decoder has run; the next
-drained frame replaces it and every one after that is on time.
+**It is a history, not a queue, and that is the whole design.** kode54’s
+description of Cog’s: *“it looks into the historical buffer of logged states and
+offsets based on the output latency”*. The offset differs here —
+`trackPositionSeconds()` needs no estimate — but the *historical* part is the
+part that matters, and getting it wrong is what made the panel look broken.
 
-Cog makes the opposite trade and never corrects it: `currentTimestamp` is the
-newest queued event minus its estimate of the device latency, so its panel runs
-ahead of the music for as long as the track plays. This is early once and exact
-afterwards.
+States are recorded from the first sample of a track, whether or not anything is
+displaying them. A display then asks `stateAt(seconds)`: what did the panel look
+like at the moment now being heard.
+
+Draining a queue instead fails in a way that is worth writing down, because it
+took two wrong guesses and a diagnostic on screen to find. A synthesiser renders
+far faster than real time and the engine buffers deeply, so when a panel is
+opened part-way through a track, everything the decoder produces from that
+moment on is positioned *seconds ahead* of the speaker. A draining display has
+nothing at the position being heard, so it shows one state and then sits frozen
+until playback catches up — which is exactly what happened, and it only recovered
+when a new track began.
+
+Recording all along costs the emulator a comparison against the previous panel
+state on every rendered sample, inside something already emulating a whole CPU
+per sample. Cog pays it too.
 
 ### Missing ROMs fall back rather than refusing
 
