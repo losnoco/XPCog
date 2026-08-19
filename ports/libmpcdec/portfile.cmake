@@ -25,16 +25,39 @@
 # ../libsidplayfp does for a related reason.
 #
 # ---------------------------------------------------------------------------
-# The one upstream fix worth taking
+# The four patches
 # ---------------------------------------------------------------------------
-# Four places in mpc_demux.c mask with `-1 << 2` and `-1 << 1`. Left-shifting a
-# negative value is undefined behaviour in C, and the value is a signed -1
-# every time; it works on every compiler anyone has run it through, and it is
-# exactly what a UBSan build reports. Cog rewrote the same four lines as
-# multiplications, so the patch is Cog's fix applied to upstream rather than an
-# invention here. `-fsanitize=undefined` is one `-D XPCOG_SANITIZE=undefined`
-# away in this tree, which makes the difference between a clean run and four
-# reports on every seek.
+# One is Cog's; three are what a 2005 C library meets on a 2026 toolchain, and
+# none of the three is anything Cog would have hit, because Cog builds this for
+# macOS with clang and nothing else.
+#
+#   no-shift-of-negative   Four places in mpc_demux.c mask with `-1 << 2` and
+#                          `-1 << 1`. Left-shifting a negative value is
+#                          undefined behaviour in C; it works on every compiler
+#                          anyone has run it through, and it is exactly what a
+#                          UBSan build reports -- one `-D XPCOG_SANITIZE=
+#                          undefined` away in this tree. Cog rewrote the same
+#                          four lines as multiplications, so this is Cog's fix
+#                          applied to upstream rather than an invention here.
+#
+#   log2-name-collision    A static table named `log2`, in the decoder and
+#                          again in the encoder. C99 added log2(), MSVC's UCRT
+#                          declares it, and a file-scope array of that name is
+#                          then a redefinition rather than a shadow.
+#
+#   msvc-provides-asinh    The mirror image: psy_tab.c carries its own asinh
+#                          under `#ifdef _MSC_VER`, from when MSVC had none.
+#                          Visual Studio has had it since 2013, and defining a
+#                          function the UCRT declares dllimport is an error.
+#
+#   extern-requant-tables  requant.h states three tables at file scope without
+#                          `extern`, so every translation unit including it
+#                          gets a tentative definition. GCC merged them until
+#                          -fno-common became the default in GCC 10; now it is
+#                          a multiple-definition link error. Not fixed with
+#                          -fcommon, which would only hide it: the declarations
+#                          are meant to be declarations, and requant.c has the
+#                          real ones.
 vcpkg_download_distfile(ARCHIVE
     URLS "https://files.musepack.net/source/musepack_src_r475.tar.gz"
     FILENAME "musepack_src_r475.tar.gz"
@@ -47,6 +70,7 @@ vcpkg_extract_source_archive(SOURCE_PATH
         no-shift-of-negative.patch
         log2-name-collision.patch
         msvc-provides-asinh.patch
+        extern-requant-tables.patch
 )
 
 file(COPY "${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt" DESTINATION "${SOURCE_PATH}")
