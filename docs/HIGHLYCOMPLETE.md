@@ -15,7 +15,8 @@ or reproducible; nothing depends on the session that started it.
 | 1 | lazyusf2 → USF, `usf` + `miniusf` registered | **done** |
 | 2 | mGBA → GSF, `gsf` + `minigsf` registered | **done** |
 | 3 | melonDS → 2SF, `2sf` + `mini2sf` registered | **done** |
-| 4… | the remaining five cores | not started — see *Which core next* |
+| 4 | snes9x → SNSF, `snsf` + `minisnsf` registered | **done** |
+| 5… | the remaining four cores | not started — see *Which core next* |
 
 Stage 0 registered **nothing** with the plugin registry — deliberately, since a
 decoder that cannot decode is worse than a format the player does not claim.
@@ -116,7 +117,7 @@ Version bytes verified against Cog's `HCDecoder.mm`, not recalled.
 | `0x21` | usf, miniusf | lazyusf2 | 211 | **done** — `vendor/lazyusf2`, 52 built |
 | `0x24` | 2sf, mini2sf | **melonDS**, not vio2sf | 44 built | **done** — `vendor/vio2sf` |
 | `0x25` | ncsf, minincsf | SSEQPlayer | 31 | vendored in Cog |
-| `0x23` | snsf, minisnsf | snes9x | 36 | vendored in Cog |
+| `0x23` | snsf, minisnsf | snes9x | 18 built | **done** — `vendor/snes9x` |
 | `0x12` | dsf, minidsf | HighlyTheoretical | 29 | vendored in Cog |
 | `0x11` | ssf, minissf | HighlyTheoretical | — | same core |
 | `0x01`/`0x02` | psf, psf2 + mini | HighlyExperimental | 25 | vendored in Cog |
@@ -133,30 +134,33 @@ hand-written `CMakeLists.txt` since upstream ships only an Xcode project.
 
 ## Which core next
 
-Three of eight are in, covering **1,656 of 1,656** PSF-family files in this
-corpus — every rip here now plays. What is left adds formats rather than
-coverage, and none of the five has a single file here to listen to, which on
-this project's evidence is the part that matters: the GSF pitch bug passed every
-automated check and was caught by ear.
+Four of eight are in. The corpus at `/Volumes/gigante/vgm` is entirely covered
+by the first three; SNSF was added against a separate set (Tales of Phantasia,
+373 tracks against one 6.3 MB `.snsflib`) and is the first core whose defining
+test case came from outside it.
 
-Two templates exist. `codecs/usf` and `codecs/twosf` are cores with no usable
-upstream: vendored under `vendor/`, hand-written `CMakeLists.txt`. `codecs/gsf`
-is one that has an upstream: a vcpkg overlay port under `ports/`, which CI
-binary-caches. Prefer the port when the choice exists.
+Templates: `codecs/usf`, `codecs/twosf` and `codecs/snsf` are cores with no
+usable upstream — vendored under `vendor/`, hand-written `CMakeLists.txt`.
+`codecs/gsf` is one that has an upstream — a vcpkg overlay port under `ports/`,
+which CI binary-caches. Prefer the port when the choice exists.
 
-The five left, all vendored-in-Cog and all with nothing in this corpus:
+The four left, all vendored-in-Cog:
 
-- **snes9x → SNSF**, 36 files.
-- **HighlyTheoretical → DSF and SSF**, 29 files, two formats for one core.
-- **SSEQPlayer → NCSF**, 31 files. Note it is a *sequence* player rather than an
-  emulator, so the core contract will fit it differently.
-- **HighlyExperimental → PSF and PSF2**, 25 files, and the namesake format.
-  Needs a PlayStation BIOS image; Cog carries `hebios.bin` beside
-  `HCDecoder.mm`, which is a redistribution question rather than a technical
-  one. PSF2 also needs `psf2fs.c`, already vendored in `vendor/psflib`.
+- **HighlyTheoretical → DSF and SSF**, 29 files, two formats for one core
+  (Dreamcast and Saturn), so the best remaining value per core.
+- **SSEQPlayer → NCSF**, 31 files. A *sequence* player rather than an emulator,
+  so the core contract will fit it differently — worth reading before assuming
+  the shape of the other four transfers.
+- **HighlyExperimental → PSF and PSF2**, 25 files, and the format the whole
+  family is named after. Needs a PlayStation BIOS image; Cog carries
+  `hebios.bin` beside `HCDecoder.mm`, which is a redistribution question rather
+  than a technical one. PSF2 additionally needs `psf2fs.c`, already vendored in
+  `vendor/psflib`.
 - **HighlyQuixotic → QSF**, 11 files, the smallest.
 
-Getting a corpus with something in these formats is worth more than any of them.
+Rips to test them against are worth more than any of the four. SNSF is the
+evidence: the core was written in an afternoon and the thing that proved it was
+one particular track someone knew to reach for.
 
 ## Lessons already paid for
 
@@ -227,6 +231,44 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   to vendored sources are marked in place with an "XPCog local change" comment
   and listed at the top of the core's `CMakeLists.txt`, so a re-vendor does not
   drop them silently.
+
+### From stage 4 (snes9x → SNSF)
+
+- **SNSF is why the format family needs whole machines.** The SPC700 has 64 KB
+  of audio RAM, which at its own BRR encoding is about 3.6 seconds of sample
+  data. Tales of Phantasia's vocal theme does not fit and never could: Wolf
+  Team's driver streams sample chunks from cartridge ROM through the CPU-APU I/O
+  ports as the music plays, under a sound driver computing sixteen virtual
+  voices and sounding the loudest eight. An `.spc` is a snapshot of those 64 KB
+  and cannot contain such a track — which is the whole reason SNSF rips the
+  cartridge instead.
+
+  So the CPU-APU handshake is what this core has to keep honest, and
+  `Settings.SoundSync` is the setting that does it: it ties emulation to the
+  sound output rather than to a video frame rate, so the APU is never starved by
+  a frame running long.
+
+- **A third section layout, different again.** GSF has one header per section
+  and 2SF has offset/length chunks in both sections. SNSF takes the **first**
+  section's offset as a base, biases every later section by it, and masks the
+  result to `0x1fffffff`. Its `reserved` holds type/length records where type 0
+  is save RAM, erased to `0xff`, and the payload begins with its own offset.
+  Assume any of these resemble each other and the cartridge assembles at the
+  wrong addresses, which boots to silence with the chain and tags all correct.
+
+- **A rip set is not all music, and a test must not assume it is.** The first
+  `.minisnsf` in a set alphabetically may be `sfx-005F` — two seconds of a sound
+  effect and then 156 seconds of nothing, which is correct. A test asserting
+  "there is audio 45 seconds in" fails on it while the decoder is perfect. What
+  is true of every entry is that the decoder keeps *producing frames* until the
+  declared length runs out, so that is what `test_snsf.cpp` asserts, with the
+  content-varies check reserved for a track long enough to have content.
+
+- **`_lib` is matched by exact name.** The set this was developed against says
+  `_lib=top.snsflib` and ships `Top.snsflib`. That resolves on macOS and Windows
+  and would not on a case-sensitive filesystem. psflib opens by the name given,
+  and so does Cog; worth knowing before blaming a core for a set that plays on
+  one machine and not another.
 
 ### From stage 3 (melonDS → 2SF)
 

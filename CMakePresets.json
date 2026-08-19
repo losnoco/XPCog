@@ -15,7 +15,7 @@
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba",
+        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores",
         "XPCOG_WITH_FFMPEG": "ON",
         "XPCOG_WITH_VGMSTREAM": "ON",
         "XPCOG_WITH_PSF": "ON"

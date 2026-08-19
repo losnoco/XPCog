@@ -79,7 +79,7 @@ add_library(vendor-vio2sf STATIC
 
 # `<vio2sf/NDS.h>` for both this library and its consumers; `src/` privately,
 # because a handful of melonDS sources include "version.h" beside themselves.
-target_include_directories(vendor-vio2sf PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(vendor-vio2sf SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 # The header tree is flat, which is not how it sits in Cog's repository and is
 # exactly how Cog's compiler sees it: the framework copies every header into one
 # `vio2sf.framework/Headers/`, and the sources were rewritten to match --
@@ -92,6 +92,21 @@ target_include_directories(vendor-vio2sf PRIVATE
 target_link_libraries(vendor-vio2sf PUBLIC ZLIB::ZLIB)
 target_compile_features(vendor-vio2sf PUBLIC cxx_std_17)
 set_target_properties(vendor-vio2sf PROPERTIES FOLDER vendor)
+
+# What melonDS's own CMakeLists asks for on Win32, which a hand-written build
+# has to ask for too -- the same omission that took the Windows job down for
+# mGBA, in the same shape.
+#
+# `dirent.h` is a POSIX header MSVC does not ship, and FATStorage.cpp includes
+# it unconditionally. Upstream reaches for a `dirent` package there and so does
+# this; it is a manifest dependency in ../../vcpkg.json, qualified to Windows.
+if(WIN32)
+    target_link_libraries(vendor-vio2sf PUBLIC ole32 comctl32 wsock32 ws2_32)
+    if(MSVC)
+        find_path(XPCOG_DIRENT_INCLUDE_DIR "dirent.h" REQUIRED)
+        target_include_directories(vendor-vio2sf PRIVATE "${XPCOG_DIRENT_INCLUDE_DIR}")
+    endif()
+endif()
 
 if(MSVC)
     # NOMINMAX is the one that looks optional and is not. Something in melonDS

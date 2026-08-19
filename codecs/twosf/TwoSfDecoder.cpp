@@ -167,11 +167,6 @@ struct Image {
     return true;
 }
 
-/// A tag that is present and non-empty.
-[[nodiscard]] bool flagSet(const MetadataMap& tags, std::string_view key) {
-    return !tags.first(key).empty();
-}
-
 [[nodiscard]] int intTag(const MetadataMap& tags, std::string_view key, int fallback) {
     const std::string_view text = tags.first(key);
     if (text.empty()) {

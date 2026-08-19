@@ -1313,9 +1313,27 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   in a Debug build. That is packaging surface not worth taking on to render a
   few minutes of audio.
 
-  The staging plan for the remaining five cores -- what each needs, which
-  section holds its program, where Cog keeps it, and what a core must implement
-  -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
+- **The fourth core: snes9x, so `snsf` and `minisnsf` play.** Eighteen sources:
+  the 65816, the memory map, DMA, the S-DD1 decompressor, enough PPU to keep the
+  CPU honest, and bsnes's SPC700 and S-DSP. No video, no frontend.
+
+  It is the clearest illustration of why this format family rips whole machines.
+  The SPC700 has 64 KB of audio RAM -- about 3.6 seconds of sample data in its
+  own BRR encoding -- and Tales of Phantasia's vocal theme does not fit at any
+  compression. Wolf Team's driver streams sample chunks from cartridge ROM
+  through the CPU-APU I/O ports while the music plays, computing sixteen virtual
+  voices and sounding the loudest eight. An `.spc` is a snapshot of those 64 KB
+  and cannot contain the track; an SNSF is the cartridge, so it can. Which makes
+  the CPU-APU handshake the thing the core has to keep honest, and
+  `Settings.SoundSync` -- emulation tied to sound output rather than to a frame
+  rate -- the setting that does it.
+
+  That track was also the acceptance test, supplied for the purpose, and it
+  passed by ear. Worth stating plainly after the GSF episode: the automated
+  checks here establish that a core runs, not that it sounds right.
+
+  -- what each needs, which section holds its program, where Cog keeps it, and
+  what a core must implement -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
   picked up on another machine.
 
   Tests run against the same opt-in corpus mechanism vgmstream introduced
