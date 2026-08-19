@@ -17,6 +17,22 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    # A hung job is not a slow job, and GitHub's default lets it run for six
+    # hours before saying so. A green run here is five to eight minutes on a warm
+    # binary cache and around twenty on a cold one, so an hour is generous enough
+    # never to cut off real work and short enough that a wedged runner reports
+    # rather than idles.
+    #
+    # Added after one Linux job stalled three times in a row: seven minutes in
+    # `apt-get update` against an unreachable azure.archive.ubuntu.com, then
+    # thirty-eight in Install Qt, then forty-seven back in apt again. Two
+    # unrelated hosts on the same runner, which is what says it was the machine
+    # rather than either mirror. Note what this deliberately is *not*: a retry
+    # around apt, or a swap to a different mirror. Neither would have helped the
+    # Qt half, and making a flaky download tolerant is the habit
+    # docs/PORTING.md's Known gaps argues against. This only converts a hang
+    # into a failure that can be re-run in a minute.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -237,6 +253,8 @@ jobs:
     # only catches includes, whereas this catches a genuine link-time dependency.
     name: Headless (no Qt)
     runs-on: ubuntu-24.04
+    # See the matrix job above for why.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
