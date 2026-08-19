@@ -9,10 +9,15 @@
 // The chain is recursive and ordered, and the order is the part worth stating
 // because it is not the obvious one. Given a file that names `_lib` and then
 // `_lib2`, psflib loads the library chain depth-first and hands the resulting
-// program images back **highest priority first** -- the deepest library, then
-// its dependents, then the file you asked for, each overlaying the last. An
-// emulator core applies them in that order and ends up with the right memory
-// image.
+// program images back in **load order**: `_lib` and its own chain, then the
+// file you asked for, then `_lib2` and onwards. A core applies them in exactly
+// that order and lets each write over what came before, so the main file
+// overrides its library by arriving later. See PsfProgram below.
+//
+// This said "highest priority first" until the eighth core, which is backwards
+// -- what arrives last wins, not first -- and also left out where `_lib2` goes.
+// Every core had the code right and only the prose wrong, which is how it
+// survived seven of them.
 //
 // This layer does the container and nothing else: it resolves the chain, hands
 // out the program images, and parses the tags. What turns a program image into

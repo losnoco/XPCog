@@ -1779,8 +1779,10 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
 
   It produced the deepest `_lib` chain of any set here -- NiGHTS names six
   libraries from one track, 177 `.ssflib` behind 30 `.minissf`. psflib handles
-  the numbered form and returns them highest priority first; merging them in any
-  other order assembles the wrong track and plays it happily.
+  the numbered form and hands the images back in load order; merging them in any
+  other order assembles the wrong track and plays it happily. (This said
+  "highest priority first" until stage 8 found it backwards, in the same words
+  the container section used and for the same reason.)
 
 - **The sixth core: SSEQPlayer, so `ncsf` and `minincsf` play.** The only one of
   the eight that is not an emulator. An NCSF holds an SDAT, the DS's sound
@@ -1824,10 +1826,10 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   `decode` to mean anything, which applies retroactively to the sweeps recorded
   for the earlier cores.
 
-  The staging plan for the remaining core -- what each needs, which
-  section holds its program, where Cog keeps it, and what a core must implement
-  -- is [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work can be
-  picked up on another machine.
+  The staging plan for all eight -- what each needs, which section holds its
+  program, where Cog keeps it, and what a core must implement -- is
+  [`HIGHLYCOMPLETE.md`](HIGHLYCOMPLETE.md), written so the work could be picked
+  up on another machine. It is now a record rather than a plan.
 
   Tests run against the same opt-in corpus mechanism vgmstream introduced
   (`-DXPCOG_PSF_CORPUS=<path>`): chains resolve, tags parse, the tags-only path
@@ -1837,11 +1839,71 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   track finite, and its fraction is decimal rather than the frame count anyone
   arriving from cue sheets would assume.
 
+- **The eighth core: HighlyQuixotic, so `qsf` plays** -- Capcom's CPS-2 sound
+  board, and the last of the eight. A Z80 running a program out of ROM beside
+  the QSound DSP, which reads PCM from a sample ROM. Four sources, the smallest
+  of them, and the only one that boots nothing at all: no BIOS, no firmware, no
+  cartridge header. A QSF carries both ROMs outright, so the file is the whole
+  machine.
+
+  Its sections are a fifth layout and the simplest: `[3-byte tag][LE32
+  offset][LE32 length][data]`, the tag naming one of three ROMs. `Z80` is the
+  sound program, `SMP` the samples, `KEY` eleven bytes of Kabuki key. Kabuki is
+  the custom part Capcom shipped in place of a plain Z80 -- it decrypts opcodes
+  as they are fetched, so the ROM as dumped is ciphertext. Rips of games whose
+  ROMs were already decrypted omit the section, Street Fighter Alpha 2 among
+  them, and a zero key is upstream's signal to run the ROM as it stands. So the
+  path the available set exercises is the absent one.
+
+  This is the core that caught the `_lib` ordering erratum recorded above, and
+  it could only have been this one: a `.miniqsf`'s entire contribution is a
+  single byte written over the library's Z80 image, and that byte is the track
+  number. With the merge reversed the file still opens, still reports its own
+  tags and duration, and still plays -- the same track, fifty-nine times over.
+  Four of the five QSF tests passed like that. Only "two QSFs from one library
+  play different tracks" did not.
+
+- **Commodore 64 tunes, through libsidplayfp.** Not a PSF format and not an
+  emulator core in that sense, but the same shape of problem: a `.sid` is 6510
+  machine code with an init routine and a play routine, and playing it means
+  running a Commodore 64 -- the CPU, both CIAs, enough VIC-II to raise the
+  raster interrupt the play routine is usually driven by, and the SID itself.
+  libsidplayfp is that machine and reSIDfp is its SID.
+
+  Three consequences. A tune has no length, so duration comes from settings the
+  way it does for the PSF family; HVSC's Songlengths database is where real
+  per-track times live and is not something a player may assume exists. A tune
+  usually has several subsongs -- title music, in-game music, jingles -- so this
+  registers a container as well as a decoder, addressed by URL fragment and
+  numbered from one, where GME numbers from zero. And a tune is mono unless it
+  asks for a second or third SID chip, so the channel count is a property of the
+  file rather than of the format.
+
+  The C64 KERNAL, BASIC and character ROMs are vendored in `codecs/sid`, from
+  Cog's `Plugins/sidplay/roms.cpp` -- the same decision and the same shape as
+  the PlayStation BIOS in `vendor/highlyexperimental`. Without them a tune whose
+  play routine calls into KERNAL does not run, which presents as a minority of
+  files failing rather than as nothing working.
+
+  An overlay port rather than vendored sources, which `ports/README.md` had
+  already called for by name, and the first port here to carry its own
+  `CMakeLists`: upstream is autotools and nothing else.
+
+  **Playback is reproducible here and is not in Cog.**
+  `DEFAULT_POWER_ON_DELAY` is deliberately one past `MAX_POWER_ON_DELAY`, and
+  libsidplayfp reads anything above the maximum as "pick one at random", from a
+  generator seeded with `time(0)` -- modelling a real machine not coming up the
+  same way twice. That is the wrong default for a player: the same file decodes
+  to different samples on every run. Pinning it needs the calls in the opposite
+  order to Cog's, because `Player::config()` runs `initialise()` and only then
+  assigns `m_cfg`, so a `config()` made while a tune is loaded initialises from
+  the *previous* settings.
+
 **Then:**
 
-- The rest of M6 — archive sources, DSD/DoP, the remaining ~27 decoders and ~32
-  vendored libraries (one `xpcog_add_codec()` plus one vcpkg overlay port each),
-  `cogimport`, HRTF, Last.fm, global hotkeys.
+- The rest of M6 — DSD/DoP, the remaining decoders and their libraries (one
+  `xpcog_add_codec()` plus one vcpkg overlay port each), `cogimport`, HRTF,
+  Last.fm, global hotkeys.
 
 Milestone 1's narrow format scope was a fastest-path-to-execution choice, not the
 destination. The architecture is sized for full Cog parity throughout: if adding a
@@ -2148,7 +2210,8 @@ the source of truth is what feels natural and is precisely what breaks.
 
 
 **Tests that build fixtures skip silently when their encoder is missing.** Sixteen
-tests shell out to `flac`, `oggenc`, `opusenc`, `lame`, `wavpack` or `ffmpeg`. A skip
+tests shelled out to `flac`, `oggenc`, `opusenc`, `lame`, `wavpack` or `ffmpeg` when
+this was found; 37 do now, and the count only goes up. A skip
 is not a failure, so CI reported "100% tests passed out of 178" for months while
 gapless, seeking, cue spans and tag reading went unrun on every platform. CI now
 installs the encoders. **Check the skip count, not just the pass rate.**
@@ -2213,9 +2276,10 @@ asserted a property Qt provides rather than the one the code was responsible for
 ## Known gaps
 
 - Windows CI now installs all six encoders from pinned upstream releases, so the
-  suite runs the same sixteen tests on every platform. It depends on those URLs
+  suite runs the same tests on every platform — 37 of them, measured by running
+  the suite twice with the encoders on and off `PATH`. It depends on those URLs
   staying up, and a failed download fails the job deliberately — a mirror that
-  quietly degraded back to sixteen skips is the exact failure mode being closed.
+  quietly degraded back to 37 skips is the exact failure mode being closed.
   Two of the six come from RareWares, which is not a versioned host in the way a
   GitHub release is.
 

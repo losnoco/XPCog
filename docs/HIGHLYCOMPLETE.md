@@ -1,8 +1,9 @@
 # HighlyComplete: staging plan
 
 Cog's HighlyComplete is one decoder driving **eight emulator cores** — roughly
-1,600 source files, of which mGBA alone is 989. It does not land in one commit,
-so it lands in stages, and this is the record of where those stages are.
+1,600 source files, of which mGBA alone is 989. It could not land in one commit,
+so it landed in stages, and this is the record of them. All eight are in; what
+follows is kept as the account of how, not as work outstanding.
 
 Written to be picked up on another machine. Everything here is either checked in
 or reproducible; nothing depends on the session that started it.
@@ -23,9 +24,9 @@ or reproducible; nothing depends on the session that started it.
 
 Stage 0 registered **nothing** with the plugin registry — deliberately, since a
 decoder that cannot decode is worse than a format the player does not claim.
-Stage 1 is the first core behind that container, so `usf` and `miniusf` are now
-claimed and play. `codecs/psf` remains a plain library; the other seven cores
-link it the same way `codecs/usf` does.
+Stage 1 was the first core behind that container, and from it on each stage
+claimed its own extensions. `codecs/psf` is still a plain library; all eight
+cores link it the same way `codecs/usf` does.
 
 ## Building and testing what exists
 
@@ -490,7 +491,8 @@ its own set in [`PORTING.md`](PORTING.md) and [`ports/README.md`](../ports/READM
   `USE_MINIZIP` as undefined while the library is compiled with all three.
   `codecs/gsf/CMakeLists.txt` states the set on the imported target instead, and
   records how to re-derive it from the port's own `build.ninja`. **Check this
-  first for every remaining core that has a real upstream.**
+  first for anything that arrives as a vcpkg port rather than vendored
+  sources** — of the eight cores only mGBA did, and `ports/` holds three in all.
 
 - **A GBA has no sample rate, and asking too early gets the reset default.** The
   sound hardware runs at `0x200 >> SOUNDBIAS.resolution` cycles per sample —

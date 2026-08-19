@@ -17,7 +17,11 @@ from a single codebase.
 > a spectrum analyser on Cog's own band frequencies, a mini player, and a taskbar
 > badge and progress bar. Now playing over HTTP too — File → Open URL, internet
 > radio included, with SHOUTcast stream titles live in the window as the
-> station announces them.
+> station announces them, HLS for the stations that use it, and chained Ogg so a
+> stream survives its own track changes. Breadth since: archives played in
+> place, tracker modules, game music rips, vgmstream's console formats, the
+> whole PSF family on all eight of its emulator cores, and Commodore 64 tunes.
+> **830 extensions** across 20 decoders.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
 
@@ -115,10 +119,10 @@ it configures; what is lost is the icon's container and its dark and tinted
 appearances, which the system composes from the layered source and cannot
 recover from a bitmap.
 
-Sixteen tests build their fixtures by shelling out to command-line **encoders**,
-and *skip silently* when those are absent — a skip is not a failure, so the suite
-still reports success while the gapless, seek and cue-span tests never run. Install
-them to get real coverage:
+Thirty-seven tests build their fixtures by shelling out to command-line
+**encoders**, and *skip silently* when those are absent — a skip is not a failure,
+so the suite still reports success while the gapless, seek and cue-span tests never
+run. Install them to get real coverage:
 
 ```sh
 brew install flac vorbis-tools opus-tools lame wavpack ffmpeg    # macOS
@@ -137,11 +141,15 @@ winget install Xiph.FLAC Gyan.FFmpeg LAME.LAME Mozilla.opus-tools
 [RareWares](https://www.rarewares.org/ogg-oggenc.php), and put `wavpack.exe` and
 `oggenc.exe` (renamed from `oggenc2.exe`) anywhere on `PATH`.
 
-Watch the skip count in `ctest` output, not just the pass rate — a full run is
-247 tests and **0 skipped**. Note that the encoders alone were not enough before
-the fixture commands stopped assuming a POSIX shell: `2>/dev/null` under
-`cmd.exe` fails the whole command, which every call site read as "encoder
-missing". See `tests/TestShell.hpp`.
+Watch the skip count in `ctest` output, not just the pass rate. With the encoders
+installed a full run is **444 tests, 50 skipped**, and those 50 want something no
+package manager can supply: rips of copyrighted game programs, which cannot be
+committed. Point `XPCOG_PSF_CORPUS`, `XPCOG_VGM_CORPUS` or `XPCOG_SID_CORPUS` at a
+folder of them and the matching cases run. Without the encoders, 37 more go quiet.
+
+Note that the encoders alone were not enough before the fixture commands stopped
+assuming a POSIX shell: `2>/dev/null` under `cmd.exe` fails the whole command,
+which every call site read as "encoder missing". See `tests/TestShell.hpp`.
 
 To build the engine without Qt at all:
 
@@ -180,8 +188,17 @@ real albums:
 ### Formats
 
 Dedicated decoders for FLAC, Ogg Vorbis, Opus, MP3 (minimp3) and WavPack, plus
-FFmpeg as the catch-all for AAC, ALAC, WMA, AC3, DTS, TAK, TTA, APE, PCM and the
-MP4/MKV/ASF containers — 30-odd extensions in total.
+FFmpeg as the catch-all for AAC, ALAC, WMA, AC3, DTS, TAK, TTA, APE, Musepack, PCM
+and the MP4/MKV/ASF containers.
+
+Beyond those: tracker modules (libopenmpt), chiptune rips (Game_Music_Emu),
+console streamed audio (vgmstream), the PSF family on all eight of the emulator
+cores behind it — USF, GSF, 2SF, SNSF, SSF/DSF, NCSF, PSF/PSF2 and QSF — and
+Commodore 64 tunes (libsidplayfp). Archives are a *source* rather than a format,
+so a `.zip` of FLAC plays without being unpacked first.
+
+`xpcog-cli codecs` prints what a given build claims; a default one is 20 decoders
+and 830 extensions. Cog recognises around 900 across ~35 decoders.
 
 Selection follows Cog's rules: extension first, then MIME type, with several
 claimants tried in descending priority. FFmpeg registers *below* default priority,
@@ -253,14 +270,15 @@ never confused with the expected tail.
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
 | ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
-| 🚧 | **M6** | Breadth. HTTP and internet radio, tracker modules and game music rips done; the remaining decoders, archive sources, DSD/DoP, HRTF, scrobbling to come |
+| 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores and SID all done; DSD/DoP, the remaining decoders, `cogimport`, HRTF, scrobbling and global hotkeys to come |
 
-Milestone 1 covers FLAC, MP3, Vorbis, Opus, AAC/ALAC, WavPack, APE and Musepack; M6
-adds tracker modules (libopenmpt) and game music rips (Game_Music_Emu), taking the
-recognised extension count past a hundred. Cog recognises around 900 across ~35
-decoders; reaching that is the rest of M6 and beyond, and the architecture is sized
-for it — each additional decoder is one `xpcog_add_codec()` call, never a refactor,
-and the two added so far each cost exactly that.
+Milestone 1's formats were FLAC, MP3, Vorbis, Opus, AAC/ALAC and WavPack, with APE
+and Musepack arriving through FFmpeg rather than their own decoders. M6 has taken
+the recognised extension count from 30-odd to **830**, against the roughly 900 Cog
+recognises across ~35 decoders. Getting the rest is the remainder of M6 and beyond,
+and the architecture is sized for it — each additional decoder is one
+`xpcog_add_codec()` call, never a refactor, and every one added so far has cost
+exactly that.
 
 ### Deliberately out of scope
 
@@ -279,8 +297,8 @@ keeps playback order canonical and treats sorting as display-only.
 The full porting plan, milestone-by-milestone progress, and the complete list of
 deliberate behaviour differences live in [`docs/PORTING.md`](docs/PORTING.md).
 Work that spans several commits gets its own plan beside it —
-[`docs/HIGHLYCOMPLETE.md`](docs/HIGHLYCOMPLETE.md) stages the eight emulator
-cores behind the PSF formats.
+[`docs/HIGHLYCOMPLETE.md`](docs/HIGHLYCOMPLETE.md) staged the eight emulator
+cores behind the PSF formats, one at a time, and is now the record of all eight.
 
 Upstream Cog: <https://github.com/losnoco/Cog>
 
