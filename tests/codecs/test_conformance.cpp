@@ -25,6 +25,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace xpcog;
@@ -56,6 +57,16 @@ constexpr Codec kCodecs[] = {
     {"Opus", "opus", R"(opusenc --quiet --bitrate 128 "{in}" "{out}")", "Opus", false},
     {"MP3", "mp3", R"(lame --quiet -b 192 "{in}" "{out}")", "MP3", false},
     {"WavPack", "wv", R"(wavpack -q -y "{in}" -o "{out}")", "WavPack", true},
+#ifdef XPCOG_MPCENC
+    // Named by full path, unlike every other row. mpcenc is not a tool anyone
+    // has installed -- Musepack ships no packaged encoder for any platform here
+    // -- so ports/libmpcdec builds it and tests/CMakeLists.txt passes its
+    // location in. `--standard` is the ~175 kbps default profile; the row would
+    // pass at any of them, and pinning it keeps the fixture's size stable.
+    {"Musepack", "mpc",
+     "\"" XPCOG_MPCENC "\" --silent --overwrite --standard \"{in}\" \"{out}\"",
+     "Musepack", false},
+#endif
     // FFmpeg-backed. expectedCodec is FFmpeg's long name, which is what the
     // decoder reports.
     {"AAC", "m4a", R"(ffmpeg -y -loglevel error -i "{in}" -c:a aac -b:a 192k "{out}")",
@@ -127,6 +138,7 @@ std::optional<std::filesystem::path> encode(const Codec& codec) {
     replace("{in}", referenceWav().string());
     replace("{out}", out.string());
     command += xpcog::test::kSilenceStderr;
+    command = xpcog::test::shellCommand(std::move(command));
 
     if (std::system(command.c_str()) != 0 || !std::filesystem::exists(out)) {
         return std::nullopt;

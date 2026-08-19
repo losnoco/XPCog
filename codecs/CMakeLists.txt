@@ -23,6 +23,12 @@ endif()
 if(XPCOG_WITH_WAVPACK)
     add_subdirectory(wavpack)
 endif()
+if(XPCOG_WITH_MUSEPACK)
+    add_subdirectory(musepack)
+endif()
+if(XPCOG_WITH_APL)
+    add_subdirectory(apl)
+endif()
 if(XPCOG_WITH_PLAYLISTS)
     add_subdirectory(playlists)
 endif()
@@ -68,8 +74,9 @@ if(XPCOG_WITH_PSF)
     add_subdirectory(qsf)
 endif()
 
-# M1b onward: ffmpeg, vorbis, opus, minimp3, wavpack, ape, musepack, taglib,
-# cuesheet, m3u, pls, xmlplaylist. M6: the remaining ~27 Cog decoders.
+# M1b onward: ffmpeg, vorbis, opus, minimp3, wavpack, musepack, taglib,
+# cuesheet, m3u, pls, xmlplaylist. APE is not on this list: Cog has no native
+# Monkey's Audio decoder either, and claims .ape from its FFmpeg plugin.
 
 # ---------------------------------------------------------------------------
 # Generate RegisterAll.cpp

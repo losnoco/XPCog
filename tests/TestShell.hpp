@@ -1,9 +1,10 @@
 // Shelling out to the fixture encoders, portably.
 //
-// Sixteen tests build their fixtures by invoking a command-line encoder through
-// std::system, which runs /bin/sh on POSIX and cmd.exe on Windows. The two share
-// no syntax for either of the things every one of those call sites needs:
-// discarding the encoder's diagnostics, and asking whether a tool exists.
+// Forty-one tests build their fixtures by invoking a command-line encoder
+// through std::system, which runs /bin/sh on POSIX and cmd.exe on Windows. The
+// two share no syntax for any of the things those call sites need: discarding
+// the encoder's diagnostics, asking whether a tool exists, and naming a program
+// by an absolute path.
 //
 // Neither failure is loud. `2>/dev/null` under cmd.exe is parsed as a
 // redirection to a file called \dev\null; that directory does not exist, so the
@@ -42,6 +43,31 @@ inline constexpr const char* kSilenceStderr =
     const std::string probe = std::string{"command -v "} + name + " >/dev/null 2>&1";
 #endif
     return std::system(probe.c_str()) == 0;
+}
+
+/// A command line, made safe to hand to std::system().
+///
+/// Only does anything on Windows, and only to a command whose *program* is a
+/// quoted path -- which is any encoder that is not on PATH and has to be named
+/// in full. cmd.exe strips the first and last quote character of the line it is
+/// given, so
+///
+///     "C:/.../mpcenc.exe" --silent "in.wav" "out.mpc"
+///
+/// arrives at the program as something that names no file it can find, and
+/// std::system returns 1 with nothing written. Wrapping the whole line in one
+/// more pair leaves the intended command after that strip.
+///
+/// Guarded on the leading quote rather than applied to everything: cmd's rule
+/// depends on how many quotes the line has, so wrapping a command that does not
+/// need it is not reliably a no-op.
+[[nodiscard]] inline std::string shellCommand(std::string command) {
+#ifdef _WIN32
+    if (!command.empty() && command.front() == '"') {
+        return "\"" + command + "\"";
+    }
+#endif
+    return command;
 }
 
 }  // namespace xpcog::test

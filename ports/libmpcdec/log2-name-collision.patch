@@ -1,0 +1,59 @@
+Rename the static table `log2` so it does not collide with C99's log2().
+
+MSVC's UCRT declares log2() through headers these files already include, so
+the file-scope array redefines a function and every use that follows becomes
+a call:
+
+  mpc_bits_reader.c(101): error C2365: 'log2': redefinition; previous definition was 'function'
+  bitstream.c(169): error C2198: too few arguments for call
+
+Two copies of the same table, one in the decoder and one in the encoder. The
+library predates C99. Cog does not carry this fix because Apple's headers do
+not declare log2() in these translation units -- it is MSVC-only, and the
+reason this port needs a patch Cog's copy does not.
+
+--- a/libmpcdec/mpc_bits_reader.c
++++ b/libmpcdec/mpc_bits_reader.c
+@@ -98,7 +98,7 @@
+ 	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 103, 55, 3347, 12419, 56459, 16987, 313105, 54177, 3076873, 3739321, 3132677, 66353813, 123012781, 236330717}
+ };
+ 
+-static const mpc_uint8_t log2[32] =
++static const mpc_uint8_t mpc_log2[32] =
+ { 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6};
+ 
+ static const mpc_uint8_t log2_lost[32] =
+@@ -138,8 +138,8 @@
+ 	mpc_uint32_t value = 0;
+ 	if (max == 0)
+ 		return 0;
+-	if (log2[max - 1] > 1)
+-		value = mpc_bits_read(r, log2[max - 1] - 1);
++	if (mpc_log2[max - 1] > 1)
++		value = mpc_bits_read(r, mpc_log2[max - 1] - 1);
+ 	if (value >= log2_lost[max - 1])
+ 		value = ((value << 1) | mpc_bits_read(r, 1)) - log2_lost[max - 1];
+ 	return value;
+--- a/libmpcenc/bitstream.c
++++ b/libmpcenc/bitstream.c
+@@ -93,7 +93,7 @@
+ 	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 103, 55, 3347, 12419, 56459, 16987, 313105, 54177, 3076873, 3739321, 3132677, 66353813, 123012781, 236330717}
+ };
+ 
+-static const mpc_uint8_t log2[32] =
++static const mpc_uint8_t mpc_log2[32] =
+ { 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6};
+ 
+ static const mpc_uint8_t log2_lost[32] =
+@@ -166,9 +166,9 @@
+ void encodeLog(mpc_encoder_t * e, mpc_uint32_t value, mpc_uint32_t max)
+ {
+ 	if (value < log2_lost[max - 1])
+-		writeBits(e, value, log2[max - 1] - 1);
++		writeBits(e, value, mpc_log2[max - 1] - 1);
+ 	else
+-		writeBits(e, value + log2_lost[max - 1], log2[max - 1]);
++		writeBits(e, value + log2_lost[max - 1], mpc_log2[max - 1]);
+ }
+ 
+ void writeMagic(mpc_encoder_t * e)

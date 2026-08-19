@@ -33,6 +33,17 @@
     }
   ],
   "features": {
+    "musepack": {
+      "description": "Musepack decoder, on libmpcdec (see ports/libmpcdec)",
+      "dependencies": [
+        {
+          "name": "libmpcdec",
+          "features": [
+            "tools"
+          ]
+        }
+      ]
+    },
     "vgmstream": {
       "description": "vgmstream decoder: several hundred video-game streaming formats",
       "dependencies": [

@@ -1,0 +1,29 @@
+Drop the MSVC asinh() shim, which is now the thing that breaks MSVC.
+
+psy_tab.c carries its own asinh under #ifdef _MSC_VER, written when MSVC had
+no such function. Visual Studio has provided asinh since 2013, and a local
+definition of a function the UCRT declares dllimport is an error, not a
+shadow:
+
+  psy_tab.c(192): error C2491: 'asinh': definition of dllimport function not allowed
+
+Removing the block leaves <math.h>'s, which is what every other platform in
+this build has always used.
+
+--- a/libmpcpsy/psy_tab.c
++++ b/libmpcpsy/psy_tab.c
+@@ -187,14 +187,6 @@
+     }
+ }
+ 
+-#ifdef _MSC_VER
+-static double
+-asinh ( double x )
+-{
+-    return x >= 0  ?  log (sqrt (x*x+1) + x)  :  -log (sqrt (x*x+1) - x);
+-}
+-#endif
+-
+ 
+ static double
+ Freq2Bark ( double Hz )           // Klemm 2002

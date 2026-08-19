@@ -1899,6 +1899,56 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   assigns `m_cfg`, so a `config()` made while a tune is loaded initialises from
   the *previous* settings.
 
+- **Musepack, and what looking for its neighbour turned up.** `libmpcdec` was
+  named in [`ports/README.md`](../ports/README.md) as an M1b leftover from the
+  start, and it is the straightforward half: Cog has
+  `Plugins/Musepack/MusepackDecoder.m` on `Frameworks/MPCDec`, the reader
+  callbacks map onto `ISource` the way psflib's and vgmstream's did, and the
+  decoder hands back float32 already.
+
+  Cog's copy is the r475 reference tree with the public headers renamed from
+  `mpc/` to `mpcdec/` for its framework layout, a scattering of casts, and one
+  real fix -- four masks written `-1 << 2`, which is undefined behaviour for a
+  negative left operand and is exactly what a UBSan build reports. The port
+  takes the fix and not the rename. Two further patches are new here and both
+  are MSVC-only: the library defines a static table called `log2` and a function
+  called `asinh`, each of which C99 later claimed, and each of which MSVC now
+  declares -- so a 2005 codebase that compiles on Apple's headers stops on
+  Microsoft's, with `error C2365: 'log2': redefinition`.
+
+  **The encoder comes from the same port.** Musepack has no packaged encoder
+  anywhere -- not winget, not apt, not Homebrew -- so the alternative was
+  another pinned download from a third-party host, of which
+  [Known gaps](#known-gaps) already records one failing a build. The reference
+  tree ships `mpcenc` beside the decoder, so a `tools` feature builds it for
+  twenty more C files, and the fixture is then encoded by exactly the revision
+  the decoder was built from.
+
+  One decoder bug came out of the test rather than the review, which is the
+  point of having one. `mpc_demux_seek_sample()` does not land on the sample
+  asked for: it seeks to the start of the containing block and leaves the
+  decoder to discard the remainder, reporting `samples = 0` for each frame it
+  throws away. A first version treated more than sixteen of those as end of
+  stream, which is fine for a three-second fixture and wrong for a one-second
+  one, since the count follows the block size and not the file. The bound is now
+  the library's own arithmetic.
+
+- **Monkey's Audio Link files**, which is what the APE half of that work turned
+  into. Cog has no native Monkey's Audio decoder -- `.ape` is claimed by its
+  FFmpeg plugin, which is what XPCog already did -- so there was no parity to
+  reach for there. What Cog does have and this did not is `Plugins/APL`: a
+  `.apl` is a few lines of text naming one big `.ape` and a range of samples in
+  it, so a set of them turns a single-file CD rip into an album.
+
+  That is a cue sheet track by another name, and the implementation says so --
+  it is `codecs/cuesheet`'s span decoder with the range read from one file
+  instead of from a sheet. Nothing in it is Monkey's Audio specific: the image is
+  opened through the registry, so the tests use FLAC, and run everywhere rather
+  than waiting on an encoder no platform packages.
+
+  Cog parses the two offsets with `-[NSString intValue]` under a comment reading
+  "bugs with files over 2GB". These are 64-bit here.
+
 **Then:**
 
 - The rest of M6 — DSD/DoP, the remaining decoders and their libraries (one
@@ -2211,7 +2261,7 @@ the source of truth is what feels natural and is precisely what breaks.
 
 **Tests that build fixtures skip silently when their encoder is missing.** Sixteen
 tests shelled out to `flac`, `oggenc`, `opusenc`, `lame`, `wavpack` or `ffmpeg` when
-this was found; 37 do now, and the count only goes up. A skip
+this was found; 41 do now, and the count only goes up. A skip
 is not a failure, so CI reported "100% tests passed out of 178" for months while
 gapless, seeking, cue spans and tag reading went unrun on every platform. CI now
 installs the encoders. **Check the skip count, not just the pass rate.**
@@ -2276,10 +2326,10 @@ asserted a property Qt provides rather than the one the code was responsible for
 ## Known gaps
 
 - Windows CI now installs all six encoders from pinned upstream releases, so the
-  suite runs the same tests on every platform — 37 of them, measured by running
+  suite runs the same tests on every platform — 41 of them, measured by running
   the suite twice with the encoders on and off `PATH`. It depends on those URLs
   staying up, and a failed download fails the job deliberately — a mirror that
-  quietly degraded back to 37 skips is the exact failure mode being closed.
+  quietly degraded back to 41 skips is the exact failure mode being closed.
   Two of the six come from RareWares, which is not a versioned host in the way a
   GitHub release is.
 

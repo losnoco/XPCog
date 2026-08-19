@@ -100,6 +100,31 @@ if(XPCOG_WITH_VGMSTREAM)
     endif()
 endif()
 
+if(XPCOG_WITH_APL)
+    # The fixtures are FLAC, not Monkey's Audio: an .apl names a range in a file
+    # the registry opens, so what codec answers is not the thing under test, and
+    # FLAC's encoder is one every platform already has.
+    target_sources(xpcog-tests PRIVATE codecs/test_apl.cpp)
+endif()
+
+if(XPCOG_WITH_MUSEPACK)
+    target_sources(xpcog-tests PRIVATE codecs/test_musepack.cpp)
+
+    # The encoder comes from the same port as the decoder and is named by its
+    # full path rather than looked up on PATH, which is what every other codec
+    # test does. There is nothing to look up: Musepack has no packaged encoder
+    # for any platform here, so ports/libmpcdec builds mpcenc under its `tools`
+    # feature and it lands in the manifest's own vcpkg_installed tree. Naming it
+    # also means the fixture is encoded by exactly the revision the decoder was
+    # built from.
+    set(_mpcenc "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/libmpcdec/mpcenc${CMAKE_EXECUTABLE_SUFFIX}")
+    if(EXISTS "${_mpcenc}")
+        target_compile_definitions(xpcog-tests PRIVATE "XPCOG_MPCENC=\"${_mpcenc}\"")
+    else()
+        message(STATUS "mpcenc not found at ${_mpcenc}; Musepack fixtures will skip")
+    endif()
+endif()
+
 if(XPCOG_WITH_SID)
     target_sources(xpcog-tests PRIVATE codecs/test_sid.cpp)
 

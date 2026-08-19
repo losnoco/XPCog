@@ -18,3 +18,9 @@
 # `./script.sh` breaks, so this would survive every test that ran it as
 # `bash script.sh` and fail the first time someone ran it the obvious way.
 *.sh text eol=lf
+
+# Patches likewise, and for a sharper reason: a patch's context lines have to
+# match the file it is applied to byte for byte. The overlay ports under ports/
+# patch sources unpacked from upstream tarballs, which are LF, so a patch
+# checked out with CRLF fails to apply on Windows and only on Windows.
+*.patch text eol=lf

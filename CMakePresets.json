@@ -15,11 +15,12 @@
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid",
+        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack",
         "XPCOG_WITH_FFMPEG": "ON",
         "XPCOG_WITH_VGMSTREAM": "ON",
         "XPCOG_WITH_PSF": "ON",
-        "XPCOG_WITH_SID": "ON"
+        "XPCOG_WITH_SID": "ON",
+        "XPCOG_WITH_MUSEPACK": "ON"
       },
       "environment": {
         "VCPKG_BINARY_SOURCES": "clear;files,${sourceDir}/.vcpkg-cache,readwrite"

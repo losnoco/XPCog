@@ -15,8 +15,12 @@ option(XPCOG_WITH_OPUS      "Opus decoder"                 ON)
 option(XPCOG_WITH_OGGCHAIN  "Chained Ogg files as subsongs" ON)
 option(XPCOG_WITH_MINIMP3   "MP3 decoder (vendored minimp3)" ON)
 option(XPCOG_WITH_WAVPACK   "WavPack decoder"              ON)
-option(XPCOG_WITH_APE       "Monkey's Audio decoder (M1b)" OFF)
-option(XPCOG_WITH_MUSEPACK  "Musepack decoder (M1b)"       OFF)
+# APE has no option of its own and will not get one: Cog has no native
+# Monkey's Audio decoder, and claims .ape from its FFmpeg plugin, which
+# XPCOG_WITH_FFMPEG already does here. What Cog does have and this lacked is
+# the .apl link container, which is XPCOG_WITH_APL below.
+option(XPCOG_WITH_APL       "Monkey's Audio Link (.apl) container" ON)
+option(XPCOG_WITH_MUSEPACK  "Musepack decoder (libmpcdec)"  OFF)
 option(XPCOG_WITH_TAGLIB    "TagLib tag reading"           ON)
 option(XPCOG_WITH_DSD       "DSD / DoP support (M6)"       OFF)
 option(XPCOG_WITH_HTTP      "HTTP and internet radio source (libcurl)" ON)

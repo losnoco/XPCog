@@ -1,0 +1,16 @@
+{
+  "name": "libmpcdec",
+  "version-string": "r475",
+  "description": "libmpcdec, the Musepack SV7/SV8 decoder, from the musepack_src reference tree. Not to be confused with vcpkg's `mpc`, which is GNU MPC, a multiprecision arithmetic library.",
+  "homepage": "https://www.musepack.net",
+  "license": "BSD-3-Clause",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ],
+  "features": {
+    "tools": {
+      "description": "mpcenc, the reference encoder, which the test suite uses to build fixtures. Musepack has no packaged encoder on any platform this builds for."
+    }
+  }
+}
