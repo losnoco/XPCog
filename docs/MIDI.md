@@ -96,6 +96,34 @@ Worth deciding at stage 3 whether to accept the part-number names directly
 rather than making everyone rename five files. The sizes identify them exactly,
 and nothing else in a ROM directory has those five sizes.
 
+## The corpus
+
+`-DXPCOG_MIDI_CORPUS=<path>`, opt-in like the PSF, SID and vgmstream ones and
+for the same reason: these files cannot be committed.
+
+The collection this was developed against holds 198,712 files, of which 197,475
+are Standard MIDI (3.6 GB, averaging 19 KB, largest 3.9 MB). What makes it worth
+more than its size is the tail, which reaches four processors a folder of `.mid`
+never would:
+
+| extension | files | processor |
+|---|---|---|
+| `mid`, `midi` | 197,475 | `standard_midi` |
+| `mus` | 190 | `mus` — Doom |
+| `hmi` | 190 | `hmi` |
+| `lds` | 94 | `lds` — Loudness |
+| `rmi` | 9 | `riff_midi` |
+| `mids` | 3 | `riff_midi`, Microsoft's variant |
+
+Absent from it, and so still unexercised: `hmp`, `xmi`, `kar`, `xmf`, `mxmf`,
+`hmq`, `mds`. `xmi` is the one worth finding a fixture for, since it is the
+format that makes subsongs real.
+
+The sweep caps at 25 files per format. A corpus of this size holds truncated and
+misnamed files and refusing those is correct, so the test requires a majority to
+parse rather than all of them — what would be a failure is a format whose
+processor never runs at all.
+
 ## Where each piece should live
 
 `midi_processing` and `nuked-sc55` are Cog's own trees with no separate

@@ -100,6 +100,23 @@ if(XPCOG_WITH_VGMSTREAM)
     endif()
 endif()
 
+if(XPCOG_WITH_MIDI)
+    target_sources(xpcog-tests PRIVATE codecs/test_midi_container.cpp)
+    target_link_libraries(xpcog-tests PRIVATE xpcog-codec-midi)
+
+    # Its own corpus variable, like the SID one and for the same reason: a MIDI
+    # collection is not a folder of rips of anything else. The formats past
+    # Standard MIDI -- HMI, Doom's MUS, Loudness LDS -- cannot be synthesised
+    # convincingly by a test and cannot be committed, so breadth is opt-in.
+    set(XPCOG_MIDI_CORPUS "" CACHE PATH
+        "Folder of MIDI files for the container tests; empty to skip")
+    if(XPCOG_MIDI_CORPUS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_MIDI_CORPUS=\"${XPCOG_MIDI_CORPUS}\"")
+        message(STATUS "MIDI corpus tests: ${XPCOG_MIDI_CORPUS}")
+    endif()
+endif()
+
 if(XPCOG_WITH_APL)
     # The fixtures are FLAC, not Monkey's Audio: an .apl names a range in a file
     # the registry opens, so what codec answers is not the thing under test, and

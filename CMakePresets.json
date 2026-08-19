@@ -20,7 +20,8 @@
         "XPCOG_WITH_VGMSTREAM": "ON",
         "XPCOG_WITH_PSF": "ON",
         "XPCOG_WITH_SID": "ON",
-        "XPCOG_WITH_MUSEPACK": "ON"
+        "XPCOG_WITH_MUSEPACK": "ON",
+        "XPCOG_WITH_MIDI": "ON"
       },
       "environment": {
         "VCPKG_BINARY_SOURCES": "clear;files,${sourceDir}/.vcpkg-cache,readwrite"

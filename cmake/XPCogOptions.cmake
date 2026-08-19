@@ -22,6 +22,11 @@ option(XPCOG_WITH_WAVPACK   "WavPack decoder"              ON)
 option(XPCOG_WITH_APL       "Monkey's Audio Link (.apl) container" ON)
 option(XPCOG_WITH_MUSEPACK  "Musepack decoder (libmpcdec)"  OFF)
 option(XPCOG_WITH_TAGLIB    "TagLib tag reading"           ON)
+# MIDI is staged; see docs/MIDI.md. This switches on the container and the
+# sequencer, and each synth follows behind it. OFF until one of them can
+# answer, on the rule the PSF container set: a decoder that cannot decode is
+# worse than a format the player does not claim.
+option(XPCOG_WITH_MIDI      "MIDI sequencing (midi_processing)" OFF)
 option(XPCOG_WITH_DSD       "DSD / DoP support (M6)"       OFF)
 option(XPCOG_WITH_HTTP      "HTTP and internet radio source (libcurl)" ON)
 option(XPCOG_WITH_HLS       "HTTP Live Streaming (.m3u8)"  ON)
