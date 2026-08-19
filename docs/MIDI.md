@@ -67,7 +67,7 @@ player does not claim.
 | 1 | **Nuked OPL3**, via the `opl3*` sources. First audible MIDI, and the decoder that registers. | nothing external | done |
 | 2 | **SpessaSynth**, and a SoundFont setting | a user-supplied `.sf2`/`.sf3` | |
 | 3 | **Nuked SC-55**, and a ROM setting | a user-supplied ROM set | audio done |
-| 3b | The SC-55's **front-panel LCD**, in sync with playback | the same ROM set | |
+| 3b | The SC-55's **front-panel LCD**, in sync with playback | the same ROM set | capture done |
 
 OPL3 is first on purpose: it is the only one of the three that needs no asset
 the user has to find, so stage 1 proves the whole sequencer path — parse, tempo
@@ -159,6 +159,62 @@ synthesiser, and every SC-55 track is resampled by the player downstream.
 Booting is also real: `sc55_init` loads the ROMs and then the firmware has to
 run its own startup, which Cog spins for seven seconds of emulated time before
 sending a note. That is a fraction of a second of CPU at every track start.
+
+### The front panel
+
+The panel is part of the emulation, not a decoration bolted on: `lcd.cpp` is one
+of the seven sources, the firmware drives it, and `api.h` is built for handing
+it out. `sc55_render_with_lcd()` takes a callback that receives the panel state
+whenever it changes, and `sc55_lcd_render_screen()` composites that state against
+`data/back.data` -- a raw 741x268 RGBA photograph of the front panel, which
+*is* shippable, unlike the firmware.
+
+**The timestamp is a stream position, and api.h says otherwise.** The header
+documents it as "milliseconds, absolute elapsed since boot". Booting is seven
+seconds of emulated time, so believing the header puts every captured frame
+seven seconds into a stream that may be one second long. The code disagrees:
+the value comes from `st->sample_counter` (`mcu.cpp:982`), which accumulates
+while rendering and is zeroed *only* inside `sc55_spin` (`mcu.cpp:1542`) -- the
+boot spin, which zeroes it after every page. By the time booting ends the
+counter is back at nothing, so it counts exactly the samples rendered since.
+
+Two tests hold that down, and both were confirmed by putting the bug back: one
+asserts the frames land inside the second that was rendered rather than seven
+seconds past it, and one renders the same second in a single call and in a
+hundred, asserting identical positions. The second is the one that matters for
+sync -- if positions came from the caller's chunking, the panel would drift by
+the buffer size, which changes with the output device.
+
+**The display is amber, not blue.** `sc55_init` sets `lcd_col2 = 0x0050c8`
+(`mcu.cpp:1183`), which is a blue, and Cog takes that default -- kode54 was
+bitten by it. The real machine's panel is amber. The colours are not baked into
+the pixels: `LCD_Init` copies them into the `lcd_state_t` that reaches the
+callback (`lcd.cpp:215`), and `LCD_Update` reads them back out of that blob, so
+the state a consumer holds can simply be recoloured before it is rendered. No
+change to the vendored sources is needed; the value gets set when the widget
+lands.
+
+### Drawing it is the part still to come
+
+Capture is done and positioned; what remains is the widget. Cog has both halves
+already -- `Audio/Visualization/MIDIVisualizationController.m` and
+`Visualization/SCView.m`, 1,224 lines between them -- and one design decision in
+there does not transfer.
+
+`AudioTap`, which feeds the spectrum, gets its sync for free by being filled in
+the *device callback*: what is written is what is about to be heard, so the
+latency compensation disappears rather than being reimplemented. LCD state
+cannot use that trick, because it is produced at decode time and does not travel
+in the samples. It has to be a timestamped queue drained against the playback
+position -- which is what Cog does, subtracting `[controller getFullLatency]`
+from the newest event's timestamp.
+
+Three behaviours of Cog's to carry, each a bug if missed: a floor of 5 ms
+between captured states (done -- `kLcdThrottleMs`), a flush on seek (free here,
+since seeking rebuilds the machine), and trimming states older than the window.
+One deliberately *not* carried: Cog posts the previous state stamped with the
+previous timestamp, one throttle window behind, which is defensible but means a
+panel that goes quiet never shows its final state until something else changes.
 
 ### Missing ROMs fall back rather than refusing
 

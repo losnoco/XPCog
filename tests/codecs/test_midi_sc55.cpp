@@ -27,6 +27,7 @@
 #include "MidiFixtures.hpp"
 
 #include "midi/Sc55Roms.hpp"
+#include "midi/Sc55Synth.hpp"
 
 #include "xpcog/core/AudioChunk.hpp"
 #include "xpcog/core/Plugin.hpp"
@@ -197,4 +198,129 @@ TEST_CASE("a configured SC-55 with no ROMs plays on the OPL instead",
     // And says what actually made the sound, which is the only way anyone could
     // tell that the setting did not get what it asked for.
     CHECK(decoded.properties.encoding == "Nuked OPL3 (DMX)");
+}
+
+// ---------------------------------------------------------------------------
+// The front panel
+// ---------------------------------------------------------------------------
+// Stage 3b: the LCD state comes out of the emulator positioned in the rendered
+// stream, so a display can be driven from it. No pixels yet -- what is at risk
+// here is the timing, and the timing can be settled without drawing anything.
+
+namespace {
+
+/// Boots a machine, or skips. Booting is seven seconds of emulated time, so
+/// these share nothing and each pays for it once.
+[[nodiscard]] bool boot(codecs::Sc55Synth& synth) {
+    if (!kHaveRoms || !fs::exists(romPath())) {
+        return false;
+    }
+    const auto roms = codecs::loadSc55Roms(romPath());
+    return roms.has_value() && synth.open(*roms);
+}
+
+/// Something for the panel to react to: a program change puts an instrument
+/// name on the display, which is the whole point of watching it.
+void playSomething(codecs::Sc55Synth& synth) {
+    synth.write(0x0000C0u);        // program change, channel 0, piano
+    synth.write(0x64'3C'90u);      // note on, middle C, velocity 100
+}
+
+}  // namespace
+
+TEST_CASE("the panel is not captured unless something is watching",
+          "[midi][sc55]") {
+    codecs::Sc55Synth synth;
+    if (!boot(synth)) {
+        SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
+    }
+
+    std::vector<std::int16_t> audio(2 * 8192);
+    playSomething(synth);
+    synth.render(audio.data(), 8192);
+
+    // Capture is off by default, and off means nothing is queued rather than
+    // queued and thrown away -- a player with no panel on screen should not be
+    // paying for one.
+    CHECK(synth.takeLcdFrames().empty());
+
+    synth.setCaptureLcd(true);
+    playSomething(synth);
+    synth.render(audio.data(), 8192);
+    CHECK_FALSE(synth.takeLcdFrames().empty());
+}
+
+TEST_CASE("panel states are positioned in the stream, not since boot",
+          "[midi][sc55]") {
+    codecs::Sc55Synth synth;
+    if (!boot(synth)) {
+        SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
+    }
+    synth.setCaptureLcd(true);
+
+    const auto rate   = static_cast<std::uint64_t>(synth.sampleRate());
+    const auto frames = static_cast<std::size_t>(rate);  // one second
+
+    std::vector<std::int16_t> audio(frames * 2);
+    playSomething(synth);
+    synth.render(audio.data(), frames);
+
+    const auto captured = synth.takeLcdFrames();
+    REQUIRE_FALSE(captured.empty());
+
+    // The one that matters. api.h calls the timestamp "absolute elapsed since
+    // boot", and booting is seven seconds -- so a reading of api.h rather than
+    // of mcu.cpp puts every frame seven seconds into a stream that is one
+    // second long. Nothing about that failure is visible except a panel that
+    // never updates.
+    for (const codecs::Sc55LcdFrame& frame : captured) {
+        INFO("frame at sample " << frame.samplePosition << " of " << frames);
+        CHECK(frame.samplePosition <= frames);
+        CHECK_FALSE(frame.state.empty());
+    }
+
+    // Ordered, because a display walks them forwards.
+    for (std::size_t i = 1; i < captured.size(); ++i) {
+        CHECK(captured[i].samplePosition >= captured[i - 1].samplePosition);
+    }
+}
+
+TEST_CASE("panel positions do not depend on how the audio was chunked",
+          "[midi][sc55]") {
+    if (!kHaveRoms || !fs::exists(romPath())) {
+        SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
+    }
+
+    // The same second of music, rendered once in a single call and once in a
+    // hundred small ones. If the positions came from the caller's chunking
+    // rather than from the machine's own counter, these would disagree -- and
+    // the panel would drift by the buffer size, which changes with the output
+    // device.
+    const auto renderPositions =
+        [](std::size_t chunk) -> std::vector<std::uint64_t> {
+        codecs::Sc55Synth synth;
+        if (!boot(synth)) {
+            return {};
+        }
+        synth.setCaptureLcd(true);
+        const auto frames = static_cast<std::size_t>(synth.sampleRate());
+
+        std::vector<std::int16_t> audio(chunk * 2);
+        playSomething(synth);
+        for (std::size_t done = 0; done < frames; done += chunk) {
+            synth.render(audio.data(), std::min(chunk, frames - done));
+        }
+
+        std::vector<std::uint64_t> positions;
+        for (const codecs::Sc55LcdFrame& frame : synth.takeLcdFrames()) {
+            positions.push_back(frame.samplePosition);
+        }
+        return positions;
+    };
+
+    const auto whole = renderPositions(static_cast<std::size_t>(66207));
+    const auto split = renderPositions(662);
+    REQUIRE_FALSE(whole.empty());
+    REQUIRE_FALSE(split.empty());
+    CHECK(whole == split);
 }

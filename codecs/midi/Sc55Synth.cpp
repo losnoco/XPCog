@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 namespace xpcog::codecs {
 namespace {
@@ -16,6 +17,14 @@ namespace {
 /// lands are simply not heard, so this is not a margin that can be trimmed
 /// without finding out empirically where the machine actually becomes ready.
 constexpr double kBootSeconds = 7.0;
+
+/// The shortest gap between two captured panel states, in milliseconds.
+///
+/// Cog's number (SCPlayer.mm:91). The panel is a 16x2 character LCD and its
+/// firmware repaints it far faster than anyone can read; without a floor the
+/// queue fills with states nobody could tell apart. Two hundred a second is
+/// already three times what a display refreshes at.
+constexpr std::uint64_t kLcdThrottleMs = 5;
 
 /// How many bytes a short message occupies on the wire.
 ///
@@ -112,6 +121,10 @@ bool Sc55Synth::open(const Sc55RomSet& roms) {
     // the ROMs said rather than what the setting asked for.
     device_ = "Roland " + roms.device;
 
+    lcdFrames_.clear();
+    haveLcdMs_ = false;
+    lastLcdMs_ = 0;
+
     sc55_spin(state_, static_cast<std::uint32_t>(sampleRate_ * kBootSeconds));
     return true;
 }
@@ -139,6 +152,42 @@ void Sc55Synth::writeSysex(std::span<const std::uint8_t> bytes) {
     sc55_write_uart(state_, bytes.data(), static_cast<std::uint32_t>(bytes.size()));
 }
 
+void Sc55Synth::pushLcd(void* context, int port, const void* state,
+                        std::size_t size, std::uint64_t timestampMs) {
+    // One machine, so one port; the argument exists for Cog's four.
+    if (port != 0) {
+        return;
+    }
+    static_cast<Sc55Synth*>(context)->onLcd(state, size, timestampMs);
+}
+
+void Sc55Synth::onLcd(const void* state, std::size_t size,
+                      std::uint64_t timestampMs) {
+    if (state == nullptr || size == 0) {
+        return;
+    }
+    if (haveLcdMs_ && timestampMs - lastLcdMs_ < kLcdThrottleMs) {
+        return;
+    }
+    lastLcdMs_ = timestampMs;
+    haveLcdMs_ = true;
+
+    // The timestamp is the emulator's own sample counter in milliseconds, and
+    // that counter measures the stream rather than the machine's whole life --
+    // see the note in the header. So this is a position in what has been
+    // rendered, which is the only clock a display can be driven from.
+    Sc55LcdFrame frame;
+    frame.samplePosition =
+        static_cast<std::uint64_t>(timestampMs * sampleRate_ / 1000.0);
+    const auto* bytes = static_cast<const std::byte*>(state);
+    frame.state.assign(bytes, bytes + size);
+    lcdFrames_.push_back(std::move(frame));
+}
+
+std::vector<Sc55LcdFrame> Sc55Synth::takeLcdFrames() {
+    return std::exchange(lcdFrames_, {});
+}
+
 void Sc55Synth::render(std::int16_t* out, std::size_t frames) {
     if (frames == 0) {
         return;
@@ -153,7 +202,12 @@ void Sc55Synth::render(std::int16_t* out, std::size_t frames) {
     constexpr std::size_t kMaxChunk = 4096;
     while (frames > 0) {
         const std::size_t todo = std::min(frames, kMaxChunk);
-        sc55_render(state_, out, static_cast<std::uint32_t>(todo));
+        if (captureLcd_) {
+            sc55_render_with_lcd(state_, out, static_cast<std::uint32_t>(todo),
+                                 &Sc55Synth::pushLcd, this);
+        } else {
+            sc55_render(state_, out, static_cast<std::uint32_t>(todo));
+        }
         out += todo * 2;
         frames -= todo;
     }
