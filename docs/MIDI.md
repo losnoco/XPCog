@@ -185,14 +185,33 @@ hundred, asserting identical positions. The second is the one that matters for
 sync -- if positions came from the caller's chunking, the panel would drift by
 the buffer size, which changes with the output device.
 
-**The display is amber, not blue.** `sc55_init` sets `lcd_col2 = 0x0050c8`
-(`mcu.cpp:1183`), which is a blue, and Cog takes that default -- kode54 was
-bitten by it. The real machine's panel is amber. The colours are not baked into
-the pixels: `LCD_Init` copies them into the `lcd_state_t` that reaches the
-callback (`lcd.cpp:215`), and `LCD_Update` reads them back out of that blob, so
-the state a consumer holds can simply be recoloured before it is rendered. No
-change to the vendored sources is needed; the value gets set when the widget
-lands.
+**The display is amber, and the emulator already knows.** Kevin flagged that the
+panel is amber where Cog draws it blue — kode54 was bitten by this — and then
+that it might be a channel-order problem rather than a wrong colour. It is, and
+three pieces of evidence agree:
+
+| where | read as `0xAARRGGBB` | read as RGBA bytes |
+|---|---|---|
+| `back.data`, dominant pixel `(255,111,15,255)` | dark blue | **amber** — a photograph of the lit panel |
+| SC-55 `lcd_col2 = 0x0050c8` (`mcu.cpp:1183`) | blue | **amber**, (200, 80, 0) |
+| JV-880 fill `0xFF03be51` (`lcd.cpp:399`) | dark blue | **green**, which is the JV-880's display |
+
+So `lcd_buffer_t` is RGBA in **byte** order — little-endian `0xAABBGGRR` — and
+nothing needs recolouring. What the consumer must not do is treat a `uint32_t`
+as `0xAARRGGBB`, which is the one reading that turns every one of those three
+into a blue.
+
+One trap inside the trap: the SC-55's two colour constants carry **alpha 0**,
+unlike the JV-880's `0xFF...` and unlike `back.data`'s opaque pixels. A consumer
+that honours alpha therefore draws the panel and leaves the characters
+invisible. Qt's `QImage::Format_RGBX8888` reads the byte order above and ignores
+the fourth channel, which is exactly right.
+
+The colours are also not baked into the pixels, which is worth knowing in case a
+future machine needs adjusting: `LCD_Init` copies them into the `lcd_state_t`
+that reaches the callback (`lcd.cpp:215`) and `LCD_Update` reads them back out of
+that blob, so a captured state can be recoloured before rendering without
+touching the vendored sources.
 
 ### Drawing it is the part still to come
 
