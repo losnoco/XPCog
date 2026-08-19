@@ -1,0 +1,406 @@
+// Tags that arrive mid-stream, as ID3v2 chunks spliced between audio frames.
+//
+// This is how a live stream renames the track that is playing when the transport
+// is not SHOUTcast. An HLS packed-audio rendition carries an ID3v2 tag at the
+// head of every segment, and the ones after the first are the station saying
+// what is on now -- so for a stream reaching XPCog through the HLS decoder, this
+// is the only path a now-playing title has.
+//
+// FFmpeg's ADTS demuxer has parsed these into AVFormatContext::metadata and
+// raised AVFMT_EVENT_FLAG_METADATA_UPDATED for years. Nothing here read the
+// flag, so every tag after the first was decoded and thrown away, and the
+// failure was silent: audio played, the title just never changed.
+//
+// The fixture is built by splicing tags into a real ADTS stream at a real frame
+// boundary, because that is the case the demuxer distinguishes -- a tag at a
+// byte offset that is not a frame start makes it resync and drop the tag
+// instead, which would pass a test that only checked "some metadata arrived".
+
+#include "xpcog/core/Plugin.hpp"
+#include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/Url.hpp"
+
+#include "../TestShell.hpp"
+#include "../TestSignal.hpp"
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+using namespace xpcog;
+
+namespace {
+
+constexpr double kSampleRate = 44100.0;
+constexpr int    kFrames     = 44100 * 4;
+
+PluginRegistry& registry() {
+    static PluginRegistry instance;
+    static const bool     once = [] {
+        registerAllCodecs(instance);
+        return true;
+    }();
+    (void)once;
+    return instance;
+}
+
+std::filesystem::path fixtureDir() {
+    static const std::filesystem::path dir = [] {
+        auto path = std::filesystem::temp_directory_path() / "xpcog-ffmpeg-tag-tests";
+        std::filesystem::remove_all(path);
+        std::filesystem::create_directories(path);
+        return path;
+    }();
+    return dir;
+}
+
+void writeBytes(const std::filesystem::path& path, const std::vector<std::uint8_t>& data) {
+    std::FILE* f = std::fopen(path.string().c_str(), "wb");
+    REQUIRE(f != nullptr);
+    std::fwrite(data.data(), 1, data.size(), f);
+    std::fclose(f);
+}
+
+std::vector<std::uint8_t> readBytes(const std::filesystem::path& path) {
+    std::FILE* f = std::fopen(path.string().c_str(), "rb");
+    REQUIRE(f != nullptr);
+    std::vector<std::uint8_t> data;
+    std::uint8_t              buffer[4096];
+    std::size_t               got = 0;
+    while ((got = std::fread(buffer, 1, sizeof(buffer), f)) > 0) {
+        data.insert(data.end(), buffer, buffer + got);
+    }
+    std::fclose(f);
+    return data;
+}
+
+std::filesystem::path referenceWav() {
+    const auto out = fixtureDir() / "reference.wav";
+    if (std::filesystem::exists(out)) {
+        return out;
+    }
+
+    std::vector<std::int16_t> samples;
+    samples.reserve(static_cast<std::size_t>(kFrames) * 2);
+    for (int i = 0; i < kFrames; ++i) {
+        const double t = static_cast<double>(i) / kSampleRate;
+        samples.push_back(static_cast<std::int16_t>(
+            0.67 * 32767.0 * std::sin(xpcog::test::kTwoPi * 440.0 * t)));
+        samples.push_back(static_cast<std::int16_t>(
+            0.55 * 32767.0 * std::sin(xpcog::test::kTwoPi * 660.0 * t)));
+    }
+
+    const auto dataBytes = static_cast<std::uint32_t>(samples.size() * 2);
+    std::FILE* f         = std::fopen(out.string().c_str(), "wb");
+    REQUIRE(f != nullptr);
+    const auto u32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, f); };
+    const auto u16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, f); };
+
+    std::fwrite("RIFF", 1, 4, f);
+    u32(36 + dataBytes);
+    std::fwrite("WAVEfmt ", 1, 8, f);
+    u32(16); u16(1); u16(2);
+    u32(static_cast<std::uint32_t>(kSampleRate));
+    u32(static_cast<std::uint32_t>(kSampleRate) * 4);
+    u16(4); u16(16);
+    std::fwrite("data", 1, 4, f);
+    u32(dataBytes);
+    std::fwrite(samples.data(), 1, dataBytes, f);
+    std::fclose(f);
+    return out;
+}
+
+/// An ID3v2.4 tag carrying one TITLE frame, which is the shape a packed-audio
+/// segment leads with. Sizes are syncsafe -- seven bits per byte, high bit
+/// always clear, so the tag can never be mistaken for an audio sync word.
+std::vector<std::uint8_t> id3v2TitleTag(std::string_view title) {
+    const auto syncsafe = [](std::size_t value, std::vector<std::uint8_t>& out) {
+        out.push_back(static_cast<std::uint8_t>((value >> 21) & 0x7F));
+        out.push_back(static_cast<std::uint8_t>((value >> 14) & 0x7F));
+        out.push_back(static_cast<std::uint8_t>((value >> 7) & 0x7F));
+        out.push_back(static_cast<std::uint8_t>(value & 0x7F));
+    };
+
+    std::vector<std::uint8_t> frame;
+    frame.insert(frame.end(), {'T', 'I', 'T', '2'});
+    syncsafe(title.size() + 1, frame);            // + the encoding byte
+    frame.insert(frame.end(), {0x00, 0x00});      // frame flags
+    frame.push_back(0x03);                        // UTF-8
+    frame.insert(frame.end(), title.begin(), title.end());
+
+    std::vector<std::uint8_t> tag;
+    tag.insert(tag.end(), {'I', 'D', '3', 0x04, 0x00, 0x00});
+    syncsafe(frame.size(), tag);
+    tag.insert(tag.end(), frame.begin(), frame.end());
+    return tag;
+}
+
+/// The offset of the first ADTS frame that starts at or after `at`. Walking the
+/// frame-length field rather than searching for a sync word: 0xFFF occurs inside
+/// compressed audio too, and splicing a tag into the middle of a frame is
+/// precisely the case the demuxer throws away.
+std::size_t adtsFrameBoundary(const std::vector<std::uint8_t>& data, std::size_t at) {
+    std::size_t position = 0;
+
+    // Skip the leading ID3v2 tag the encoder may have written.
+    if (data.size() > 10 && data[0] == 'I' && data[1] == 'D' && data[2] == '3') {
+        std::size_t size = 0;
+        for (std::size_t i = 6; i < 10; ++i) {
+            size = (size << 7) | (data[i] & 0x7FU);
+        }
+        position = size + 10;
+    }
+
+    while (position + 7 <= data.size()) {
+        if (data[position] != 0xFF || (data[position + 1] & 0xF0) != 0xF0) {
+            return 0;
+        }
+        if (position >= at) {
+            return position;
+        }
+        const std::size_t length = (static_cast<std::size_t>(data[position + 3] & 0x03) << 11) |
+                                   (static_cast<std::size_t>(data[position + 4]) << 3) |
+                                   (static_cast<std::size_t>(data[position + 5]) >> 5);
+        if (length < 7) {
+            return 0;
+        }
+        position += length;
+    }
+    return 0;
+}
+
+/// A raw ADTS stream with `Opening Number` at the front and `Second Number`
+/// spliced in at the frame boundary nearest the middle. Empty when ffmpeg is not
+/// installed to produce the audio.
+std::filesystem::path buildTaggedStream() {
+    const auto tagged = fixtureDir() / "tagged.aac";
+    if (std::filesystem::exists(tagged)) {
+        return tagged;
+    }
+    if (!xpcog::test::haveTool("ffmpeg")) {
+        return {};
+    }
+
+    const auto        plain   = fixtureDir() / "plain.aac";
+    const std::string command = "ffmpeg -y -loglevel error -i \"" +
+                                referenceWav().string() +
+                                "\" -c:a aac -b:a 128k -f adts \"" + plain.string() +
+                                "\"" + xpcog::test::kSilenceStderr;
+    if (std::system(command.c_str()) != 0 || !std::filesystem::exists(plain)) {
+        return {};
+    }
+
+    const std::vector<std::uint8_t> audio = readBytes(plain);
+    REQUIRE(audio.size() > 1024);
+
+    const std::size_t split = adtsFrameBoundary(audio, audio.size() / 2);
+    REQUIRE(split > 0);
+    REQUIRE(split < audio.size());
+
+    const auto first  = id3v2TitleTag("Opening Number");
+    const auto second = id3v2TitleTag("Second Number");
+
+    std::vector<std::uint8_t> out;
+    out.insert(out.end(), first.begin(), first.end());
+    out.insert(out.end(), audio.begin(), audio.begin() + static_cast<std::ptrdiff_t>(split));
+    out.insert(out.end(), second.begin(), second.end());
+    out.insert(out.end(), audio.begin() + static_cast<std::ptrdiff_t>(split), audio.end());
+
+    writeBytes(tagged, out);
+    return tagged;
+}
+
+/// The same stream cut into four segments at real frame boundaries, each led by
+/// its own ID3v2 tag, with a manifest beside them -- which is exactly the shape
+/// of an HLS packed-audio rendition. Empty when the fixture cannot be built.
+std::filesystem::path buildTaggedHlsStream() {
+    const auto manifest = fixtureDir() / "tagged.m3u8";
+    if (std::filesystem::exists(manifest)) {
+        return manifest;
+    }
+    if (buildTaggedStream().empty()) {
+        return {};
+    }
+
+    const std::vector<std::uint8_t> audio = readBytes(fixtureDir() / "plain.aac");
+    REQUIRE(audio.size() > 4096);
+
+    constexpr int     kSegments = 4;
+    std::string       playlist  = "#EXTM3U\n#EXT-X-TARGETDURATION:1\n"
+                                  "#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n";
+    std::size_t       begin     = adtsFrameBoundary(audio, 0);
+    REQUIRE(begin < audio.size());
+
+    for (int i = 0; i < kSegments; ++i) {
+        const std::size_t wanted = audio.size() * static_cast<std::size_t>(i + 1) / kSegments;
+        const std::size_t end =
+            (i + 1 == kSegments) ? audio.size() : adtsFrameBoundary(audio, wanted);
+        REQUIRE(end > begin);
+
+        const auto                tag = id3v2TitleTag("Track " + std::to_string(i));
+        std::vector<std::uint8_t> segment(tag);
+        segment.insert(segment.end(), audio.begin() + static_cast<std::ptrdiff_t>(begin),
+                       audio.begin() + static_cast<std::ptrdiff_t>(end));
+
+        const std::string name = "seg" + std::to_string(i) + ".aac";
+        writeBytes(fixtureDir() / name, segment);
+        playlist += "#EXTINF:1,\n" + name + "\n";
+        begin = end;
+    }
+    playlist += "#EXT-X-ENDLIST\n";
+
+    std::vector<std::uint8_t> bytes(playlist.size());
+    std::memcpy(bytes.data(), playlist.data(), playlist.size());
+    writeBytes(manifest, bytes);
+    return manifest;
+}
+
+const bool kHaveHls = [] {
+    const auto extensions = registry().allExtensions();
+    return std::find(extensions.begin(), extensions.end(), "m3u8") != extensions.end();
+}();
+
+const bool kHaveFFmpeg = [] {
+    const auto extensions = registry().allExtensions();
+    return std::find(extensions.begin(), extensions.end(), "aac") != extensions.end();
+}();
+
+}  // namespace
+
+TEST_CASE("a mid-stream ID3v2 chunk updates the tags", "[ffmpeg][streamtags]") {
+    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+
+    const auto path = buildTaggedStream();
+    if (path.empty()) SKIP("ffmpeg not available to build an ADTS fixture");
+
+    auto opened = registry().open(Url::fromLocalPath(path));
+    REQUIRE(opened);
+
+    // The tag at the head of the stream is a header, not an update, and must not
+    // be announced as a change -- a chain that reacts to it would treat the first
+    // read of every file as a track rename.
+    CHECK(opened.decoder->metadata().first("title") == "Opening Number");
+
+    int         announcements    = 0;
+    bool        propertiesMoved  = false;
+    std::size_t framesAtFirstTag = 0;
+    std::size_t frames           = 0;
+    std::string latestTitle;
+
+    opened.decoder->setChangeCallback(
+        [&](bool propertiesChanged, bool metadataChanged) {
+            if (!metadataChanged) {
+                return;
+            }
+            propertiesMoved = propertiesMoved || propertiesChanged;
+            if (announcements == 0) {
+                framesAtFirstTag = frames;
+            }
+            ++announcements;
+            latestTitle = opened.decoder->metadata().first("title");
+        });
+
+    AudioChunk chunk;
+    while (opened.decoder->readAudio(chunk)) {
+        frames += chunk.frameCount();
+    }
+
+    REQUIRE(frames > 0);
+    // Exactly one: the flag is consumed when it is read, so a spliced tag is
+    // reported once rather than on every packet after it.
+    CHECK(announcements == 1);
+    CHECK(latestTitle == "Second Number");
+    // A tag block does not change the format, and saying it did makes the chain
+    // re-evaluate the stream for nothing.
+    CHECK_FALSE(propertiesMoved);
+
+    // Reported where it appears, not at the end. Roughly halfway, generously
+    // bounded because AAC's decoder delay and the demuxer's read-ahead both put
+    // the announcement a few frames off the splice.
+    CHECK(framesAtFirstTag > frames / 8);
+    CHECK(framesAtFirstTag < frames * 7 / 8);
+}
+
+TEST_CASE("a stream with no mid-stream tags announces nothing", "[ffmpeg][streamtags]") {
+    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+
+    // The other half of the check: harvesting on every packet instead of on the
+    // demuxer's flag would also make the test above pass, while reporting a track
+    // rename thousands of times a second for every ordinary file.
+    const auto tagged = buildTaggedStream();
+    if (tagged.empty()) SKIP("ffmpeg not available to build an ADTS fixture");
+
+    const auto plain = fixtureDir() / "plain.aac";
+    REQUIRE(std::filesystem::exists(plain));
+
+    auto opened = registry().open(Url::fromLocalPath(plain));
+    REQUIRE(opened);
+
+    int announcements = 0;
+    opened.decoder->setChangeCallback([&](bool, bool metadataChanged) {
+        if (metadataChanged) {
+            ++announcements;
+        }
+    });
+
+    AudioChunk chunk;
+    while (opened.decoder->readAudio(chunk)) {
+    }
+    CHECK(announcements == 0);
+}
+
+TEST_CASE("an HLS rendition's per-segment tags reach the playlist",
+          "[ffmpeg][streamtags][hls]") {
+    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+    if (!kHaveHls) SKIP("HLS is not built into this configuration");
+
+    // The whole path, which is what the feature is for: the fetcher concatenates
+    // segments, each segment leads with its own ID3v2 tag, the ADTS demuxer
+    // parses those as mid-stream updates, and the HLS decoder forwards them on
+    // behalf of the decoder it wrapped. Any link missing and the title never
+    // changes -- while the audio plays perfectly, which is why this is a test
+    // rather than something anyone would notice.
+    const auto manifest = buildTaggedHlsStream();
+    if (manifest.empty()) SKIP("ffmpeg not available to build an HLS fixture");
+
+    auto opened = registry().open(Url::fromLocalPath(manifest));
+    REQUIRE(opened);
+
+    std::vector<std::string> observed;
+    observed.emplace_back(opened.decoder->metadata().first("title"));
+    opened.decoder->setChangeCallback([&](bool, bool metadataChanged) {
+        if (metadataChanged) {
+            observed.emplace_back(opened.decoder->metadata().first("title"));
+        }
+    });
+
+    AudioChunk  chunk;
+    std::size_t frames = 0;
+    while (opened.decoder->readAudio(chunk)) {
+        frames += chunk.frameCount();
+    }
+    REQUIRE(frames > 0);
+
+    // A suffix rather than the whole list, because the fetcher runs ahead and
+    // avformat_open_input probes into what it has already queued -- so by the
+    // time open() returns, the tag on view can be the second segment's. That
+    // head start is bounded by the probe and is FFmpeg's behaviour for any
+    // stream, not something the HLS layer introduces.
+    //
+    // What must hold is everything after it: in order, none dropped, none
+    // repeated. A station announcing them out of sequence leaves the wrong track
+    // named, and a dropped one leaves the previous title standing for two
+    // segments -- both of which look like the feature working.
+    const std::vector<std::string> expected{"Track 0", "Track 1", "Track 2", "Track 3"};
+    REQUIRE(observed.size() >= expected.size() - 1);
+    REQUIRE(observed.size() <= expected.size());
+    CHECK(std::equal(observed.begin(), observed.end(),
+                     expected.end() - static_cast<std::ptrdiff_t>(observed.size())));
+}

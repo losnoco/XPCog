@@ -195,6 +195,9 @@ public:
         }
 
         readTags();
+        // Anything the demuxer raised while probing is already in tags_; leaving
+        // the flag set would announce a change on the first read that is not one.
+        clearMetadataEvents();
         framePos_ = 0;
         if (startFrames_) {
             seek(0);
@@ -282,6 +285,9 @@ public:
 
             // The decoder wants more input.
             const int read = av_read_frame(format_ctx_, packet_);
+            // Checked whatever av_read_frame returned: a demuxer can raise the
+            // flag on the same call that reports end of input.
+            harvestMidStreamTags();
             if (read < 0) {
                 // Flush whatever is still buffered inside the decoder.
                 avcodec_send_packet(codec_ctx_, nullptr);
@@ -422,6 +428,52 @@ private:
 
         return status >= 0 && swr_ != nullptr && swr_init(swr_) >= 0;
     }
+
+    /// Mid-stream tag updates, which arrive as ID3v2 chunks spliced between
+    /// audio frames rather than in a header.
+    ///
+    /// This is how a live stream renames the track that is playing when the
+    /// transport is not SHOUTcast: an HLS packed-audio rendition carries an ID3v2
+    /// tag at the head of every segment, and the ones after the first are the
+    /// station saying what is on now. FFmpeg's ADTS demuxer parses them into
+    /// `AVFormatContext::metadata` and raises a flag; nothing here was reading
+    /// it, so every tag after the first was decoded and dropped.
+    ///
+    /// The flag is the whole mechanism -- an unconditional re-harvest per packet
+    /// would rebuild the tag map thousands of times a second and report a change
+    /// each time, which downstream reads as a new track.
+    void harvestMidStreamTags() {
+        if (!takeMetadataEvents()) {
+            return;
+        }
+        readTags();
+        // Properties are unchanged: a tag block does not alter the format, and
+        // saying it did makes the chain re-evaluate the stream for nothing.
+        notifyChanged(false, true);
+    }
+
+    /// True when a demuxer has announced new metadata since the last call, which
+    /// also clears the announcement.
+    [[nodiscard]] bool takeMetadataEvents() {
+        bool updated = false;
+
+        if ((format_ctx_->event_flags & AVFMT_EVENT_FLAG_METADATA_UPDATED) != 0) {
+            format_ctx_->event_flags &= ~AVFMT_EVENT_FLAG_METADATA_UPDATED;
+            updated = true;
+        }
+        // Per-stream as well as per-container: a chained Ogg announces its new
+        // comment header on the stream, not on the file.
+        if (streamIndex_ >= 0) {
+            AVStream* stream = format_ctx_->streams[streamIndex_];
+            if ((stream->event_flags & AVSTREAM_EVENT_FLAG_METADATA_UPDATED) != 0) {
+                stream->event_flags &= ~AVSTREAM_EVENT_FLAG_METADATA_UPDATED;
+                updated = true;
+            }
+        }
+        return updated;
+    }
+
+    void clearMetadataEvents() { (void)takeMetadataEvents(); }
 
     void readTags() {
         tags_.clear();

@@ -760,6 +760,49 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   extension check avoids opening normal files, while an extensionless URL gets
   one source open so its response type can identify the container.
 
+- **Mid-stream ID3v2 tags reach the screen.** A live stream that is not
+  SHOUTcast renames the playing track by splicing an ID3v2 chunk between audio
+  frames -- an HLS packed-audio rendition carries one at the head of every
+  segment, and the ones after the first are the station saying what is on now.
+  For a stream arriving through the HLS decoder that is the *only* path a
+  now-playing title has, since there is no ICY framing to carry it.
+
+  FFmpeg's ADTS demuxer has parsed these into `AVFormatContext::metadata` and
+  raised `AVFMT_EVENT_FLAG_METADATA_UPDATED` for years (`libavformat/aacdec.c`,
+  `handle_id3`). Nothing here read the flag, so every tag after the first was
+  parsed and thrown away, and the failure was silent: the audio played, the
+  title just never changed. `FFmpegDecoder` now consumes the flag after each
+  `av_read_frame` and re-harvests, which costs one integer test per packet.
+
+  **On the flag, not on every packet.** Re-reading the dictionary unconditionally
+  would rebuild the tag map thousands of times a second and report a change each
+  time, which downstream reads as a new track. The second test exists only to
+  pin that down -- an unconditional harvest passes the first test too.
+
+  `AVStream::event_flags` is checked as well as the container's, because a
+  chained Ogg announces its new comment header on the stream rather than on the
+  file (`libavformat/oggparsevorbis.c`). And the flag is cleared once at the end
+  of `open()`: whatever the demuxer raised while probing is already in the tag
+  map, and leaving it set would announce a change on the first read of every
+  file that has none.
+
+  **The title can lead the audio at startup, by design of FFmpeg's probe.**
+  `avformat_open_input` reads ahead into what the HLS fetcher has already
+  queued, so the tag on view when `open()` returns may be the second segment's.
+  The lead is bounded by `probesize` and is what FFmpeg does for any stream; the
+  fix would be to shrink the probe, which trades a cosmetic inaccuracy for
+  codec misdetection. The HLS test asserts a *suffix* of the expected titles for
+  this reason -- and still requires the rest in order, with none dropped or
+  repeated, since either would look exactly like the feature working.
+
+  **Two gaps left, both in FFmpeg rather than here.** `libavformat/mp3dec.c` has
+  no mid-stream ID3 handling at all, so an MP3 rendition surfaces only its first
+  tag; and ID3 inside MPEG-TS arrives as a separate `AV_CODEC_ID_TIMED_ID3`
+  stream, which this decoder ignores. Cog patches neither -- its
+  `0006-hls-live-id3-metadata.patch` fixes FFmpeg's own `hls.c` demuxer, which
+  XPCog never uses, since the HLS decoder here replaces it and hands FFmpeg raw
+  concatenated segments instead.
+
 - **HTTP Live Streaming.** Port of Cog `Plugins/HLS/`. HLS is not an audio
   format -- an `.m3u8` is a manifest naming a sequence of ordinary media files --
   so the decoder does no decoding: it parses the manifest, follows a master
