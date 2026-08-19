@@ -8,6 +8,7 @@ add_executable(xpcog-tests
     core/test_freesurround.cpp
     core/test_gapless.cpp
     core/test_m1c.cpp
+    core/test_panelfeed.cpp
     core/test_library.cpp
     core/test_loop_policy.cpp
     core/test_playlist.cpp

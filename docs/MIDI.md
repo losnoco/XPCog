@@ -67,7 +67,7 @@ player does not claim.
 | 1 | **Nuked OPL3**, via the `opl3*` sources. First audible MIDI, and the decoder that registers. | nothing external | done |
 | 2 | **SpessaSynth**, and a SoundFont setting | a user-supplied `.sf2`/`.sf3` | |
 | 3 | **Nuked SC-55**, and a ROM setting | a user-supplied ROM set | audio done |
-| 3b | The SC-55's **front-panel LCD**, in sync with playback | the same ROM set | capture done |
+| 3b | The SC-55's **front-panel LCD**, in sync with playback | the same ROM set | capture and feed done |
 
 OPL3 is first on purpose: it is the only one of the three that needs no asset
 the user has to find, so stage 1 proves the whole sequencer path — parse, tempo
@@ -213,6 +213,35 @@ that reaches the callback (`lcd.cpp:215`) and `LCD_Update` reads them back out o
 that blob, so a captured state can be recoloured before rendering without
 touching the vendored sources.
 
+### The queue, and why it is a global
+
+`core/audio/PanelFeed` is the port of Cog's `MIDIVisualizationController`, and
+the same shape on purpose: one process-wide queue, keyed by track.
+
+A global was chosen after the alternative turned out not to exist. The producer
+is a decoder, and a decoder belongs to the engine's feeder thread — `AudioEngine`
+marshals even `seek()` across rather than touch it from the caller's, and it
+exposes no decoder at all. So "let the widget ask the decoder" is not a design
+that was rejected; it is one the UI thread cannot reach. Something shared and
+synchronised is needed either way, and once that is true, injecting it buys only
+test isolation — which is paid for instead by `clear()`, called at the top of
+every test that posts.
+
+Keyed by track because two are alive at once: `Delegate::nextTrack()` is asked
+"while its audio is still playing out", so across a gapless seam two decoders
+produce simultaneously and both count from zero within themselves. A drain only
+ever returns the audible track's.
+
+**One difference from Cog.** Cog derives "now" from the newest queued event's
+timestamp minus `[controller getFullLatency]`, because it has no better clock to
+hand. `AudioEngine::trackPositionSeconds()` is built from audio *delivered to
+the device*, so it already accounts for buffering — the drain takes that and has
+nothing to estimate.
+
+Trimming is on post rather than on Cog's thirty-second timer: what is being
+bounded is a panel nobody is draining, and a paused player drains nothing, so a
+timer would be the one thing that could fall behind.
+
 ### Drawing it is the part still to come
 
 Capture is done and positioned; what remains is the widget. Cog has both halves
@@ -229,11 +258,17 @@ position -- which is what Cog does, subtracting `[controller getFullLatency]`
 from the newest event's timestamp.
 
 Three behaviours of Cog's to carry, each a bug if missed: a floor of 5 ms
-between captured states (done -- `kLcdThrottleMs`), a flush on seek (free here,
-since seeking rebuilds the machine), and trimming states older than the window.
-One deliberately *not* carried: Cog posts the previous state stamped with the
-previous timestamp, one throttle window behind, which is defensible but means a
-panel that goes quiet never shows its final state until something else changes.
+between captured states, a flush on seek, and trimming states older than the
+window. All three are done. One deliberately *not* carried: Cog posts the
+previous state stamped with the previous timestamp, one throttle window behind,
+which is defensible but means a panel that goes quiet never shows its final
+state until something else changes.
+
+The widget itself is what remains, and one thing about it is already decided:
+**it is not docked by default.** A front panel for one synthesiser of three, for
+one format among many, is not something to put in everyone's window — it is a
+View menu item that starts hidden, and `PanelFeed::wanted()` follows its
+visibility so nothing is produced until it is shown.
 
 ### Missing ROMs fall back rather than refusing
 

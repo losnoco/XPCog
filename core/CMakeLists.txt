@@ -6,6 +6,7 @@ configure_file(
 add_library(xpcog-core STATIC
     src/audio/AudioConverter.cpp
     src/audio/AudioTap.cpp
+    src/audio/PanelFeed.cpp
     src/audio/AudioEngine.cpp
     src/audio/Downmix.cpp
     src/audio/Equalizer.cpp

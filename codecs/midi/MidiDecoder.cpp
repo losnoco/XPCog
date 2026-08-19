@@ -44,6 +44,7 @@
 #include "midi/Sc55Synth.hpp"
 
 #include "xpcog/core/Plugin.hpp"
+#include "xpcog/core/audio/PanelFeed.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
 
@@ -178,6 +179,7 @@ public:
             return false;
         }
 
+        url_     = source->url();
         subsong_ = subsongFromFragment(source->url());
         if (subsong_ >= file_.subsongCount()) {
             return false;
@@ -253,9 +255,17 @@ public:
             return false;
         }
 
+        // Asked per read rather than latched: switching the panel on should
+        // show something without waiting for the next track. Reading an atomic
+        // once per thousand frames is not a cost worth avoiding.
+        if (sc55_ != nullptr) {
+            sc55_->setCaptureLcd(PanelFeed::instance().wanted());
+        }
+
         scratch_.resize(want * 2);
         render(scratch_.data(), want);
         applyFade(scratch_.data(), want);
+        publishPanel();
 
         out.clear();
         out.setFormat(format_);
@@ -289,12 +299,25 @@ public:
             }
         }
 
+        // Nothing rendered from here to the target is ever heard, so nothing
+        // about it belongs on the panel. Capture goes off for the discard and
+        // whatever was already queued for this track goes with it.
+        const bool wasCapturing = (sc55_ != nullptr) && sc55_->capturingLcd();
+        if (sc55_ != nullptr) {
+            sc55_->setCaptureLcd(false);
+        }
+        PanelFeed::instance().forget(url_);
+
         while (framePos_ < frame) {
             const auto step = static_cast<std::size_t>(std::min<std::int64_t>(
                 static_cast<std::int64_t>(kFramesPerRead), frame - framePos_));
             scratch_.resize(step * 2);
             render(scratch_.data(), step);
             framePos_ += static_cast<std::int64_t>(step);
+        }
+        if (sc55_ != nullptr) {
+            (void)sc55_->takeLcdFrames();
+            sc55_->setCaptureLcd(wasCapturing);
         }
         return framePos_;
     }
@@ -316,10 +339,13 @@ private:
     /// the fallback is visible, since properties() reports what actually ran.
     bool buildSynth() {
         synth_.reset();
+        sc55_ = nullptr;
 
+        sc55_ = nullptr;
         if (choice_.backend == SynthChoice::Backend::Sc55 && roms_) {
             auto sc55 = std::make_unique<codecs::Sc55Synth>();
             if (sc55->open(*roms_)) {
+                sc55_  = sc55.get();
                 synth_ = std::move(sc55);
                 return true;
             }
@@ -434,6 +460,22 @@ private:
         }
     }
 
+    /// Hands whatever the panel did during the last render to whoever draws it.
+    ///
+    /// The synthesiser positions its frames in samples it has rendered, which is
+    /// this decoder's own output position -- so dividing by the rate gives a
+    /// position in the track, which is the clock PanelFeed drains against.
+    void publishPanel() {
+        if (sc55_ == nullptr || !sc55_->capturingLcd() || sampleRate_ <= 0.0) {
+            return;
+        }
+        PanelFeed& feed = PanelFeed::instance();
+        for (const codecs::Sc55LcdFrame& frame : sc55_->takeLcdFrames()) {
+            feed.post(url_, static_cast<double>(frame.samplePosition) / sampleRate_,
+                      frame.state);
+        }
+    }
+
     void dispatch(const codecs::MidiStreamEvent& event) {
         // One synthesiser, so one port. A file naming a second wants a second
         // machine, which is what Cog builds for it and what this does not.
@@ -484,6 +526,11 @@ private:
     codecs::MidiFile                  file_;
     codecs::MidiStream                stream_;
     std::unique_ptr<codecs::MidiSynth> synth_;
+
+    /// Borrowed from synth_ when the machine that was built is a Roland. Only
+    /// that one has a front panel, so only that one is asked for frames.
+    codecs::Sc55Synth*                sc55_ = nullptr;
+    Url                               url_;
 
     SynthChoice                       choice_;
     /// Kept for the lifetime of the decoder so a backwards seek can boot a

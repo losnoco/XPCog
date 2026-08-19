@@ -34,6 +34,7 @@
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Url.hpp"
+#include "xpcog/core/audio/PanelFeed.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -323,4 +324,72 @@ TEST_CASE("panel positions do not depend on how the audio was chunked",
     REQUIRE_FALSE(whole.empty());
     REQUIRE_FALSE(split.empty());
     CHECK(whole == split);
+}
+
+TEST_CASE("decoding an SC-55 track feeds the panel, positioned in the track",
+          "[midi][sc55]") {
+    if (!kHaveRoms || !fs::exists(romPath())) {
+        SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
+    }
+
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+    feed.setWanted(true);
+
+    Harness harness;
+    harness.settings.setMidiPlugin("NukeSc55");
+    harness.settings.setMidiRomPath(romPath().string());
+
+    const auto path = writeFixture("sc55-panel.mid", tinyMidi());
+    const Url  url  = Url::fromLocalPath(path);
+    feed.setAudibleTrack(url);
+
+    const Decoded decoded = decode(harness.registry, url, 4 * 64000);
+    REQUIRE_FALSE(decoded.samples.empty());
+
+    // Everything the panel did during a one-second track, drained as if the
+    // speaker had reached the end of it.
+    const auto frames = feed.take(60.0);
+    feed.setWanted(false);
+    feed.clear();
+
+    REQUIRE_FALSE(frames.empty());
+    for (const PanelFrame& frame : frames) {
+        INFO("panel frame at " << frame.seconds << "s");
+        // Inside the track, not seven seconds into it -- the same api.h trap the
+        // synthesiser's own tests cover, checked again here because this is the
+        // path a display actually takes and the two could drift apart.
+        CHECK(frame.seconds >= 0.0);
+        CHECK(frame.seconds <= 5.0);
+        CHECK_FALSE(frame.state.empty());
+    }
+}
+
+TEST_CASE("nothing feeds the panel when nothing is displaying it",
+          "[midi][sc55]") {
+    if (!kHaveRoms || !fs::exists(romPath())) {
+        SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
+    }
+
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+    feed.setWanted(false);
+
+    Harness harness;
+    harness.settings.setMidiPlugin("NukeSc55");
+    harness.settings.setMidiRomPath(romPath().string());
+
+    const auto path = writeFixture("sc55-nopanel.mid", tinyMidi());
+    const Url  url  = Url::fromLocalPath(path);
+    feed.setAudibleTrack(url);
+
+    const Decoded decoded = decode(harness.registry, url, 4 * 64000);
+    REQUIRE_FALSE(decoded.samples.empty());
+
+    // The emulator compares the panel against its previous state on every
+    // sample it renders when capture is on. A player with no panel on screen
+    // should not be paying for that, and "not paying" is only observable as
+    // nothing arriving.
+    CHECK(feed.take(60.0).empty());
+    feed.clear();
 }
