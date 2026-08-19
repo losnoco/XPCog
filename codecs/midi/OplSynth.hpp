@@ -83,6 +83,10 @@ public:
     /// for any `frames` including zero.
     void render(std::int16_t* out, std::size_t frames) override;
 
+    /// Rebuilds the chip, which for an OPL3 is an allocation and a register
+    /// clear -- there is nothing here that takes time to become ready.
+    void reset() override;
+
     /// How many instrument banks `driver` offers: six for Doom, one for the
     /// General MIDI driver. Asked without opening anything, because the setting
     /// has to be validated before a file is.

@@ -293,9 +293,13 @@ public:
         // notes are exactly what does not need replaying -- what does is which
         // instrument each channel holds, where its controllers are, and what
         // the machine was told by SysEx.
-        if (!restart()) {
-            return -1;
-        }
+        // Reset rather than rebuild. Rebuilding an SC-55 reloads its ROMs and
+        // spins seven seconds of emulated time before the machine will answer,
+        // which is about a second of real work -- and it was the whole of what
+        // seeking still cost once the rendering was gone.
+        synth_->reset();
+        eventIndex_ = 0;
+        seqSample_  = 0;
         PanelFeed::instance().forget(url_);
 
         const std::uint64_t target = sequencePosition(frame);
@@ -388,6 +392,13 @@ public:
         eventIndex_ = index;
         seqSample_  = target;
         framePos_   = frame;
+        // The machine's own sample counter is what positions its panel states,
+        // and it has just carried on counting while the track jumped. Without
+        // this every state after a seek would be filed under the wrong moment
+        // and the panel would stop moving.
+        if (sc55_ != nullptr) {
+            sc55_->rebaseLcd(static_cast<std::uint64_t>(frame));
+        }
         return framePos_;
     }
 

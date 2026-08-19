@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -391,4 +392,37 @@ TEST_CASE("a panel opened part-way through finds the moment being heard",
     CHECK(early->seconds <= 0.2 + 0.001);
 
     feed.clear();
+}
+
+TEST_CASE("seeking an SC-55 track does not reboot the machine", "[midi][sc55]") {
+    if (!kHaveRoms || !fs::exists(romPath())) {
+        SKIP("no ROMs: configure with -DXPCOG_SC55_ROMS=<folder or archive>");
+    }
+
+    Harness harness;
+    harness.settings.setMidiPlugin("NukeSc55");
+    harness.settings.setMidiRomPath(romPath().string());
+
+    const auto path = writeFixture("sc55-seek.mid", tinyMidi());
+    PluginRegistry::OpenResult opened =
+        harness.registry.open(Url::fromLocalPath(path));
+    REQUIRE(opened);
+
+    // A wall-clock assertion, which is normally a bad idea. It earns its place
+    // because the thing being guarded against is not slow code but the *wrong
+    // code*: rebuilding the synthesiser reloads 3.6 MB of ROM and runs seven
+    // seconds of emulated time before the machine will answer, and that is a
+    // second of real work per seek. Resetting a machine that is already running
+    // is a hundred bytes of MIDI and a quarter second of emulation.
+    //
+    // The bound is deliberately loose -- an order of magnitude below a reboot
+    // and well above a reset -- and this only runs where the ROMs are, which is
+    // never on CI.
+    const auto start = std::chrono::steady_clock::now();
+    REQUIRE(opened.decoder->seek(30000) == 30000);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now() - start)
+                             .count();
+    INFO("seek took " << elapsed << " ms");
+    CHECK(elapsed < 400);
 }

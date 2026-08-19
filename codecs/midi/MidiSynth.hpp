@@ -42,6 +42,15 @@ public:
     /// Renders `frames` stereo frames of 16-bit samples.
     virtual void render(std::int16_t* out, std::size_t frames) = 0;
 
+    /// Returns to a known state as cheaply as the machine allows.
+    ///
+    /// For seeking, and "cheaply" is the whole point. Rebuilding an SC-55 means
+    /// reloading its ROMs and running seven seconds of emulated time before it
+    /// will answer -- about a second of real work, which is what made seeking
+    /// feel broken. Telling a machine that is already running to reset itself
+    /// costs a hundred bytes of MIDI and a quarter second of emulation.
+    virtual void reset() = 0;
+
     /// A name for the thing that actually made the sound, for the track's
     /// properties. Which synthesiser ran is not always the one the setting
     /// asked for -- a missing ROM set falls back rather than refusing to play --

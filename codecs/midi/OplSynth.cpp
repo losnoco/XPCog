@@ -72,6 +72,12 @@ bool OplSynth::open(OplDriver driver, unsigned bank, double sampleRate) {
     return true;
 }
 
+void OplSynth::reset() {
+    if (synth_ != nullptr) {
+        (void)open(driver_, bank_, sampleRate_);
+    }
+}
+
 void OplSynth::write(std::uint32_t message) {
     if (synth_ != nullptr) {
         synth_->midi_write(message);

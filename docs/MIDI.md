@@ -329,6 +329,26 @@ Even collapsed, sixteen channels of dense controller use comes to six kilobytes,
 so the replay renders a couple of thousand frames whenever it has sent four
 kilobytes, letting the machine read what it has been given.
 
+**And the synthesiser is reset, not rebuilt.** With the rendering gone, the
+whole remaining cost of a seek was `sc55_init` reloading 3.6 MB of ROM and
+spinning seven seconds of emulated time before the machine would answer.
+Measured in a Debug build, by putting it back: **2,854 ms**. Telling a machine
+that is already running to reset itself -- a GS reset, an all-sound-off and a
+reset-all-controllers on each of sixteen channels, then a quarter second of
+emulation so the firmware acts on them -- is **94 ms** in the same build. That
+is 107 bytes of MIDI against a reboot.
+
+A wall-clock assertion guards it, which is normally a bad idea and earns its
+place here: what it catches is not slow code but the wrong code, the bound is an
+order of magnitude either side, and it only runs where the ROMs are, which is
+never CI.
+
+The machine's own sample counter is what positions its panel states, and after a
+reset it carries on counting while the track jumps -- so `rebaseLcd()` ties the
+two back together. Without it every state after a seek is filed under the wrong
+moment and the panel stops moving. That bug arrived with the state replay and
+never shipped.
+
 The cost of all this is that a seek no longer lands in a state identical to
 having played there — envelopes in flight are gone, and a note sustained across
 the seek point does not resume. That is what Cog does and what a MIDI player is

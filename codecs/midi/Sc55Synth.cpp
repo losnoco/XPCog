@@ -26,6 +26,12 @@ constexpr double kBootSeconds = 7.0;
 /// already three times what a display refreshes at.
 constexpr std::uint64_t kLcdThrottleMs = 5;
 
+/// How long the machine is run after being told to reset, so that it has acted
+/// on the message before replayed state starts arriving. A GS reset on real
+/// hardware takes tens of milliseconds; this is generous and still a
+/// twenty-eighth of what rebooting costs.
+constexpr double kResetSettleSeconds = 0.25;
+
 /// How many bytes a short message occupies on the wire.
 ///
 /// The container packs status, data0 and data1 into one word and does not say
@@ -124,6 +130,8 @@ bool Sc55Synth::open(const Sc55RomSet& roms) {
     lcdFrames_.clear();
     haveLcdMs_ = false;
     lastLcdMs_ = 0;
+    rendered_  = 0;
+    lcdBias_   = 0;
 
     sc55_spin(state_, static_cast<std::uint32_t>(sampleRate_ * kBootSeconds));
     return true;
@@ -177,8 +185,8 @@ void Sc55Synth::onLcd(const void* state, std::size_t size,
     // see the note in the header. So this is a position in what has been
     // rendered, which is the only clock a display can be driven from.
     Sc55LcdFrame frame;
-    frame.samplePosition =
-        static_cast<std::uint64_t>(timestampMs * sampleRate_ / 1000.0);
+    const auto counted = static_cast<std::int64_t>(timestampMs * sampleRate_ / 1000.0);
+    frame.samplePosition = static_cast<std::uint64_t>(std::max<std::int64_t>(0, counted + lcdBias_));
     const auto* bytes = static_cast<const std::byte*>(state);
     frame.state.assign(bytes, bytes + size);
     lcdFrames_.push_back(std::move(frame));
@@ -208,9 +216,41 @@ void Sc55Synth::render(std::int16_t* out, std::size_t frames) {
         } else {
             sc55_render(state_, out, static_cast<std::uint32_t>(todo));
         }
+        rendered_ += todo;
         out += todo * 2;
         frames -= todo;
     }
+}
+
+void Sc55Synth::rebaseLcd(std::uint64_t trackSamples) {
+    lcdBias_ = static_cast<std::int64_t>(trackSamples) -
+               static_cast<std::int64_t>(rendered_);
+}
+
+void Sc55Synth::reset() {
+    if (state_ == nullptr) {
+        return;
+    }
+    // The same GS reset sc55_init posts at start-up (mcu.cpp:1158), then the
+    // two channel-mode messages that silence anything sounding and return the
+    // controllers to their defaults.
+    static constexpr std::uint8_t kGsReset[] = {0xF0, 0x41, 0x10, 0x42, 0x12, 0x40,
+                                                0x00, 0x7F, 0x00, 0x41, 0xF7};
+    sc55_write_uart(state_, kGsReset, sizeof(kGsReset));
+    for (std::uint8_t channel = 0; channel < 16; ++channel) {
+        const std::uint8_t status = static_cast<std::uint8_t>(0xB0 | channel);
+        const std::uint8_t allSoundOff[3]   = {status, 120, 0};
+        const std::uint8_t resetControls[3] = {status, 121, 0};
+        sc55_write_uart(state_, allSoundOff, 3);
+        sc55_write_uart(state_, resetControls, 3);
+    }
+
+    // A hundred and seven bytes, well inside the 8192-byte port buffer, and
+    // then long enough for the firmware to have read them.
+    const auto settle = static_cast<std::size_t>(sampleRate_ * kResetSettleSeconds);
+    std::vector<std::int16_t> discard(settle * 2);
+    render(discard.data(), settle);
+    (void)takeLcdFrames();
 }
 
 }  // namespace xpcog::codecs

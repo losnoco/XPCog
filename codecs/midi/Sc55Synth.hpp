@@ -100,6 +100,23 @@ public:
     /// Renders `frames` stereo frames.
     void render(std::int16_t* out, std::size_t frames) override;
 
+    /// Resets the machine over MIDI rather than rebooting it.
+    ///
+    /// A GS reset and an all-sound-off on every channel, then a quarter second
+    /// of emulation so the firmware acts on them before anything else arrives.
+    /// Rebooting instead would mean reloading the ROMs and spinning seven
+    /// seconds of emulated time, which is the second a seek used to cost.
+    void reset() override;
+
+    /// Ties the emulator's sample counter to a position in the track.
+    ///
+    /// The counter measures what this machine has rendered, which is the same
+    /// as the track position only while the two have advanced together. A seek
+    /// breaks that -- the machine keeps counting from wherever it was while the
+    /// track jumps -- so without this every panel state after a seek would be
+    /// filed under the wrong moment and never drawn.
+    void rebaseLcd(std::uint64_t trackSamples);
+
     /// Starts or stops capturing the front panel.
     ///
     /// Off by default, and worth a switch rather than always being on: capturing
@@ -132,6 +149,10 @@ private:
     std::string device_ = "Roland SC-55";
 
     bool                      captureLcd_ = false;
+    /// Samples rendered since this machine was opened, and what has to be added
+    /// to that to get a position in the track. See rebaseLcd().
+    std::uint64_t rendered_ = 0;
+    std::int64_t  lcdBias_  = 0;
     std::vector<Sc55LcdFrame> lcdFrames_;
     /// The timestamp of the last frame kept, so changes closer together than
     /// the throttle are collapsed.
