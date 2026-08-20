@@ -2,12 +2,12 @@
 
 [![CI](https://github.com/losnoco/XPCog/actions/workflows/ci.yml/badge.svg)](https://github.com/losnoco/XPCog/actions/workflows/ci.yml)
 
-A cross-platform Qt 6 port of [Cog](https://cog.losno.co/), the macOS audio player by
-Vincent Spader and Christopher Snowhill. XPCog targets **Windows, macOS and Linux**
-from a single codebase.
+A cross-platform port of [Cog](https://cog.losno.co/), the macOS audio player by
+Vincent Spader and Christopher Snowhill, built on wxWidgets. XPCog targets
+**Windows, macOS and Linux** from a single codebase.
 
 > **Status: milestone 6 — breadth.**
-> A Qt window with a playlist, transport, seek bar, file browser, preferences,
+> A window with a playlist, transport, seek bar, file browser, preferences,
 > undo, drag-and-drop and a persistent library. Gapless across formats *and*
 > sample rates, ReplayGain, cue sheets, HDCD. A 31-band equaliser at Cog's
 > frequencies, transport fades, matrix downmix/upmix and FreeSurround stereo-to-5.1.
@@ -43,19 +43,25 @@ libraries. XPCog keeps that contract and rebuilds everything around it.
 ## Architecture
 
 ```
-xpcog-app ──┬── xpcog-platform (Qt: per-OS integration)
+xpcog-app ──┬── xpcog-platform (per-OS integration; NO toolkit)
             └── xpcog-codecs ──┐
-                               ├── xpcog-core   (NO Qt)
+                               ├── xpcog-core   (NO toolkit)
 xpcog-cli ── core + codecs ────┘
 ```
 
 Two rules do most of the structural work:
 
-**`xpcog-core` never links Qt.** The engine, plugin registry, library and playlist model
-depend only on the C++ standard library and codec libraries. This keeps them embeddable
-and testable without a display. The rule enforces itself — `xpcog-cli` links no Qt at
-all, so a `QtCore` leak breaks that target immediately — and a CMake check reports it
-earlier with a clearer message.
+**Only `xpcog-app` links a UI toolkit.** The engine, plugin registry, library and
+playlist view depend only on the C++ standard library and codec libraries, which keeps
+them embeddable and testable without a display. `xpcog-platform` links none either: it
+talks to Win32, C++/WinRT, CoreFoundation, MediaPlayer.framework and GDBus, and its
+public headers name no toolkit at all.
+
+The rule enforces itself — `xpcog-cli` links nothing, so a leak breaks that target
+immediately — and `cmake/CheckNoToolkit.cmake` reports it earlier with a clearer
+message. It was put to the test in earnest: the interface was moved from Qt 6 to
+wxWidgets without `core/` or `codecs/` changing at all. See
+[`docs/WXPORT.md`](docs/WXPORT.md).
 
 **Codecs are registered at compile time, not discovered at runtime.** Each codec exposes
 one registrar function; CMake generates a `RegisterAll.cpp` that calls every one of them
@@ -66,16 +72,12 @@ at build time. See [`cmake/XPCogCodec.cmake`](cmake/XPCogCodec.cmake).
 
 ## Building
 
-Requires **Qt 6.5+**, **CMake 3.24+**, **Ninja**, a **C++20** compiler, and
-[**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set.
-
-Point `XPCOG_QT_ROOT` at your Qt installation — the directory containing `bin`
-and `lib/cmake`, as produced by the Qt installer or aqtinstall. Qt deliberately
-does not come from vcpkg, because mixing a vcpkg Qt with vcpkg's other ports is
-a known source of grief.
+Requires **CMake 3.24+**, **Ninja**, a **C++20** compiler, and
+[**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set. Every
+dependency, wxWidgets included, comes from vcpkg — there is nothing to install
+separately and no environment variable to point at a toolkit.
 
 ```sh
-export XPCOG_QT_ROOT=~/Qt/6.11.1/macos      # or .../gcc_64 on Linux
 cmake --preset macos-debug                   # or linux-debug / windows-debug
 cmake --build --preset macos-debug
 ctest --preset macos-debug
@@ -83,26 +85,23 @@ ctest --preset macos-debug
 
 ```bat
 :: Windows, from a Developer Command Prompt
-set XPCOG_QT_ROOT=C:\Qt\6.11.1\msvc2022_64
 cmake --preset windows-debug
 cmake --build --preset windows-debug
 ctest --preset windows-debug
 ```
 
-If you would rather manage `CMAKE_PREFIX_PATH` yourself, leave `XPCOG_QT_ROOT`
-unset and it stays out of the way.
+There is no deploy step. On Windows, vcpkg's applocal pass copies every dependent
+DLL beside `XPCog.exe` as part of the build — the same pass that has always placed
+FFmpeg's and TagLib's — so a freshly built binary starts from Explorer. On macOS the
+triplet is static and there is nothing to copy. What remains is signing, and
+`cmake --build build/macos-debug --target sign` does that when
+`XPCOG_CODESIGN_IDENTITY` names a Developer ID identity.
 
-The Windows presets build with MSVC, so the Qt installed must be the
-**`msvc2022_64`** component and not `mingw_64`. The two are not
-ABI-interchangeable, and pointing `XPCOG_QT_ROOT` at a MinGW Qt gets past the
-path check in `cmake/XPCogQt.cmake` — the layout is identical — before failing
-much later and much less clearly. Any MSVC from 2019 onward links Qt's
-msvc2022 binaries; a VS 2026 toolset (14.5x) is fine.
-
-`cmake --build build/windows-debug --target deploy` runs `windeployqt`, copying
-the Qt runtime and plugins beside `XPCog.exe` so it can be launched from Explorer
-rather than only from a shell with Qt on `PATH`. Windows has no rpath, so a
-freshly built `XPCog.exe` cannot start without one or the other.
+wxWidgets is declared under a `gui` feature rather than as a plain dependency, so
+a headless configuration (`-D XPCOG_BUILD_APP=OFF`) builds no toolkit at all — and
+on Linux, no GTK. If you would rather use a wxWidgets your distribution already
+supplies, `cmake/XPCogWx.cmake` falls back to CMake's `FindwxWidgets` when no
+vcpkg one is present.
 
 ### Other prerequisites
 
@@ -162,7 +161,7 @@ Note that the encoders alone were not enough before the fixture commands stopped
 assuming a POSIX shell: `2>/dev/null` under `cmd.exe` fails the whole command,
 which every call site read as "encoder missing". See `tests/TestShell.hpp`.
 
-To build the engine without Qt at all:
+To build the engine with no toolkit at all:
 
 ```sh
 cmake --preset macos-headless && cmake --build --preset macos-headless
@@ -300,6 +299,7 @@ never confused with the expected tail.
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
 | ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
 | 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores, SID, Musepack, APL, DSD, output device selection and exclusive mode, and MIDI on OPL3, SpessaSynth and an emulated SC-55 with its front panel all done; DoP output, `.dsf`/`.dff`, the remaining decoders, `cogimport`, HRTF, scrobbling and global hotkeys to come |
+| ✅ | **M7** | The interface moved from Qt 6 to wxWidgets. `core/` and `codecs/` unchanged; `platform/` de-Qt'd and now links no toolkit either. Qt was the last dependency outside vcpkg, and the deploy step went with it. See [`docs/WXPORT.md`](docs/WXPORT.md) |
 
 Picking this up on another machine? [`docs/PORTING.md`](docs/PORTING.md) ends with
 **Where to pick up next** — the remaining work itemised, in order, each with where

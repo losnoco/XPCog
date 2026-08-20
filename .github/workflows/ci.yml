@@ -25,13 +25,15 @@ jobs:
     #
     # Added after one Linux job stalled three times in a row: seven minutes in
     # `apt-get update` against an unreachable azure.archive.ubuntu.com, then
-    # thirty-eight in Install Qt, then forty-seven back in apt again. Two
+    # thirty-eight in the Qt install, then forty-seven back in apt again. Two
     # unrelated hosts on the same runner, which is what says it was the machine
     # rather than either mirror. Note what this deliberately is *not*: a retry
-    # around apt, or a swap to a different mirror. Neither would have helped the
-    # Qt half, and making a flaky download tolerant is the habit
-    # docs/PORTING.md's Known gaps argues against. This only converts a hang
-    # into a failure that can be re-run in a minute.
+    # around apt, or a swap to a different mirror. Making a flaky download
+    # tolerant is the habit docs/PORTING.md's Known gaps argues against; this
+    # only converts a hang into a failure that can be re-run in a minute.
+    #
+    # One of those three stalls cannot happen any more: the Qt install is gone,
+    # since the toolkit now comes from vcpkg like every other dependency.
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -46,20 +48,12 @@ jobs:
           - name: macOS
             os: macos-26
             preset: macos-debug
-            # Not 6.8 like the others, and not a preference. Qt 6.8's QtGui
-            # carries -framework AGL in its link interface, and Apple removed
-            # AGL from the macOS 26 SDK, so 6.8 cannot link on this image at
-            # all. 6.11 dropped the reference and is what the port is developed
-            # against anyway.
-            qt: "6.11.*"
           - name: Linux
             os: ubuntu-24.04
             preset: linux-debug
-            qt: "6.8.*"
           - name: Windows
             os: windows-2022
             preset: windows-debug
-            qt: "6.8.*"
 
     steps:
       - uses: actions/checkout@v4
@@ -80,8 +74,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf automake libtool nasm \
-            libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev \
-            libxcb-cursor-dev libvulkan-dev \
+            libgl1-mesa-dev libglu1-mesa-dev \
+            libgtk-3-dev libglib2.0-dev \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
 
       - name: Install macOS build dependencies
@@ -159,17 +153,6 @@ jobs:
         with:
           arch: x64
 
-      # Per-platform, not one version for all three -- see the matrix for why
-      # macOS cannot use 6.8. Keeping Linux and Windows there is deliberate: it
-      # is the only thing standing behind the "Qt 6.5+" claim in the README, and
-      # building everything against the newest Qt would quietly turn that into
-      # "whatever the developers happen to have".
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: ${{ matrix.qt }}
-          cache: true
-
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
         with:
@@ -200,8 +183,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v2-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
-          restore-keys: vcpkg-v2-${{ matrix.preset }}-
+          key: vcpkg-v3-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          restore-keys: vcpkg-v3-${{ matrix.preset }}-
 
       # vcpkg creates this itself, but not if configure fails before it gets
       # that far -- and then the save step warns about a missing path.
@@ -248,10 +231,15 @@ jobs:
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
   headless:
-    # The engine, codecs, CLI and tests must build with no Qt installed at all.
-    # This is the real guarantee behind the Qt-free core rule; the CheckNoQt script
-    # only catches includes, whereas this catches a genuine link-time dependency.
-    name: Headless (no Qt)
+    # The engine, codecs, CLI and tests must build with no UI toolkit present at
+    # all -- not merely unused. This is the real guarantee behind the layering
+    # rule; cmake/CheckNoToolkit.cmake catches includes, whereas this catches a
+    # genuine link-time dependency, and it is the job that proved the rule held
+    # when the toolkit was swapped.
+    #
+    # It also stays cheap, which is why `gui` is a vcpkg feature: without it this
+    # job builds no GTK.
+    name: Headless (no toolkit)
     runs-on: ubuntu-24.04
     # See the matrix job above for why.
     timeout-minutes: 60
@@ -277,17 +265,18 @@ jobs:
           # The first overlay port added here took all four jobs down this way.
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
-      # Shares the Linux job's key on purpose: same triplet, same dependencies.
-      # Dropping Qt changes what we build, not what vcpkg builds. On the very
-      # first run both jobs miss and one loses the race to save, which is a
-      # warning and nothing more.
+      # A key of its own, unlike before. Under Qt this job shared the Linux
+      # job's, because Qt was not a vcpkg dependency and dropping it changed what
+      # we built rather than what vcpkg built. wxWidgets *is* one, and this job
+      # omits the `gui` feature, so the two jobs genuinely want different package
+      # sets and sharing a key would have each of them evicting the other's.
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v2-linux-debug-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
-          restore-keys: vcpkg-v2-linux-debug-
+          key: vcpkg-v3-linux-headless-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          restore-keys: vcpkg-v3-linux-headless-
 
       # vcpkg creates this itself, but not if configure fails before it gets
       # that far -- and then the save step warns about a missing path.
@@ -295,9 +284,16 @@ jobs:
         shell: bash
         run: mkdir -p .vcpkg-cache
 
-      - name: Configure without Qt
+      # VCPKG_MANIFEST_FEATURES is restated without `gui` rather than subtracted
+      # from, because a vcpkg feature cannot be removed by overriding: the preset
+      # sets the list and this replaces it wholesale. Getting it wrong costs a
+      # GTK build for a configuration that links no toolkit.
+      - name: Configure without a toolkit
         id: configure
-        run: cmake --preset linux-debug -D XPCOG_BUILD_APP=OFF
+        run: >-
+          cmake --preset linux-debug
+          -D XPCOG_BUILD_APP=OFF
+          -D VCPKG_MANIFEST_FEATURES=ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm
 
       - name: Build
         run: cmake --build --preset linux-debug

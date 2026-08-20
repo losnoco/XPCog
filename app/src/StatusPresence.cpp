@@ -1,135 +1,114 @@
 #include "StatusPresence.hpp"
 
-#include "ActionRegistry.hpp"
 #include "AppIcon.hpp"
+#include "Commands.hpp"
+#include "MainFrame.hpp"
+#include "Text.hpp"
 
-#include <QAction>
-#include <QFontMetrics>
-#include <QIcon>
-#include <QMenu>
-#include <QStringList>
-#include <QSystemTrayIcon>
-#include <QWidget>
+#include <wx/menu.h>
+#include <wx/notifmsg.h>
 
 namespace xpcog::app {
 namespace {
 
-/// The commands, in Cog's dock-menu order (MainMenu.xib, menu 513): transport
-/// first, then track movement. Cog also carries Stop After Current and the
-/// album skips, which XPCog has no command for yet -- when it does, they belong
-/// here rather than in a second list.
-constexpr ActionId kTransport[] = {
-    ActionId::PlaybackPlayPause,
-    ActionId::PlaybackStop,
+/// Ids for the two entries that exist only where there is a tray.
+enum : int {
+    kShowWindowId = FirstWidgetId + 80,
 };
 
-constexpr ActionId kNavigation[] = {
-    ActionId::PlaybackPrevious,
-    ActionId::PlaybackNext,
-};
+/// Long titles get cut rather than stretching a tooltip across the screen.
+constexpr std::size_t kMaxTooltipRun = 60;
 
-/// A long title would otherwise stretch the menu to the width of the screen,
-/// and a tray menu has no other content to hold it in shape.
-QString elide(const QString& text, const QFontMetrics& metrics) {
-    constexpr int kMaxPixels = 320;
-    return metrics.elidedText(text, Qt::ElideRight, kMaxPixels);
+[[nodiscard]] std::string elide(const std::string& text) {
+    if (text.size() <= kMaxTooltipRun) {
+        return text;
+    }
+    // Cut on a byte boundary that is not mid-sequence: UTF-8 continuation bytes
+    // are 10xxxxxx, so walking back off them lands on a character start. A
+    // tooltip ending in half a codepoint renders as a replacement glyph.
+    std::size_t cut = kMaxTooltipRun;
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
+        --cut;
+    }
+    return text.substr(0, cut) + "\xE2\x80\xA6";
 }
 
 }  // namespace
 
-void raiseWindow(QWidget* window) {
+void raiseWindow(wxTopLevelWindow* window) {
     if (window == nullptr) {
         return;
     }
-    window->setWindowState(window->windowState() & ~Qt::WindowMinimized);
-    window->show();
-    window->raise();
-    window->activateWindow();
+    window->Iconize(false);
+    window->Show();
+    window->Raise();
+    window->SetFocus();
 }
 
-StatusPresence::StatusPresence(const ActionRegistry& actions, QWidget* window,
-                               QObject* parent)
-    : QObject(parent), window_(window) {
-    // On the tray platforms, ask first: a Linux session may have no notification
-    // area at all, and QSystemTrayIcon::show() on one of those is a silent
-    // no-op that would leave a menu attached to nothing.
-#ifndef Q_OS_MACOS
-    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-        return;
+StatusPresence::StatusPresence(MainFrame* frame) : frame_(frame) {
+#ifndef __WXOSX__
+    // wxTaskBarIcon::IsAvailable() answers for the session rather than the
+    // platform: a Linux desktop with no notification area says no, and the
+    // caller has to be able to tell that from "a tray that ignores updates".
+    if (wxTaskBarIcon::IsAvailable()) {
+        hasTrayIcon_ = SetIcon(applicationIconAt(16), "XPCog");
     }
-#endif
-
-    menu_ = new QMenu(window);
-
-    // Two disabled rows for the track, as Cog's dock menu opens with the artist
-    // and the song. Created up front and hidden rather than inserted on demand:
-    // Cog inserts and removes its artist item by index, which is why that code
-    // has to ask where the item currently is before touching it.
-    artistRow_ = menu_->addAction(QString{});
-    artistRow_->setEnabled(false);
-    titleRow_ = menu_->addAction(QString{});
-    titleRow_->setEnabled(false);
-    infoSplit_ = menu_->addSeparator();
-
-    for (const ActionId id : kTransport) {
-        if (QAction* command = actions.action(id); command != nullptr) {
-            menu_->addAction(command);
-        }
-    }
-    menu_->addSeparator();
-    for (const ActionId id : kNavigation) {
-        if (QAction* command = actions.action(id); command != nullptr) {
-            menu_->addAction(command);
-        }
-    }
-
-    clear();
-
-#ifdef Q_OS_MACOS
-    // The Dock tile's menu. AppKit adds Quit, Show All, Options and the window
-    // list below whatever is here, so this menu stops at the transport.
-    menu_->setAsDockMenu();
 #else
-    // Raising the window and quitting exist only here: on macOS the Dock icon
-    // does the first and AppKit's own menu does the second.
-    menu_->addSeparator();
-    QAction* show = menu_->addAction(tr("Show XPCog"));
-    connect(show, &QAction::triggered, this, [this] { raiseWindow(window_); });
-    if (QAction* quit = actions.action(ActionId::FileQuit); quit != nullptr) {
-        menu_->addAction(quit);
-    }
-
-    tray_ = new QSystemTrayIcon(this);
-    tray_->setContextMenu(menu_);
-    connect(tray_, &QSystemTrayIcon::activated, this,
-            [this](QSystemTrayIcon::ActivationReason reason) {
-                // Trigger is a single click, which is the Windows convention;
-                // DoubleClick is what several Linux shells send instead. Context
-                // is the right-click that opens the menu and must not also raise
-                // the window out from under it.
-                if (reason == QSystemTrayIcon::Trigger ||
-                    reason == QSystemTrayIcon::DoubleClick) {
-                    raiseWindow(window_);
-                }
-            });
-    tray_->setIcon(applicationIcon());
-    refreshTooltip();
-    tray_->show();
+    // The Dock menu. Constructed by the wxTBI_DOCK base below; nothing to set,
+    // because the tile already carries the bundle's icon and replacing it would
+    // lose the layered treatment macOS composes from icons/xpcog.icon.
+    hasTrayIcon_ = false;
 #endif
+
+    Bind(wxEVT_TASKBAR_LEFT_DCLICK,
+         [this](wxTaskBarIconEvent&) { raiseWindow(frame_); });
 }
 
-void StatusPresence::setNowPlaying(const QString& title, const QString& artist) {
-    if (menu_ == nullptr) {
-        return;
+wxMenu* StatusPresence::CreatePopupMenu() {
+    auto* menu = new wxMenu;
+
+    // The track, as two disabled rows at the top, exactly as Cog's dock menu
+    // does. Absent rather than blank when there is nothing: an empty row reads as
+    // a broken menu.
+    if (!title_.empty()) {
+        menu->Append(wxID_ANY, toWx(elide(title_)))->Enable(false);
+        if (!artist_.empty()) {
+            menu->Append(wxID_ANY, toWx(elide(artist_)))->Enable(false);
+        }
+        menu->AppendSeparator();
     }
 
-    const QFontMetrics metrics(menu_->font());
-    titleRow_->setText(elide(title, metrics));
-    titleRow_->setVisible(!title.isEmpty());
-    artistRow_->setText(elide(artist, metrics));
-    artistRow_->setVisible(!artist.isEmpty());
-    infoSplit_->setVisible(!title.isEmpty() || !artist.isEmpty());
+    menu->Append(PlaybackPlayPause, playing_ && !paused_ ? "Pause" : "Play");
+    menu->Append(PlaybackStop, "Stop");
+    menu->AppendSeparator();
+    menu->Append(PlaybackPrevious, "Previous");
+    menu->Append(PlaybackNext, "Next");
 
+#ifndef __WXOSX__
+    // Only where there is a tray. AppKit appends Quit and the window list to a
+    // Dock menu itself, and clicking the Dock icon already raises the window --
+    // adding these there would produce a menu with two Quits.
+    menu->AppendSeparator();
+    menu->Append(kShowWindowId, "Show XPCog");
+    menu->Append(FileQuit, "Quit");
+#endif
+
+    // The transport ids are the frame's, so the commands run there and pick up
+    // the same EVT_UPDATE_UI handlers the menu bar uses. Only the show-window
+    // entry belongs to this object.
+    menu->Bind(wxEVT_MENU, [this](wxCommandEvent& event) {
+        if (event.GetId() == kShowWindowId) {
+            raiseWindow(frame_);
+            return;
+        }
+        wxCommandEvent forwarded(wxEVT_MENU, event.GetId());
+        frame_->GetEventHandler()->ProcessEvent(forwarded);
+    });
+
+    return menu;
+}
+
+void StatusPresence::setNowPlaying(const std::string& title, const std::string& artist) {
     title_  = title;
     artist_ = artist;
     refreshTooltip();
@@ -142,54 +121,46 @@ void StatusPresence::setPlaybackState(bool playing, bool paused) {
 }
 
 void StatusPresence::clear() {
+    title_.clear();
+    artist_.clear();
     playing_ = false;
     paused_  = false;
-    setNowPlaying(QString{}, QString{});
-}
-
-void StatusPresence::showMessage(const QString& title, const QString& body) {
-    if (tray_ == nullptr) {
-        return;
-    }
-    tray_->showMessage(title, body, applicationIcon());
+    refreshTooltip();
 }
 
 void StatusPresence::refreshTooltip() {
-    if (tray_ == nullptr) {
+    if (!hasTrayIcon_) {
         return;
     }
 
-    // The tray keeps the application icon and puts the state in the tooltip,
-    // rather than swapping the image for a play or pause glyph.
-    //
-    // Cog does swap -- it badges the Dock tile -- but a Dock tile is 128px and a
-    // tray icon is 16, where a corner badge is three or four pixels and reads as
-    // dirt. It also costs the only thing the tray is actually for, which is
-    // being recognisable at a glance among a row of other icons.
-    //
-    // Badging belongs to the taskbar/Dock progress work (NSDockTile,
-    // ITaskbarList3), which has a real API for it at a size that can carry it.
-    const QString what = artist_.isEmpty() ? title_
-                         : title_.isEmpty()
-                             ? artist_
-                             : QStringLiteral("%1 — %2").arg(artist_, title_);
-
-    QString state;
-    if (playing_ && paused_) {
-        state = tr("Paused");
-    } else if (playing_) {
-        state = tr("Playing");
+    std::string text = "XPCog";
+    if (!title_.empty()) {
+        text += "\n" + elide(title_);
+        if (!artist_.empty()) {
+            text += "\n" + elide(artist_);
+        }
+    }
+    if (playing_) {
+        text += paused_ ? "\n(paused)" : "";
     }
 
-    QStringList lines;
-    lines.append(QStringLiteral("XPCog"));
-    if (!state.isEmpty()) {
-        lines.append(state);
+    // The icon is passed again because wx has no tooltip-only setter; it is the
+    // same bundle, so nothing is redrawn that was not already there.
+    SetIcon(applicationIconAt(16), toWx(text));
+}
+
+void StatusPresence::notify(const std::string& title, const std::string& body) {
+    if (!hasTrayIcon_) {
+        return;
     }
-    if (!what.isEmpty()) {
-        lines.append(what);
-    }
-    tray_->setToolTip(lines.join(QStringLiteral(" — ")));
+    // wxNotificationMessage rather than a balloon: ShowBalloon() is MSW-only,
+    // and this is the portable spelling that also reaches a Linux desktop's
+    // notification daemon.
+    wxNotificationMessage message(toWx(title), toWx(body), frame_);
+#if defined(__WXMSW__)
+    message.UseTaskBarIcon(this);
+#endif
+    message.Show();
 }
 
 }  // namespace xpcog::app

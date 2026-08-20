@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "xpcog",
   "version": "0.1.0",
-  "description": "Cross-platform Qt port of the Cog audio player",
+  "description": "Cross-platform wxWidgets port of the Cog audio player",
   "homepage": "https://github.com/losnoco/Cog",
   "license": "GPL-2.0-or-later",
   "builtin-baseline": "17f35ad2418007a895ced8a4cece4ab34068a58d",
@@ -34,6 +34,15 @@
     }
   ],
   "features": {
+    "gui": {
+      "description": "wxWidgets: the application's UI toolkit. A feature rather than a plain dependency so the headless presets, which build no app, do not drag in wx -- and on Linux, GTK -- for a target that links no toolkit at all",
+      "dependencies": [
+        {
+          "name": "wxwidgets",
+          "default-features": false
+        }
+      ]
+    },
     "musepack": {
       "description": "Musepack decoder, on libmpcdec (see ports/libmpcdec)",
       "dependencies": [

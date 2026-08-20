@@ -16,13 +16,13 @@ namespace xpcog::platform {
 
 bool fileAssociationsSupported() { return false; }
 
-bool registerFileAssociations(const QStringList& extensions, QString* error) {
+bool registerFileAssociations(std::span<const std::string> extensions, std::string* error) {
     (void)extensions;
     (void)error;
     return false;
 }
 
-bool unregisterFileAssociations(QString* error) {
+bool unregisterFileAssociations(std::string* error) {
     (void)error;
     return false;
 }

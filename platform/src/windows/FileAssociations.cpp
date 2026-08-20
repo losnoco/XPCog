@@ -1,10 +1,12 @@
-// Windows file associations, written through QSettings.
+// Windows file associations, written straight to the registry.
 //
-// QSettings rather than the registry API: with NativeFormat its paths *are*
-// registry paths, "." names a key's default value, and it reports failure through
-// status() -- which is the whole of what this needs, without windows.h in the
-// middle of it. The one thing it cannot do is tell the shell something changed,
-// which is what the single Win32 call at the bottom is for.
+// This used to go through QSettings, whose NativeFormat paths *are* registry
+// paths -- a genuinely neat trick that meant no windows.h in the middle of it.
+// With Qt gone the trick goes too, and what replaces it is the API QSettings was
+// standing in for. The mapping is mechanical: a QSettings path component is a
+// subkey, a trailing "." was the key's default value, and childKeys() was
+// RegEnumValue. The one Win32 call that was already here, SHChangeNotify, is
+// unchanged.
 //
 // What gets written, and what deliberately does not:
 //
@@ -26,56 +28,126 @@
 
 #include "xpcog/platform/FileAssociations.hpp"
 
-#include <QCoreApplication>
-#include <QDir>
-#include <QSettings>
-#include <QString>
-#include <QStringList>
+#include "WinString.hpp"
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
 #include <shlobj.h>
+
+#include <filesystem>
+#include <string>
+#include <vector>
 
 namespace xpcog::platform {
 namespace {
 
-constexpr auto kClasses = R"(HKEY_CURRENT_USER\Software\Classes)";
-constexpr auto kProgId  = "XPCog.AudioFile";
+constexpr const wchar_t* kClasses = L"Software\\Classes";
+constexpr const wchar_t* kProgId  = L"XPCog.AudioFile";
+
+/// This process's own image path, in native form.
+[[nodiscard]] std::wstring executablePath() {
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD written =
+            GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (written == 0) {
+            return {};
+        }
+        if (written < buffer.size()) {
+            buffer.resize(written);
+            return buffer;
+        }
+        // Truncated: GetModuleFileNameW fills the buffer and does not say how
+        // much it wanted, so the only way forward is to ask again with more.
+        buffer.resize(buffer.size() * 2);
+    }
+}
 
 /// `Applications\<basename>` -- keyed by the executable's file name, which is
 /// what the shell looks up, not by its path.
-QString applicationsKey() {
-    return QStringLiteral("Applications/") +
-           QFileInfo(QCoreApplication::applicationFilePath()).fileName();
+[[nodiscard]] std::wstring applicationsKey() {
+    const std::filesystem::path exe{executablePath()};
+    return std::wstring{L"Applications\\"} + exe.filename().wstring();
 }
 
 /// `"C:\path\XPCog.exe" "%1"`.
 ///
-/// Built by concatenation rather than QString::arg: the command contains a
-/// literal `%1` for the shell to substitute, and arg() would replace that too --
-/// producing a command line that passes the executable to itself.
-QString openCommand() {
-    const QString exe =
-        QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
-    return QLatin1Char('"') + exe + QLatin1String("\" \"%1\"");
+/// Built by concatenation, and the `%1` is a literal the shell substitutes -- any
+/// formatting helper applied here would consume it and produce a command line
+/// that passes the executable to itself.
+[[nodiscard]] std::wstring openCommand() {
+    return L"\"" + executablePath() + L"\" \"%1\"";
 }
 
-bool report(QSettings& settings, QString* error) {
-    settings.sync();
-    if (settings.status() == QSettings::NoError) {
-        return true;
+/// Creates `Software\Classes\<subPath>` and writes `valueName` (empty for the
+/// key's default value). Returns false on the first refusal.
+bool writeValue(const std::wstring& subPath, const wchar_t* valueName,
+                const std::wstring& value) {
+    const std::wstring full = std::wstring{kClasses} + L"\\" + subPath;
+
+    HKEY key = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, full.c_str(), 0, nullptr,
+                        REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &key,
+                        nullptr) != ERROR_SUCCESS) {
+        return false;
     }
+
+    const LSTATUS status =
+        RegSetValueExW(key, valueName, 0, REG_SZ,
+                       reinterpret_cast<const BYTE*>(value.c_str()),
+                       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+    RegCloseKey(key);
+    return status == ERROR_SUCCESS;
+}
+
+/// The value *names* under `Software\Classes\<subPath>`, which is how both of the
+/// lists here are expressed: the presence of the name is the whole content.
+[[nodiscard]] std::vector<std::wstring> valueNames(const std::wstring& subPath) {
+    const std::wstring full = std::wstring{kClasses} + L"\\" + subPath;
+
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, full.c_str(), 0, KEY_READ, &key) !=
+        ERROR_SUCCESS) {
+        return {};
+    }
+
+    std::vector<std::wstring> names;
+    // 16383 is the documented maximum length of a registry value name.
+    std::wstring buffer(16384, L'\0');
+    for (DWORD index = 0;; ++index) {
+        DWORD length = static_cast<DWORD>(buffer.size());
+        const LSTATUS status =
+            RegEnumValueW(key, index, buffer.data(), &length, nullptr, nullptr, nullptr, nullptr);
+        if (status != ERROR_SUCCESS) {
+            break;
+        }
+        names.emplace_back(buffer.data(), length);
+    }
+    RegCloseKey(key);
+    return names;
+}
+
+void deleteValue(const std::wstring& subPath, const std::wstring& valueName) {
+    const std::wstring full = std::wstring{kClasses} + L"\\" + subPath;
+
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, full.c_str(), 0, KEY_WRITE, &key) !=
+        ERROR_SUCCESS) {
+        return;
+    }
+    RegDeleteValueW(key, valueName.c_str());
+    RegCloseKey(key);
+}
+
+void deleteTree(const std::wstring& subPath) {
+    const std::wstring full = std::wstring{kClasses} + L"\\" + subPath;
+    // Absent is the desired end state, so "no such key" is a success.
+    RegDeleteTreeW(HKEY_CURRENT_USER, full.c_str());
+    RegDeleteKeyExW(HKEY_CURRENT_USER, full.c_str(), 0, 0);
+}
+
+void fail(std::string* error) {
     if (error != nullptr) {
-        *error = settings.status() == QSettings::AccessError
-                     ? QStringLiteral("the registry refused the change")
-                     : QStringLiteral("the registry could not be written");
+        *error = "the registry refused the change";
     }
-    return false;
 }
 
 /// Tells the shell the association table moved. Without it Explorer keeps showing
@@ -89,69 +161,63 @@ void notifyShell() {
 
 bool fileAssociationsSupported() { return true; }
 
-bool registerFileAssociations(const QStringList& extensions, QString* error) {
-    const QString progId  = QLatin1String(kProgId);
-    const QString appKey  = applicationsKey();
-    const QString command = openCommand();
-    const QString exe =
-        QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+bool registerFileAssociations(std::span<const std::string> extensions, std::string* error) {
+    const std::wstring exe     = executablePath();
+    const std::wstring appKey  = applicationsKey();
+    const std::wstring command = openCommand();
+    const std::wstring progId{kProgId};
 
-    QSettings classes(QLatin1String(kClasses), QSettings::NativeFormat);
+    if (exe.empty()) {
+        if (error != nullptr) {
+            *error = "this program could not determine its own path";
+        }
+        return false;
+    }
 
-    classes.setValue(progId + QLatin1String("/."), QStringLiteral("Audio File"));
-    classes.setValue(progId + QLatin1String("/DefaultIcon/."),
-                     exe + QLatin1String(",0"));
-    classes.setValue(progId + QLatin1String("/shell/open/command/."), command);
+    bool ok = true;
+    ok = writeValue(progId, nullptr, L"Audio File") && ok;
+    ok = writeValue(progId + L"\\DefaultIcon", nullptr, exe + L",0") && ok;
+    ok = writeValue(progId + L"\\shell\\open\\command", nullptr, command) && ok;
 
     // FriendlyAppName is what "Open with" shows instead of the raw image name.
     // Worth noting for a different reason too: the SMTC card's "Unknown app"
     // caption comes from app identity rather than from this, but this is what
     // AssocQueryString(ASSOCSTR_FRIENDLYAPPNAME) answers with -- so having set it,
     // that caption is worth re-checking rather than assumed unchanged.
-    classes.setValue(appKey + QLatin1String("/FriendlyAppName"),
-                     QStringLiteral("XPCog"));
-    classes.setValue(appKey + QLatin1String("/shell/open/command/."), command);
+    ok = writeValue(appKey, L"FriendlyAppName", L"XPCog") && ok;
+    ok = writeValue(appKey + L"\\shell\\open\\command", nullptr, command) && ok;
 
-    for (const QString& extension : extensions) {
-        const QString dotted = QLatin1Char('.') + extension;
-        // Empty values: both of these are lists expressed as key names, where the
-        // presence of the name is the whole content.
-        classes.setValue(appKey + QLatin1String("/SupportedTypes/") + dotted,
-                         QString{});
-        classes.setValue(dotted + QLatin1String("/OpenWithProgids/") + progId,
-                         QString{});
+    for (const std::string& extension : extensions) {
+        const std::wstring dotted = L"." + toWide(extension);
+        ok = writeValue(appKey + L"\\SupportedTypes", dotted.c_str(), L"") && ok;
+        ok = writeValue(dotted + L"\\OpenWithProgids", kProgId, L"") && ok;
     }
 
-    if (!report(classes, error)) {
+    if (!ok) {
+        fail(error);
         return false;
     }
     notifyShell();
     return true;
 }
 
-bool unregisterFileAssociations(QString* error) {
-    const QString progId = QLatin1String(kProgId);
-    const QString appKey = applicationsKey();
+bool unregisterFileAssociations(std::string* error) {
+    (void)error;
 
-    QSettings classes(QLatin1String(kClasses), QSettings::NativeFormat);
+    const std::wstring appKey = applicationsKey();
+    const std::wstring progId{kProgId};
 
     // The extension list is read back out of SupportedTypes rather than taken from
     // the caller. That way this removes exactly what was registered, even if the
     // set of built-in codecs has changed since -- an extension added by a later
     // build would otherwise be missed, and one removed would be left behind.
-    classes.beginGroup(appKey + QLatin1String("/SupportedTypes"));
-    const QStringList dottedExtensions = classes.childKeys();
-    classes.endGroup();
-
-    for (const QString& dotted : dottedExtensions) {
-        classes.remove(dotted + QLatin1String("/OpenWithProgids/") + progId);
+    for (const std::wstring& dotted : valueNames(appKey + L"\\SupportedTypes")) {
+        deleteValue(dotted + L"\\OpenWithProgids", progId);
     }
-    classes.remove(progId);
-    classes.remove(appKey);
 
-    if (!report(classes, error)) {
-        return false;
-    }
+    deleteTree(progId);
+    deleteTree(appKey);
+
     notifyShell();
     return true;
 }

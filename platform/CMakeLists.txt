@@ -1,81 +1,114 @@
-# xpcog-platform is where OS-specific behaviour lives. Unlike core, Qt is allowed
-# here (QtCore/QtGui/QtDBus) -- this layer exists precisely so core does not need it.
+# xpcog-platform is where OS-specific behaviour lives.
 #
-# Planned occupants:
-#   Paths          per-OS config/data locations             (M2)
-#   NowPlaying     MPNowPlayingInfoCenter / SMTC / MPRIS    (all done)
-#   MediaKeys      MPRemoteCommandCenter / SMTC / MPRIS     (all done)
-#   FileAccess     no-op seam replacing Cog's SandboxBroker (M2)
-#   TaskbarProgress ITaskbarList3 done; NSDockTile          (M5, half outstanding)
-
-find_package(Qt6 REQUIRED COMPONENTS Core Gui)
+# It used to be the layer where Qt was allowed -- QtCore, QtGui and, on Linux,
+# QtDBus -- so that core did not have to carry it. It now links **no UI toolkit at
+# all**: the OS APIs here are Win32, C++/WinRT, CoreFoundation, MediaPlayer.framework
+# and GDBus, none of which needs one, and the four public headers speak
+# std::string, xpcog::Url, std::vector<std::byte> and xpcog::Signal.
+#
+# What that buys is substitutability. app/ can be rewritten in a different toolkit
+# -- which is exactly what is happening -- without this directory changing at all,
+# and the tests can link it without starting an application object.
+#
+# The one thing a toolkit was doing invisibly is thread marshalling: SMTC calls
+# back on a WinRT thread and MediaPlayer.framework on a dispatch queue, and Qt's
+# queued connections absorbed that. MediaIntegration::create() takes a dispatcher
+# instead, so the hop is explicit and the caller decides what "the UI thread"
+# means. GDBus needs none, because a GMainLoop already delivers on it.
+#
+# Occupants:
+#   Settings       registry / CFPreferences / a file, and the paths around them
+#   MediaIntegration  MPNowPlayingInfoCenter / SMTC / MPRIS
+#   TaskbarIntegration ITaskbarList3 done; NSDockTile outstanding
+#   FileAssociations   Windows only, by design
+#   Foreground     AllowSetForegroundWindow, Windows only
 
 add_library(xpcog-platform STATIC
-    src/common/Placeholder.cpp
-    src/common/QSettingsStore.cpp
-    # Listed so AUTOMOC sees it. It declares Q_OBJECT and has no .cpp of its own
-    # -- the implementation is chosen per platform below -- and AUTOMOC only
-    # looks at headers whose base name matches a listed source.
-    include/xpcog/platform/MediaIntegration.hpp
-    include/xpcog/platform/TaskbarIntegration.hpp
+    src/common/FileSettingsStore.cpp
+    src/common/FileSettingsStore.hpp
 )
 
-# MediaIntegration: exactly one implementation is compiled, chosen here rather
-# than by #ifdef inside one file. Adding SMTC or MPRIS is a new file and a new
-# branch, with no existing code to disturb.
+# Exactly one implementation of each seam is compiled, chosen here rather than by
+# #ifdef inside one file. Adding a platform is a new file and a new branch, with
+# no existing code to disturb.
 if(WIN32)
     target_sources(xpcog-platform PRIVATE
+        src/windows/WinString.hpp
         src/windows/Foreground.cpp
         src/windows/FileAssociations.cpp
-        src/windows/WindowsTaskbarIntegration.cpp)
-    # Shell32 for SHChangeNotify, which is how the association table's change is
-    # announced. Everything else in that file goes through QSettings.
-    target_link_libraries(xpcog-platform PRIVATE Shell32.lib)
-else()
-    target_sources(xpcog-platform PRIVATE
-        src/common/Foreground.cpp
-        src/common/FileAssociations.cpp
-        src/common/NullTaskbarIntegration.cpp)
-endif()
+        src/windows/WindowsSettings.cpp
+        src/windows/WindowsTaskbarIntegration.cpp
+        src/windows/WindowsMediaIntegration.cpp)
 
-if(APPLE)
-    enable_language(OBJCXX)
-    target_sources(xpcog-platform PRIVATE src/mac/MacMediaIntegration.mm)
-    # ARC, so the Objective-C objects here need no manual retain or release.
-    set_source_files_properties(src/mac/MacMediaIntegration.mm PROPERTIES
-        COMPILE_OPTIONS "-fobjc-arc")
-    target_link_libraries(xpcog-platform PRIVATE
-        "-framework MediaPlayer" "-framework AppKit" "-framework Foundation")
-elseif(WIN32)
-    target_sources(xpcog-platform PRIVATE src/windows/WindowsMediaIntegration.cpp)
-    # WindowsApp.lib is the umbrella that carries the WinRT entry points
-    # (RoGetActivationFactory and friends) that C++/WinRT is built on; linking a
-    # narrower static alternative is explicitly discouraged. ShCore and Shlwapi
-    # are for the synchronous COM-stream route the artwork takes -- see the file.
+    # Shell32 for SHChangeNotify and SHGetKnownFolderPath; Ole32 for the COM
+    # apartment calls and CoTaskMemFree; Advapi32 for the registry. WindowsApp is
+    # the umbrella carrying the WinRT entry points (RoGetActivationFactory and
+    # friends) that C++/WinRT is built on; linking a narrower static alternative
+    # is explicitly discouraged. ShCore and Shlwapi are for the synchronous COM
+    # stream the artwork takes -- see WindowsMediaIntegration.cpp.
     #
     # The C++/WinRT headers themselves come from the Windows SDK's cppwinrt
     # include directory, which a developer environment already puts on INCLUDE,
     # so there is no NuGet package to restore.
-    target_link_libraries(xpcog-platform PRIVATE WindowsApp.lib ShCore.lib Shlwapi.lib)
+    target_link_libraries(xpcog-platform PRIVATE
+        Shell32.lib Ole32.lib Advapi32.lib WindowsApp.lib ShCore.lib Shlwapi.lib)
+elseif(APPLE)
+    enable_language(OBJCXX)
+    target_sources(xpcog-platform PRIVATE
+        src/common/Foreground.cpp
+        src/common/FileAssociations.cpp
+        src/common/NullTaskbarIntegration.cpp
+        src/mac/MacSettings.cpp
+        src/mac/MacMediaIntegration.mm)
+    # ARC, so the Objective-C objects there need no manual retain or release.
+    set_source_files_properties(src/mac/MacMediaIntegration.mm PROPERTIES
+        COMPILE_OPTIONS "-fobjc-arc")
+    # CoreFoundation is for the settings store, which talks to CFPreferences
+    # directly rather than through any config library -- see MacSettings.cpp for
+    # why reading a real plist is the requirement.
+    target_link_libraries(xpcog-platform PRIVATE
+        "-framework MediaPlayer" "-framework AppKit" "-framework Foundation"
+        "-framework CoreFoundation")
 elseif(UNIX)
-    # MPRIS is D-Bus, and Qt's D-Bus support is a separate module. REQUIRED
-    # rather than optional: a Linux desktop without a session bus is possible,
-    # which the code handles at run time, but a Qt build without QtDBus is a
-    # broken development environment and should say so at configure time rather
-    # than produce a player with no remote control and no explanation.
-    find_package(Qt6 REQUIRED COMPONENTS DBus)
-    target_sources(xpcog-platform PRIVATE src/linux/LinuxMediaIntegration.cpp)
-    target_link_libraries(xpcog-platform PRIVATE Qt6::DBus)
+    target_sources(xpcog-platform PRIVATE
+        src/common/Foreground.cpp
+        src/common/FileAssociations.cpp
+        src/common/NullTaskbarIntegration.cpp
+        src/common/CommonSettings.cpp
+        src/linux/GDbusMediaIntegration.cpp)
+
+    # MPRIS is D-Bus, and GDBus is the binding. REQUIRED rather than optional: a
+    # Linux desktop without a session bus is possible, which the code handles at
+    # run time, but a build environment without GLib development files is broken
+    # and should say so at configure time rather than produce a player with no
+    # remote control and no explanation.
+    #
+    # GDBus rather than libdbus-1 for one decisive reason: a GTK application's
+    # main loop *is* a GMainLoop on the default main context, so an object
+    # registered from the GUI thread has its method calls delivered on the GUI
+    # thread. That is the guarantee QtDBus was quietly providing, and libdbus-1
+    # would mean rebuilding it with a pump thread and a marshalling hop.
+    #
+    # From the system via pkg-config rather than as a vcpkg dependency of ours:
+    # GLib is already present, both on any desktop and in vcpkg_installed, since
+    # the toolkit's own port depends on GTK.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(XPCOG_GIO REQUIRED IMPORTED_TARGET gio-2.0 glib-2.0 gobject-2.0)
+    target_link_libraries(xpcog-platform PRIVATE PkgConfig::XPCOG_GIO)
 else()
-    target_sources(xpcog-platform PRIVATE src/common/NullMediaIntegration.cpp)
+    target_sources(xpcog-platform PRIVATE
+        src/common/Foreground.cpp
+        src/common/FileAssociations.cpp
+        src/common/NullTaskbarIntegration.cpp
+        src/common/NullMediaIntegration.cpp
+        src/common/CommonSettings.cpp)
 endif()
 
-set_target_properties(xpcog-platform PROPERTIES AUTOMOC ON)
 add_library(XPCog::platform ALIAS xpcog-platform)
 
 target_include_directories(xpcog-platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(xpcog-platform
-    PUBLIC  xpcog-core Qt6::Core Qt6::Gui
+    PUBLIC  xpcog-core
     PRIVATE XPCog::warnings)
 
 set_target_properties(xpcog-platform PROPERTIES FOLDER platform)

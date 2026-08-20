@@ -15,7 +15,7 @@
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm",
+        "VCPKG_MANIFEST_FEATURES": "gui;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm",
         "XPCOG_WITH_FFMPEG": "ON",
         "XPCOG_WITH_VGMSTREAM": "ON",
         "XPCOG_WITH_PSF": "ON",
@@ -141,8 +141,10 @@
         "macos",
         "debug"
       ],
+      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui` because it inherits the list and a feature cannot be subtracted. Building wx here would cost a GTK build for a target that links no toolkit.",
       "cacheVariables": {
-        "XPCOG_BUILD_APP": "OFF"
+        "XPCOG_BUILD_APP": "OFF",
+        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
       }
     }
   ],

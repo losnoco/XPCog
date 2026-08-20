@@ -25,8 +25,9 @@
 
 #pragma once
 
-#include <QString>
-#include <QStringList>
+#include <span>
+#include <string>
+#include <string_view>
 
 namespace xpcog::platform {
 
@@ -35,11 +36,11 @@ namespace xpcog::platform {
 ///
 /// Returns false and fills `error` when the OS refused. Succeeds trivially where
 /// there is nothing to do.
-bool registerFileAssociations(const QStringList& extensions, QString* error);
+bool registerFileAssociations(std::span<const std::string> extensions, std::string* error);
 
 /// Removes what registerFileAssociations() added, leaving anything it did not
 /// create alone.
-bool unregisterFileAssociations(QString* error);
+bool unregisterFileAssociations(std::string* error);
 
 /// Whether this platform has an implementation at all, so a caller can say
 /// "nothing to do here" rather than reporting a silent success.

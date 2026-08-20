@@ -1,130 +1,159 @@
 #include "FileTree.hpp"
 
+#include "Commands.hpp"
 #include "LucideIcon.hpp"
+#include "Text.hpp"
 
-#include <QAction>
-#include <QEvent>
-#include <QDir>
-#include <QFileDialog>
-#include <QFileSystemModel>
-#include <QHeaderView>
-#include <QStandardPaths>
-#include <QToolButton>
-#include <QTreeView>
-#include <QVBoxLayout>
+#include "xpcog/core/FilePath.hpp"
+
+#include <wx/bmpbuttn.h>
+#include <wx/dirctrl.h>
+#include <wx/dirdlg.h>
+#include <wx/menu.h>
+#include <wx/sizer.h>
+#include <wx/stattext.h>
+#include <wx/treectrl.h>
+
+#include <filesystem>
+#include <string>
 
 namespace xpcog::app {
+namespace {
 
-FileTree::FileTree(const PluginRegistry& registry, QWidget* parent)
-    : QWidget(parent), registry_(registry) {
-    model_ = new QFileSystemModel(this);
-    model_->setResolveSymlinks(false);
+/// Ids for this panel's own widgets, above everything Commands.hpp claims.
+enum : int {
+    kRootButtonId = FirstWidgetId + 10,
+    kTreeId,
+    kAddToPlaylistId,
+    kChooseRootId,
+};
 
-    // Names, not a hard filter: setNameFilters with setNameFilterDisables(false)
-    // hides non-matching *files* while leaving folders navigable, which is what
-    // a music browser wants. Cog reimplements this over FSEvents.
-    QStringList patterns;
-    for (const std::string& extension : registry_.allExtensions()) {
-        patterns << QStringLiteral("*.%1").arg(QString::fromStdString(extension));
+/// `"Audio Files|*.flac;*.mp3;...|All Files|*.*"`.
+///
+/// Built from the registry rather than written out, so a new codec appears here
+/// with no edit -- a hand-written list would be wrong the first time a decoder
+/// was added and would stay wrong quietly.
+[[nodiscard]] wxString buildFilter(const PluginRegistry& registry) {
+    std::string patterns;
+    for (const std::string& extension : registry.allExtensions()) {
+        if (!patterns.empty()) {
+            patterns += ';';
+        }
+        patterns += "*." + extension;
     }
-    patterns << QStringLiteral("*.cue") << QStringLiteral("*.m3u")
-             << QStringLiteral("*.m3u8") << QStringLiteral("*.pls")
-             << QStringLiteral("*.xspf");
-    model_->setNameFilters(patterns);
-    model_->setNameFilterDisables(false);
-
-    view_ = new QTreeView(this);
-    view_->setModel(model_);
-    view_->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    view_->setDragEnabled(true);
-    view_->setDragDropMode(QAbstractItemView::DragOnly);
-    view_->setHeaderHidden(true);
-    // Size, type and date belong in a file manager, not beside a playlist.
-    for (int column = 1; column < model_->columnCount(); ++column) {
-        view_->hideColumn(column);
+    if (patterns.empty()) {
+        return "All Files|*.*";
     }
-
-    // The header doubles as the chooser. Cog's is a bare "Choose" button that
-    // says nothing about where you are; naming the folder costs no more room and
-    // answers the more common question.
-    root_ = new QToolButton(this);
-    root_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    root_->setIcon(lucideIcon(QStringLiteral("folder-open")));
-    root_->setAutoRaise(true);
-    // Left-aligned like the tree beneath it, and allowed to shrink: the pane is
-    // narrow and a long folder name must not set the splitter's minimum width.
-    root_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    connect(root_, &QToolButton::clicked, this, &FileTree::chooseRootPath);
-
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    layout->addWidget(root_);
-    layout->addWidget(view_);
-
-    connect(view_, &QTreeView::activated, this,
-            [this](const QModelIndex&) { emit activated(selectedUrls()); });
-
-    auto* add = new QAction(tr("Add to Playlist"), this);
-    connect(add, &QAction::triggered, this, [this] { emit addRequested(selectedUrls()); });
-    view_->addAction(add);
-
-    auto* choose = new QAction(tr("Choose Root Folder…"), this);
-    connect(choose, &QAction::triggered, this, &FileTree::chooseRootPath);
-    view_->addAction(choose);
-    view_->setContextMenuPolicy(Qt::ActionsContextMenu);
-
-    setRootPath(QStandardPaths::writableLocation(QStandardPaths::MusicLocation));
+    return "Audio Files|" + toWx(patterns) + "|All Files|*.*";
 }
 
-void FileTree::setRootPath(const QString& path) {
-    const QString target =
-        (path.isEmpty() || !QDir{path}.exists()) ? QDir::homePath() : path;
-    // setRootPath tells the model what to watch; setRootIndex tells the view
-    // where to start. Both are needed, and doing only the first is a common way
-    // to end up browsing the whole filesystem.
-    view_->setRootIndex(model_->setRootPath(target));
+}  // namespace
 
-    // dirName() is empty at a filesystem root ("C:/", "/"), where the path is
-    // already the shortest true name for it.
-    const QDir   directory{target};
-    const QString name = directory.dirName();
-    root_->setText(name.isEmpty() ? QDir::toNativeSeparators(target) : name);
-    root_->setToolTip(tr("Browsing %1 — click to choose another folder")
-                          .arg(QDir::toNativeSeparators(target)));
+FileTree::FileTree(wxWindow* parent, const PluginRegistry& registry)
+    : wxPanel(parent, wxID_ANY), registry_(registry) {
+    root_ = new wxBitmapButton(this, kRootButtonId, lucideIcon("folder-open"));
+    root_->SetToolTip("Choose the folder to browse");
+
+    rootLabel_ = new wxStaticText(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                  wxDefaultSize, wxST_ELLIPSIZE_MIDDLE);
+
+    tree_ = new wxGenericDirCtrl(this, kTreeId, wxDirDialogDefaultFolderStr,
+                                 wxDefaultPosition, wxDefaultSize,
+                                 wxDIRCTRL_3D_INTERNAL | wxDIRCTRL_MULTIPLE,
+                                 buildFilter(registry_));
+
+    auto* header = new wxBoxSizer(wxHORIZONTAL);
+    header->Add(root_, 0, wxALIGN_CENTER_VERTICAL | wxALL, FromDIP(2));
+    header->Add(rootLabel_, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
+
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(header, 0, wxEXPAND);
+    sizer->Add(tree_, 1, wxEXPAND);
+    SetSizer(sizer);
+
+    Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { chooseRootPath(); }, kRootButtonId);
+
+    // Double-click or Enter. wxGenericDirCtrl reports both as ITEM_ACTIVATED on
+    // the tree it wraps.
+    tree_->GetTreeCtrl()->Bind(wxEVT_TREE_ITEM_ACTIVATED, [this](wxTreeEvent& event) {
+        event.Skip();
+        if (std::vector<Url> urls = selectedUrls(); !urls.empty()) {
+            activated.publish(urls);
+        }
+    });
+
+    tree_->GetTreeCtrl()->Bind(wxEVT_TREE_ITEM_MENU, [this](wxTreeEvent& event) {
+        wxMenu menu;
+        menu.Append(kAddToPlaylistId, "&Add to Playlist");
+        menu.AppendSeparator();
+        menu.Append(kChooseRootId, "Choose &Root Folder...");
+        menu.Bind(wxEVT_MENU, [this](wxCommandEvent& command) {
+            if (command.GetId() == kChooseRootId) {
+                chooseRootPath();
+                return;
+            }
+            if (std::vector<Url> urls = selectedUrls(); !urls.empty()) {
+                addRequested.publish(urls);
+            }
+        });
+        PopupMenu(&menu);
+        event.Skip(false);
+    });
+
+    updateRootLabel();
 }
 
-void FileTree::changeEvent(QEvent* event) {
-    QWidget::changeEvent(event);
-    if (event == nullptr || root_ == nullptr) {
+void FileTree::setRootPath(const std::string& path) {
+    if (path.empty()) {
         return;
     }
-    switch (event->type()) {
-        case QEvent::StyleChange:
-        case QEvent::PaletteChange:
-        case QEvent::ApplicationPaletteChange:
-            root_->setIcon(lucideIcon(QStringLiteral("folder-open")));
-            break;
-        default: break;
+    std::error_code ec;
+    if (!std::filesystem::is_directory(pathFromUtf8(path), ec)) {
+        // A root saved from a removable drive, or one since renamed. Keeping
+        // whatever is currently shown beats emptying the tree with no
+        // explanation.
+        return;
     }
+    tree_->SetPath(toWx(path));
+    updateRootLabel();
 }
+
+std::string FileTree::rootPath() const { return toUtf8(tree_->GetPath()); }
 
 void FileTree::chooseRootPath() {
-    // Opens where you already are, so choosing a sibling folder is one step
-    // rather than a walk back down from the home directory. Cog does the same.
-    const QString chosen = QFileDialog::getExistingDirectory(
-        this, tr("Choose Root Folder"), rootPath());
-    if (!chosen.isEmpty()) {
-        setRootPath(chosen);
+    const wxString chosen = wxDirSelector("Choose the folder to browse", tree_->GetPath(),
+                                          wxDD_DEFAULT_STYLE, wxDefaultPosition, this);
+    if (chosen.IsEmpty()) {
+        return;
+    }
+    tree_->SetPath(chosen);
+    updateRootLabel();
+}
+
+void FileTree::refreshIcons() {
+    if (root_ != nullptr) {
+        root_->SetBitmap(lucideIcon("folder-open"));
     }
 }
 
-QString FileTree::rootPath() const { return model_->rootPath(); }
+void FileTree::updateRootLabel() {
+    const std::filesystem::path path = pathFromUtf8(rootPath());
+    // The leaf name, or the whole thing when there is no leaf -- a drive root,
+    // where filename() is empty and the path itself is the name.
+    const std::string name =
+        path.filename().empty() ? path.string() : path.filename().string();
+    static_cast<wxStaticText*>(rootLabel_)->SetLabelText(toWx(name));
+    Layout();
+}
 
-QList<QUrl> FileTree::selectedUrls() const {
-    QList<QUrl> urls;
-    for (const QModelIndex& index : view_->selectionModel()->selectedRows()) {
-        urls.append(QUrl::fromLocalFile(model_->filePath(index)));
+std::vector<Url> FileTree::selectedUrls() const {
+    wxArrayString paths;
+    tree_->GetPaths(paths);
+
+    std::vector<Url> urls;
+    urls.reserve(paths.GetCount());
+    for (const wxString& path : paths) {
+        urls.push_back(Url::fromLocalPath(std::filesystem::path{path.ToStdWstring()}));
     }
     return urls;
 }
