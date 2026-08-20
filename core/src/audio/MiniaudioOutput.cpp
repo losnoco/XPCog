@@ -139,17 +139,28 @@ public:
         return deviceValid_ && exclusiveHeld_;
     }
 
-    [[nodiscard]] double preferredSampleRate() const override {
+    [[nodiscard]] double preferredSampleRate(std::string_view deviceId) const override {
         std::lock_guard lock(deviceMutex_);
         auto*           self = const_cast<MiniaudioOutput*>(this);
         if (!self->ensureContextLocked()) {
             return 0.0;
         }
-        // The default playback device, since nothing selects another one yet.
-        // A null id is what miniaudio takes to mean the default.
+
+        // The device about to be opened, which is not necessarily the default
+        // one. A null id is what miniaudio takes to mean the default, so an
+        // empty selection and a selection that no longer resolves both land
+        // there -- the latter deliberately, since that is also what start()
+        // does with an id it cannot find.
+        ma_device_id  resolved{};
+        ma_device_id* which = nullptr;
+        if (!deviceId.empty() &&
+            self->resolveDeviceIdLocked(std::string{deviceId}, resolved)) {
+            which = &resolved;
+        }
+
         ma_device_info info{};
         if (ma_context_get_device_info(&self->context_, ma_device_type_playback,
-                                       nullptr, &info) != MA_SUCCESS) {
+                                       which, &info) != MA_SUCCESS) {
             return 0.0;
         }
         // The first native format is the one the backend is actually running --

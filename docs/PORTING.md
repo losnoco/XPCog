@@ -2534,11 +2534,23 @@ both rings, and the entry under "Then" above says how. Three things it does
   hard part is that a gapless handoff may already have moved the decoder on to
   the *next* track, so "back to the audible position" can mean re-opening the
   previous one. That is why it is not done rather than half done.
-- **`preferredSampleRate()` answers for the default device**, not for the one
-  about to be opened: `MiniaudioOutput` passes a null id to
-  `ma_context_get_device_info`, and the comment beside it says "since nothing
-  selects another one yet", which stopped being true when the picker landed. It
-  only bites where the track's own rate is refused, which today means DSD.
+- ~~**`preferredSampleRate()` answers for the default device**~~ — **fixed.** It
+  takes the device id now, and `AudioEngine::play()` passes `chosenDeviceId()`,
+  which it already had. The parameter is defaulted, so `OfflineOutput` and the
+  test doubles that never overrode it did not have to change.
+
+  A parameter rather than remembered state, because the question is asked
+  *before* `start()` — there is nothing to remember yet. An id that no longer
+  resolves falls through to the default device, deliberately: that is also what
+  `start()` does with one, and having the two disagree would mean negotiating a
+  rate for a device that was never going to be opened.
+
+  Both halves are covered in `tests/core/test_output_device.cpp`, and the second
+  is the one that matters — an empty selection must stay empty, or an
+  implementation that always passes *something* would satisfy the first. What is
+  still not covered is `MiniaudioOutput` asking the right device, since that
+  needs a machine with two of them and a listener; what the tests pin is the
+  wiring, which is where the bug was.
 - **The gap has never been listened to.** The tests establish which samples came
   out and what the clock said; how long the driver takes to hand over, and
   whether that reads as a seam or as a stumble, needs two real devices.

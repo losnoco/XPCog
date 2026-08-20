@@ -77,7 +77,10 @@ TEST_CASE("the real FFT agrees with a direct DFT on random input", "[audio][fft]
     // at N/4 -- a size where that midpoint lands differently is a different code
     // path through the same loop.
     for (const std::size_t size : {4U, 8U, 64U, 256U, 1024U}) {
-        const std::vector<double> input = randomSignal(size, 1234U + size);
+        // The seed only has to differ per size; the cast is what says so, since
+        // `1234U + size` is a size_t and the parameter is not.
+        const std::vector<double> input =
+            randomSignal(size, static_cast<unsigned>(1234U + size));
 
         const RealFft       fft(size);
         std::vector<double> real(fft.bins());

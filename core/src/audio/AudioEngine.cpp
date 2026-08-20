@@ -165,8 +165,14 @@ bool AudioEngine::play(const Url& url) {
     // belongs to the backend -- see IAudioOutput::supportsSampleRate. Cog never
     // asks at all: its device keeps its own format and everything is resampled
     // into it (OutputCoreAudio.m, -outputFormatForInputFormat:).
+    //
+    // Asked about the device this play() is going to open, not the default one.
+    // They differ exactly when a device has been picked in preferences, and the
+    // difference only bites where the track's own rate was refused -- which
+    // today means DSD, and means falling back to the default device's mix rate
+    // while opening something else entirely.
     if (!output_.supportsSampleRate(format_.sampleRate)) {
-        const double preferred = output_.preferredSampleRate();
+        const double preferred = output_.preferredSampleRate(chosenDeviceId());
         format_.sampleRate = output_.supportsSampleRate(preferred) ? preferred : 48000.0;
     }
 

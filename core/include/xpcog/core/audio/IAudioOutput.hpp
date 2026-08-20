@@ -75,7 +75,17 @@ public:
 
     /// The rate this output would rather run at, or 0 when it cannot say. Used
     /// when the track's own rate is one supportsSampleRate() has refused.
-    [[nodiscard]] virtual double preferredSampleRate() const { return 0.0; }
+    ///
+    /// `deviceId` is the device that is *about to be opened*, empty for the
+    /// system default. It is a parameter rather than remembered state because
+    /// this is asked before start(), so there is nothing to remember yet -- and
+    /// answering for the default device while another one is about to be opened
+    /// is how a DSD track ends up resampled to the wrong rate on the way to a
+    /// DAC that would have taken it.
+    [[nodiscard]] virtual double preferredSampleRate(std::string_view deviceId = {}) const {
+        static_cast<void>(deviceId);
+        return 0.0;
+    }
 
     /// Whether the running device is actually held exclusively. False when it
     /// was not asked for, when the backend cannot, and when the device refused.

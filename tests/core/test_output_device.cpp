@@ -227,6 +227,74 @@ private:
     std::atomic<int>              refusals_{0};
 };
 
+/// The rate every track in this file is refused at, and the one the fussy
+/// output below offers instead. Well under 44,100 so an ordinary fixture
+/// provokes the fallback.
+constexpr double kOnlyRate = 22050.0;
+
+/// An output that refuses the track's own sample rate, so the engine has to ask
+/// what it would rather run at -- and records which device it was asked about.
+///
+/// Refusing 44,100 rather than the DSD rates that provoke this in earnest is
+/// what keeps the case runnable anywhere: the question is which device the
+/// engine names, and that is the same question whatever rate raised it.
+class RateFussyOutput final : public IAudioOutput {
+public:
+    explicit RateFussyOutput(std::unique_ptr<IAudioOutput> inner)
+        : inner_(std::move(inner)) {}
+
+    [[nodiscard]] bool supportsSampleRate(double sampleRate) const override {
+        return sampleRate <= kOnlyRate;
+    }
+
+    /// Not synchronised, and it does not need to be: the engine asks this from
+    /// inside play(), on the caller's thread, before the feeder exists.
+    [[nodiscard]] double preferredSampleRate(std::string_view deviceId) const override {
+        askedAbout_ = std::string{deviceId};
+        asked_      = true;
+        return kOnlyRate;
+    }
+
+    [[nodiscard]] bool        wasAsked() const { return asked_; }
+    [[nodiscard]] std::string askedAbout() const { return askedAbout_; }
+
+    bool start(const Config& config) override { return inner_->start(config); }
+    void stop() override { inner_->stop(); }
+    void pause() override { inner_->pause(); }
+    void resume() override { inner_->resume(); }
+
+    [[nodiscard]] AudioFormat negotiatedFormat() const override {
+        return inner_->negotiatedFormat();
+    }
+    [[nodiscard]] double latencySeconds() const override {
+        return inner_->latencySeconds();
+    }
+    [[nodiscard]] std::vector<DeviceInfo> devices() const override {
+        return inner_->devices();
+    }
+    void  setVolume(float gain) override { inner_->setVolume(gain); }
+    [[nodiscard]] float volume() const override { return inner_->volume(); }
+    void rampGain(float target, double milliseconds) override {
+        inner_->rampGain(target, milliseconds);
+    }
+    [[nodiscard]] bool ramping() const override { return inner_->ramping(); }
+    [[nodiscard]] std::uint64_t underrunCount() const override {
+        return inner_->underrunCount();
+    }
+    [[nodiscard]] std::uint64_t framesPlayed() const override {
+        return inner_->framesPlayed();
+    }
+    void setDeviceInvalidatedCallback(std::function<void()> callback) override {
+        inner_->setDeviceInvalidatedCallback(std::move(callback));
+    }
+    void setTap(AudioTap* tap) override { inner_->setTap(tap); }
+
+private:
+    std::unique_ptr<IAudioOutput> inner_;
+    mutable std::string           askedAbout_;
+    mutable bool                  asked_ = false;
+};
+
 /// Counts the delegate calls the failure paths are supposed to make.
 class RecordingDelegate final : public AudioEngine::Delegate {
 public:
@@ -493,3 +561,71 @@ TEST_CASE("losing every device ends the transport rather than wedging it", "[dev
     engine.stop();
 }
 
+
+TEST_CASE("the refused-rate fallback asks about the chosen device", "[device]") {
+    // `preferredSampleRate()` used to take no argument and answer for the
+    // system default, with a comment beside it saying "since nothing selects
+    // another one yet" -- which stopped being true when the device picker
+    // landed. It only bites where the track's own rate was refused, so the
+    // listener with a DSD DAC selected got the *default* device's mix rate and
+    // a resample to it.
+    constexpr int kFrames = static_cast<int>(kRate) * 2;
+
+    const auto file = makeFlac("refused-rate", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    RateFussyOutput output{makeOfflineOutput(ring, kSpeed)};
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    // The offline output names exactly one device, so this is a selection that
+    // resolves -- and one the engine must repeat back rather than substitute.
+    settings.setOutputDeviceId("offline");
+
+    AudioEngine engine{registry(), output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+
+    // The premise: 44,100 was refused, so the question was actually asked.
+    REQUIRE(output.wasAsked());
+    CHECK(output.askedAbout() == "offline");
+
+    // And the answer was used, rather than the 48,000 the engine falls back to
+    // when the preferred rate is refused as well. Read from the output, which
+    // is what the device was actually opened at.
+    CHECK(output.negotiatedFormat().sampleRate == kOnlyRate);
+
+    engine.waitUntilFinished();
+    engine.stop();
+}
+
+TEST_CASE("no chosen device asks about no device", "[device]") {
+    // The other half, and the reason the case above is not satisfied by an
+    // implementation that always passes something: an empty selection has to
+    // stay empty, because empty is what both the engine and the backend read as
+    // "the system default, and it follows the system default".
+    constexpr int kFrames = static_cast<int>(kRate) * 2;
+
+    const auto file = makeFlac("refused-rate-default", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer      ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    RateFussyOutput output{makeOfflineOutput(ring, kSpeed)};
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    AudioEngine engine{registry(), output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+
+    REQUIRE(output.wasAsked());
+    CHECK(output.askedAbout().empty());
+
+    engine.waitUntilFinished();
+    engine.stop();
+}
