@@ -35,6 +35,40 @@ else()
     set(LIBVGM_LIBRARY_TYPE "STATIC")
 endif()
 
+# Charset conversion on Windows uses the operating system, not iconv.
+#
+# libvgm converts three things -- CP1252 for GYM tags, CP932 for S98, UTF-16LE
+# for a VGM's GD3 block -- and has two backends for it. Which one it picks is
+# decided by whether `find_package(Iconv)` succeeds, and for MSVC it rigs that
+# question: the top-level CMakeLists hardcodes Iconv_INCLUDE_DIR and
+# Iconv_LIBRARY to a copy of libiconv 1.15 bundled in `libs/iconv`, built with
+# Visual Studio 2010, as **32-bit**. An x64 build links it and gets
+#
+#   libiconv.lib : warning LNK4272: library machine type 'x86' conflicts with
+#                  target machine type 'x64'
+#   vgm-utils.dll : fatal error LNK1120: 3 unresolved externals
+#
+# which is how this port first failed CI. Even had it linked, the bundled lib is
+# an *import* library for a DLL nothing deploys.
+#
+# So the WinAPI backend is selected outright rather than left to the find. It is
+# what libvgm chooses for itself whenever iconv is absent, it needs no library at
+# all, and MultiByteToWideChar covers all three of the codepages above -- the
+# converter maps "CP<digits>" to a codepage ID directly and looks the rest up in
+# the MIME charset registry, where "unicode" and "utf-8" are present on every
+# Windows install.
+#
+# Note the failure mode this leaves behind: turning UTIL_CHARCNV_ICONV back on
+# for an MSVC build reaches the same 32-bit library again, because those two
+# cache paths are still hardcoded upstream.
+set(LIBVGM_CHARSET_OPTIONS "")
+if(VCPKG_TARGET_IS_WINDOWS)
+    set(LIBVGM_CHARSET_OPTIONS
+        -DUTIL_CHARCNV_WINAPI=ON
+        -DUTIL_CHARCNV_ICONV=OFF
+    )
+endif()
+
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
@@ -46,6 +80,7 @@ vcpkg_cmake_configure(
         -DBUILD_PLAYER=OFF
         -DBUILD_VGM2WAV=OFF
         -DUSE_SANITIZERS=OFF
+        ${LIBVGM_CHARSET_OPTIONS}
 )
 
 vcpkg_cmake_install()

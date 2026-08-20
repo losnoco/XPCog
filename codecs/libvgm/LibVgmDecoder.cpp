@@ -72,6 +72,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -476,6 +477,14 @@ private:
         // Beside the track. Only for a local file: FileLoader_Init takes a path,
         // so there is nothing to hand it for an archive member or an HTTP
         // stream, and a companion ROM is not something either of those carries.
+        //
+        // `.string()` hands over the platform's *narrow* encoding, which on
+        // Windows is the active code page rather than UTF-8 -- normally the bug
+        // this tree deletes overloads to prevent. It is right here only because
+        // FileLoader_Init goes on to fopen() that same narrow string, so the two
+        // agree: a path the code page cannot spell fails to open rather than
+        // opening the wrong file. Anyone keeping a ROM under such a path is one
+        // rebuild away from having it compiled in instead.
         const auto* self = static_cast<const LibVgmDecoder*>(userParam);
         if (self == nullptr) {
             return nullptr;

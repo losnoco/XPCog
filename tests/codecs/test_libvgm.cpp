@@ -137,6 +137,86 @@ constexpr bool kHaveCorpus = false;
     return dir;
 }
 
+/// CRC-32, zlib's polynomial. Fifteen lines rather than a zlib dependency in
+/// the test binary.
+[[nodiscard]] std::uint32_t crc32Of(const std::vector<unsigned char>& data) {
+    std::uint32_t crc = 0xFFFFFFFFU;
+    for (const unsigned char byte : data) {
+        crc ^= byte;
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
+        }
+    }
+    return ~crc;
+}
+
+/// `data` in a gzip container, compressed not at all.
+///
+/// Written here rather than shelled out to gzip, so the .vgz case runs on a
+/// machine that has no gzip -- which is every Windows runner. Deflate's "stored"
+/// block type is what makes that cheap: a three-bit header that is then padded
+/// to a byte, a length and its complement, and the bytes themselves. A stored
+/// stream is a perfectly ordinary gzip file and libvgm's loader has no idea it
+/// was not compressed.
+[[nodiscard]] std::vector<unsigned char> gzipStored(
+    const std::vector<unsigned char>& data) {
+    std::vector<unsigned char> out = {
+        0x1F, 0x8B,  // magic
+        0x08,        // CM: deflate
+        0x00,        // FLG: no name, no extra, no comment
+        0x00, 0x00, 0x00, 0x00,  // MTIME: none
+        0x00,        // XFL
+        0xFF,        // OS: unknown
+    };
+
+    constexpr std::size_t kMaxBlock = 65535;
+    std::size_t           at        = 0;
+    do {
+        const std::size_t take  = std::min(kMaxBlock, data.size() - at);
+        const bool        final = (at + take) >= data.size();
+        out.push_back(static_cast<unsigned char>(final ? 1 : 0));
+        out.push_back(static_cast<unsigned char>(take & 0xFF));
+        out.push_back(static_cast<unsigned char>((take >> 8) & 0xFF));
+        out.push_back(static_cast<unsigned char>(~take & 0xFF));
+        out.push_back(static_cast<unsigned char>((~take >> 8) & 0xFF));
+        out.insert(out.end(), data.begin() + static_cast<std::ptrdiff_t>(at),
+                   data.begin() + static_cast<std::ptrdiff_t>(at + take));
+        at += take;
+    } while (at < data.size());
+
+    const std::uint32_t crc  = crc32Of(data);
+    const auto          size = static_cast<std::uint32_t>(data.size());
+    for (const std::uint32_t value : {crc, size}) {
+        for (int shift = 0; shift < 32; shift += 8) {
+            out.push_back(static_cast<unsigned char>((value >> shift) & 0xFF));
+        }
+    }
+    return out;
+}
+
+[[nodiscard]] std::vector<unsigned char> readFile(const fs::path& path) {
+    std::vector<unsigned char> out;
+    std::FILE*                 file = std::fopen(path.string().c_str(), "rb");
+    if (file == nullptr) {
+        return out;
+    }
+    std::fseek(file, 0, SEEK_END);
+    out.resize(static_cast<std::size_t>(std::ftell(file)));
+    std::fseek(file, 0, SEEK_SET);
+    const std::size_t got = std::fread(out.data(), 1, out.size(), file);
+    std::fclose(file);
+    out.resize(got);
+    return out;
+}
+
+void writeFile(const fs::path& path, const std::vector<unsigned char>& bytes) {
+    std::FILE* file = std::fopen(path.string().c_str(), "wb");
+    if (file != nullptr) {
+        std::fwrite(bytes.data(), 1, bytes.size(), file);
+        std::fclose(file);
+    }
+}
+
 [[nodiscard]] Url writeTemp(const std::string& name, const std::string& bytes) {
     const fs::path path = tempDir() / name;
     std::FILE*     file = std::fopen(path.string().c_str(), "wb");
@@ -293,36 +373,13 @@ TEST_CASE("a gzipped log is the same log", "[libvgm][corpus]") {
     // hands the loader a memory buffer rather than a filename, and a loader
     // that only sniffed gzip when reading from disk would fail here and
     // nowhere else.
-    std::vector<char> raw;
-    {
-        std::FILE* file = std::fopen(logs.front().string().c_str(), "rb");
-        REQUIRE(file != nullptr);
-        std::fseek(file, 0, SEEK_END);
-        raw.resize(static_cast<std::size_t>(std::ftell(file)));
-        std::fseek(file, 0, SEEK_SET);
-        const std::size_t got = std::fread(raw.data(), 1, raw.size(), file);
-        std::fclose(file);
-        REQUIRE(got == raw.size());
-    }
+    const std::vector<unsigned char> raw = readFile(logs.front());
+    REQUIRE_FALSE(raw.empty());
 
-    const fs::path plain = tempDir() / "roundtrip.vgm";
-    {
-        std::FILE* file = std::fopen(plain.string().c_str(), "wb");
-        REQUIRE(file != nullptr);
-        std::fwrite(raw.data(), 1, raw.size(), file);
-        std::fclose(file);
-    }
-
-    // gzip the copy. Done with the shell rather than by linking zlib into the
-    // tests: this is a fixture, not a unit under test.
-    const fs::path packed  = tempDir() / "roundtrip.vgz";
-    std::error_code error;
-    fs::remove(packed, error);
-    const std::string command =
-        "gzip -c \"" + plain.string() + "\" > \"" + packed.string() + "\"";
-    if (std::system(command.c_str()) != 0 || !fs::exists(packed, error)) {
-        SKIP("gzip is not available to build the .vgz fixture");
-    }
+    const fs::path plain  = tempDir() / "roundtrip.vgm";
+    const fs::path packed = tempDir() / "roundtrip.vgz";
+    writeFile(plain, raw);
+    writeFile(packed, gzipStored(raw));
 
     PluginRegistry::OpenResult first = registry().open(Url::fromLocalPath(plain));
     PluginRegistry::OpenResult second = registry().open(Url::fromLocalPath(packed));

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>  // SEEK_SET
 #include <cstring>
 #include <string>
 #include <vector>
