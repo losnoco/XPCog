@@ -189,6 +189,12 @@ private:
     /// minimised. See rememberGeometry().
     wxRect normalRect_;
 
+    /// The window wxAuiManager actually manages, which is not the frame.
+    ///
+    /// See buildUi() for why the transport strip sits above it rather than in
+    /// it. Everything dockable is a child of this.
+    wxPanel* dockHost_ = nullptr;
+
     wxSplitterWindow* splitter_ = nullptr;
     FileTree*         tree_     = nullptr;
     wxDataViewCtrl*   list_     = nullptr;

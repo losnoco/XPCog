@@ -187,6 +187,7 @@ MainFrame::~MainFrame() {
     // because nothing should be tempted to follow them afterwards.
     DestroyChildren();
 
+    dockHost_  = nullptr;
     splitter_  = nullptr;
     tree_      = nullptr;
     list_      = nullptr;
@@ -209,12 +210,46 @@ MainFrame::~MainFrame() {
 }
 
 void MainFrame::buildUi() {
-    auiManager_.SetManagedWindow(this);
+    // The transport strip is not a wxAUI pane, and that is the fix rather than an
+    // oversight.
+    //
+    // wxAUI gives a dock exactly two layout modes and neither is what a transport
+    // strip wants. A dock is *fixed* when every pane in it is fixed, or when any
+    // pane sets DockFixed -- LayoutAll() decides that -- and LayoutAddDock() then
+    // lays a fixed dock's panes out at pane.best_size and adds a stretchable
+    // background spacer after them to swallow whatever width is left. That spacer
+    // is the empty half-window this strip has been sitting beside: not a missing
+    // proportion, a deliberate one. Make the dock non-fixed instead and the pane
+    // does fill the width, but LayoutAddDock() then puts a drag sash under a top
+    // dock, so the height of a row of fixed-height controls becomes something the
+    // user can pull around.
+    //
+    // Full width and a fixed height cannot both be asked for of a docked pane, so
+    // the strip stops being one. It was a pane in name only in any case: dockable,
+    // floatable, movable, closable and captioned were all already switched off,
+    // which is every single thing wxAUI would have been managing it for. And
+    // wxAuiManager manages any window rather than only a frame, so it takes the
+    // panel below the strip and the frame's own sizer stacks the two.
+    //
+    // A saved perspective from before this still names a "transport" pane;
+    // LoadPerspective() skips names it cannot find, so it costs nothing.
+    auto* root = new wxBoxSizer(wxVERTICAL);
+
+    auto* transport = new wxPanel(this, wxID_ANY);
+    buildTransport(transport);
+    root->Add(transport, 0, wxEXPAND);
+
+    dockHost_ = new wxPanel(this, wxID_ANY);
+    root->Add(dockHost_, 1, wxEXPAND);
+    SetSizer(root);
+
+    auiManager_.SetManagedWindow(dockHost_);
 
     // The playlist and the file browser are the centre, and the browser is a
     // splitter pane rather than a dock: Cog's file tree is a fixed part of the
     // window and behaves as one, and the View menu toggles the split.
-    splitter_ = new wxSplitterWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+    splitter_ = new wxSplitterWindow(dockHost_, wxID_ANY, wxDefaultPosition,
+                                     wxDefaultSize,
                                      wxSP_LIVE_UPDATE | wxSP_3DSASH);
     splitter_->SetMinimumPaneSize(FromDIP(140));
 
@@ -231,57 +266,21 @@ void MainFrame::buildUi() {
 
     splitter_->SplitVertically(tree_, list_, FromDIP(260));
 
-    auto* transport = new wxPanel(this, wxID_ANY);
-    buildTransport(transport);
-
     // The optional panes, in the places the Qt build docked them: the wide, short
     // ones along the bottom and the tall column of fields at the right.
-    equalizer_ = new EqualizerPanel(this, settings_);
-    info_      = new InfoPanel(this, library_.get());
-    spectrum_  = new SpectrumPanel(this, playback_->tap());
+    equalizer_ = new EqualizerPanel(dockHost_, settings_);
+    info_      = new InfoPanel(dockHost_, library_.get());
+    spectrum_  = new SpectrumPanel(dockHost_, playback_->tap());
     spectrum_->applySettings(settings_);
 
 #ifdef XPCOG_HAVE_SC55_PANEL
-    sc55_ = new Sc55Panel(this, [this] { return playback_->position(); });
+    sc55_ = new Sc55Panel(dockHost_, [this] { return playback_->position(); });
 #endif
 
     // Every pane is named, and the names are what a saved perspective refers to.
     // Renaming one silently discards that pane's saved position, so these are as
     // load-bearing as the object names QMainWindow::saveState() needed.
     auiManager_.AddPane(splitter_, wxAuiPaneInfo().Name("playlist").CenterPane());
-
-    // The transport is a pane so the manager owns the whole frame, but it is not
-    // a *dockable* one. Hiding the only play button leaves a window with no way to
-    // start playback and no obvious way back, which is why the Qt build removed
-    // the transport from its own context menu too.
-    // Resizable, and that is the fix rather than an oversight corrected.
-    //
-    // Resizable(false) is Fixed(), and framemanager.cpp sets a fixed pane's
-    // proportion to 0 -- so it gets exactly its best size inside the dock and the
-    // rest of the dock stays empty. That is why the transport sat at its natural
-    // width with a gap beside it instead of spanning the window.
-    //
-    // What was actually wanted is fixed *vertically* and stretched horizontally,
-    // which is two different flags. DockFixed keeps the dock's thickness -- its
-    // height, here -- from being dragged, while the pane keeps a proportion and
-    // fills the width.
-    //
-    // MaxSize is deliberately not used for this: wxAUI reads it only for floating
-    // panes and when saving a perspective, and it has no effect at all on a
-    // docked one. Reaching for it first was the wrong guess.
-    const int transportHeight = transport->GetBestSize().GetHeight();
-    auiManager_.AddPane(transport, wxAuiPaneInfo()
-                                       .Name("transport")
-                                       .Top()
-                                       .CaptionVisible(false)
-                                       .CloseButton(false)
-                                       .Dockable(false)
-                                       .Floatable(false)
-                                       .Movable(false)
-                                       .DockFixed(true)
-                                       .Layer(10)
-                                       .MinSize(FromDIP(320), transportHeight)
-                                       .BestSize(FromDIP(900), transportHeight));
 
     auiManager_.AddPane(spectrum_, wxAuiPaneInfo()
                                        .Name("spectrum")
@@ -1325,13 +1324,8 @@ void MainFrame::restoreState() {
         auiManager_.LoadPerspective(toWx(layout), true);
     }
 
-    // Whatever the perspective said, the transport is on screen. A saved layout
-    // from a build where it was closable would otherwise leave a window with no
-    // play button and no way to get one back.
-    if (wxAuiPaneInfo& transport = auiManager_.GetPane("transport"); transport.IsOk()) {
-        transport.Show();
-        auiManager_.Update();
-    }
+    // Nothing here forces the transport back on screen any more, and nothing needs
+    // to: it is no longer a pane, so no perspective can hide it.
 }
 
 void MainFrame::persistState() {

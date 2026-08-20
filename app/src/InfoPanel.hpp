@@ -30,7 +30,6 @@
 #include <string>
 #include <vector>
 
-class wxStaticBitmap;
 class wxTextCtrl;
 
 namespace xpcog {
@@ -38,6 +37,9 @@ class Library;
 }
 
 namespace xpcog::app {
+
+/// The cover, drawn to fit whatever room it is given. Defined in the .cpp.
+class ArtworkView;
 
 /// The formatting Cog does in PlaylistEntry's derived accessors. Free functions
 /// because they are the testable part -- and now testable without a display at
@@ -104,23 +106,33 @@ private:
 
     void set(Field field, const std::string& value);
 
-    /// Rescales the cover to whatever room there is now.
+    /// Tells the cover how much height to ask the sizer for.
     ///
     /// Called from showEntry and again on every resize, because the pane is
-    /// dockable: it can be dragged from the right edge to the bottom, where
-    /// it is a completely different shape. Scaling to a fixed height alone --
-    /// which is what Cog's fixed-size HUD could get away with -- overruns the
-    /// width the moment the pane is narrower than the cover is wide.
+    /// dockable: it can be dragged from the right edge to the bottom, where it is
+    /// a completely different shape. A fixed height alone -- which is what Cog's
+    /// fixed-size HUD could get away with -- is wider than the pane the moment
+    /// the pane is narrower than the cover.
+    ///
+    /// This only decides the height. Fitting the image inside the rectangle that
+    /// results is ArtworkView's job, and it does that unconditionally, so a
+    /// height this got slightly wrong is a little wasted space rather than a
+    /// clipped cover.
     void updateArt();
 
-    const Library*  library_ = nullptr;
-    wxStaticBitmap* art_     = nullptr;
+    /// Lays out inside the client width rather than inside the virtual width.
+    ///
+    /// wxScrolled::Layout() sizes its sizer to GetVirtualSize(), so FitInside()
+    /// -- which sets the virtual size from the sizer's minimum -- is what lets
+    /// content be laid out past the right-hand edge. With horizontal scrolling
+    /// deliberately off there is then no way to reach it: it is simply cut off.
+    /// Pinning the virtual width to the client width makes the layout honest, and
+    /// leaves only the height to scroll.
+    void relayout();
 
-    /// The cover at its own size. Kept so a resize rescales from the original
-    /// rather than from the last scaled copy, which would lose a little more
-    /// detail every time the pane moved.
-    wxImage artOriginal_;
-    wxSize  artDrawnAt_;
+    const Library* library_ = nullptr;
+    ArtworkView*   art_     = nullptr;
+
     std::vector<wxTextCtrl*> values_;
 };
 

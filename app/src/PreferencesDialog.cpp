@@ -10,9 +10,10 @@
 #include <wx/dirdlg.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
-#include <wx/listbook.h>
+#include <wx/listbox.h>
 #include <wx/panel.h>
 #include <wx/scrolwin.h>
+#include <wx/simplebook.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
@@ -380,20 +381,48 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings)
       settings_(settings) {
     SetSize(FromDIP(wxSize(660, 480)));
 
-    // wxListbook is precisely the sidebar-and-pages shape the Qt version built by
-    // hand from a QListWidget and a QStackedWidget.
-    auto* book = new wxListbook(this, wxID_ANY);
+    // A list beside a stack of pages, which is exactly what the Qt version built
+    // from a QListWidget and a QStackedWidget.
+    //
+    // wxListbook is the obvious fit and was what this used first. Its sidebar is
+    // a wxListCtrl, and wxMSW's wxListCtrl reports no best size of its own, so
+    // wxBookCtrlBase::GetControllerSize() falls back through GetBestSize() to
+    // wxControl's default of about a hundred pixels -- whatever the category
+    // names happen to be. That is how "Playlist" and "Appearance" came out as
+    // "Playli..." and "App...". wxListBox measures its widest item to decide its
+    // width, on every platform, so the sidebar is the right size by construction
+    // rather than by a hand-tuned number that would go wrong again at another
+    // DPI or in another language.
+    auto* categories = new wxListBox(this, wxID_ANY);
+    auto* book       = new wxSimplebook(this, wxID_ANY);
+
+    const auto page = [&](wxWindow* pane, const wxString& name) {
+        book->AddPage(pane, name);
+        categories->Append(name);
+    };
 
     // Cog's order, with its unported panes taken out rather than reshuffled.
-    book->AddPage(buildPlaylistPane(book), "Playlist", true);
-    book->AddPage(buildOutputPane(book), "Output");
-    book->AddPage(buildAppearancePane(book), "Appearance");
-    book->AddPage(buildMidiPane(book), "MIDI");
-    book->AddPage(buildSpectrumPane(book), "Spectrum");
-    book->AddPage(buildAdvancedPane(book), "Advanced");
+    page(buildPlaylistPane(book), "Playlist");
+    page(buildOutputPane(book), "Output");
+    page(buildAppearancePane(book), "Appearance");
+    page(buildMidiPane(book), "MIDI");
+    page(buildSpectrumPane(book), "Spectrum");
+    page(buildAdvancedPane(book), "Advanced");
+
+    categories->SetSelection(0);
+    book->ChangeSelection(0);
+    categories->Bind(wxEVT_LISTBOX, [book](wxCommandEvent& event) {
+        if (event.GetSelection() >= 0) {
+            book->ChangeSelection(static_cast<std::size_t>(event.GetSelection()));
+        }
+    });
+
+    auto* columns = new wxBoxSizer(wxHORIZONTAL);
+    columns->Add(categories, 0, wxEXPAND | wxRIGHT, FromDIP(8));
+    columns->Add(book, 1, wxEXPAND);
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(book, 1, wxEXPAND | wxALL, FromDIP(8));
+    layout->Add(columns, 1, wxEXPAND | wxALL, FromDIP(8));
     if (wxSizer* buttons = CreateStdDialogButtonSizer(wxCLOSE); buttons != nullptr) {
         layout->Add(buttons, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
     }

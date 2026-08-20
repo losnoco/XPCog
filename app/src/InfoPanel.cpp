@@ -6,12 +6,13 @@
 #include "xpcog/core/library/Library.hpp"
 
 #include <wx/datetime.h>
+#include <wx/dcbuffer.h>
 #include <wx/mstream.h>
 #include <wx/sizer.h>
-#include <wx/statbmp.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <string>
@@ -137,6 +138,97 @@ constexpr std::array<const char*, 20> kLabels = {
 
 }  // namespace
 
+/// The cover, drawn to fit.
+///
+/// This replaces a wxStaticBitmap, and the difference is the whole of the
+/// artwork fix. wxStaticBitmap draws its bitmap at the bitmap's own size and
+/// lets the window clip whatever does not fit, so getting a cover on screen
+/// intact means computing exactly the right size for it in advance, every time,
+/// from a client width that is itself still settling. Get that arithmetic wrong
+/// by a pixel in the wrong direction and the result is not a slightly-too-big
+/// cover, it is a cropped one.
+///
+/// Drawing it instead inverts the dependency. Whatever rectangle the sizer ends
+/// up handing over, the cover is scaled into it with its aspect ratio kept and
+/// centred in what is left. There is no size this can be given that crops
+/// anything, which makes the height asked for outside a question of taste rather
+/// than a correctness requirement.
+class ArtworkView : public wxWindow {
+public:
+    ArtworkView(wxWindow* parent, int maxHeight)
+        : wxWindow(parent, wxID_ANY), maxHeight_(maxHeight) {
+        // wxAutoBufferedPaintDC needs this, and a cover that is rescaled on its
+        // way to the screen is exactly the case where a flickering background
+        // would show.
+        SetBackgroundStyle(wxBG_STYLE_PAINT);
+        Bind(wxEVT_PAINT, &ArtworkView::onPaint, this);
+    }
+
+    /// Takes the cover at its own size. An invalid image clears it.
+    ///
+    /// The original is kept rather than a scaled copy, so every resize scales
+    /// once from the source instead of losing a little more detail each time the
+    /// pane is dragged somewhere new.
+    void setImage(const wxImage& image) {
+        source_   = image;
+        scaled_   = wxBitmap{};
+        scaledAt_ = wxSize{};
+        Refresh();
+    }
+
+    [[nodiscard]] bool hasImage() const { return source_.IsOk(); }
+
+    /// Asks the sizer for the height this cover wants, given `room` of width.
+    ///
+    /// The minimum width stays small on purpose: the cover must never be the
+    /// thing that decides how narrow the pane is allowed to get.
+    void fitTo(int room) {
+        if (!source_.IsOk()) {
+            SetMinSize(wxSize(0, 0));
+            return;
+        }
+        const int width  = std::max(1, room);
+        int       height = maxHeight_;
+        if ((source_.GetWidth() * height) / source_.GetHeight() > width) {
+            height = std::max(1, (source_.GetHeight() * width) / source_.GetWidth());
+        }
+        SetMinSize(wxSize(FromDIP(24), height));
+    }
+
+private:
+    void onPaint(wxPaintEvent&) {
+        wxAutoBufferedPaintDC dc(this);
+        dc.SetBackground(wxBrush(GetParent()->GetBackgroundColour()));
+        dc.Clear();
+
+        const wxSize room = GetClientSize();
+        if (!source_.IsOk() || room.GetWidth() <= 0 || room.GetHeight() <= 0) {
+            return;
+        }
+
+        // Fit inside rather than fill: whichever ratio is smaller wins, so
+        // neither edge runs over.
+        int width = std::min(room.GetWidth(),
+                             (source_.GetWidth() * room.GetHeight()) / source_.GetHeight());
+        width     = std::max(1, width);
+        int height = std::min(room.GetHeight(),
+                              (source_.GetHeight() * width) / source_.GetWidth());
+        height     = std::max(1, height);
+
+        if (scaledAt_ != wxSize(width, height)) {
+            scaledAt_ = wxSize(width, height);
+            scaled_   = wxBitmap(source_.Scale(width, height, wxIMAGE_QUALITY_HIGH));
+        }
+        dc.DrawBitmap(scaled_, (room.GetWidth() - width) / 2,
+                      (room.GetHeight() - height) / 2, true);
+    }
+
+    wxImage  source_;
+    wxBitmap scaled_;
+    wxSize   scaledAt_;
+    int      maxHeight_;
+};
+
 InfoPanel::InfoPanel(wxWindow* parent, const Library* library) : library_(library) {
     Create(parent, wxID_ANY);
     // Vertical only, and that is the whole of the art-sizing fix.
@@ -158,9 +250,13 @@ InfoPanel::InfoPanel(wxWindow* parent, const Library* library) : library_(librar
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
 
-    art_ = new wxStaticBitmap(this, wxID_ANY, wxNullBitmap);
+    art_ = new ArtworkView(this, FromDIP(kArtHeight));
     art_->Hide();
-    layout->Add(art_, 0, wxALIGN_CENTER_HORIZONTAL | wxALL, FromDIP(8));
+    // wxEXPAND rather than a centring flag: the control takes the whole width of
+    // the row and centres the cover inside itself. Centring the *control* would
+    // mean its width had to be exactly right, which is the arithmetic this is
+    // getting away from.
+    layout->Add(art_, 0, wxEXPAND | wxALL, FromDIP(8));
 
     // Two columns: a bold caption and a selectable value. wxFlexGridSizer with
     // the value column growable is what a form layout is here.
@@ -216,9 +312,9 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
         for (wxTextCtrl* value : values_) {
             value->ChangeValue(wxEmptyString);
         }
-        art_->SetBitmap(wxNullBitmap);
+        art_->setImage(wxImage{});
         art_->Hide();
-        Layout();
+        relayout();
         return;
     }
 
@@ -277,7 +373,7 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
 
     set(Comment, entry->comment);
 
-    artOriginal_ = wxImage{};
+    wxImage cover;
     if (library_ != nullptr && !entry->artHash.empty()) {
         const std::vector<std::byte> bytes = library_->artwork(entry->artHash);
         if (!bytes.empty()) {
@@ -287,57 +383,61 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
             // is usually JPEG and sometimes PNG.
             if (image.LoadFile(stream, wxBITMAP_TYPE_ANY) && image.GetHeight() > 0 &&
                 image.GetWidth() > 0) {
-                artOriginal_ = image;
+                cover = image;
             }
         }
     }
+    art_->setImage(cover);
 
     updateArt();
-    Layout();
-    FitInside();
+    relayout();
 }
 
 void InfoPanel::updateArt() {
     if (art_ == nullptr) {
         return;
     }
-    if (!artOriginal_.IsOk()) {
-        art_->SetBitmap(wxNullBitmap);
+    if (!art_->hasImage()) {
         art_->Hide();
-        artDrawnAt_ = wxSize{};
         return;
     }
 
     // Whichever constraint binds first: the height a cover is worth showing at,
     // or the width there actually is. The second is what makes it shrink in a
-    // narrow pane instead of overrunning it.
+    // narrow pane rather than stay tall.
     //
     // The margin is not only tidiness -- it absorbs the vertical scrollbar
     // appearing and disappearing. Without it a cover sized to exactly the client
     // width can add enough height to need a scrollbar, which narrows the client,
     // which resizes the cover, which removes the scrollbar again.
-    const int margin    = FromDIP(16);
-    const int available = std::max(FromDIP(48), GetClientSize().GetWidth() - margin);
+    const int margin = FromDIP(16);
+    const int room   = std::max(FromDIP(48), GetClientSize().GetWidth() - margin);
 
-    int height = FromDIP(kArtHeight);
-    int width  = (artOriginal_.GetWidth() * height) / artOriginal_.GetHeight();
-    if (width > available) {
-        width  = available;
-        height = std::max(1, (artOriginal_.GetHeight() * width) / artOriginal_.GetWidth());
+    const wxSize before = art_->GetMinSize();
+    art_->fitTo(room);
+    art_->Show();
+
+    // A resize sends a stream of these, and only the ones that actually move the
+    // cover are worth a relayout. That test is also what stops this looping:
+    // relayout() can change the client width, which sends another size event
+    // straight back here.
+    if (art_->GetMinSize() != before) {
+        relayout();
     }
+}
 
-    // Rescaling a large cover is not free, and a resize sends a stream of these.
-    if (artDrawnAt_ == wxSize(width, height)) {
+void InfoPanel::relayout() {
+    wxSizer* sizer = GetSizer();
+    if (sizer == nullptr) {
         return;
     }
-    artDrawnAt_ = wxSize(width, height);
-
-    art_->SetBitmap(wxBitmap(artOriginal_.Scale(width, height, wxIMAGE_QUALITY_HIGH)));
-    art_->Show();
+    const wxSize client = GetClientSize();
+    // The width is the client width, deliberately, and never the sizer's
+    // minimum: horizontal scrolling is off, so anything laid out wider than this
+    // is unreachable rather than merely off-screen.
+    SetVirtualSize(client.GetWidth(),
+                   std::max(sizer->CalcMin().GetHeight(), client.GetHeight()));
     Layout();
-    // The cover just changed height, so the amount there is to scroll through
-    // did too.
-    FitInside();
 }
 
 }  // namespace xpcog::app
