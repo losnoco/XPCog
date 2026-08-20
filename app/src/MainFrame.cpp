@@ -42,9 +42,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <utility>
+#include <vector>
 
 namespace xpcog::app {
 namespace {
@@ -1021,12 +1024,32 @@ void MainFrame::savePlaylistAs() {
         format = PlaylistFormat::Xspf;
     }
 
+    // The queue is translated from ids to positions, and that is a real
+    // conversion rather than a cast to satisfy a signature. Playlist::queue()
+    // holds TrackIds, which are opaque and permanent; writePlaylist wants
+    // indices into the entries it is being handed, because that is what Cog's
+    // XML stores and what readPlaylist gives back. Writing ids where positions
+    // belong produced a saved playlist whose queue pointed at whatever rows
+    // those numbers happened to name.
+    //
+    // It compiled on Windows for two years for a silly reason: TrackId is
+    // uint64_t, and MSVC's size_t is unsigned long long, so the two vectors were
+    // the same type. On macOS and Linux size_t is unsigned long -- same width,
+    // different type -- and the first compiler that was not MSVC rejected it
+    // immediately. An overload that took either would have hidden this for good.
+    std::vector<std::size_t> queuePositions;
+    queuePositions.reserve(playlist_.queue().size());
+    for (const TrackId id : playlist_.queue()) {
+        if (const std::optional<std::size_t> index = playlist_.indexOf(id); index) {
+            queuePositions.push_back(*index);
+        }
+    }
+
     // PlaylistFile writes text and the caller does the file I/O, which is what
     // keeps it testable without a filesystem. The destination goes in because
     // relative paths are written against it -- which is what makes a playlist
     // survive moving a music folder wholesale.
-    const std::string text = writePlaylist(format, playlist_.entries(),
-                                           playlist_.queue(),
+    const std::string text = writePlaylist(format, playlist_.entries(), queuePositions,
                                            Url::fromLocalPath(path));
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
