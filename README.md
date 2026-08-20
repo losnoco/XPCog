@@ -25,6 +25,9 @@ Vincent Spader and Christopher Snowhill, built on wxWidgets. XPCog targets
 > with it — a Sound Blaster's OPL3, or an emulated Roland SC-55 with its front
 > panel.
 > **842 extensions** across 23 decoders.
+> The interface is wxWidgets, and there is no Qt anywhere in the tree — which is
+> also why there is no dependency outside vcpkg, no environment variable pointing
+> at a toolkit, and no deploy step.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
 
