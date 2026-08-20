@@ -22,12 +22,8 @@ set(XPCOG_APP_SOURCES
     src/FileTree.hpp
     src/SeekSlider.cpp
     src/SeekSlider.hpp
-    src/PlaylistCommands.cpp
-    src/PlaylistCommands.hpp
     src/PlaylistModel.cpp
     src/PlaylistModel.hpp
-    src/ScanTask.cpp
-    src/ScanTask.hpp
     src/SingleInstance.cpp
     src/SingleInstance.hpp
     src/SpectrumWidget.cpp

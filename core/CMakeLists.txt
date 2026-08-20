@@ -24,12 +24,15 @@ add_library(xpcog-core STATIC
     src/AudioChunk.cpp
     src/AudioFormat.cpp
     src/library/Library.cpp
+    src/library/PlaylistCommands.cpp
     src/library/Playlist.cpp
     src/library/PlaylistEntry.cpp
     src/library/PlaylistFile.cpp
+    src/library/PlaylistView.cpp
     src/library/PluginCache.cpp
     src/library/PropertyList.cpp
     src/library/Scanner.cpp
+    src/library/ScanTask.cpp
     src/library/Sqlite.cpp
     src/MetadataMap.cpp
     src/NaturalOrder.cpp
@@ -37,7 +40,9 @@ add_library(xpcog-core STATIC
     src/LoopPolicy.cpp
     src/MultiDecoder.cpp
     src/PluginRegistry.cpp
+    src/SerialExecutor.cpp
     src/Settings.cpp
+    src/UndoStack.cpp
     src/FilePath.cpp
     src/Url.cpp
     src/Utf8.cpp

@@ -1,9 +1,8 @@
 // Undoable playlist edits.
 //
 // Cog has no undo at all: -delete: removes the managed objects and the only way
-// back is to re-add the files. Every edit here goes through a QUndoCommand
-// instead, which is the Qt idiom and costs one push() per mutation at the call
-// site.
+// back is to re-add the files. Every edit here goes through an UndoCommand
+// instead, which costs one push() per mutation at the call site.
 //
 // Two things make this less trivial than "call the inverse mutator":
 //
@@ -17,31 +16,34 @@
 //
 // Commands take a Playlist reference and must not outlive it. The undo stack is
 // owned by the window that owns the playlist, so that holds.
+//
+// The label each command carries is passed in rather than composed here. Core has
+// no message catalogue, and the caller is where the user's language is known --
+// which is also why RandomizeCommand takes one where it used to build its own.
 
 #pragma once
 
+#include "xpcog/core/UndoStack.hpp"
 #include "xpcog/core/library/Playlist.hpp"
-
-#include <QString>
-#include <QUndoCommand>
 
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <vector>
 
-namespace xpcog::app {
+namespace xpcog {
 
 /// Adds entries at a position. Holds them while undone.
-class InsertTracksCommand : public QUndoCommand {
+class InsertTracksCommand : public UndoCommand {
 public:
     InsertTracksCommand(Playlist& playlist, std::size_t index,
-                        std::vector<PlaylistEntry> entries, const QString& text);
+                        std::vector<PlaylistEntry> entries, std::string text);
 
     void redo() override;
     void undo() override;
 
     /// The ids the entries were given. Empty until the first redo(), which
-    /// QUndoStack::push performs.
+    /// UndoStack::push performs.
     [[nodiscard]] const std::vector<TrackId>& ids() const noexcept { return ids_; }
 
 private:
@@ -52,10 +54,9 @@ private:
 };
 
 /// Removes entries by id. The selection need not be contiguous.
-class RemoveTracksCommand : public QUndoCommand {
+class RemoveTracksCommand : public UndoCommand {
 public:
-    RemoveTracksCommand(Playlist& playlist, std::vector<TrackId> ids,
-                        const QString& text);
+    RemoveTracksCommand(Playlist& playlist, std::vector<TrackId> ids, std::string text);
 
     void redo() override;
     void undo() override;
@@ -80,9 +81,9 @@ private:
 };
 
 /// Rearranges the whole list into a given order. Drag-and-drop reordering.
-class ReorderCommand : public QUndoCommand {
+class ReorderCommand : public UndoCommand {
 public:
-    ReorderCommand(Playlist& playlist, std::vector<TrackId> order, const QString& text);
+    ReorderCommand(Playlist& playlist, std::vector<TrackId> order, std::string text);
 
     void redo() override;
     void undo() override;
@@ -94,9 +95,9 @@ private:
 };
 
 /// Cog's -randomizeList:. Unlike shuffle, this really reorders the playlist.
-class RandomizeCommand : public QUndoCommand {
+class RandomizeCommand : public UndoCommand {
 public:
-    explicit RandomizeCommand(Playlist& playlist);
+    RandomizeCommand(Playlist& playlist, std::string text);
 
     void redo() override;
     void undo() override;
@@ -122,4 +123,4 @@ private:
                                                   const std::vector<TrackId>& moved,
                                                   TrackId anchor);
 
-}  // namespace xpcog::app
+}  // namespace xpcog

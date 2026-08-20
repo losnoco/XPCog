@@ -4,18 +4,15 @@
 // not equal ones: ids have to survive, because the queue and the playing track
 // hold them.
 
-#include "QtStringMaker.hpp"
-
-#include "PlaylistCommands.hpp"
+#include "xpcog/core/library/PlaylistCommands.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <QUndoStack>
-
+#include <memory>
 #include <string>
+#include <vector>
 
 using namespace xpcog;
-using namespace xpcog::app;
 
 namespace {
 
@@ -59,11 +56,11 @@ std::vector<PlaylistEntry> twoNewTracks() {
 
 TEST_CASE("adding tracks undoes and redoes", "[app][undo]") {
     Playlist   playlist = makeTracks(3);
-    QUndoStack stack;
+    UndoStack stack;
 
-    auto* command =
-        new InsertTracksCommand(playlist, 1, twoNewTracks(), QStringLiteral("Add"));
-    stack.push(command);
+    auto  owned   = std::make_unique<InsertTracksCommand>(playlist, 1, twoNewTracks(), "Add");
+    auto* command = owned.get();
+    stack.push(std::move(owned));
 
     REQUIRE(picture(playlist) == "1 a b 2 3");
     const std::vector<TrackId> assigned = command->ids();
@@ -82,14 +79,14 @@ TEST_CASE("adding tracks undoes and redoes", "[app][undo]") {
 
 TEST_CASE("removing a scattered selection undoes in one step", "[app][undo]") {
     Playlist   playlist = makeTracks(6);
-    QUndoStack stack;
+    UndoStack stack;
 
     const TrackId second = playlist.at(1).id;
     const TrackId fourth = playlist.at(3).id;
     const TrackId fifth  = playlist.at(4).id;
 
-    stack.push(new RemoveTracksCommand(playlist, {second, fourth, fifth},
-                                       QStringLiteral("Remove")));
+    stack.push(std::make_unique<RemoveTracksCommand>(
+        playlist, std::vector<TrackId>{second, fourth, fifth}, "Remove"));
     REQUIRE(picture(playlist) == "1 3 6");
 
     stack.undo();
@@ -104,7 +101,7 @@ TEST_CASE("removing a scattered selection undoes in one step", "[app][undo]") {
 
 TEST_CASE("undoing a removal restores the queue", "[app][undo]") {
     Playlist   playlist = makeTracks(4);
-    QUndoStack stack;
+    UndoStack stack;
 
     const TrackId second = playlist.at(1).id;
     const TrackId third  = playlist.at(2).id;
@@ -114,7 +111,7 @@ TEST_CASE("undoing a removal restores the queue", "[app][undo]") {
 
     // Removing a queued entry drops it from the queue and renumbers the rest.
     // Putting the entry back is not enough on its own.
-    stack.push(new RemoveTracksCommand(playlist, {second}, QStringLiteral("Remove")));
+    stack.push(std::make_unique<RemoveTracksCommand>(playlist, std::vector<TrackId>{second}, "Remove"));
     REQUIRE(playlist.queue() == std::vector<TrackId>{third});
 
     stack.undo();
@@ -131,9 +128,9 @@ TEST_CASE("a multi-row drag lands in the order it was picked up", "[app][undo]")
     const std::vector<TrackId> moved{playlist.at(1).id, playlist.at(3).id};
     const TrackId              anchor = playlist.at(5).id;
 
-    QUndoStack stack;
-    stack.push(new ReorderCommand(playlist, orderAfterMove(playlist, moved, anchor),
-                                  QStringLiteral("Move")));
+    UndoStack stack;
+    stack.push(std::make_unique<ReorderCommand>(playlist, orderAfterMove(playlist, moved, anchor),
+                                  "Move"));
     CHECK(picture(playlist) == "1 3 5 2 4 6");
 
     stack.undo();
@@ -163,8 +160,8 @@ TEST_CASE("redoing a randomize replays the same permutation", "[app][undo]") {
     Playlist playlist = makeTracks(12);
     playlist.seedShuffle(1234);
 
-    QUndoStack stack;
-    stack.push(new RandomizeCommand(playlist));
+    UndoStack stack;
+    stack.push(std::make_unique<RandomizeCommand>(playlist, "Randomize"));
 
     const std::string shuffled = picture(playlist);
     REQUIRE(shuffled != "1 2 3 4 5 6 7 8 9 10 11 12");
@@ -180,15 +177,15 @@ TEST_CASE("redoing a randomize replays the same permutation", "[app][undo]") {
 
 TEST_CASE("the undo stack reports what it would take back", "[app][undo]") {
     Playlist   playlist = makeTracks(2);
-    QUndoStack stack;
+    UndoStack stack;
 
     CHECK_FALSE(stack.canUndo());
-    stack.push(new InsertTracksCommand(playlist, 0, twoNewTracks(),
-                                       QStringLiteral("Add 2 Tracks")));
+    stack.push(std::make_unique<InsertTracksCommand>(playlist, 0, twoNewTracks(),
+                                       "Add 2 Tracks"));
     CHECK(stack.canUndo());
-    CHECK(stack.undoText() == QStringLiteral("Add 2 Tracks"));
+    CHECK(stack.undoText() == "Add 2 Tracks");
 
     stack.undo();
     CHECK_FALSE(stack.canUndo());
-    CHECK(stack.redoText() == QStringLiteral("Add 2 Tracks"));
+    CHECK(stack.redoText() == "Add 2 Tracks");
 }

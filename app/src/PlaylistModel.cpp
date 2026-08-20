@@ -2,7 +2,7 @@
 
 #include "xpcog/core/FilePath.hpp"
 
-#include "PlaylistCommands.hpp"
+#include "xpcog/core/library/PlaylistCommands.hpp"
 
 #include <QDataStream>
 #include <QtGlobal>

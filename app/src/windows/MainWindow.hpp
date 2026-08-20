@@ -10,7 +10,11 @@
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/library/Library.hpp"
 #include "xpcog/core/library/Playlist.hpp"
+#include "xpcog/core/SerialExecutor.hpp"
+#include "xpcog/core/UndoStack.hpp"
+#include "xpcog/core/library/PlaylistCommands.hpp"
 #include "xpcog/core/library/PluginCache.hpp"
+#include "xpcog/core/library/ScanTask.hpp"
 #include "xpcog/platform/MediaIntegration.hpp"
 #include "xpcog/platform/TaskbarIntegration.hpp"
 
@@ -30,7 +34,6 @@ class QSlider;
 class QProgressBar;
 class QTableView;
 class QToolButton;
-class QUndoStack;
 
 namespace xpcog::app {
 
@@ -38,7 +41,6 @@ class ActionRegistry;
 class EqualizerPanel;
 class FileTree;
 class InfoPanel;
-class ScanTask;
 class SeekSlider;
 class PlaybackController;
 class PlaylistModel;
@@ -136,9 +138,8 @@ private:
     void enqueueSelected();
 
     /// Keeps the Undo and Redo commands' enabled state and labels in step with
-    /// the stack. Qt's QUndoStack::createUndoAction() would do this, but it
-    /// makes its own QAction, and every command in this window is one the
-    /// registry owns.
+    /// the stack. The toolkit is not asked to make its own actions for this:
+    /// every command in this window is one the registry owns.
     void refreshUndoActions();
 
     /// Tells the OS what is playing. Reads the artwork from the library, which
@@ -169,7 +170,7 @@ private:
     ActionRegistry*     actions_ = nullptr;
     PlaylistModel*      model_   = nullptr;
     PlaylistProxyModel* proxy_   = nullptr;
-    QUndoStack*         undo_    = nullptr;
+    UndoStack           undo_;
 
     QToolBar*   transport_ = nullptr;
     FileTree*   tree_     = nullptr;
@@ -235,7 +236,7 @@ private:
         std::vector<Url> inputs;
         int              atRow = -1;
     };
-    ScanTask*                scan_ = nullptr;
+    std::unique_ptr<ScanTask> scan_;
     std::vector<ScanRequest> pendingScans_;
 
     /// The duration of the audible track, remembered so the clock can show the

@@ -9,9 +9,7 @@
 #include "InfoPanel.hpp"
 #include "LucideIcon.hpp"
 #include "PlaybackController.hpp"
-#include "PlaylistCommands.hpp"
 #include "PlaylistModel.hpp"
-#include "ScanTask.hpp"
 #include "SeekSlider.hpp"
 #include "SpectrumWidget.hpp"
 #ifdef XPCOG_HAVE_SC55_PANEL
@@ -50,7 +48,6 @@
 #include <QTableView>
 #include <QToolBar>
 #include <QToolButton>
-#include <QUndoStack>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -91,7 +88,6 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     }
 
     playback_ = std::make_unique<PlaybackController>(registry_, playlist_, settings_, this);
-    undo_     = new QUndoStack(this);
 
     buildUi();
     buildMenus();
@@ -131,7 +127,7 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
     }
     // Restoring the saved playlist is not an edit the user made, so it must not
     // be the first thing Undo offers to take back.
-    undo_->clear();
+    undo_.clear();
 
     // Modes come from settings, which hold Cog's integers.
     playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
@@ -191,11 +187,10 @@ QMenu* MainWindow::createPopupMenu() {
 
 MainWindow::~MainWindow() {
     // The scan borrows the registry and the PluginCache, and the cache is a
-    // member of this window. QObject deletes its children only after every
-    // member is already gone, so leaving the task to that would let its thread
-    // outlive what it is reading from. ~ScanTask cancels and joins.
-    delete scan_;
-    scan_ = nullptr;
+    // member of this window, so the task has to go first -- otherwise its
+    // thread outlives what it is reading from. ~ScanTask cancels and joins,
+    // and resetting here rather than relying on member order says so out loud.
+    scan_.reset();
 }
 
 // --- construction -------------------------------------------------------
@@ -492,14 +487,15 @@ void MainWindow::wireUp() {
     on(ActionId::EditRemove, [this] { removeSelected(); });
     on(ActionId::PlaybackEnqueue, [this] { enqueueSelected(); });
 
-    on(ActionId::EditUndo, [this] { undo_->undo(); });
-    on(ActionId::EditRedo, [this] { undo_->redo(); });
+    on(ActionId::EditUndo, [this] { undo_.undo(); });
+    on(ActionId::EditRedo, [this] { undo_.redo(); });
     on(ActionId::EditRandomize, [this] {
         if (playlist_.size() > 1) {
-            undo_->push(new RandomizeCommand(playlist_));
+            undo_.push(std::make_unique<RandomizeCommand>(
+                playlist_, tr("Randomize").toStdString()));
         }
     });
-    connect(undo_, &QUndoStack::indexChanged, this, [this] { refreshUndoActions(); });
+    subscriptions_.push_back(undo_.changed.connect([this] { refreshUndoActions(); }));
     refreshUndoActions();
 
     on(ActionId::PlaybackPlayPause, [this] { playback_->playPause(); });
@@ -645,7 +641,8 @@ void MainWindow::wireUp() {
 
     connect(model_, &PlaylistModel::reorderRequested, this,
             [this](const std::vector<TrackId>& order) {
-                undo_->push(new ReorderCommand(playlist_, order, tr("Move Tracks")));
+                undo_.push(std::make_unique<ReorderCommand>(
+                    playlist_, order, tr("Move Tracks").toStdString()));
             });
 }
 
@@ -655,12 +652,14 @@ void MainWindow::refreshUndoActions() {
     };
 
     if (QAction* command = actions_->action(ActionId::EditUndo); command != nullptr) {
-        command->setEnabled(undo_->canUndo());
-        command->setText(label(tr("&Undo"), undo_->undoText()));
+        command->setEnabled(undo_.canUndo());
+        command->setText(
+            label(tr("&Undo"), QString::fromStdString(undo_.undoText())));
     }
     if (QAction* command = actions_->action(ActionId::EditRedo); command != nullptr) {
-        command->setEnabled(undo_->canRedo());
-        command->setText(label(tr("&Redo"), undo_->redoText()));
+        command->setEnabled(undo_.canRedo());
+        command->setText(
+            label(tr("&Redo"), QString::fromStdString(undo_.redoText())));
     }
 }
 
@@ -819,9 +818,13 @@ void MainWindow::pumpScanQueue() {
     ScanRequest request = std::move(pendingScans_.front());
     pendingScans_.erase(pendingScans_.begin());
 
-    scan_ = new ScanTask(registry_, &cache_, std::move(request.inputs), this);
+    scan_ = std::make_unique<ScanTask>(
+        registry_, &cache_, std::move(request.inputs),
+        [this](std::function<void()> action) {
+            QMetaObject::invokeMethod(this, std::move(action), Qt::QueuedConnection);
+        });
 
-    connect(scan_, &ScanTask::progress, this, [this](int done, int total) {
+    subscriptions_.push_back(scan_->progress.connect([this](int done, int total) {
         // A zero maximum is Qt's busy indicator, which is the truthful display
         // while the expansion pass is still counting.
         scanBar_->setMaximum(total);
@@ -835,22 +838,24 @@ void MainWindow::pumpScanQueue() {
             taskbar_->setProgress(static_cast<double>(done) /
                                   static_cast<double>(total));
         }
-    });
+    }));
 
     const int atRow = request.atRow;
-    connect(scan_, &ScanTask::finished, this,
-            [this, atRow](const std::vector<PlaylistEntry>& entries, bool cancelled) {
+    subscriptions_.push_back(scan_->finished.connect(
+        [this, atRow](const std::vector<PlaylistEntry>& entries, bool cancelled) {
                 // The task owns the thread it is still returning from, so it
-                // cannot be deleted from inside its own signal.
-                scan_->deleteLater();
-                scan_ = nullptr;
+                // cannot be destroyed from inside its own callback. Handing it
+                // to the event loop to drop is what deleteLater() was doing.
+                auto* finished = scan_.release();
+                QMetaObject::invokeMethod(
+                    this, [finished] { delete finished; }, Qt::QueuedConnection);
 
                 scanBar_->hide();
                 scanCancel_->hide();
                 taskbar_->clearProgress();
                 addScannedEntries(entries, atRow, cancelled);
                 pumpScanQueue();
-            });
+        }));
 
     scanBar_->setRange(0, 0);
     scanBar_->show();
@@ -880,8 +885,9 @@ void MainWindow::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow
     const std::size_t where =
         (atRow >= 0) ? static_cast<std::size_t>(atRow) : playlist_.size();
     const auto count = static_cast<int>(entries.size());
-    undo_->push(new InsertTracksCommand(playlist_, where, std::move(entries),
-                                        tr("Add %n Track(s)", nullptr, count)));
+    undo_.push(std::make_unique<InsertTracksCommand>(
+        playlist_, where, std::move(entries),
+        tr("Add %n Track(s)", nullptr, count).toStdString()));
 
     statusBar()->showMessage(statusSummary());
 }
@@ -895,8 +901,9 @@ void MainWindow::removeSelected() {
     if (ids.empty()) {
         return;
     }
-    undo_->push(new RemoveTracksCommand(
-        playlist_, ids, tr("Remove %n Track(s)", nullptr, static_cast<int>(ids.size()))));
+    undo_.push(std::make_unique<RemoveTracksCommand>(
+        playlist_, ids,
+        tr("Remove %n Track(s)", nullptr, static_cast<int>(ids.size())).toStdString()));
     statusBar()->showMessage(statusSummary());
 }
 

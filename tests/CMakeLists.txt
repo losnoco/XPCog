@@ -16,11 +16,16 @@ add_executable(xpcog-tests
     core/test_loop_policy.cpp
     core/test_playlist.cpp
     core/test_paths.cpp
+    core/test_playlistcommands.cpp
     core/test_playlistfile.cpp
+    core/test_playlistview.cpp
     core/test_plugin_registry.cpp
     core/test_value_types.cpp
     core/test_scanner.cpp
+    core/test_scantask.cpp
+    core/test_serialexecutor.cpp
     core/test_seek.cpp
+    core/test_undostack.cpp
     core/test_spectrum.cpp
     core/test_stream_metadata.cpp
     core/test_transportgain.cpp
@@ -380,10 +385,7 @@ if(XPCOG_BUILD_APP)
         app/test_infopanel.cpp
         app/test_lucideicon.cpp
         app/test_openurldialog.cpp
-        app/test_playlistcommands.cpp
-        app/test_playlistmodel.cpp
         app/test_sc55panel.cpp
-        app/test_scantask.cpp
         app/test_singleinstance.cpp
     )
 

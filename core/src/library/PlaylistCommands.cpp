@@ -1,12 +1,10 @@
-#include "PlaylistCommands.hpp"
-
-#include <QCoreApplication>
+#include "xpcog/core/library/PlaylistCommands.hpp"
 
 #include <algorithm>
 #include <unordered_set>
 #include <utility>
 
-namespace xpcog::app {
+namespace xpcog {
 
 std::vector<TrackId> currentOrder(const Playlist& playlist) {
     std::vector<TrackId> order;
@@ -52,8 +50,8 @@ std::vector<TrackId> orderAfterMove(const Playlist& playlist,
 
 InsertTracksCommand::InsertTracksCommand(Playlist& playlist, std::size_t index,
                                          std::vector<PlaylistEntry> entries,
-                                         const QString& text)
-    : QUndoCommand(text),
+                                         std::string text)
+    : UndoCommand(std::move(text)),
       playlist_(playlist),
       index_(index),
       entries_(std::move(entries)) {}
@@ -85,8 +83,8 @@ void InsertTracksCommand::undo() {
 // --- remove -------------------------------------------------------------
 
 RemoveTracksCommand::RemoveTracksCommand(Playlist& playlist, std::vector<TrackId> ids,
-                                         const QString& text)
-    : QUndoCommand(text), playlist_(playlist), ids_(std::move(ids)) {}
+                                         std::string text)
+    : UndoCommand(std::move(text)), playlist_(playlist), ids_(std::move(ids)) {}
 
 void RemoveTracksCommand::redo() {
     queue_ = playlist_.queue();
@@ -128,8 +126,8 @@ void RemoveTracksCommand::undo() {
 // --- reorder ------------------------------------------------------------
 
 ReorderCommand::ReorderCommand(Playlist& playlist, std::vector<TrackId> order,
-                               const QString& text)
-    : QUndoCommand(text),
+                               std::string text)
+    : UndoCommand(std::move(text)),
       playlist_(playlist),
       before_(currentOrder(playlist)),
       after_(std::move(order)) {}
@@ -137,8 +135,8 @@ ReorderCommand::ReorderCommand(Playlist& playlist, std::vector<TrackId> order,
 void ReorderCommand::redo() { static_cast<void>(playlist_.reorder(after_)); }
 void ReorderCommand::undo() { static_cast<void>(playlist_.reorder(before_)); }
 
-RandomizeCommand::RandomizeCommand(Playlist& playlist)
-    : QUndoCommand(QCoreApplication::translate("PlaylistCommands", "Randomize")),
+RandomizeCommand::RandomizeCommand(Playlist& playlist, std::string text)
+    : UndoCommand(std::move(text)),
       playlist_(playlist),
       before_(currentOrder(playlist)) {}
 
@@ -154,4 +152,4 @@ void RandomizeCommand::redo() {
 
 void RandomizeCommand::undo() { static_cast<void>(playlist_.reorder(before_)); }
 
-}  // namespace xpcog::app
+}  // namespace xpcog
