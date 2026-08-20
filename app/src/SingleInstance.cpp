@@ -4,11 +4,9 @@
 
 #include "xpcog/platform/Foreground.hpp"
 
-// sckipc rather than ipc: <wx/ipc.h> selects DDE on Windows and sockets
-// everywhere else, so the class names differ per platform. Naming the socket
-// implementation explicitly gives one set of types and one behaviour to reason
-// about -- and DDE is a Windows-only mechanism this has no reason to want.
-#include <wx/sckipc.h>
+// See the header: this must be ipc.h rather than sckipc.h, so that Windows gets
+// DDE and no socket is ever opened.
+#include <wx/ipc.h>
 #include <wx/snglinst.h>
 #include <wx/stdpaths.h>
 #include <wx/utils.h>
@@ -54,43 +52,42 @@ class HandoverConnection;
 /// wxIPC object having to carry a back pointer through wx's factory methods.
 SingleInstance* g_owner = nullptr;
 
-class HandoverConnection : public wxTCPConnection {
+class HandoverConnection : public wxConnection {
 public:
-    bool OnExecute(const wxString&, const void* data, std::size_t size,
-                   wxIPCFormat) override {
-        if (g_owner == nullptr || data == nullptr) {
+    /// The text form, not the raw-bytes one.
+    ///
+    /// DDE carries text and nothing else -- wxDDEServer asserts outright on
+    /// wxIPC_PRIVATE -- so the payload crosses as UTF-8 and arrives here already
+    /// decoded. wxConnectionBase::OnExecute forwards to this for any text format,
+    /// so the same override serves the socket transport on other platforms.
+    bool OnExec(const wxString&, const wxString& data) override {
+        if (g_owner == nullptr) {
             return false;
         }
-        const std::string payload(static_cast<const char*>(data), size);
-        g_owner->launched.publish(SingleInstance::decode(payload));
+        g_owner->launched.publish(SingleInstance::decode(data.utf8_string()));
         return true;
     }
 };
 
-class HandoverServer : public wxTCPServer {
+class HandoverServer : public wxServer {
 public:
     wxConnectionBase* OnAcceptConnection(const wxString& topic) override {
         return topic == kTopic ? new HandoverConnection : nullptr;
     }
 };
 
-class HandoverClient : public wxTCPClient {
+class HandoverClient : public wxClient {
 public:
     wxConnectionBase* OnMakeConnection() override { return new HandoverConnection; }
 };
 
-/// Where the two ends meet. A path on Unix, which wx turns into a Unix domain
-/// socket; a port number as a string on Windows, where wxIPC is TCP on loopback.
+/// Where the two ends meet.
+///
+/// On Windows this is a DDE service name -- a plain string, no port and no
+/// socket. Everywhere else wx makes a Unix domain socket out of a path.
 [[nodiscard]] wxString endpointFor(const std::string& name) {
 #ifdef __WXMSW__
-    // Derived from the name rather than fixed, so two users get two ports. The
-    // range is the ephemeral one, and a collision is handled the same way a
-    // stale name is: the connection is refused and this process claims the name.
-    unsigned int hash = 2166136261U;
-    for (const char character : name) {
-        hash = (hash ^ static_cast<unsigned char>(character)) * 16777619U;
-    }
-    return wxString::Format("%u", 49152U + (hash % 8192U));
+    return toWx(name);
 #else
     return toWx("/tmp/" + name + ".sock");
 #endif
@@ -150,11 +147,18 @@ bool SingleInstance::claim(const std::vector<std::string>& arguments) {
         const std::string payload = encode(arguments);
 
         // Execute() is framed and synchronous -- it returns after the server's
-        // OnExecute has run -- which is the whole of what the Qt version's length
+        // handler has run -- which is the whole of what the Qt version's length
         // prefix, read accumulator and waitForDisconnected() were doing by hand.
-        if (auto* connection = dynamic_cast<wxTCPConnection*>(
+        //
+        // The wxString overload, deliberately: it sends as wxIPC_UTF8TEXT, which
+        // is the only shape DDE accepts. Passing bytes with wxIPC_PRIVATE
+        // compiles, and asserts at run time on Windows the first time a second
+        // launch tries to hand anything over.
+        // The host is ignored under DDE and is localhost under sockets; there is
+        // no case in which this should reach another machine.
+        if (auto* connection = dynamic_cast<wxConnection*>(
                 client.MakeConnection("localhost", endpointFor(name_), kTopic))) {
-            connection->Execute(payload.data(), payload.size(), wxIPC_PRIVATE);
+            connection->Execute(toWx(payload));
             connection->Disconnect();
             return false;
         }

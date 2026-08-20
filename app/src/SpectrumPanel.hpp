@@ -37,6 +37,11 @@ public:
     /// controller owns both it and, transitively, this window.
     SpectrumPanel(wxWindow* parent, AudioTap& tap);
 
+    /// Stops the clock. Explicit, because a timer that outlives the window it
+    /// draws into is a callback into freed memory, and ~wxTimer running as a
+    /// member is late enough to be worth not relying on.
+    ~SpectrumPanel() override;
+
     /// The rate the analysis window is taken at. Needed because the band table
     /// depends on it and the widget has no other way to learn it.
     void setSampleRate(double rate);
@@ -56,7 +61,6 @@ public:
 private:
     void onPaint(wxPaintEvent& event);
     void onSize(wxSizeEvent& event);
-    void onShow(wxShowEvent& event);
     void tick();
 
     /// Derives the bar count from the widget's width. Frequencies mode only.

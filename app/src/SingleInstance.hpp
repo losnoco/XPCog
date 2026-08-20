@@ -20,10 +20,19 @@
 // readAll() once the peer had gone.
 //
 // wx splits the two, and both halves are already written. wxSingleInstanceChecker
-// answers "am I first" (a named mutex on Windows, a lock file on Unix).
-// wxTCPServer/wxTCPClient carry the handover, and wxConnection::Execute() is a
-// **framed, synchronous** message -- so the length prefix, the accumulator, the
-// Windows workaround and the waitForDisconnected() dance all delete.
+// answers "am I first" (a named mutex on Windows, a lock file on Unix). wxServer
+// and wxClient carry the handover, and wxConnection::Execute() is a **framed,
+// synchronous** message -- so the length prefix, the accumulator, the Windows
+// workaround and the waitForDisconnected() dance all delete.
+//
+// `<wx/ipc.h>`, deliberately, and not `<wx/sckipc.h>`. The two differ by exactly
+// one thing that matters: wx/ipc.h picks **DDE on Windows** and Unix domain
+// sockets elsewhere, while sckipc is TCP on loopback everywhere. An earlier
+// version of this file reached for sckipc to have one set of class names to
+// reason about, and dismissed DDE as a Windows-only mechanism it had no reason to
+// want. That was backwards. A listening TCP socket on Windows means the firewall
+// asks the user to approve a *music player* wanting network access, which is
+// alarming, unanswerable and entirely self-inflicted. DDE opens no socket.
 //
 // What does not change is the foreground handover. permitForegroundHandover()
 // must still be called before Execute(), for exactly the reason
@@ -39,7 +48,9 @@
 #include <vector>
 
 class wxSingleInstanceChecker;
-class wxTCPServer;
+// wxServer is a per-platform typedef -- wxDDEServer on Windows, wxTCPServer
+// elsewhere -- so it cannot be forward-declared. Both derive from this.
+class wxServerBase;
 
 namespace xpcog::app {
 
@@ -84,7 +95,7 @@ private:
     std::string name_;
 
     std::unique_ptr<wxSingleInstanceChecker> checker_;
-    std::unique_ptr<wxTCPServer>             server_;
+    std::unique_ptr<wxServerBase>            server_;
 };
 
 }  // namespace xpcog::app

@@ -45,10 +45,21 @@ public:
     /// seconds. A callback rather than a controller reference, because that is the
     /// whole of what this needs to know about playback.
     Sc55Panel(wxWindow* parent, std::function<double()> position);
+    ~Sc55Panel() override;
+
+    /// Starts and stops the refresh clock.
+    ///
+    /// Driven by the frame rather than by wxEVT_SHOW, for the reason spelled
+    /// out in SpectrumPanel.cpp: that event arrives during teardown, at a
+    /// window that is already going away.
+    ///
+    /// Nothing is switched on in the *feed* here. States are recorded from the
+    /// start of the track regardless, which is what lets this show the right
+    /// one immediately rather than the first one that happens to arrive next.
+    void setActive(bool active);
 
 private:
     void onPaint(wxPaintEvent& event);
-    void onShow(wxShowEvent& event);
 
     /// Looks up the state for the moment now being heard and renders it.
     void tick();

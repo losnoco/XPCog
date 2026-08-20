@@ -139,10 +139,17 @@ constexpr std::array<const char*, 20> kLabels = {
 
 InfoPanel::InfoPanel(wxWindow* parent, const Library* library) : library_(library) {
     Create(parent, wxID_ANY);
-    // Both axes. A field with a long value -- a path, a cuesheet -- is wider than
-    // a narrow pane, and horizontal scrolling is what reaches it rather than the
-    // text being cut off.
-    SetScrollRate(FromDIP(8), FromDIP(8));
+    // Vertical only, and that is the whole of the art-sizing fix.
+    //
+    // Turning horizontal scrolling on was the wrong answer to "the cover overruns
+    // a narrow pane": it let the content stay wide and gave the reader a
+    // scrollbar to chase it with, when what a cover should do in a narrower pane
+    // is get smaller. With the horizontal rate at zero the virtual width is the
+    // client width, so nothing can be wider than the pane -- which makes shrinking
+    // the only thing updateArt() can do, rather than one of two options.
+    //
+    // The text fields wrap instead of extending, which is why they are multiline.
+    SetScrollRate(0, FromDIP(8));
 
     Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
         event.Skip();
@@ -175,6 +182,11 @@ InfoPanel::InfoPanel(wxWindow* parent, const Library* library) : library_(librar
                                      wxTE_READONLY | wxTE_MULTILINE | wxTE_NO_VSCROLL |
                                          wxBORDER_NONE);
         value->SetBackgroundColour(GetBackgroundColour());
+        // Narrow, so the form can be. A text control's default best width is
+        // around a hundred pixels, and twenty of them in a growable column set a
+        // floor the pane cannot go below -- which with horizontal scrolling off
+        // would clip rather than wrap.
+        value->SetMinSize(wxSize(FromDIP(48), -1));
 
         form->Add(caption, 0, wxALIGN_TOP);
         form->Add(value, 1, wxEXPAND);
@@ -296,9 +308,14 @@ void InfoPanel::updateArt() {
         return;
     }
 
-    // Whichever constraint binds first. GetClientSize() is the visible width
-    // rather than the virtual one, which is what stops the cover from being the
-    // thing that makes the panel need a horizontal scrollbar.
+    // Whichever constraint binds first: the height a cover is worth showing at,
+    // or the width there actually is. The second is what makes it shrink in a
+    // narrow pane instead of overrunning it.
+    //
+    // The margin is not only tidiness -- it absorbs the vertical scrollbar
+    // appearing and disappearing. Without it a cover sized to exactly the client
+    // width can add enough height to need a scrollbar, which narrows the client,
+    // which resizes the cover, which removes the scrollbar again.
     const int margin    = FromDIP(16);
     const int available = std::max(FromDIP(48), GetClientSize().GetWidth() - margin);
 
@@ -318,6 +335,9 @@ void InfoPanel::updateArt() {
     art_->SetBitmap(wxBitmap(artOriginal_.Scale(width, height, wxIMAGE_QUALITY_HIGH)));
     art_->Show();
     Layout();
+    // The cover just changed height, so the amount there is to scroll through
+    // did too.
+    FitInside();
 }
 
 }  // namespace xpcog::app

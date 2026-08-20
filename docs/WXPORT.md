@@ -410,7 +410,7 @@ visible" the normal path, and a layout captured then is not the one the listener
 arranged. Pane *names* are load-bearing in the same way object names were —
 renaming one silently discards that pane's saved position.
 
-### Nine things that only show up when you click them
+### Twelve things that only show up when you run it
 
 The suite was green through all of this and had nothing to say about any of them.
 Each was found by running the application.
@@ -465,6 +465,50 @@ narrow pane does not have, so the equaliser scrolls horizontally and takes its
 pane height from its own best size. The cover fits whichever constraint binds
 first and rescales on resize, from the original rather than from the last scaled
 copy.
+
+**Windows Firewall asked about a music player.** `SingleInstance` used
+`<wx/sckipc.h>`, which is TCP on loopback everywhere, and the comment above the
+include dismissed DDE as "a Windows-only mechanism this has no reason to want".
+Backwards: `<wx/ipc.h>` picks DDE on Windows — which opens no socket at all — and
+Unix domain sockets elsewhere. The binary now imports no Winsock.
+
+That immediately surfaced the next one, which the assertion said outright:
+`wxDDEServer::Execute()` carries text and nothing else, and the payload was going
+as raw bytes with `wxIPC_PRIVATE`. It compiles on every platform and asserts on
+Windows the first time a second launch hands anything over. It goes as UTF-8 text
+now, and arrives at `OnExec`, which `wxConnectionBase` forwards text formats to —
+so one override serves both transports.
+
+**It crashed on exit, and two guesses at why were wrong before it was measured.**
+`SpectrumPanel::onShow` was running on a window already being destroyed: tearing
+the frame down hides its children, which sends `wxEVT_SHOW` to a panel whose C++
+object is going away. An access violation inside a window procedure surfaces as
+`STATUS_FATAL_USER_CALLBACK_EXCEPTION` — exit code `0xC000041D`, no message, no
+dialog, nothing.
+
+What found it was a vectored exception handler logging the fault code, the address
+and a DbgHelp symbol lookup, which named the function and line on the first run.
+That scaffolding is gone; `XPCogApp::OnAssertFailure` stays, because this is a
+`WIN32_EXECUTABLE` with no console and an assertion raised during shutdown has no
+event loop left to show a dialog on. It aborted silently before, which is why the
+first two attempts were guesses.
+
+The handler was deleted rather than guarded. `Sc55Panel` had the same pattern and
+the same latent crash, and both were redundant: every path that shows or hides
+those panes already calls `setActive()`, because each knows something `wxEVT_SHOW`
+does not — whether anything is playing.
+
+`~MainFrame` now calls `DestroyChildren()` explicitly, which closes a whole family
+of these rather than one. A frame's children are destroyed by `~wxWindow`, *after*
+its own members — so by default the spectrum panel outlives the `AudioTap` it
+references, the data model outlives the `PlaylistView` it reads, and the SC-55
+panel outlives the controller its position callback calls into.
+
+**The album art scrolled instead of shrinking**, because the previous fix turned
+horizontal scrolling on. That let the content stay wide and gave the reader a
+scrollbar to chase it with, when what a cover should do in a narrower pane is get
+smaller. With the horizontal rate at zero the virtual width *is* the client width,
+so shrinking is the only thing left to do.
 
 **HiDPI was pixelated on Windows.** Qt's platform plugin carried a DPI-awareness
 manifest; nothing did afterwards, so Windows marked the process unaware and

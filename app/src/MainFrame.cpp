@@ -153,15 +153,59 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
 }
 
 MainFrame::~MainFrame() {
-    // Not optional, and not something the destructor ordering can substitute for:
-    // the manager holds pointers to windows that are about to be destroyed with
-    // the frame, and UnInit() is what detaches it from them first.
-    auiManager_.UnInit();
-
     // The scan borrows the registry and the PluginCache, and the cache is a
     // member of this window, so the task has to go first -- otherwise its thread
-    // outlives what it is reading from. ~ScanTask cancels and joins.
+    // outlives what it is reading from. ~ScanTask cancels and joins, so nothing
+    // is still posting to the interface after this returns.
     scan_.reset();
+
+    // The tray icon is not a child window and so is not covered by the sweep
+    // below. Removing it here rather than only on the quit path means it cannot
+    // outlive the window it raises.
+    if (presence_) {
+        presence_->RemoveIcon();
+    }
+
+    // Not optional, and not something destructor ordering can substitute for:
+    // the manager holds pointers to windows that are about to be destroyed, and
+    // UnInit() is what detaches it from them first.
+    auiManager_.UnInit();
+
+    // Then every widget, explicitly, while the things they borrow are still
+    // alive.
+    //
+    // This is the ordering trap of the whole class, and it is not visible from
+    // any one line of it. A frame's children are destroyed by ~wxWindow, which
+    // runs *after* the frame's own members -- so by default the spectrum panel
+    // outlives the AudioTap it holds a reference to, the data model outlives the
+    // PlaylistView it reads, and the SC-55 panel outlives the controller its
+    // position callback calls into. Every one of those is a read of a destroyed
+    // object during teardown.
+    //
+    // DestroyChildren() moves the whole sweep to a point where playback_, view_
+    // and library_ are all still valid. The pointers left behind are cleared
+    // because nothing should be tempted to follow them afterwards.
+    DestroyChildren();
+
+    splitter_  = nullptr;
+    tree_      = nullptr;
+    list_      = nullptr;
+    model_     = nullptr;
+    seekBar_   = nullptr;
+    volume_    = nullptr;
+    filter_    = nullptr;
+    clock_     = nullptr;
+    scanBar_   = nullptr;
+    scanCancel_ = nullptr;
+    equalizer_ = nullptr;
+    info_      = nullptr;
+    spectrum_  = nullptr;
+    mini_      = nullptr;
+#ifdef XPCOG_HAVE_SC55_PANEL
+    sc55_ = nullptr;
+#endif
+    transportButtons_.clear();
+    playPauseButton_ = nullptr;
 }
 
 void MainFrame::buildUi() {
@@ -571,9 +615,19 @@ void MainFrame::wireUp() {
     // follows on its own -- but the spectrum's clock is not the manager's to stop.
     Bind(wxEVT_AUI_PANE_CLOSE, [this](wxAuiManagerEvent& event) {
         event.Skip();
-        if (event.GetPane() != nullptr && event.GetPane()->window == spectrum_) {
+        if (event.GetPane() == nullptr) {
+            return;
+        }
+        // Neither clock is the manager's to stop, and neither panel watches for
+        // being hidden any more.
+        if (event.GetPane()->window == spectrum_) {
             spectrum_->setActive(false);
         }
+#ifdef XPCOG_HAVE_SC55_PANEL
+        if (event.GetPane()->window == sc55_) {
+            sc55_->setActive(false);
+        }
+#endif
     });
 
     bindCommands();
@@ -782,7 +836,13 @@ void MainFrame::bindCommands() {
         spectrum_->setActive(showing && playback_->playing() && !playback_->paused());
     });
 #ifdef XPCOG_HAVE_SC55_PANEL
-    on(ViewSc55Panel, [this] { togglePane(sc55_, !paneShown(sc55_)); });
+    on(ViewSc55Panel, [this] {
+        const bool showing = !paneShown(sc55_);
+        togglePane(sc55_, showing);
+        // Driven from here rather than from a wxEVT_SHOW handler on the panel;
+        // see SpectrumPanel.cpp for what that cost.
+        sc55_->setActive(showing);
+    });
 #endif
     on(ViewFileTree, [this] {
         if (splitter_->IsSplit()) {

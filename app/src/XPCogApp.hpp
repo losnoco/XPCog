@@ -42,6 +42,7 @@ class MainFrame;
 class XPCogApp : public wxApp {
 public:
     bool OnInit() override;
+    int  OnRun() override;
     int  OnExit() override;
 
     /// Command-line handling. `--register` and `--unregister` are about this
@@ -64,8 +65,29 @@ public:
     /// Runs `action` on the interface's thread. Safe from any thread.
     [[nodiscard]] std::function<void(std::function<void()>)> dispatcher();
 
+#if wxDEBUG_LEVEL
+    /// Writes assertions somewhere they can be read.
+    ///
+    /// This is a WIN32_EXECUTABLE: it has no console, so the default handler's
+    /// message goes nowhere anyone will see it. Worse, an assertion raised
+    /// while the application is shutting down has no event loop left to show a
+    /// dialog on, so it aborts instead -- which arrives as a bare exit code and
+    /// looks like a crash with no cause attached. Appending to a file costs
+    /// nothing and turns that into a sentence.
+    void OnAssertFailure(const wxChar* file, int line, const wxChar* function,
+                         const wxChar* condition, const wxChar* message) override;
+#endif
+
 private:
     bool performRegistration(bool unregister);
+
+    /// Ends the process successfully, without a window.
+    ///
+    /// For the two paths that finish their work in OnInit: registering the
+    /// file associations, and handing a later launch's arguments to the
+    /// player already running. Always returns true; see the implementation
+    /// for why that is not the same as `return false`.
+    bool finishEarly();
 
     /// One player per user. Claimed before anything expensive is built, so a
     /// second launch hands its files over and exits without opening a
@@ -90,6 +112,9 @@ private:
 
     bool wantsRegister_   = false;
     bool wantsUnregister_ = false;
+
+    /// Set by finishEarly(). Read by OnRun, which then runs no event loop.
+    bool finishedEarly_ = false;
 };
 
 }  // namespace xpcog::app

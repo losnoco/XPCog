@@ -55,9 +55,27 @@ SpectrumPanel::SpectrumPanel(wxWindow* parent, AudioTap& tap)
 
     Bind(wxEVT_PAINT, &SpectrumPanel::onPaint, this);
     Bind(wxEVT_SIZE, &SpectrumPanel::onSize, this);
-    Bind(wxEVT_SHOW, &SpectrumPanel::onShow, this);
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) { tick(); });
+
+    // Deliberately no wxEVT_SHOW handler, and this is the one comment in the file
+    // worth reading twice.
+    //
+    // There was one, starting and stopping the clock as the pane appeared. It
+    // crashed the application on exit, every time: tearing the frame down hides
+    // its children, which sends wxEVT_SHOW to a window whose C++ object is
+    // already going away, and the handler then read through it. An access
+    // violation inside a window procedure surfaces as
+    // STATUS_FATAL_USER_CALLBACK_EXCEPTION -- a bare exit code with no message
+    // attached, which is why it took a vectored exception handler and a symbol
+    // lookup to find rather than a guess.
+    //
+    // The handler was redundant anyway. Every path that shows or hides this pane
+    // -- the View command, the pane's own close button, a change of playback
+    // state -- already calls setActive(), because each of them knows something
+    // wxEVT_SHOW does not: whether anything is playing.
 }
+
+SpectrumPanel::~SpectrumPanel() { timer_.Stop(); }
 
 void SpectrumPanel::setSampleRate(double rate) { analyzer_.prepare(rate); }
 
@@ -109,15 +127,6 @@ void SpectrumPanel::setActive(bool active) {
     if (active && IsShownOnScreen()) {
         timer_.Start(kFrameIntervalMs);
     } else {
-        timer_.Stop();
-    }
-}
-
-void SpectrumPanel::onShow(wxShowEvent& event) {
-    event.Skip();
-    if (event.IsShown() && playing_) {
-        timer_.Start(kFrameIntervalMs);
-    } else if (!event.IsShown()) {
         timer_.Stop();
     }
 }

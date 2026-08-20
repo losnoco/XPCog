@@ -56,21 +56,18 @@ Sc55Panel::Sc55Panel(wxWindow* parent, std::function<double()> position)
     SetSize(FromDIP(wxSize(lcd_background_width / 2, lcd_background_height / 2)));
 
     Bind(wxEVT_PAINT, &Sc55Panel::onPaint, this);
-    Bind(wxEVT_SHOW, &Sc55Panel::onShow, this);
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) { tick(); });
 }
 
-void Sc55Panel::onShow(wxShowEvent& event) {
-    event.Skip();
-    if (event.IsShown()) {
-        // Nothing is switched on here. States are recorded from the start of the
-        // track regardless, which is what lets this show the right one immediately
-        // rather than the first one that happens to arrive next.
+Sc55Panel::~Sc55Panel() { timer_.Stop(); }
+
+void Sc55Panel::setActive(bool active) {
+    if (active) {
         timer_.Start(kRefreshMs);
-    } else {
-        timer_.Stop();
-        haveFrame_ = false;
+        return;
     }
+    timer_.Stop();
+    haveFrame_ = false;
 }
 
 void Sc55Panel::tick() {
