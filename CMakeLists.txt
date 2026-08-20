@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
     VERSION 0.1.0
-    DESCRIPTION "Cross-platform Qt port of the Cog audio player"
+    DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
     LANGUAGES C CXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -23,6 +23,14 @@ endif()
 include(XPCogOptions)
 include(XPCogWarnings)
 include(XPCogCodec)
+include(XPCogResources)
+# The UI toolkit. Unlike the Qt below it, this is an ordinary vcpkg dependency
+# and needs no environment variable and no deploy step.
+include(XPCogWx)
+# Still here while the wxWidgets port is in progress: the Qt application and
+# the Qt half of platform/ build alongside the new one until the last window is
+# ported, and this include goes with them. See docs/WXPORT.md.
+#
 # Before any add_subdirectory that calls find_package(Qt6): it contributes to
 # CMAKE_PREFIX_PATH, which has to be set by then.
 include(XPCogQt)
@@ -54,7 +62,8 @@ endif()
 message(STATUS "")
 message(STATUS "XPCog ${PROJECT_VERSION}")
 message(STATUS "  build type ......... ${CMAKE_BUILD_TYPE}")
-message(STATUS "  app (Qt) ........... ${XPCOG_BUILD_APP}")
+message(STATUS "  app ................ ${XPCOG_BUILD_APP}")
+message(STATUS "  toolkit ............ wxWidgets (${XPCOG_WX_DISCOVERY})")
 message(STATUS "  cli ................ ${XPCOG_BUILD_CLI}")
 message(STATUS "  tests .............. ${XPCOG_BUILD_TESTS}")
 get_property(_codecs GLOBAL PROPERTY XPCOG_CODEC_TARGETS)

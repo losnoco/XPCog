@@ -1,0 +1,220 @@
+# Moving the interface from Qt to wxWidgets
+
+`docs/PORTING.md` is the record of getting Cog off macOS and into Qt. This is the
+record of getting XPCog off Qt, which is a much smaller job than that one and for
+entirely different reasons.
+
+## Why
+
+Not because Qt was a mistake. It was the right choice for M0–M5 and it is why
+there is an application at all. Three things made it worth replacing once the
+application existed:
+
+**Qt is the only dependency that does not come from vcpkg.** Everything else in
+this project — sqlite3, soxr, taglib, ffmpeg, libopenmpt, all forty-odd codec
+libraries — is a line in `vcpkg.json` and arrives with the toolchain file. Qt is a
+separate installer, a separate version matrix, an `XPCOG_QT_ROOT` environment
+variable, a documented trap about `msvc2022_64` versus `mingw_64`, and a
+`jurplel/install-qt-action` step in CI. That is a lot of surface for one
+dependency, and all of it exists because Qt is not a vcpkg port.
+
+**Qt has to be deployed.** Windows has no rpath, so a freshly built `XPCog.exe`
+cannot start from Explorer until `windeployqt` has copied the runtime and its
+plugins beside it. That is a build step nobody remembers until the binary fails to
+launch, and it is the single largest thing in the payload.
+
+**Qt paints its own controls.** wxWidgets wraps the platform's. For a player
+that is meant to feel like a native application on three operating systems rather
+than like one application on three operating systems, that is the right trade.
+
+What is explicitly *not* a reason: licensing. XPCog is GPL-2.0-or-later and Qt's
+LGPLv3 was compatible with that. wx's LGPL-with-exception is simpler, but nothing
+was blocked.
+
+## What the move is not
+
+It is not a rewrite of the player. `xpcog-core` and `xpcog-codecs` — 57,000 lines,
+the engine, the registry, the library, the playlist, every decoder — contain no Qt
+and are not touched. That was the point of the Qt-free rule, and this is the
+first time it has had to pay for itself. It did: the entire Qt surface is 43 files
+in `app/` and 10 in `platform/`.
+
+Nor is it a redesign. The window keeps its layout, its menus, its docks and its
+behaviour. Two contracts are carried across deliberately unchanged, because they
+are already toolkit-neutral and re-deriving them would only introduce differences
+nobody asked for:
+
+- `ActionRegistry`'s `ActionId` enum — 37 values, and effectively the whole
+  command surface of the application.
+- `PlaybackController`'s nine commands and six notifications.
+
+## Structural decisions
+
+### The Qt-free rule becomes a Qt-free repository
+
+`cmake/CheckNoQt.cmake` has been failing the build on any `#include <Q…>` under
+`core/` since M0. At the end of this port it stops being scoped to core and starts
+scanning everything but `vendor/`. That makes the completion criterion mechanical
+rather than a matter of opinion: the port is done when that target passes over the
+whole tree.
+
+### `xpcog::Signal` replaces Qt's signals, and the thread hops become visible
+
+Core already carries a small RAII signal mechanism in
+`core/include/xpcog/core/Signal.hpp`, written so core could notify without
+depending on Qt. It is now the application's notification substrate too.
+
+The consequence is worth stating plainly, because it is the one place where the
+new arrangement is *less* forgiving than the old one. Qt's queued connections were
+doing invisible thread marshalling: `AudioEngine::Delegate` fires on the feeder
+thread, SMTC callbacks arrive on a WinRT thread, MPRIS on the D-Bus thread, and
+`connect()` quietly made all three safe. `xpcog::Signal::publish()` is synchronous
+and does nothing of the kind. Every one of those hops is now an explicit
+`CallAfter`, at the point where it happens. That is more code and it is better
+code: the places where a thread boundary is crossed are the places where the
+crossing is written down.
+
+### `platform/` links wxBase, and never wxCore
+
+`platform/` was allowed to use Qt — that was its whole reason to exist, so core
+would not have to. It ends this port linking `wx::base` and nothing else.
+
+That distinction is the whole rule, and it is checkable. `wxBase` is wx's
+portable runtime — files, paths, `wxConfig`, string conversion — with no window
+system in it at all; `wxCore` is the widget library. Today this layer needs
+QtCore *and* QtGui *and* QtDBus. Afterwards it needs one library that cannot
+open a window.
+
+Reaching for wxBase rather than for nothing is a deliberate trade, and the
+earlier draft of this document got it wrong by promising no toolkit at all. The
+alternative is re-implementing an INI parser, a registry wrapper and three
+platform path conventions — more code, in the layer where bugs are hardest to
+test, to avoid a dependency the application already links anyway.
+
+Four public headers leaked `QString`, `QStringList`, `QUrl`, `QImage` and
+`QObject`. They become `std::string`, `std::vector<std::string>`, `xpcog::Url`,
+`std::vector<std::byte>` and `xpcog::Signal`. Where the OS callbacks need to reach
+the GUI thread, `MediaIntegration::create()` takes an injected dispatcher rather
+than reaching for a toolkit's event loop itself.
+
+The artwork change is a straight simplification. `NowPlayingInfo::artwork` was a
+decoded `QImage`, and all three backends re-encoded it: Windows went
+`QImage → QBuffer → PNG → IStream`, macOS went `QImage → QBuffer → NSData`, MPRIS
+wrote a temporary file. `Library::artwork()` returns the original encoded blob and
+always did. Handing each backend those bytes deletes a decode-and-re-encode round
+trip from all three.
+
+### Settings and the library must land on the bytes that are already there
+
+Two paths are not free to change, because a working installation already has files
+at them. Measured rather than assumed, on a machine with a real library:
+
+| | Qt today | must stay |
+|---|---|---|
+| Settings | `QSettings` with org `LoSnoCo`, app `XPCog` | `HKCU\Software\LoSnoCo\XPCog` |
+| Library | `QStandardPaths::AppDataLocation` | `%APPDATA%\LoSnoCo\XPCog\library.db` |
+
+`wxRegConfig` reaches the first exactly, given `SetVendorName`/`SetAppName`. The
+second it does *not*: `wxStandardPaths::GetUserDataDir()` omits the vendor segment
+by default, so it would answer `%APPDATA%\XPCog` and silently start an empty
+library beside the real one. `platform/` links no toolkit anyway, so
+`libraryDatabasePath()` is hand-rolled per OS — `SHGetKnownFolderPath` on Windows,
+`$XDG_DATA_HOME` on Linux, `~/Library/Application Support` on macOS — with the
+vendor segment written in.
+
+Worth noting that the comment in `QSettingsStore.cpp` claimed `%APPDATA%/XPCog`
+and was wrong about that segment. Reading the disk is what caught it.
+
+### Resources are compiled in, by a generator rather than by the toolkit
+
+`qt_add_resources()` has no wx equivalent — wx has XRC, which is a UI layout
+format, not a blob store. `cmake/XPCogResources.cmake` and its script-mode
+generator `cmake/EmbedResources.cmake` produce one `const unsigned char[]` per
+file plus a lookup keyed on the path relative to the embedding directory, so call
+sites keep asking for `lucide/play.svg` exactly as they asked for
+`:/icons/lucide/play.svg`.
+
+Compiled in rather than read from disk for the same reason Qt's resources were:
+these files are part of the program, not configuration. An icon that can go
+missing is an icon that degrades silently — which is precisely the failure
+`AppIcon`'s test exists to catch.
+
+## What has to be written by hand
+
+wxWidgets is a smaller library than Qt and five things have no equivalent in it.
+None is large; one is risky.
+
+| | Replacing | Size |
+|---|---|---|
+| Undo stack | `QUndoStack` / `QUndoCommand` | ~120 lines |
+| Playlist view model | `QAbstractTableModel` + `QSortFilterProxyModel` | folds two classes into one |
+| Resource embedding | `qt_add_resources()` | done — see above |
+| **MPRIS on raw libdbus-1** | `QDBusAbstractAdaptor` | ~700–900 lines |
+| Taskbar overlay badge | `QImage` + `QPainter` → `HICON` | ~80 lines |
+
+The MPRIS rewrite is the one to be careful with. `QDBusAbstractAdaptor` turns a
+`Q_OBJECT` into a D-Bus interface by introspecting its metaobject; without it,
+the introspection XML, the `org.freedesktop.DBus.Properties` dispatch, the
+`PropertiesChanged` emission and the `MediaPlayer2` / `MediaPlayer2.Player` method
+tables are all hand-written. The failure mode is a desktop panel that shows
+nothing and reports nothing, so it wants testing against a real session bus rather
+than trusting that it compiles. libdbus-1 comes from the system via `pkg-config`
+rather than from vcpkg: every Linux desktop already has it, and there is no
+`sdbus-c++` in this project's vcpkg baseline.
+
+## Deliberate regressions
+
+Stated here rather than discovered later.
+
+- **Run-time style switching goes away.** `Appearance.cpp` offered `windows11`,
+  `windowsvista` and `Fusion` because Qt draws its own controls and can therefore
+  draw them several ways. wx uses the platform's, which is the point, and has no
+  `QStyleFactory`. The `WidgetStyle` setting becomes dead rather than silently
+  broken. Dark mode comes from `wxSystemAppearance` and `MSWEnableDarkMode()`
+  instead.
+- **The file tree stops watching the filesystem.** `QFileSystemModel` watched;
+  `wxGenericDirCtrl` does not. Live refresh needs `wxFileSystemWatcher` wired up
+  explicitly, or the tree is stale until re-expanded.
+- **The SC-55 panel gains a per-frame copy.** The emulator's `lcd_buffer_t` was
+  wrapped zero-copy as a `QImage::Format_RGBX8888`. wx wants separate RGB and
+  alpha planes, so the panel repacks RGBX to RGB24 each redraw.
+- **`wxDataViewCtrl` is not `QTableView`.** Expect drift in header sorting,
+  in-place editing and selection rendering.
+
+## Staging
+
+Each step ends with a building tree and a green `ctest`, except where noted.
+
+| | Step | State |
+|---|---|---|
+| ✅ | **1** — Branch, `vcpkg.json` `gui` feature, `XPCogWx.cmake`, resource embedding | done |
+| | **2** — De-Qt `platform/`: four headers, four backends, the settings store, the dispatcher | |
+| | **3** — Leaf pieces: undo stack, `LucideIcon`, `AppIcon`, `PlaybackController`, `ScanTask`, `SingleInstance`, and their tests | |
+| | **4** — The playlist view model and its test | |
+| | **5** — The main window. The Qt application is deleted here | |
+| | **6** — Preferences, info, about, open-URL, equaliser, mini player | |
+| | **7** — The painted widgets: spectrum, SC-55 panel | |
+| | **8** — Finish the purge: delete `XPCogQt.cmake`, widen `CheckNoQt`, update CI, presets and README | |
+
+### Step 1 — scaffolding (done)
+
+`wxwidgets` joins `vcpkg.json` under a new `gui` feature rather than as a plain
+dependency, so `macos-headless` — which builds no application — does not drag the
+toolkit, and on Linux GTK, into a configuration that links neither. A vcpkg
+feature cannot be subtracted by an inheriting preset, so `macos-headless` restates
+the feature list without it.
+
+`cmake/XPCogWx.cmake` tries CONFIG mode first, which is what vcpkg's own `usage`
+file recommends and what its port installs, then falls back to CMake's bundled
+`FindwxWidgets` for a wx that came from the system package manager. A Linux
+developer with `libwxgtk3.2-dev` already installed should not have to build GTK
+through vcpkg to compile this. Either path produces one target, `XPCog::wx`.
+
+`adv` is deliberately absent from the component list: wxWidgets 3.3 merged wxadv
+into core, and asking for it by name fails on exactly the version this targets.
+
+The resource generator wraps hex into lines *before* expanding it into `0x..,`
+literals, so the line-breaking pass runs over the hex rather than over the
+five-times-larger text it becomes. For the SC-55 background — 776 KiB, the one
+genuinely large resource here — that is the difference between a slow configure
+step and a 1.6-second one.
