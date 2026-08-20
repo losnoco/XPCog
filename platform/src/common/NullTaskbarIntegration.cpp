@@ -13,9 +13,9 @@
 
 namespace xpcog::platform {
 
-TaskbarIntegration* TaskbarIntegration::create(WId window, QObject* parent) {
-    (void)window;
-    return new TaskbarIntegration(parent);
+std::unique_ptr<TaskbarIntegration> TaskbarIntegration::create(void* nativeWindow) {
+    (void)nativeWindow;
+    return std::make_unique<TaskbarIntegration>();
 }
 
 }  // namespace xpcog::platform

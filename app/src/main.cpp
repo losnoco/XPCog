@@ -14,13 +14,17 @@
 
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/platform/FileAssociations.hpp"
-#include "xpcog/platform/QSettingsStore.hpp"
+#include "xpcog/platform/SettingsStore.hpp"
 
 #include <QApplication>
 #include <QMessageBox>
 #include <QList>
 #include <QStringList>
 #include <QUrl>
+
+#include <memory>
+#include <span>
+#include <string>
 
 namespace {
 
@@ -66,10 +70,11 @@ void performRegistration(const QStringList&           arguments,
         return;
     }
 
-    QString error;
+    std::string error;
     if (wantsUnregister) {
         if (!xpcog::platform::unregisterFileAssociations(&error)) {
-            complain(QObject::tr("Could not remove the file associations: %1").arg(error));
+            complain(QObject::tr("Could not remove the file associations: %1")
+                         .arg(QString::fromStdString(error)));
             return;
         }
         QMessageBox::information(nullptr, QStringLiteral("XPCog"),
@@ -77,12 +82,13 @@ void performRegistration(const QStringList&           arguments,
         return;
     }
 
-    QStringList extensions;
-    for (const std::string& extension : registry.allExtensions()) {
-        extensions.append(QString::fromStdString(extension));
-    }
+    // Handed straight through: allExtensions() already answers with the span
+    // registerFileAssociations() takes, so the copy into a toolkit string list
+    // that used to sit here was pure translation and has gone with it.
+    const std::span<const std::string> extensions = registry.allExtensions();
     if (!xpcog::platform::registerFileAssociations(extensions, &error)) {
-        complain(QObject::tr("Could not register the file associations: %1").arg(error));
+        complain(QObject::tr("Could not register the file associations: %1")
+                     .arg(QString::fromStdString(error)));
         return;
     }
 
@@ -158,8 +164,9 @@ int main(int argc, char** argv) {
     }
 #endif
 
-    xpcog::platform::QSettingsStore store;
-    xpcog::Settings                 settings{store};
+    const std::unique_ptr<xpcog::ISettingsStore> store =
+        xpcog::platform::makeNativeSettingsStore();
+    xpcog::Settings settings{*store};
     settings.applyMigrations();
 
     // Settings before codecs are built from it: a decoder is handed these on

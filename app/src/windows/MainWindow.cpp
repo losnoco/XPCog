@@ -24,7 +24,7 @@
 #include "xpcog/core/Version.hpp"
 #include "xpcog/core/library/PlaylistFile.hpp"
 #include "xpcog/core/library/Scanner.hpp"
-#include "xpcog/platform/QSettingsStore.hpp"
+#include "xpcog/platform/SettingsStore.hpp"
 #include "xpcog/platform/TaskbarIntegration.hpp"
 
 #include <QAction>
@@ -92,21 +92,39 @@ MainWindow::MainWindow(const PluginRegistry& registry, Settings& settings, QWidg
 
     playback_ = std::make_unique<PlaybackController>(registry_, playlist_, settings_, this);
     undo_     = new QUndoStack(this);
-    media_    = platform::MediaIntegration::create(this);
 
     buildUi();
     buildMenus();
+
+    // Both of these want the native window handle, and neither can be built
+    // before there is one. winId() realises it.
+    //
+    // The media integration used to be constructed above, before buildUi(), and
+    // to go looking for a window itself -- which on Windows meant finding none,
+    // and carrying a deferred-acquisition retry for the rest of its life. SMTC
+    // binds to an HWND and there is no way around that, so building it here and
+    // handing the handle over deleted the whole retry path.
+    //
+    // Calls made before the window is shown are harmless -- the taskbar has no
+    // button to decorate yet -- and everything that drives either of these
+    // happens on a playback or scan change, which is necessarily later.
+    void* const handle = reinterpret_cast<void*>(winId());
+    media_             = platform::MediaIntegration::create(
+        [this](std::function<void()> action) {
+            // The hop Qt's queued connections used to make invisibly: SMTC calls
+            // back on a thread pool thread and MediaPlayer.framework on a
+            // dispatch queue, while xpcog::Signal publishes synchronously on
+            // whichever thread reached it.
+            QMetaObject::invokeMethod(this, std::move(action), Qt::QueuedConnection);
+        },
+        handle);
+    taskbar_ = platform::TaskbarIntegration::create(handle);
+
     wireUp();
 
     // After buildMenus(), because it hands out the same QActions the menu bar
     // uses and they have to exist first.
     presence_ = new StatusPresence(*actions_, this, this);
-
-    // winId() realises the native window, which is what an overlay icon needs a
-    // handle to. Calls made before the window is shown are harmless -- the taskbar
-    // has no button to decorate yet -- and everything that drives this happens on a
-    // playback or scan change, which is necessarily later.
-    taskbar_ = platform::TaskbarIntegration::create(winId(), this);
 
     if (library_ && library_->loadPlaylist(playlist_)) {
         statusBar()->showMessage(statusSummary());
@@ -574,42 +592,43 @@ void MainWindow::wireUp() {
 
     // The media keys and the Now Playing widget drive the same commands the
     // buttons do, rather than reaching into the engine separately.
-    connect(media_, &platform::MediaIntegration::playPauseRequested, this,
-            [this] { playback_->playPause(); });
-    connect(media_, &platform::MediaIntegration::playRequested, this, [this] {
+    //
+    // These are xpcog::Signal rather than Qt signals now, because the platform
+    // layer has no QObject left in it. The token a connection returns is what
+    // keeps it alive, so every one of them is kept; see subscriptions_.
+    const auto observe = [this](auto& signal, auto handler) {
+        subscriptions_.push_back(signal.connect(std::move(handler)));
+    };
+
+    observe(media_->playPauseRequested, [this] { playback_->playPause(); });
+    observe(media_->playRequested, [this] {
         if (!playback_->playing() || playback_->paused()) {
             playback_->playPause();
         }
     });
-    connect(media_, &platform::MediaIntegration::pauseRequested, this, [this] {
+    observe(media_->pauseRequested, [this] {
         if (playback_->playing() && !playback_->paused()) {
             playback_->playPause();
         }
     });
-    connect(media_, &platform::MediaIntegration::stopRequested, this,
-            [this] { playback_->stop(); });
-    connect(media_, &platform::MediaIntegration::nextRequested, this,
-            [this] { playback_->next(); });
-    connect(media_, &platform::MediaIntegration::previousRequested, this,
-            [this] { playback_->previous(); });
-    connect(media_, &platform::MediaIntegration::seekRequested, this,
-            [this](double seconds) { playback_->seek(seconds); });
+    observe(media_->stopRequested, [this] { playback_->stop(); });
+    observe(media_->nextRequested, [this] { playback_->next(); });
+    observe(media_->previousRequested, [this] { playback_->previous(); });
+    observe(media_->seekRequested, [this](double seconds) { playback_->seek(seconds); });
 
-    // MPRIS only, on Linux. The other two platforms never emit these, so there
+    // MPRIS only, on Linux. The other two platforms never publish these, so there
     // is nothing to guard: a signal that is never sent costs a connection.
-    connect(media_, &platform::MediaIntegration::raiseRequested, this,
-            [this] { raiseWindow(this); });
-    connect(media_, &platform::MediaIntegration::quitRequested, this,
-            [] { QApplication::quit(); });
-    connect(media_, &platform::MediaIntegration::volumeRequested, this,
-            [this](float gain) {
-                // Through the slider rather than straight to the engine, so the
-                // panel and the window cannot end up showing different volumes.
-                // The slider's own signal is what then reaches playback_.
-                volume_->setValue(static_cast<int>(std::lround(gain * 100.0F)));
-            });
-    connect(media_, &platform::MediaIntegration::openUrlRequested, this,
-            [this](const QUrl& url) { openUrls({url}); });
+    observe(media_->raiseRequested, [this] { raiseWindow(this); });
+    observe(media_->quitRequested, [] { QApplication::quit(); });
+    observe(media_->volumeRequested, [this](float gain) {
+        // Through the slider rather than straight to the engine, so the panel and
+        // the window cannot end up showing different volumes. The slider's own
+        // signal is what then reaches playback_.
+        volume_->setValue(static_cast<int>(std::lround(gain * 100.0F)));
+    });
+    observe(media_->openUrlRequested, [this](const Url& url) {
+        openUrls({QUrl(QString::fromStdString(url.toString()))});
+    });
 
     connect(scanCancel_, &QToolButton::clicked, this, [this] {
         // Everything not yet started goes too: cancelling one folder of a
@@ -941,23 +960,21 @@ void MainWindow::publishNowPlaying(TrackId id) {
     }
 
     platform::NowPlayingInfo info;
-    info.title    = QString::fromStdString(entry->title());
-    info.artist   = QString::fromStdString(entry->artist);
-    info.album    = QString::fromStdString(entry->album);
+    info.title    = entry->title();
+    info.artist   = entry->artist;
+    info.album    = entry->album;
     info.duration = entry->duration();
     info.position = playback_->position();
 
     // Artwork is content-addressed in the library rather than carried on the
     // entry, so this is the one place that can resolve it.
+    //
+    // Handed over as the encoded bytes the file carried rather than as a decoded
+    // image. Every backend wants bytes in the end -- Windows wraps them in an
+    // IStream, macOS in an NSData, MPRIS writes them to a file it can name in a
+    // URL -- so decoding here only bought each of them a re-encode.
     if (library_ && !entry->artHash.empty()) {
-        // Not `data`: QWidget has a member of that name, so this shadowed it --
-        // MSVC's C4458 and GCC's -Wshadow both said so.
-        const std::vector<std::byte> artBytes = library_->artwork(entry->artHash);
-        if (!artBytes.empty()) {
-            info.artwork.loadFromData(
-                QByteArray(reinterpret_cast<const char*>(artBytes.data()),
-                           static_cast<qsizetype>(artBytes.size())));
-        }
+        info.artwork = library_->artwork(entry->artHash);
     }
 
     media_->setNowPlaying(info);

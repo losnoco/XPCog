@@ -13,66 +13,74 @@
 #import <Foundation/Foundation.h>
 #import <MediaPlayer/MediaPlayer.h>
 
-#include <QBuffer>
-#include <QByteArray>
+#include <utility>
 
 namespace xpcog::platform {
 namespace {
 
-[[nodiscard]] NSString* toNS(const QString& text) {
-    return text.toNSString();
+[[nodiscard]] NSString* toNS(const std::string& text) {
+    // initWithBytes rather than stringWithUTF8String: the latter takes a C string
+    // and would stop at an embedded NUL. Strings crossing this boundary are UTF-8
+    // by contract; nil back means they were not, and an empty string is a better
+    // answer than a nil in a dictionary literal.
+    NSString* value = [[NSString alloc] initWithBytes:text.data()
+                                               length:static_cast<NSUInteger>(text.size())
+                                             encoding:NSUTF8StringEncoding];
+    return value != nil ? value : @"";
 }
 
-/// A QImage as an NSImage, via PNG. Going through a byte buffer rather than
-/// poking at QImage's bits avoids having to match Qt's format to a
-/// CGBitmapInfo, which is a per-format table nobody wants to maintain for a
-/// picture that gets scaled to 64 points anyway.
-[[nodiscard]] NSImage* toNSImage(const QImage& image) {
-    if (image.isNull()) {
+/// The artwork as an NSImage.
+///
+/// These are the image's own encoded bytes, straight out of the file the music
+/// came in, so NSImage decodes them itself. This used to take a decoded image and
+/// re-encode it as PNG purely to get back to bytes, which is a round trip that
+/// existed only because the type crossing the boundary was the wrong one.
+[[nodiscard]] NSImage* toNSImage(const std::vector<std::byte>& artwork) {
+    if (artwork.empty()) {
         return nil;
     }
-    QByteArray encoded;
-    QBuffer    buffer(&encoded);
-    buffer.open(QIODevice::WriteOnly);
-    if (!image.save(&buffer, "PNG")) {
-        return nil;
-    }
-    NSData* data = [NSData dataWithBytes:encoded.constData()
-                                  length:static_cast<NSUInteger>(encoded.size())];
+    NSData* data = [NSData dataWithBytes:artwork.data()
+                                  length:static_cast<NSUInteger>(artwork.size())];
     return [[NSImage alloc] initWithData:data];
 }
 
 class MacMediaIntegration final : public MediaIntegration {
 public:
-    explicit MacMediaIntegration(QObject* parent) : MediaIntegration(parent) {
+    explicit MacMediaIntegration(Dispatcher dispatch)
+        : MediaIntegration(std::move(dispatch)) {
         MPRemoteCommandCenter* centre = [MPRemoteCommandCenter sharedCommandCenter];
 
-        // Blocks run on the main thread, which is where this object lives, so
-        // emitting straight from them is safe. `this` outlives them because the
-        // destructor removes every target.
+        // The blocks run on the main thread, so this is already the user
+        // interface's and the hop publishOnUiThread() makes is a deferral to the
+        // next turn of the loop rather than a thread change. Going through it
+        // anyway keeps one rule for all three platforms -- an implementation
+        // never publishes directly -- and means nothing here has to be revisited
+        // if that guarantee ever softens.
+        //
+        // `this` outlives the blocks because the destructor removes every target.
         [centre.playCommand addTargetWithHandler:^(MPRemoteCommandEvent*) {
-            emit playRequested();
+            publishOnUiThread(playRequested);
             return MPRemoteCommandHandlerStatusSuccess;
         }];
         [centre.pauseCommand addTargetWithHandler:^(MPRemoteCommandEvent*) {
-            emit pauseRequested();
+            publishOnUiThread(pauseRequested);
             return MPRemoteCommandHandlerStatusSuccess;
         }];
         // The physical play/pause key sends this one, not play or pause.
         [centre.togglePlayPauseCommand addTargetWithHandler:^(MPRemoteCommandEvent*) {
-            emit playPauseRequested();
+            publishOnUiThread(playPauseRequested);
             return MPRemoteCommandHandlerStatusSuccess;
         }];
         [centre.stopCommand addTargetWithHandler:^(MPRemoteCommandEvent*) {
-            emit stopRequested();
+            publishOnUiThread(stopRequested);
             return MPRemoteCommandHandlerStatusSuccess;
         }];
         [centre.nextTrackCommand addTargetWithHandler:^(MPRemoteCommandEvent*) {
-            emit nextRequested();
+            publishOnUiThread(nextRequested);
             return MPRemoteCommandHandlerStatusSuccess;
         }];
         [centre.previousTrackCommand addTargetWithHandler:^(MPRemoteCommandEvent*) {
-            emit previousRequested();
+            publishOnUiThread(previousRequested);
             return MPRemoteCommandHandlerStatusSuccess;
         }];
 
@@ -82,7 +90,8 @@ public:
             addTargetWithHandler:^(MPRemoteCommandEvent* event) {
                 auto* positionEvent =
                     static_cast<MPChangePlaybackPositionCommandEvent*>(event);
-                emit seekRequested(positionEvent.positionTime);
+                publishOnUiThread(seekRequested,
+                                  static_cast<double>(positionEvent.positionTime));
                 return MPRemoteCommandHandlerStatusSuccess;
             }];
 
@@ -169,8 +178,13 @@ private:
 
 }  // namespace
 
-MediaIntegration* MediaIntegration::create(QObject* parent) {
-    return new MacMediaIntegration(parent);
+std::unique_ptr<MediaIntegration> MediaIntegration::create(Dispatcher dispatch,
+                                                           void* nativeWindow) {
+    // Unused here: MPRemoteCommandCenter is per-process and binds to no window,
+    // unlike SMTC. The parameter is in the signature because Windows cannot do
+    // without it.
+    (void)nativeWindow;
+    return std::make_unique<MacMediaIntegration>(std::move(dispatch));
 }
 
 }  // namespace xpcog::platform

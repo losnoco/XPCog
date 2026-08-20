@@ -3,8 +3,9 @@
 // Windows does not let a process raise its own window whenever it likes. Only a
 // process that already owns the foreground -- or one just launched by the process
 // that does -- may call SetForegroundWindow and be obeyed; for anyone else the
-// call is silently refused and the taskbar button flashes orange instead. Qt's
-// QWidget::activateWindow() is SetForegroundWindow, so it inherits the rule.
+// call is silently refused and the taskbar button flashes orange instead. Every
+// toolkit's "raise this window" is SetForegroundWindow underneath, so all of
+// them inherit the rule.
 //
 // That is exactly the situation the single-instance handover is in, and it is
 // backwards from what it looks like. The process that *wants* the foreground is

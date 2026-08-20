@@ -12,23 +12,26 @@
 // -- that needs a CoreWindow, which only UWP has. The supported route is the
 // ISystemMediaTransportControlsInterop COM interface off the class's activation
 // factory, whose GetForWindow() binds the controls to a top-level HWND of this
-// process. XPCog therefore cannot create its controls in the constructor: this
-// object is built while MainWindow is still being constructed, so no native
-// window exists yet. Acquisition is deferred to the first call that has
-// something to say, and retried until a window exists.
+// process. That HWND is now handed in on construction. It used to be hunted for:
+// this object was built while the main window still was, so no native window
+// existed yet, and the file carried a deferred-acquisition-and-retry path for the
+// rest of its life. Creating it after the window instead deleted about fifty
+// lines and a failure mode.
 //
 // SMTC has no toggle button. The keyboard's play/pause key arrives as *either*
 // Play or Pause, chosen by the PlaybackStatus we last reported -- so unlike
 // MPRemoteCommandCenter's togglePlayPauseCommand, keeping the status accurate is
-// not cosmetic, it is what makes the key do the right thing. MainWindow already
+// not cosmetic, it is what makes the key do the right thing. The window already
 // treats playRequested and pauseRequested idempotently, so they map directly.
 //
-// Events arrive on a Windows thread pool thread, not this object's. Every
-// handler therefore hops to the object's thread before touching Qt.
+// Events arrive on a Windows thread pool thread, not the user interface's. Every
+// handler therefore goes through publishOnUiThread(), which is what the injected
+// dispatcher exists for; Qt's queued connections used to do this invisibly.
 
-// Ahead of the Qt headers deliberately: these bring in <windows.h>, and Qt's
-// `signals`/`slots`/`emit` macros must not be in scope when the SDK is parsed.
-// NOMINMAX and WIN32_LEAN_AND_MEAN come from XPCog::warnings.
+// Ahead of everything else deliberately: these bring in <windows.h>, and the
+// order used to matter because Qt's macros must not be in scope when the SDK is
+// parsed. It no longer does, and the ordering is kept because C++/WinRT is still
+// happier seeing the SDK first.
 #include <windows.h>
 
 #include <shcore.h>
@@ -41,15 +44,11 @@
 
 #include "xpcog/platform/MediaIntegration.hpp"
 
-#include <QBuffer>
-#include <QByteArray>
-#include <QGuiApplication>
-#include <QMetaObject>
-#include <QString>
-#include <QWindow>
-#include <QtGlobal>
+#include "WinString.hpp"
 
 #include <chrono>
+#include <cstdio>
+#include <utility>
 
 namespace xpcog::platform {
 namespace {
@@ -65,10 +64,9 @@ using winrt::Windows::Media::SystemMediaTransportControlsTimelineProperties;
 using winrt::Windows::Storage::Streams::IRandomAccessStream;
 using winrt::Windows::Storage::Streams::RandomAccessStreamReference;
 
-/// QString is already UTF-16, so this is a copy rather than a conversion.
-[[nodiscard]] winrt::hstring toHString(const QString& text) {
-    return winrt::hstring{reinterpret_cast<const wchar_t*>(text.utf16()),
-                          static_cast<std::uint32_t>(text.size())};
+[[nodiscard]] winrt::hstring toHString(const std::string& utf8) {
+    const std::wstring wide = toWide(utf8);
+    return winrt::hstring{wide.c_str(), static_cast<std::uint32_t>(wide.size())};
 }
 
 /// Negatives and NaN both collapse to zero, which is how SMTC spells "unknown".
@@ -89,23 +87,20 @@ using winrt::Windows::Storage::Streams::RandomAccessStreamReference;
 /// async, and the only way to finish it here would be to block the UI thread on
 /// an STA, which C++/WinRT rightly objects to. Wrapping a plain COM memory
 /// stream sidesteps the async API altogether: SHCreateMemStream copies the
-/// bytes, so the QByteArray does not have to outlive this call, and no temporary
-/// file is involved.
-[[nodiscard]] IRandomAccessStream toStream(const QImage& image) {
-    if (image.isNull()) {
-        return nullptr;
-    }
-
-    QByteArray png;
-    QBuffer    buffer(&png);
-    buffer.open(QIODevice::WriteOnly);
-    if (!image.save(&buffer, "PNG")) {
+/// bytes, so the caller's vector does not have to outlive this call, and no
+/// temporary file is involved.
+///
+/// These are the image's own encoded bytes, straight out of the file the music
+/// came in. WIC decodes JPEG and PNG alike, so the decode-to-image-and-re-encode-
+/// as-PNG round trip this used to do bought nothing and has gone.
+[[nodiscard]] IRandomAccessStream toStream(const std::vector<std::byte>& artwork) {
+    if (artwork.empty()) {
         return nullptr;
     }
 
     winrt::com_ptr<IStream> memory;
-    memory.attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(png.constData()),
-                                    static_cast<UINT>(png.size())));
+    memory.attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(artwork.data()),
+                                    static_cast<UINT>(artwork.size())));
     if (!memory) {
         return nullptr;
     }
@@ -119,9 +114,70 @@ using winrt::Windows::Storage::Streams::RandomAccessStreamReference;
     return stream;
 }
 
+void report(const winrt::hresult_error& error) {
+    // Once. A failure here is never worth a warning per transport tick.
+    static bool reported = false;
+    if (reported) {
+        return;
+    }
+    reported = true;
+
+    const winrt::hstring message = error.message();
+    std::fprintf(stderr, "SMTC unavailable, continuing without it: %s (0x%08lX)\n",
+                 toUtf8(std::wstring_view{message.c_str(), message.size()}).c_str(),
+                 static_cast<unsigned long>(error.code()));
+}
+
 class WindowsMediaIntegration final : public MediaIntegration {
 public:
-    explicit WindowsMediaIntegration(QObject* parent) : MediaIntegration(parent) {}
+    WindowsMediaIntegration(Dispatcher dispatch, HWND window)
+        : MediaIntegration(std::move(dispatch)) {
+        try {
+            auto interop =
+                winrt::get_activation_factory<SystemMediaTransportControls,
+                                              ISystemMediaTransportControlsInterop>();
+            SystemMediaTransportControls controls{nullptr};
+            winrt::check_hresult(interop->GetForWindow(
+                window, winrt::guid_of<SystemMediaTransportControls>(),
+                winrt::put_abi(controls)));
+
+            controls.IsPlayEnabled(true);
+            controls.IsPauseEnabled(true);
+            controls.IsStopEnabled(true);
+            controls.IsNextEnabled(true);
+            controls.IsPreviousEnabled(true);
+
+            // Explicitly off, as on macOS: enabled, they show up as controls
+            // that do nothing.
+            controls.IsRewindEnabled(false);
+            controls.IsFastForwardEnabled(false);
+            controls.IsRecordEnabled(false);
+            controls.IsChannelUpEnabled(false);
+            controls.IsChannelDownEnabled(false);
+
+            buttonToken_ = controls.ButtonPressed(
+                [this](const SystemMediaTransportControls&,
+                       const SystemMediaTransportControlsButtonPressedEventArgs& args) {
+                    // Thread pool thread. Copy the button out and hand the rest
+                    // to the user interface's thread.
+                    deliverButton(args.Button());
+                });
+
+            positionToken_ = controls.PlaybackPositionChangeRequested(
+                [this](const SystemMediaTransportControls&,
+                       const PlaybackPositionChangeRequestedEventArgs& args) {
+                    publishOnUiThread(seekRequested,
+                                      toSeconds(args.RequestedPlaybackPosition()));
+                });
+
+            controls_ = controls;
+        } catch (const winrt::hresult_error& error) {
+            // Not fatal. Activation failing is a property of the process -- COM
+            // not initialised, or SMTC unavailable -- and a player that refused
+            // to start over a missing overlay would be a worse answer.
+            report(error);
+        }
+    }
 
     ~WindowsMediaIntegration() override {
         if (!controls_) {
@@ -140,11 +196,10 @@ public:
     }
 
     void setNowPlaying(const NowPlayingInfo& info) override {
-        // Kept whether or not the controls exist yet: it is both what a
-        // late-arriving window needs replayed, and where setPlaybackState()
+        // Kept whether or not the controls exist: it is where setPlaybackState()
         // reads the duration from.
         info_ = info;
-        if (!ensureControls()) {
+        if (!controls_) {
             return;
         }
         try {
@@ -155,7 +210,7 @@ public:
     }
 
     void setPlaybackState(bool playing, bool paused, double position) override {
-        if (!ensureControls()) {
+        if (!controls_) {
             return;
         }
         try {
@@ -181,95 +236,6 @@ public:
     }
 
 private:
-    /// A top-level native window of this process, or null if there is not one
-    /// yet. `handle()` rather than `winId()`: the latter would *create* the
-    /// native window as a side effect of asking about it.
-    [[nodiscard]] static HWND topLevelWindow() {
-        const QList<QWindow*> windows = QGuiApplication::topLevelWindows();
-        for (QWindow* window : windows) {
-            if (window != nullptr && window->handle() != nullptr) {
-                return reinterpret_cast<HWND>(window->winId());
-            }
-        }
-        return nullptr;
-    }
-
-    /// True when `controls_` is usable. Cheap on every call after the first.
-    bool ensureControls() {
-        if (controls_) {
-            return true;
-        }
-        if (unavailable_) {
-            return false;
-        }
-
-        // Not a failure: the window simply is not up yet. Deliberately does not
-        // latch, so the next call tries again.
-        HWND window = topLevelWindow();
-        if (window == nullptr) {
-            return false;
-        }
-
-        try {
-            auto interop = winrt::get_activation_factory<SystemMediaTransportControls,
-                                                         ISystemMediaTransportControlsInterop>();
-            SystemMediaTransportControls controls{nullptr};
-            winrt::check_hresult(
-                interop->GetForWindow(window, winrt::guid_of<SystemMediaTransportControls>(),
-                                      winrt::put_abi(controls)));
-
-            controls.IsPlayEnabled(true);
-            controls.IsPauseEnabled(true);
-            controls.IsStopEnabled(true);
-            controls.IsNextEnabled(true);
-            controls.IsPreviousEnabled(true);
-
-            // Explicitly off, as on macOS: enabled, they show up as controls
-            // that do nothing.
-            controls.IsRewindEnabled(false);
-            controls.IsFastForwardEnabled(false);
-            controls.IsRecordEnabled(false);
-            controls.IsChannelUpEnabled(false);
-            controls.IsChannelDownEnabled(false);
-
-            buttonToken_ = controls.ButtonPressed(
-                [this](const SystemMediaTransportControls&,
-                       const SystemMediaTransportControlsButtonPressedEventArgs& args) {
-                    // Thread pool thread. Copy the button out and hand the rest
-                    // to the object's own thread.
-                    const SystemMediaTransportControlsButton button = args.Button();
-                    QMetaObject::invokeMethod(
-                        this, [this, button] { dispatch(button); }, Qt::QueuedConnection);
-                });
-
-            positionToken_ = controls.PlaybackPositionChangeRequested(
-                [this](const SystemMediaTransportControls&,
-                       const PlaybackPositionChangeRequestedEventArgs& args) {
-                    const double seconds = toSeconds(args.RequestedPlaybackPosition());
-                    QMetaObject::invokeMethod(
-                        this, [this, seconds] { emit seekRequested(seconds); },
-                        Qt::QueuedConnection);
-                });
-
-            controls_ = controls;
-        } catch (const winrt::hresult_error& error) {
-            // Latched. Activation failing is a property of the process -- COM
-            // not initialised, or SMTC unavailable -- not of this moment, so
-            // retrying per tick would only repeat the warning forever.
-            unavailable_ = true;
-            report(error);
-            return false;
-        }
-
-        // Whatever was already playing when the window finally appeared.
-        try {
-            applyNowPlaying();
-        } catch (const winrt::hresult_error& error) {
-            report(error);
-        }
-        return true;
-    }
-
     void applyNowPlaying() {
         auto updater = controls_.DisplayUpdater();
         updater.Type(MediaPlaybackType::Music);
@@ -316,23 +282,26 @@ private:
         controls_.PlaybackStatus(MediaPlaybackStatus::Closed);
     }
 
-    /// Object's own thread.
-    void dispatch(SystemMediaTransportControlsButton button) {
+    /// Thread pool thread; every branch hands off to the interface's.
+    ///
+    /// Not called `dispatch`: the constructor takes a Dispatcher by that name,
+    /// and inside its lambdas the parameter wins the lookup.
+    void deliverButton(SystemMediaTransportControlsButton button) {
         switch (button) {
             case SystemMediaTransportControlsButton::Play:
-                emit playRequested();
+                publishOnUiThread(playRequested);
                 break;
             case SystemMediaTransportControlsButton::Pause:
-                emit pauseRequested();
+                publishOnUiThread(pauseRequested);
                 break;
             case SystemMediaTransportControlsButton::Stop:
-                emit stopRequested();
+                publishOnUiThread(stopRequested);
                 break;
             case SystemMediaTransportControlsButton::Next:
-                emit nextRequested();
+                publishOnUiThread(nextRequested);
                 break;
             case SystemMediaTransportControlsButton::Previous:
-                emit previousRequested();
+                publishOnUiThread(previousRequested);
                 break;
             default:
                 // Record, FastForward, Rewind, ChannelUp, ChannelDown -- all
@@ -342,29 +311,23 @@ private:
         }
     }
 
-    static void report(const winrt::hresult_error& error) {
-        // Once. A failure here is never worth a warning per transport tick.
-        static bool reported = false;
-        if (reported) {
-            return;
-        }
-        reported = true;
-        qWarning("SMTC unavailable, continuing without it: %s (0x%08lX)",
-                 qUtf8Printable(QString::fromWCharArray(error.message().c_str())),
-                 static_cast<unsigned long>(error.code()));
-    }
-
     SystemMediaTransportControls controls_{nullptr};
-    winrt::event_token          buttonToken_{};
-    winrt::event_token          positionToken_{};
-    NowPlayingInfo              info_{};
-    bool                        unavailable_ = false;
+    winrt::event_token           buttonToken_{};
+    winrt::event_token           positionToken_{};
+    NowPlayingInfo               info_{};
 };
 
 }  // namespace
 
-MediaIntegration* MediaIntegration::create(QObject* parent) {
-    return new WindowsMediaIntegration(parent);
+std::unique_ptr<MediaIntegration> MediaIntegration::create(Dispatcher dispatch,
+                                                           void* nativeWindow) {
+    if (nativeWindow == nullptr) {
+        // No window means no SMTC to bind to. The base class is the honest
+        // answer rather than an implementation that can never acquire anything.
+        return std::make_unique<MediaIntegration>(std::move(dispatch));
+    }
+    return std::make_unique<WindowsMediaIntegration>(std::move(dispatch),
+                                                     static_cast<HWND>(nativeWindow));
 }
 
 }  // namespace xpcog::platform

@@ -182,7 +182,10 @@ private:
 
     /// The OS's Now Playing entry and media keys. Never null -- platforms
     /// without an implementation get a base-class instance that does nothing.
-    platform::MediaIntegration* media_ = nullptr;
+    ///
+    /// Owned rather than parented: this layer has no QObject in it any more, so
+    /// there is no parent to delete it.
+    std::unique_ptr<platform::MediaIntegration> media_;
     /// The position last pushed to the OS. It extrapolates from the rate, so
     /// pushing every transport tick would be four rewrites a second for a
     /// display that is already counting correctly on its own.
@@ -194,7 +197,7 @@ private:
 
     /// The taskbar button's overlay badge and progress bar. Never null; the base
     /// class does nothing where the platform has no such surface.
-    platform::TaskbarIntegration* taskbar_ = nullptr;
+    std::unique_ptr<platform::TaskbarIntegration> taskbar_;
 
     /// Set while shutting down, so closeEvent() knows not to treat the close as
     /// something to intercept. Without it, "close to tray" would make Quit hide the
@@ -242,6 +245,18 @@ private:
     /// Which entry is audible, so a mid-stream tag change can tell whether it
     /// affects the now-playing display or only a row.
     TrackId currentTrack_ = kInvalidTrackId;
+
+    /// Every connection this window holds to a signal outside Qt.
+    ///
+    /// Qt disconnects automatically when either end is destroyed. xpcog::Signal
+    /// hands back an RAII token instead, and letting go of it is what
+    /// disconnects -- so the connection lives exactly as long as this vector.
+    ///
+    /// Declared last on purpose. Members are destroyed in reverse order, so this
+    /// goes first, before the objects whose signals it is holding: a handler
+    /// firing into a half-destroyed window is the failure this ordering exists
+    /// to make impossible.
+    std::vector<Subscription> subscriptions_;
 };
 
 }  // namespace xpcog::app

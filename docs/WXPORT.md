@@ -74,22 +74,26 @@ and does nothing of the kind. Every one of those hops is now an explicit
 code: the places where a thread boundary is crossed are the places where the
 crossing is written down.
 
-### `platform/` links wxBase, and never wxCore
+### `platform/` links no toolkit at all
 
 `platform/` was allowed to use Qt — that was its whole reason to exist, so core
-would not have to. It ends this port linking `wx::base` and nothing else.
+would not have to. It ends this port linking neither Qt nor wx: Win32, C++/WinRT,
+CoreFoundation, MediaPlayer.framework and GDBus, which is what the directory was
+always supposed to be.
 
-That distinction is the whole rule, and it is checkable. `wxBase` is wx's
-portable runtime — files, paths, `wxConfig`, string conversion — with no window
-system in it at all; `wxCore` is the widget library. Today this layer needs
-QtCore *and* QtGui *and* QtDBus. Afterwards it needs one library that cannot
-open a window.
+That was the point of the layer, and it took a toolkit swap to notice it was only
+half true. This directory existed so core would not carry Qt, and carried Qt
+itself — so "the interface is replaceable" was a claim nothing had tested.
 
-Reaching for wxBase rather than for nothing is a deliberate trade, and the
-earlier draft of this document got it wrong by promising no toolkit at all. The
-alternative is re-implementing an INI parser, a registry wrapper and three
-platform path conventions — more code, in the layer where bugs are hardest to
-test, to avoid a dependency the application already links anyway.
+This document said `wxBase` for a while, on the reasoning that re-implementing an
+INI parser, a registry wrapper and three path conventions was more code in the
+layer where bugs are hardest to test. What changed the answer was reading
+`settings.def`: **every key is a flat ASCII identifier with no separator in it**,
+so there are no groups to model and no escaping scheme to design. That turns
+`wxConfig`'s whole value proposition into about seventy lines per platform, and
+seventy lines beat a dependency in the one place that must stay substitutable.
+The promise is now written into `SettingsStore.hpp`, because it is the assumption
+holding the decision up.
 
 Four public headers leaked `QString`, `QStringList`, `QUrl`, `QImage` and
 `QObject`. They become `std::string`, `std::vector<std::string>`, `xpcog::Url`,
@@ -257,7 +261,7 @@ wx target never needs it.
 | | Step | State |
 |---|---|---|
 | ✅ | **1** — Branch, `vcpkg.json` `gui` feature, `XPCogWx.cmake`, resource embedding | done |
-| | **2** — De-Qt `platform/` entirely: four headers, four backends, the settings store, the dispatcher. The Qt app adapts in place and keeps running | |
+| ✅ | **2** — De-Qt `platform/` entirely: four headers, four backends, the settings store, the dispatcher. The Qt app adapts in place and keeps running | done |
 | | **3** — Core gains what the UI will need: undo stack, `SerialExecutor`, the playlist view model. `PlaylistCommands` and `ScanTask` move down with them, and four test files move into the headless suite | |
 | | **4** — `xpcog-app-wx` exists: `wxApp`, an empty frame, embedded resources, `LucideIcon`, `AppIcon`, the UTF-8 helpers | |
 | | **5** — The main window: menus on command IDs, `wxDataViewCtrl`, transport, `SeekBar`, `FileTree`, drag and drop, `wxAuiManager` docks. **The wx build plays audio here** | |
@@ -292,3 +296,62 @@ literals, so the line-breaking pass runs over the hex rather than over the
 five-times-larger text it becomes. For the SC-55 background — 776 KiB, the one
 genuinely large resource here — that is the difference between a slow configure
 step and a 1.6-second one.
+
+### Step 2 — the platform layer (done)
+
+Two replacements deleted code rather than adding it. `NowPlayingInfo::artwork`
+became the encoded bytes and took a decode-and-re-encode round trip out of all
+three backends. `registerFileAssociations()` took a `QStringList` that the caller
+built by copying `PluginRegistry::allExtensions()`, which already answers with
+exactly the `std::span<const std::string>` the new signature takes.
+
+SMTC got shorter for an unrelated reason worth recording, because it is the shape
+of a bug rather than a translation. It binds to an HWND — `GetForCurrentView()`
+needs a CoreWindow only UWP has — and it was constructed before `MainWindow` had a
+native window. So it went looking for one, found none, and carried a
+deferred-acquisition-and-retry path for the rest of its life. Building it *after*
+the window and handing the handle in deleted the retry, the second job the
+`unavailable_` latch was doing, and the replay-what-was-already-playing block.
+
+Three things are hand-written where a library used to be:
+
+- **The taskbar badge**, four `QPainter` calls, is now sixty lines of coverage
+  sampling — sixteen samples a pixel on a 32x32 image, twice a track. That is the
+  honest price of this directory linking no drawing library.
+- **The settings stores**, one per platform. macOS talks to CFPreferences because
+  the requirement is to read a real plist written by a different program, and Cog
+  stores `repeat` as an integer rather than a string. Plain C++: CoreFoundation is
+  a C API.
+- **MPRIS on GDBus**, 420 lines against 488.
+
+Two paths were measured rather than assumed, and one contradicted a comment in the
+tree: `QSettingsStore.cpp` said the library lived at `%APPDATA%/XPCog`, and
+`QStandardPaths::AppDataLocation` includes the organisation segment, so it is
+actually `%APPDATA%/LoSnoCo/XPCog`. Landing one directory over would have shown a
+factory-fresh player to someone with a 9 MB library and said nothing about why.
+
+The Linux file store writes a `[General]` header and skips section lines on the way
+in, which is the whole of the difference from what QSettings wrote for flat scalar
+keys, so an existing configuration is inherited rather than discarded. It also
+escapes newlines — `UserDefaultURLsKey` holds the URL history newline-separated, and
+a raw write would turn one setting into fifteen unparseable lines.
+
+**What this step could not verify.** 569 cases green and no warnings, identical to
+the commit before it — but that covers the Windows backend and the shared code, and
+nothing else. macOS and Linux compile only in CI, and no test anywhere can say
+whether a desktop panel likes the MPRIS output or whether the SMTC card still shows
+artwork. Those are hand checks:
+
+1. **Windows** — play a track with embedded art: the SMTC card shows title, artist,
+   album and the artwork, and dragging its scrubber seeks. Media keys work. The
+   taskbar badge appears on play, flips on pause, clears on stop. A large folder
+   scan fills the taskbar progress bar. `XPCog --register`, then Open-with lists
+   XPCog with its icon; `--unregister` removes it.
+2. **Linux** — `playerctl status`, `metadata`, `play-pause`, `next`,
+   `position 30`; a panel media widget shows title, artist and album art with a
+   working seek bar; the panel's volume slider and XPCog's agree in both
+   directions; `playerctl raise` and `quit`.
+3. **macOS** — Now Playing in Control Centre with artwork, media keys, and the
+   scrubber seeking.
+4. **All three** — settings and the playlist survive a restart, which is the check
+   that the store landed on the same bytes the Qt build used.

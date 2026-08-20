@@ -16,30 +16,33 @@
 // not written yet -- see docs/PORTING.md; everything else gets the base class,
 // which does nothing.
 //
-// Takes a `WId` rather than a QWidget so this layer stays clear of QtWidgets: it
-// links QtGui, and a window handle is all an overlay icon needs.
+// Takes an opaque native window handle rather than a widget, so this layer needs
+// no window toolkit: an HWND is all an overlay icon needs. The caller casts its
+// own handle in, which on Windows is wxWindow::GetHandle().
 
 #pragma once
 
-#include <QObject>
-#include <QString>
-#include <qwindowdefs.h>
+#include <memory>
 
 namespace xpcog::platform {
 
-class TaskbarIntegration : public QObject {
-    Q_OBJECT
-
+class TaskbarIntegration {
 public:
     /// The implementation for this platform, or a do-nothing one where there is
     /// none. Never null, so callers have no branch to forget.
     ///
-    /// `window` must be a top-level window and must outlive this object.
-    [[nodiscard]] static TaskbarIntegration* create(WId window,
-                                                    QObject* parent = nullptr);
+    /// `nativeWindow` must be a top-level window's native handle -- an HWND on
+    /// Windows -- and must outlive this object. Null is accepted and yields the
+    /// do-nothing implementation, which is what a platform with no such surface
+    /// would return anyway.
+    [[nodiscard]] static std::unique_ptr<TaskbarIntegration> create(void* nativeWindow);
 
-    explicit TaskbarIntegration(QObject* parent = nullptr) : QObject(parent) {}
-    ~TaskbarIntegration() override = default;
+    TaskbarIntegration() = default;
+
+    TaskbarIntegration(const TaskbarIntegration&)            = delete;
+    TaskbarIntegration& operator=(const TaskbarIntegration&) = delete;
+
+    virtual ~TaskbarIntegration() = default;
 
     /// Playing, paused, or neither. Draws the badge.
     virtual void setPlaybackState(bool playing, bool paused) {

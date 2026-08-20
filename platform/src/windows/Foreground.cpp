@@ -14,8 +14,9 @@ namespace xpcog::platform {
 
 void permitForegroundHandover() {
     // ASFW_ANY rather than a specific process id, because the id is not in reach:
-    // the receiver is on the far end of a QLocalSocket, and Qt does not expose the
-    // underlying pipe handle that GetNamedPipeServerProcessId would need. Adding a
+    // the receiver is on the far end of an inter-process channel whose underlying
+    // pipe handle no toolkit exposes, and GetNamedPipeServerProcessId would need
+    // exactly that. Adding a
     // reply to the protocol purely to learn it would buy very little -- this
     // permission lives only until the next foreground change and belongs to a
     // process that is about to exit, so the window in which "any" is broader than
