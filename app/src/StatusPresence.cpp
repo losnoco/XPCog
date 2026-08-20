@@ -45,7 +45,20 @@ void raiseWindow(wxTopLevelWindow* window) {
     window->SetFocus();
 }
 
+// wxTBI_DOCK has to be asked for, and the header above claimed it was without
+// anything passing it. On Cocoa wxTBI_DEFAULT_TYPE is wxTBI_CUSTOM_STATUSITEM,
+// so the default ctor makes a *menu-bar* item -- a second permanent presence
+// beside the Dock icon, which is exactly what the design note says not to build.
+//
+// It is guarded rather than passed everywhere because the three platforms do not
+// agree on the signature: wxMSW and wxOSX take a wxTaskBarIconType, and
+// wx/unix/taskbarx11.h declares `wxTaskBarIcon()` with no parameter at all.
+#ifdef __WXOSX__
+StatusPresence::StatusPresence(MainFrame* frame)
+    : wxTaskBarIcon(wxTBI_DOCK), frame_(frame) {
+#else
 StatusPresence::StatusPresence(MainFrame* frame) : frame_(frame) {
+#endif
 #ifndef __WXOSX__
     // wxTaskBarIcon::IsAvailable() answers for the session rather than the
     // platform: a Linux desktop with no notification area says no, and the
@@ -54,9 +67,9 @@ StatusPresence::StatusPresence(MainFrame* frame) : frame_(frame) {
         hasTrayIcon_ = SetIcon(applicationIconAt(16), "XPCog");
     }
 #else
-    // The Dock menu. Constructed by the wxTBI_DOCK base below; nothing to set,
-    // because the tile already carries the bundle's icon and replacing it would
-    // lose the layered treatment macOS composes from icons/xpcog.icon.
+    // The Dock menu. Nothing to set on it, because the tile already carries the
+    // bundle's icon and replacing it would lose the layered treatment macOS
+    // composes from icons/xpcog.icon.
     hasTrayIcon_ = false;
 #endif
 

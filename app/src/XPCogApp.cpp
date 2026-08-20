@@ -281,12 +281,11 @@ bool XPCogApp::performRegistration(bool unregister) {
 
 #ifdef __WXOSX__
 
-bool XPCogApp::MacReopenApp() {
+void XPCogApp::MacReopenApp() {
     if (frame_ != nullptr) {
         frame_->Show();
         frame_->Raise();
     }
-    return true;
 }
 
 void XPCogApp::MacOpenFiles(const wxArrayString& fileNames) {
