@@ -396,12 +396,12 @@ into real windows, closable by their own button. The file browser stays a splitt
 pane rather than a dock, which is the Qt build's own choice and Cog's shape — its
 tree is a fixed part of the window.
 
-Two things are deliberately not dockable. The transport is a pane so the manager
-owns the whole frame, but it is fixed and has no close button: hiding the only
-play button leaves a window with no way to start playback and no obvious way back,
-which is why the Qt build removed the transport from its own context menu too. And
-`restoreState()` forces the transport visible whatever the saved layout says, so a
-perspective written by a build that allowed closing it cannot strand anyone.
+Two things are deliberately not dockable. The transport is not a pane at all --
+`wxAuiManager` manages a host panel below it and the frame's own sizer stacks the
+two, for the reason worked out at the bottom of this file. Hiding the only play
+button would leave a window with no way to start playback and no obvious way back,
+which is why the Qt build removed the transport from its own context menu too;
+here it simply is not something a layout can hide.
 
 `SavePerspective()` and `LoadPerspective()` are what `saveState()` and
 `restoreState()` were, with the same trap carried across: the layout is saved only
@@ -452,11 +452,11 @@ that is no longer attached would put the window where nobody can reach it.
 
 **The transport stopped filling the width.** `Resizable(false)` is `Fixed()`, and
 `framemanager.cpp` sets a fixed pane's proportion to 0: it gets exactly its best
-size inside the dock and the rest of the dock stays empty. Fixed *vertically* and
-stretched horizontally is two flags, not one — `DockFixed(true)` locks the dock's
-thickness while the pane keeps its proportion. `MaxSize` was the first guess and is
-worth recording as wrong: wxAUI reads it only for floating panes and when saving a
-perspective, never for a docked one.
+size inside the dock and the rest of the dock stays empty. `MaxSize` was the first
+guess and is worth recording as wrong: wxAUI reads it only for floating panes and
+when saving a perspective, never for a docked one. `DockFixed(true)` was the
+second, and is wrong too — see the bottom of this file for what actually fixed
+it.
 
 **The equaliser and the album art were cut off by the pane's width.** The same
 shape of mistake twice: sizing for a fixed dimension inside a container whose other
@@ -507,8 +507,9 @@ panel outlives the controller its position callback calls into.
 **The album art scrolled instead of shrinking**, because the previous fix turned
 horizontal scrolling on. That let the content stay wide and gave the reader a
 scrollbar to chase it with, when what a cover should do in a narrower pane is get
-smaller. With the horizontal rate at zero the virtual width *is* the client width,
-so shrinking is the only thing left to do.
+smaller. Turning it back off was necessary and not sufficient — "the virtual width
+*is* the client width" turned out not to be true either. See the bottom of this
+file.
 
 **HiDPI was pixelated on Windows.** Qt's platform plugin carried a DPI-awareness
 manifest; nothing did afterwards, so Windows marked the process unaware and
@@ -524,3 +525,56 @@ took three attempts worth recording:
 - The check that it worked is looking for `dpiAwareness` in the linked binary,
   not reading the header. The first attempt shipped an unaware process that looked
   exactly like the bug it was meant to fix.
+
+
+**The transport did not fill the width, twice, and the second explanation was as
+wrong as the first.** Recorded above as "`DockFixed(true)` locks the dock's
+thickness while the pane keeps its proportion". It does not. `LayoutAll()` marks a
+dock fixed when every pane in it is fixed *or* when any pane sets `DockFixed`, so
+`Resizable(false)` and `DockFixed(true)` set the same thing by different names --
+which is why the second attempt changed nothing at all. `LayoutAddDock()` then
+lays a fixed dock's panes out at `pane.best_size` and adds a stretchable
+background spacer after them, and that spacer is the empty half-window. Making the
+dock non-fixed does fill the width, but a non-fixed *top* dock grows a drag sash
+underneath it, so the height of a row of fixed-height controls becomes something
+to pull around.
+
+Full width and a fixed height cannot both be asked for of a docked pane, so the
+transport stopped being one. It was a pane in name only: dockable, floatable,
+movable, closable and captioned were all already off, which is every single thing
+wxAUI would have been managing it for. `wxAuiManager` manages any window rather
+than only a frame, so it takes a host panel now and the frame's own sizer stacks
+the strip above it. Everything genuinely dockable is untouched. `LoadPerspective()`
+skips names it cannot find, so old saved layouts naming a `transport` pane cost
+nothing, and nothing has to force it visible any more because nothing can hide it.
+
+Both wrong answers came from reasoning about what wxAUI probably does. The right
+one came from reading `framemanager.cpp`, and the fix was checked by measuring the
+live window rather than by looking at it: the strip is 1332px wide in a 1332px
+client, and the seek bar inside it went from a stub to 784px.
+
+**The cover was still cropped**, and sizing it more carefully was never going to
+be the answer. `wxStaticBitmap` draws its bitmap at the bitmap's own size and lets
+the window clip the rest, so every version of this depended on computing exactly
+the right size in advance, from a client width still settling -- and being a pixel
+out in the wrong direction crops rather than overflows. `ArtworkView` inverts that:
+whatever rectangle the sizer hands it, the image is scaled into it with its aspect
+kept and centred in the remainder. No size it can be given crops anything.
+
+Two things that made the old arithmetic wrong anyway went with it. `FitInside()`
+sets the virtual width from the sizer's minimum and `wxScrolled::Layout()` sizes
+its sizer to `GetVirtualSize()` rather than to the client size -- so content was
+laid out past the right edge, which with horizontal scrolling deliberately off is
+unreachable rather than merely off-screen. The virtual width is pinned to the
+client width now. And the early-out that skipped rescaling when the *size* had not
+changed also skipped it when the *image* had, so a new cover wanting the same box
+as the last one was never drawn.
+
+**The Preferences sidebar clipped its own category names** -- "Playli...",
+"Outp...", "App...". `wxListbook`'s sidebar is a `wxListCtrl`, and wxMSW's
+`wxListCtrl` reports no best size of its own, so `GetControllerSize()` falls back
+through `GetBestSize()` to `wxControl`'s default of about a hundred pixels no
+matter what the names are. A `wxListBox` beside a `wxSimplebook` is the shape the
+Qt build made from a `QListWidget` and a `QStackedWidget`, and `wxListBox` measures
+its widest item -- so the width is right by construction rather than by a tuned
+number that would go wrong again at another DPI or in another language.
