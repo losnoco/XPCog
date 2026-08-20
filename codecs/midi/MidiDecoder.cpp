@@ -212,9 +212,13 @@ public:
         //  2. Beside the file. `song.sf2`, `song.mid.sf2`, `Album/Album.sf2` --
         //     how a game rip ships its instruments.
         //  3. The configured bank, for everything else.
+        //  4. The bank XPCog ships, when nothing is configured. This is what
+        //     lets the SoundFont synthesiser be the default at all, and it is
+        //     why `midiPlugin` defaults to `Spessa` rather than to an OPL3.
         //
         // Either of the first two forces the SoundFont backend, since a bank is
-        // meaningless to an OPL3 and an SC-55 alike.
+        // meaningless to an OPL3 and an SC-55 alike. The last two do not: a
+        // listener who asked for the OPL3 or the SC-55 gets it.
         bank_.reset();
         embeddedBank_ = file_.embeddedBank();
         if (const auto local = url_.localPath()) {
@@ -222,11 +226,18 @@ public:
         }
         if (embeddedBank_ || bank_) {
             choice_.backend = SynthChoice::Backend::SoundFont;
-        } else if (choice_.backend == SynthChoice::Backend::SoundFont &&
-                   settings_ != nullptr) {
-            const std::string configured = settings_->SoundFontPath();
+        } else if (choice_.backend == SynthChoice::Backend::SoundFont) {
+            const std::string configured =
+                settings_ != nullptr ? settings_->SoundFontPath() : std::string{};
             if (!configured.empty()) {
                 bank_ = pathFromUtf8(configured);
+            } else {
+                // Which of the two shipped files depends on what the sequence
+                // says it is. An XG bank puts a GS file's instruments at other
+                // bank numbers, and the `.sflist` is the map that puts them
+                // back -- so this question is asked of the file rather than of
+                // the listener, exactly as Cog asks it (MIDIDecoder.mm:263).
+                bank_ = codecs::shippedBank(file_.dialect(subsong_).any());
             }
         }
 

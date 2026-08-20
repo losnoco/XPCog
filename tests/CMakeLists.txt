@@ -1,6 +1,7 @@
 find_package(Catch2 3 REQUIRED)
 
 add_executable(xpcog-tests
+    core/test_assetpath.cpp
     core/test_audio.cpp
     core/test_dsd.cpp
     core/test_dsp.cpp
@@ -359,6 +360,10 @@ target_compile_definitions(xpcog-tests
     PRIVATE "XPCOG_GOLDEN_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/golden\"")
 
 set_target_properties(xpcog-tests PROPERTIES FOLDER tests)
+
+# The shipped bank is found relative to the test binary, so it has to be there
+# before the tests run -- and CTest runs them straight after a build.
+add_dependencies(xpcog-tests xpcog-assets)
 
 include(Catch)
 catch_discover_tests(xpcog-tests)

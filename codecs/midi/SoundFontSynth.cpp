@@ -1,5 +1,6 @@
 #include "midi/SoundFontSynth.hpp"
 
+#include "xpcog/core/AssetPath.hpp"
 #include "xpcog/core/FilePath.hpp"
 
 #include <spessasynth/sflist/sflist.h>
@@ -135,6 +136,25 @@ std::optional<std::filesystem::path> findCompanionBank(
                 return candidate;
             }
         }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::filesystem::path> shippedBank(bool wantsGsMap) {
+    // The list first when it is wanted, and the bank it names as the fallback:
+    // a build that shipped only one of the two -- or a deployment that lost the
+    // 51 KB file and kept the 11 MB one -- should still play.
+    if (wantsGsMap) {
+        const std::filesystem::path list =
+            assetPath("soundfonts/tg300b.sflist.json");
+        if (!list.empty()) {
+            return list;
+        }
+    }
+    const std::filesystem::path bank =
+        assetPath("soundfonts/GeneralUserXG-SFeTest.sf3");
+    if (!bank.empty()) {
+        return bank;
     }
     return std::nullopt;
 }

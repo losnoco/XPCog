@@ -34,6 +34,9 @@ add_subdirectory(vendor)
 add_subdirectory(core)
 add_subdirectory(codecs)
 
+# Before the executables, so they can depend on the staged copy.
+add_subdirectory(assets)
+
 if(XPCOG_BUILD_CLI)
     add_subdirectory(tools/cli)
 endif()

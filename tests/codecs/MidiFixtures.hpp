@@ -163,6 +163,50 @@ inline std::vector<std::uint8_t> programChangeMidi(bool withProgram) {
     return out;
 }
 
+/// `tinyMidi()` with a Roland GS reset in front of it.
+///
+/// This is how a sequence says what it is. `F0 41 10 42 12 40 00 7F 00 41 F7`
+/// is a Roland DT1 write of 0x7F to address 40 00 7F, which is GS Reset, and it
+/// is what a GS file sends before it plays a note. The 0x41 before the F7 is
+/// the Roland checksum -- 128 minus the low seven bits of the address and data
+/// summed -- and a receiver that checks it drops the message when it is wrong.
+inline std::vector<std::uint8_t> gsResetMidi() {
+    const auto be16 = [](std::vector<std::uint8_t>& v, std::uint16_t x) {
+        v.push_back(static_cast<std::uint8_t>(x >> 8));
+        v.push_back(static_cast<std::uint8_t>(x & 0xFF));
+    };
+    const auto be32 = [](std::vector<std::uint8_t>& v, std::uint32_t x) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            v.push_back(static_cast<std::uint8_t>((x >> shift) & 0xFF));
+        }
+    };
+
+    std::vector<std::uint8_t> track;
+    track.insert(track.end(), {0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20});
+    // delta 0: the reset, as a meta-length-prefixed SysEx event.
+    const std::vector<std::uint8_t> sysex{0x41, 0x10, 0x42, 0x12, 0x40, 0x00,
+                                          0x7F, 0x00, 0x41, 0xF7};
+    track.push_back(0x00);
+    track.push_back(0xF0);
+    track.push_back(static_cast<std::uint8_t>(sysex.size()));
+    track.insert(track.end(), sysex.begin(), sysex.end());
+    // Then an ordinary note, so the file has something to render.
+    track.insert(track.end(), {0x00, 0x90, 0x3C, 0x64});
+    track.insert(track.end(), {0x87, 0x40, 0x80, 0x3C, 0x00});
+    track.insert(track.end(), {0x00, 0xFF, 0x2F, 0x00});
+
+    std::vector<std::uint8_t> out;
+    out.insert(out.end(), {'M', 'T', 'h', 'd'});
+    be32(out, 6);
+    be16(out, 0);
+    be16(out, 1);
+    be16(out, 480);
+    out.insert(out.end(), {'M', 'T', 'r', 'k'});
+    be32(out, static_cast<std::uint32_t>(track.size()));
+    out.insert(out.end(), track.begin(), track.end());
+    return out;
+}
+
 /// `sequence` wrapped as RMID, carrying `bank` as its embedded soundbank.
 ///
 /// RMID is a RIFF container around a standard MIDI file, and the interesting

@@ -101,6 +101,20 @@ struct MidiLoop {
     double end = 0.0;
 };
 
+/// Which dialect a sequence announces about itself, by the reset it sends.
+///
+/// Not inferred from tags or a file name: a sequence that means GS says so with
+/// a Roland reset before it plays a note, and one that means General MIDI Level
+/// 2 sends the universal GM2 On message. Cog reads exactly this to choose
+/// between the plain bank and the map that remaps XG onto GS
+/// (MIDIDecoder.mm:263), and that is the only decision it drives.
+struct MidiDialect {
+    bool gs  = false;
+    bool gm2 = false;
+
+    [[nodiscard]] bool any() const noexcept { return gs || gm2; }
+};
+
 /// A bank an RMID brought inside itself.
 ///
 /// RMID is a RIFF wrapper around a standard MIDI file, and one of the chunks it
@@ -157,6 +171,15 @@ public:
 
     /// The event stream for `subsong` at `sampleRate`, ready for a synth.
     [[nodiscard]] MidiStream stream(std::size_t subsong, double sampleRate) const;
+
+    /// What `subsong` announces itself as. Both flags false is the ordinary
+    /// case: most files announce nothing and are plain General MIDI.
+    ///
+    /// Per subsong rather than per file, which is where this differs from Cog:
+    /// Cog scans every track of the whole file. The two answers can only differ
+    /// for a format that holds several sequences at once, which in practice
+    /// means XMI, and there the subsong being played is the better question.
+    [[nodiscard]] MidiDialect dialect(std::size_t subsong) const;
 
     /// The bank this file carried, or nullopt when it carried none -- which is
     /// every file that is not an RMID, and most RMIDs.

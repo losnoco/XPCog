@@ -2591,12 +2591,11 @@ now closed and the third is the only one left:
 - **`midi.flavor` is not being ported**, by decision rather than omission. The
   reasoning is in `docs/MIDI.md`, along with the correction that it is not the
   dead SCCore-only setting it looks like.
-- **Whether to ship a default SoundFont** is the one still open, and it is what
-  lets Cog default to SpessaSynth while this defaults to the OPL3. Cog bundles
-  three files: `GeneralUserXG-SFeTest.sf3` (11.2 MB), `GeneralUserGS-Drums.sf3`
-  (1.5 MB) and `tg300b.sflist.json` (51 KB), which names both banks and remaps
-  XG onto GS. It picks the sflist when the file announces GS or GM2 and the
-  bank directly otherwise.
+- **A bank ships**, so `midiPlugin` now defaults to `Spessa` as Cog's does.
+  The same three files Cog bundles, in `assets/soundfonts`: the 11.2 MB
+  `GeneralUserXG-SFeTest.sf3`, the 1.5 MB `GeneralUserGS-Drums.sf3`, and the
+  51 KB `tg300b.sflist.json` that names both and remaps XG onto GS. Which one
+  plays is asked of the sequence, as Cog asks it — see "Shipping a bank" below.
 
 #### The decoder list, and what it left behind
 
@@ -3230,7 +3229,12 @@ asserted a property Qt provides rather than the one the code was responsible for
   `QKeySequence::Preferences` is bound only on macOS, so `ActionRegistry` gives the
   action an empty sequence everywhere else. The menu item works; the keyboard does
   not.
-- The `deploy` target's payload is **74.4 MB**, down from 94.8 MB. That gap was
+- The `deploy` target's payload was measured at **74.4 MB**, down from 94.8 MB,
+  and the shipped SoundFont bank has since added **12.8 MB** to it — the
+  measurement below predates that and has not been retaken on a release build.
+  The bank is the single largest thing XPCog itself contributes, and it buys
+  MIDI that plays on real instruments with no configuration; see "Shipping a
+  bank" in `docs/MIDI.md`. That gap was
   being held open on purpose until the visualisation's rendering was decided: if it
   had gone through Qt Quick, `opengl32sw.dll` — Mesa's software GL fallback, 19.7 MB
   of it — is exactly what keeps the application working on a machine with no usable

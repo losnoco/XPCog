@@ -285,11 +285,17 @@ XPCOG_SETTING(SynthDefaultLoopCount, int, "synthDefaultLoopCount", 2)
 /// is not being ported. Anything unrecognised falls back to the default rather
 /// than refusing to play.
 ///
-/// The default is a Sound Blaster because it is the one synthesiser here that
-/// needs nothing the listener has to supply -- the other two each want a file
-/// nobody can be handed. Cog's own default is `Spessa`, which it can afford
-/// because it ships a bank in its application bundle.
-XPCOG_SETTING(MidiPlugin, std::string, "midiPlugin", "DOOM0")
+/// The default is `Spessa`, as Cog's is, and for the reason Cog can afford it:
+/// XPCog now ships a bank (assets/soundfonts, and shippedBank() in
+/// codecs/midi/SoundFontSynth.hpp). This entry said the opposite until that
+/// landed -- a Sound Blaster, "because it is the one synthesiser here that
+/// needs nothing the listener has to supply" -- which was the right default
+/// while it was true and stopped being true the moment there was a bank in the
+/// box.
+///
+/// `NukeSc55` still wants a file nobody can be handed, and still falls back to
+/// the OPL3 when it is not there.
+XPCOG_SETTING(MidiPlugin, std::string, "midiPlugin", "Spessa")
 
 /// Where the Roland SC-55 ROM set is, for the `NukeSc55` synthesiser.
 ///
@@ -314,10 +320,17 @@ XPCOG_SETTING(MidiRomPath, std::string, "midiRomPath", "")
 /// loaded -- a bank can be well over a gigabyte, and a piece of music reaches
 /// almost none of it.
 ///
-/// A file may also bring its own bank, which wins over this one: see
-/// findCompanionBank() in codecs/midi/SoundFontSynth.hpp. Empty, with no
-/// companion bank either, falls back to the OPL3 -- the file still plays, and
-/// the track properties say what rendered it.
+/// A file may also bring its own bank, which wins over this one, and there are
+/// two ways it can: inside itself if it is an RMID, or beside itself under one
+/// of three names. See embeddedBank() in codecs/midi/MidiFile.hpp and
+/// findCompanionBank() in codecs/midi/SoundFontSynth.hpp.
+///
+/// Empty means the bank XPCog ships rather than no bank, which is why this
+/// defaults to empty rather than to a path: a path would be wrong on the next
+/// machine, and would also stop the listener ever getting an updated bank from
+/// an updated build. Only a build with no assets beside it -- which should not
+/// happen and is not fatal -- falls back to the OPL3, and the track properties
+/// say what rendered it either way.
 XPCOG_SETTING(SoundFontPath, std::string, "soundFontPath", "")
 
 /// Ring size for the HTTP source, in bytes. Must be a power of two between

@@ -259,21 +259,60 @@ TEST_CASE("a file's own bank wins over the configured synthesiser",
     CHECK(peak(decoded.samples) > kAudible);
 }
 
-TEST_CASE("SpessaSynth with no bank plays on the OPL instead",
+TEST_CASE("an unconfigured player uses the bank XPCog ships",
           "[midi][soundfont]") {
-    Harness harness;
-    harness.settings.setMidiPlugin("Spessa");
-    harness.settings.setSoundFontPath("");
+    // This case used to be "SpessaSynth with no bank plays on the OPL instead",
+    // and that was the right behaviour while there was no bank to play. There
+    // is one now (assets/soundfonts), which is the whole reason `midiPlugin`
+    // defaults to `Spessa`: a fresh install plays MIDI on real instruments
+    // rather than on an FM chip, as Cog's does.
+    Harness harness;  // nothing set: this is what a first run looks like
 
-    const fs::path path = writeFile(scratch("no-bank") / "no-bank.mid", tinyMidi());
+    const auto shipped = codecs::shippedBank(/*wantsGsMap=*/false);
+    if (!shipped) {
+        SKIP("this build has no bank staged beside the test binary");
+    }
+
+    const fs::path path = writeFile(scratch("shipped") / "shipped.mid", tinyMidi());
     const Decoded  decoded =
         decode(harness.registry, Url::fromLocalPath(path), 4 * 44100);
 
-    // Still plays. An engine with no samples in it renders silence, which is
-    // indistinguishable from a file with nothing to say.
     REQUIRE_FALSE(decoded.samples.empty());
+    CHECK(decoded.properties.encoding ==
+          "SpessaSynth (" + pathToUtf8(shipped->filename()) + ")");
     CHECK(peak(decoded.samples) > kAudible);
-    CHECK(decoded.properties.encoding == "Nuked OPL3 (DMX)");
+}
+
+TEST_CASE("a GS sequence gets the map, a plain one gets the bank",
+          "[midi][soundfont]") {
+    // Two files shipped, and which one plays is asked of the sequence rather
+    // than of the listener. The bank is an XG bank; a sequence that announced
+    // itself as GS wants instruments at bank numbers the XG bank puts
+    // elsewhere, and `tg300b.sflist.json` is the 246-entry map that puts them
+    // back. Cog decides this the same way (MIDIDecoder.mm:263).
+    if (!codecs::shippedBank(/*wantsGsMap=*/false)) {
+        SKIP("this build has no bank staged beside the test binary");
+    }
+    const auto mapped = codecs::shippedBank(/*wantsGsMap=*/true);
+    REQUIRE(mapped.has_value());
+    if (pathToUtf8(mapped->extension()) != ".json") {
+        SKIP("this build staged the bank but not the map");
+    }
+
+    const fs::path dir = scratch("dialect");
+    Harness        harness;
+
+    const fs::path plain = writeFile(dir / "plain.mid", tinyMidi());
+    const Decoded  plainOut =
+        decode(harness.registry, Url::fromLocalPath(plain), 44100);
+    REQUIRE_FALSE(plainOut.samples.empty());
+    CHECK(plainOut.properties.encoding ==
+          "SpessaSynth (GeneralUserXG-SFeTest.sf3)");
+
+    const fs::path gs = writeFile(dir / "gs.mid", gsResetMidi());
+    const Decoded  gsOut = decode(harness.registry, Url::fromLocalPath(gs), 44100);
+    REQUIRE_FALSE(gsOut.samples.empty());
+    CHECK(gsOut.properties.encoding == "SpessaSynth (tg300b.sflist.json)");
 }
 
 TEST_CASE("a bank that is not a bank falls back rather than failing",

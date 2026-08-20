@@ -60,6 +60,13 @@ struct Harness {
     Harness() {
         registerAllCodecs(registry);
         registry.setSettings(&settings);
+        // This file is the OPL3's, so it asks for the OPL3 rather than taking
+        // whatever `midiPlugin` happens to default to. It used to be able to
+        // rely on the default being an OPL3 driver; that default is now
+        // `Spessa`, since there is a bank in the box for it to play. A test
+        // whose subject is a chip's register latency has nothing to say about
+        // a wavetable synthesiser, and said it anyway for one commit.
+        settings.setMidiPlugin("DOOM0");
     }
 };
 

@@ -218,6 +218,58 @@ therefore possible and would change what a GS file sounds like on a GS bank. It
 is being left out anyway; if that turns out to matter, this paragraph is where
 to start rather than the assumption that there was nothing there.
 
+## Shipping a bank
+
+`midiPlugin` defaults to `Spessa` now, and it can only default to a synthesiser
+with no sound of its own because there is a bank in the box. The same three
+files Cog bundles, under `assets/soundfonts`:
+
+| File | Size | What it is |
+|---|---|---|
+| `GeneralUserXG-SFeTest.sf3` | 11.2 MB | the bank |
+| `GeneralUserGS-Drums.sf3` | 1.5 MB | drums, named by the list below |
+| `tg300b.sflist.json` | 51 KB | 246 patch mappings, XG onto GS/TG300B |
+
+**Which of the two plays is asked of the sequence, not of the listener.** The
+bank is an XG bank; a sequence that announced itself as GS wants instruments at
+bank numbers the XG bank puts elsewhere, and the list is the map that puts them
+back. `MidiFile::dialect()` is the question — a Roland GS reset or a universal
+GM2 On, both by SysEx — and it is `ss_midi_has_gs()` and `ss_midi_has_gm2()`
+ported byte for byte, including their not checking the manufacturer ID. Matching
+Cog exactly matters more here than tightening it, because the point is to pick
+the bank Cog would.
+
+One difference, stated because it is deliberate: this asks per **subsong** while
+Cog scans every track of the whole file. They can only differ for a format that
+holds several sequences at once, which means XMI, and there the sequence being
+played is the better question.
+
+**The licence is the bank's own and is unusually explicit.** GeneralUser GS
+v2.0, in the SF2's own INFO chunk: "You may use GeneralUser GS without
+restriction for your own music creation, private or commercial… Please feel free
+to use it in your software projects." S. Christian Collins for the original,
+the SFe Team for this revision. So this is not the open question that Organya's
+wavetable, AdPlug's song database and libvgm's OPL4 ROM still are — see
+"Three third-party data blobs" in `PORTING.md`.
+
+**What the bank says about itself, recorded rather than hidden:** "This bank is
+specifically for testing SFe features… is not recommended for production use.
+Expect imbalances or other incompatibilities!" It is shipped anyway, because Cog
+ships exactly this file and matching Cog is the point; a listener who disagrees
+sets `soundFontPath`. If MIDI ever sounds subtly wrong here and right in another
+player, this paragraph is the first thing to re-read.
+
+**Finding it at run time** is `xpcog::assetPath()`, which is new
+(`core/include/xpcog/core/AssetPath.hpp`). Cog uses `NSBundle`; there is no
+portable equivalent, so it is the executable's own path plus a per-platform
+layout — beside it on Windows, `../Resources` in a macOS bundle,
+`../share/xpcog` for an installed Linux tree.
+
+Note what is *not* there: a build-tree special case. CMake stages the assets
+into the output directory beside every binary that plays MIDI, so the lookup the
+tests exercise is the lookup that runs once installed. A resolver that only
+worked when installed would be one nobody exercised until a user did.
+
 ## The SC-55 ROMs are the user's, not ours
 
 Cog does not ship them and neither will this. `SCPlayer.mm:158` looks in

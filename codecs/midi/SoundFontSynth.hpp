@@ -60,6 +60,19 @@ enum class SoundFontInterpolation : std::uint8_t {
 [[nodiscard]] std::optional<std::filesystem::path> findCompanionBank(
     const std::filesystem::path& midiFile);
 
+/// The bank XPCog ships, or nullopt when this build has none beside it.
+///
+/// This is what lets the SoundFont synthesiser be the default rather than the
+/// OPL3: it is the one bank that needs nothing from the listener. Cog reaches
+/// for its own the same way and for the same reason (MIDIDecoder.mm:260).
+///
+/// `wantsGsMap` picks between the two files shipped. The plain bank is an XG
+/// bank; a sequence that announced itself as GS or GM2 is asking for
+/// instruments at bank numbers the XG bank puts elsewhere, and the `.sflist`
+/// beside it is a 246-entry remapping that puts them back. Cog makes exactly
+/// this choice, on exactly this question.
+[[nodiscard]] std::optional<std::filesystem::path> shippedBank(bool wantsGsMap);
+
 class SoundFontSynth final : public MidiSynth {
 public:
     SoundFontSynth();

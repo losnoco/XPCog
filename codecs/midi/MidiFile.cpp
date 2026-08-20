@@ -4,6 +4,7 @@
 #include <midi_processor.h>
 
 #include <algorithm>
+#include <span>
 #include <string>
 
 namespace xpcog::codecs {
@@ -202,6 +203,70 @@ MidiStream MidiFile::stream(std::size_t subsong, double sampleRate) const {
     }
     if (loopEnd != ~0UL && loopEnd <= out.events.size()) {
         out.loopEnd = static_cast<std::size_t>(loopEnd);
+    }
+    return out;
+}
+
+MidiDialect MidiFile::dialect(std::size_t subsong) const {
+    MidiDialect out;
+    if (!valid() || subsong >= subsongCount()) {
+        return out;
+    }
+
+    const auto index = impl_->container.get_subsong(static_cast<unsigned long>(subsong));
+
+    std::vector<midi_stream_event> events;
+    system_exclusive_table         sysex;
+    unsigned long                  loopStart = 0;
+    unsigned long                  loopEnd   = 0;
+    impl_->container.serialize_as_stream(index, events, sysex, loopStart, loopEnd, 0);
+
+    for (const midi_stream_event& event : events) {
+        // Bit 31 marks a SysEx, and the rest of the word indexes the table.
+        if ((event.m_event & 0x80000000U) == 0) {
+            continue;
+        }
+        const std::uint8_t* data = nullptr;
+        std::size_t         size = 0;
+        std::size_t         port = 0;
+        // The whole low 31 bits index the table, unlike a short message where
+        // only the low 24 are the message and bits 24-30 are the port.
+        sysex.get_entry(static_cast<unsigned>(event.m_event & 0x7FFFFFFFU), data, size,
+                        port);
+        if (data == nullptr || size == 0) {
+            continue;
+        }
+
+        // SpessaSynth matches against the payload with the leading 0xF0 already
+        // stripped, because it keeps the status byte in its own field
+        // (midi_loader.c:852). midi_processing stores the message whole, so
+        // step over it -- and tolerate either, since which one is being held is
+        // exactly the kind of thing that changes underneath a caller.
+        std::span<const std::uint8_t> body{data, size};
+        if (body.front() == 0xF0) {
+            body = body.subspan(1);
+        }
+
+        // GM2 On: 7E 7F 09 03. Universal non-real-time, all devices.
+        if (!out.gm2 && body.size() >= 4 && body[0] == 0x7E && body[1] == 0x7F &&
+            body[2] == 0x09 && body[3] == 0x03) {
+            out.gm2 = true;
+        }
+
+        // GS reset: a Roland DT1 (0x12) writing 7F to either the mode-set or
+        // the GS-reset address. Ported from ss_midi_has_gs(), including its
+        // not checking the manufacturer byte -- matching it exactly matters
+        // more here than tightening it, since the point is to pick the same
+        // bank Cog would.
+        if (!out.gs && body.size() >= 8 && body[3] == 0x12 && body[2] == 0x42 &&
+            body[5] == 0x00 && body[6] == 0x7F && body[7] == 0x00 &&
+            (body[4] == 0x00 || body[4] == 0x40)) {
+            out.gs = true;
+        }
+
+        if (out.gs && out.gm2) {
+            break;
+        }
     }
     return out;
 }

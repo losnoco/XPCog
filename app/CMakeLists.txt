@@ -262,7 +262,21 @@ elseif(APPLE)
     target_sources(xpcog-app PRIVATE ${XPCOG_BUNDLE_ICONS})
     set_source_files_properties(${XPCOG_BUNDLE_ICONS} PROPERTIES
         MACOSX_PACKAGE_LOCATION Resources)
+
+    # The banks go in beside them, in a subdirectory of their own, which is what
+    # assetPath() looks for: Contents/Resources/soundfonts. Cog puts its at the
+    # top of Resources instead, which is fine for three files and stops being
+    # fine when a second kind of asset arrives.
+    target_sources(xpcog-app PRIVATE ${XPCOG_SOUNDFONTS})
+    set_source_files_properties(${XPCOG_SOUNDFONTS} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources/soundfonts
+        HEADER_FILE_ONLY ON)
 endif()
+
+# Everywhere else the lookup is relative to the executable, so the staged copy
+# beside it is the one that is found -- in the build tree and, on Windows, in
+# the deployed folder, which is that same directory.
+add_dependencies(xpcog-app xpcog-assets)
 
 set_target_properties(xpcog-app PROPERTIES
     OUTPUT_NAME "XPCog"

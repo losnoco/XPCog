@@ -201,3 +201,24 @@ TEST_CASE("a MIDI file that carries no bank says so", "[midi]") {
     CHECK(wrapped.valid());
     CHECK_FALSE(wrapped.embeddedBank().has_value());
 }
+
+TEST_CASE("a sequence's own reset says which dialect it is", "[midi]") {
+    // What this decides is which of the two shipped banks plays: the XG bank,
+    // or the map that puts a GS file's instruments back where it expects them.
+    // Asked of the file, because the file is what knows.
+    codecs::MidiFile plain;
+    REQUIRE(plain.parse(tinyMidi(), "mid"));
+    CHECK_FALSE(plain.dialect(0).gs);
+    CHECK_FALSE(plain.dialect(0).gm2);
+    CHECK_FALSE(plain.dialect(0).any());
+
+    codecs::MidiFile gs;
+    REQUIRE(gs.parse(gsResetMidi(), "mid"));
+    CHECK(gs.dialect(0).gs);
+    CHECK_FALSE(gs.dialect(0).gm2);
+    CHECK(gs.dialect(0).any());
+
+    // A subsong that does not exist is not a dialect. Cheap to state, and the
+    // decoder asks about whichever subsong the URL's fragment named.
+    CHECK_FALSE(gs.dialect(99).any());
+}

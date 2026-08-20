@@ -20,6 +20,7 @@ add_library(xpcog-core STATIC
     src/audio/RingBuffer.cpp
     src/audio/SampleConvert.cpp
     src/audio/SpectrumAnalyzer.cpp
+    src/AssetPath.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp
     src/library/Library.cpp

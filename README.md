@@ -21,8 +21,9 @@ from a single codebase.
 > stream survives its own track changes. Breadth since: archives played in
 > place, tracker modules, game music rips, vgmstream's console formats, the
 > whole PSF family on all eight of its emulator cores, Commodore 64 tunes,
-> Musepack, Monkey's Audio Link files, and MIDI on a Sound Blaster's OPL3, a
-> SoundFont bank, or an emulated Roland SC-55 with its front panel.
+> Musepack, Monkey's Audio Link files, and MIDI on a SoundFont bank — one ships
+> with it — a Sound Blaster's OPL3, or an emulated Roland SC-55 with its front
+> panel.
 > **842 extensions** across 23 decoders.
 > See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
 > full plan and the reasoning behind the structure.
@@ -207,9 +208,18 @@ cores behind it — USF, GSF, 2SF, SNSF, SSF/DSF, NCSF, PSF/PSF2 and QSF — and
 Commodore 64 tunes (libsidplayfp). MIDI is its own thing again: a score rather
 than a recording, so what it sounds like is a choice of synthesiser. Fourteen
 extensions -- `.mid` and `.midi` among them, with HMI, XMI, Doom's MUS and
-Loudness LDS each reaching their own parser in midi_processing -- render on
-either an emulated Sound Blaster (Nuked OPL3, under two different drivers) or a
-Roland SC-55mkII running its own firmware, if you have the ROMs.
+Loudness LDS each reaching their own parser in midi_processing -- render on a
+SoundFont bank (SpessaSynth), an emulated Sound Blaster (Nuked OPL3, under two
+different drivers), or a Roland SC-55mkII running its own firmware, if you have
+the ROMs.
+
+**A bank ships with it**, so MIDI plays on real instruments out of the box
+rather than on an FM chip: `GeneralUserXG-SFeTest.sf3`, which is what Cog
+bundles, together with the `tg300b` map that XPCog selects instead when a
+sequence announces itself as GS or GM2. Point `soundFontPath` at your own bank
+to replace it, or drop one beside a file — `song.sf2`, or `Album/Album.sf2` for
+a folder — to override it for that music alone. An RMID that carries its own
+bank inside it beats all of those, since that bank is part of the music.
 
 Archives are a *source* rather than a format,
 so a `.zip` of FLAC plays without being unpacked first, and a Monkey's Audio Link
@@ -312,8 +322,8 @@ and are not being ported. A no-op `IFileAccess` seam preserves the sandbox call 
 case that changes.
 
 AudioUnit hosting is one of Cog's four MIDI backends, not MIDI itself — `.mid` and
-its dozen relatives play here through Nuked OPL3, and the two portable backends
-still to land are staged in [`docs/MIDI.md`](docs/MIDI.md).
+its dozen relatives play here through the other three, all of which have landed:
+SpessaSynth, Nuked OPL3 and Nuked SC-55. See [`docs/MIDI.md`](docs/MIDI.md).
 
 ## Relationship to upstream Cog
 

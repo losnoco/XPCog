@@ -12,6 +12,12 @@
 # single rewritten byte changes a number rather than breaking a parse.
 *.f32 binary
 
+# The shipped SoundFont banks. These are RIFF, so their chunk sizes are counted
+# in bytes -- insert a byte anywhere and every offset after it is wrong, which a
+# loader reports as a corrupt bank rather than as a line-ending problem.
+*.sf2 binary
+*.sf3 binary
+
 # Shell scripts keep LF on checkout, autocrlf notwithstanding. A CRLF shebang is
 # not a shebang: the kernel -- and Git Bash -- take the trailing \r as part of
 # the interpreter's name and report `/usr/bin/env bash^M: no such file`. Only
