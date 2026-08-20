@@ -2320,7 +2320,8 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   time, the same arrangement as Organya's wavetable and AdPlug's song database —
   2 MB in the repository instead of 14, and the same 2 MB in the binary.
   Its licence is Yamaha's and has never been established by anyone shipping it;
-  that question is open and is listed with Organya's under item 5.
+  that question is open and is listed with Organya's and AdPlug's under
+  "The decoder list, and what it left behind".
 
   The lookup has a second step Cog has not: a ROM found beside the file being
   played is used when none was compiled in, so a build with `data/` emptied still
@@ -2497,16 +2498,31 @@ rest of this file. Ordered by what each one is worth, not by size. Everything
 here is reachable from a clean checkout — `cmake --preset <platform>-debug` and
 the README's asset variables are the whole setup.
 
-**1. What is left of the DSD containers.** `codecs/dsd` reads DSF and
-uncompressed DSDIFF; see the entry above. Two things it does not do:
+**Re-ranked since the last revision.** The decoders were item 5 and are now done,
+which promotes `cogimport` to the top: with every format Cog plays now playing
+here, the thing standing between this and a player a Cog user can actually move
+to is their library, not their files.
 
-- **DST-compressed DSDIFF is declined.** It is losslessly compressed DSD, the
-  `CMPR` chunk announces it, and it needs a real decoder rather than a stub. No
-  fixture here holds one.
-- **`wsd` is not claimed**, though Cog claims it beside the other two. Wideband
-  Single-bit Data is a third container and there is no file to read one against.
+**1. `cogimport`.** Reading an existing Cog installation — its playlists, its
+SQLite library, its defaults — is the difference between a port and something a
+Cog user can switch to. Core already has the plist reader and writer that Cog's
+XML playlists need, and `codecs/playlists` already parses that format, so the
+missing pieces are the SQLite schema and the defaults mapping. Cog's library
+lives in `~/Library/Application Support/Cog/Default.storedata` (Core Data, so the
+schema is not one a person would have designed) and its preferences in
+`~/Library/Preferences/org.cogx.cog.plist`. Note that `silence://10` can appear
+in a Cog playlist and now plays here, which was the point of porting it.
 
-**2. What is left of switching the output device live.** The switch itself is
+**2. Native output backends, replacing miniaudio.** miniaudio is a stopgap;
+`IAudioOutput` is the seam that makes it a swap rather than a rewrite. A native
+WASAPI backend buys rates above miniaudio's 384,000 Hz ceiling, event-driven
+exclusive mode, and the integer output DoP needs. The three questions a backend
+answers for itself are already virtual and already asked:
+`supportsSampleRate()`, `preferredSampleRate()`, `exclusiveHeld()`. Keep new
+ones there rather than in the engine — the DSD failure recorded above is what
+happens when a backend's limit leaks upward. This unblocks items 3 and 5.
+
+**3. What is left of switching the output device live.** The switch itself is
 done — `AudioEngine::switchOutputDevice()` moves the running stream and keeps
 both rings, and the entry under "Then" above says how. Three things it does
 *not* do, in the order they are worth having:
@@ -2527,16 +2543,17 @@ both rings, and the entry under "Then" above says how. Three things it does
   out and what the clock said; how long the driver takes to hand over, and
   whether that reads as a seam or as a stumble, needs two real devices.
 
-**3. Native output backends, replacing miniaudio.** miniaudio is a stopgap;
-`IAudioOutput` is the seam that makes it a swap rather than a rewrite. A native
-WASAPI backend buys rates above miniaudio's 384,000 Hz ceiling, event-driven
-exclusive mode, and the integer output DoP needs. The three questions a backend
-answers for itself are already virtual and already asked:
-`supportsSampleRate()`, `preferredSampleRate()`, `exclusiveHeld()`. Keep new
-ones there rather than in the engine — the DSD failure below is what happens
-when a backend's limit leaks upward.
+**4. What is left of the DSD containers.** `codecs/dsd` reads DSF and
+uncompressed DSDIFF; see the entry above. Two things it does not do, both
+blocked on a fixture rather than on a decision:
 
-**4. DoP output.** `ChunkList.m` has all of it: `convert_dsd_to_dop_f32`, the
+- **DST-compressed DSDIFF is declined.** It is losslessly compressed DSD, the
+  `CMPR` chunk announces it, and it needs a real decoder rather than a stub. No
+  fixture here holds one.
+- **`wsd` is not claimed**, though Cog claims it beside the other two. Wideband
+  Single-bit Data is a third container and there is no file to read one against.
+
+**5. DoP output.** `ChunkList.m` has all of it: `convert_dsd_to_dop_f32`, the
 alternating 0x05/0xFA markers, `reverse_bits8` for putting the payload's bit
 order back on the wire. It is not ported because there is no DoP-capable DAC
 here to verify against, and a DoP path that has never locked a real device is a
@@ -2547,30 +2564,41 @@ the device has to be switched to 24-bit integer output
 (`DoPIntegerRenderFormatForDeviceFormat`), because the marker bytes must survive
 bit-exactly and a float path that scales or dithers destroys them.
 
-**5. The decoders Cog has and this does not. — DONE.** Each was one
-`xpcog_add_codec()` call plus one vcpkg overlay port — or one `vendor/` directory
-where there was no upstream to pin, or nothing at all where the player was small
-enough to be the codec — which is the claim this architecture makes about itself.
-**Hively, AdPlug, Organya, Syntrax, Shorten, libvgm and the `silence://` track
-are all in**; see the entries above.
+**6. The feature tail.** HRTF (Cog's is an impulse-response convolver in the DSP
+chain, and the DSP section above notes where it would sit), Last.fm scrobbling,
+global hotkeys.
 
-The claim mostly held. Only two needed a change outside their own directory:
+**7. Three MIDI leftovers**, all recorded in `docs/MIDI.md` and none of them
+blocking: an RMID's embedded soundbank is not extracted (`midi_processing` does
+not, SpessaSynth's own loader would); Cog's `midi.flavor` SysEx filter — GM,
+GM2, GS, four SC-88 flavours, XG — lives in `MIDIPlayer` and was not ported; and
+whether to ship a default SoundFont, which is what lets Cog default to
+SpessaSynth (it carries `GeneralUserXG-SFeTest.sf3`, 11 MB, at its repository
+root) while this defaults to the OPL3.
+
+#### The decoder list, and what it left behind
+
+Item 5 of the old list is **done**. Hively, AdPlug, Organya, Syntrax, Shorten,
+libvgm and the `silence://` track are all in; each has its own entry above.
+Cog's BASSMODS, Dumb, modplay and playptmod are deliberately absent — all four
+are tracker players OpenMPT already covers — so nothing on Cog's decoder list is
+unaccounted for.
+
+The architecture's claim about itself mostly held: each was one
+`xpcog_add_codec()` call plus one overlay port, or one `vendor/` directory where
+there was no upstream to pin, or nothing at all where the player was small
+enough to *be* the codec. Two needed a change outside their own directory.
 AdPlug's dynamic initialiser made six test files stop registering codecs before
-`main`, and Shorten added one extension to `codecs/ffmpeg` and one parser to
-`codecs/common` rather than becoming a codec at all.
+`main`. And Shorten did not become a codec at all — FFmpeg has decoded it for
+years, so it is one extension on `codecs/ffmpeg` plus a length parser in
+`codecs/common`.
 
-Cog's BASSMODS, Dumb, modplay and playptmod are deliberately not ported: all four
-are tracker players that OpenMPT already covers here. That leaves nothing on
-Cog's decoder list unaccounted for.
+Six things left behind, none of them blocking:
 
-One thing still missing rather than declined: AdPlug does not claim `.ad_`, which
-ten Westwood files in the corpus use for a format it reads as `.adl` — upstream's
-list is upstream's, and hardcoding around it would break the property that a
-player added upstream appears here without an edit.
-
-Five things the finished ones left behind, none of them blocking:
-
-- **DST-compressed DSDIFF** is still declined; that is item 1 above.
+- **AdPlug does not claim `.ad_`**, which ten Westwood files in the corpus use
+  for a format it reads as `.adl`. Upstream's list is upstream's, and hardcoding
+  around it would break the property that a player added upstream appears here
+  without an edit.
 - **Three third-party data blobs are compiled into the binary** and nobody has
   asked the licensing question about any of them: Organya's wavetable and PixTone
   parameters (Pixel's, 34 KB), AdPlug's song database (7.8 KB), and libvgm's
@@ -2588,30 +2616,70 @@ Five things the finished ones left behind, none of them blocking:
 - **Nothing creates a `silence://` URL yet.** The decoder plays one; wiring it
   into the failed-open path would change `PlaybackController`'s existing, tested
   behaviour and is a product decision rather than a porting one.
+- **95 `C4127` warnings on MSVC**, one per corpus test's `if (!kHaveCorpus || …)`
+  guard, because `kHaveCorpus` is a `constexpr bool`. The pattern predates the
+  new decoders and now spans 22 test files. Nothing is wrong with any of them
+  individually; collectively they are loud enough to hide a real warning, and
+  fixing it means touching every corpus test at once.
 
-**6. `cogimport`.** Reading an existing Cog installation — its playlists, its
-SQLite library, its defaults — is the difference between a port and something a
-Cog user can move to. Core already has the plist reader and writer that Cog's
-XML playlists need, and `codecs/playlists` already parses that format.
+#### The 60 skips, and the one that is worth clearing
 
-**7. The feature tail.** HRTF (Cog's is an impulse-response convolver in the DSP
-chain, and `docs/PORTING.md`'s DSP section notes where it would sit), Last.fm
-scrobbling, global hotkeys.
+`ctest` skips 60 cases on a fully-configured machine. Most want assets no package
+manager can supply, and the breakdown is worth knowing before assuming a green
+run means everything ran:
 
-**8. Three MIDI leftovers**, all recorded in `docs/MIDI.md` and none of them
-blocking: an RMID's embedded soundbank is not extracted (`midi_processing` does
-not, SpessaSynth's own loader would); Cog's `midi.flavor` SysEx filter — GM,
-GM2, GS, four SC-88 flavours, XG — lives in `MIDIPlayer` and was not ported; and
-whether to ship a default SoundFont, which is what lets Cog default to
-SpessaSynth (it carries `GeneralUserXG-SFeTest.sf3`, 11 MB, at its repository
-root) while this defaults to the OPL3.
+| Skips | Wants |
+|---|---|
+| 44 | `XPCOG_PSF_CORPUS` |
+| 8 | `XPCOG_SC55_ROMS` |
+| 3 | `XPCOG_SID_CORPUS` |
+| 3 | `XPCOG_SOUNDFONT` |
+| 2 | `XPCOG_MIDI_CORPUS` |
 
-**The habit that matters more than any of these.** Read Cog's implementation
+**The 44 are the ones to fix, and they are blocked by the corpus rather than by
+the tests.** Pointing `XPCOG_PSF_CORPUS` at a real collection clears the skips
+and fails twelve cases, because the core PSF tests walk recursively, take the
+first match, and require audio — while a `psf/orphan/` directory holds minis with
+their libraries deliberately removed. Those tests already build their own orphans
+in temp directories, so the fix is to teach the finders to skip files whose
+library chain does not resolve. That is more robust than dropping the directory,
+and it is the difference between 44 tests that have never run and 44 that have.
+
+#### What the two Windows failures taught, which will recur
+
+Both Windows CI failures on the libvgm port had the same shape, and it is the
+shape to expect from the rest of Cog's ~25 vendored libraries as they land:
+**a library written to be built the way its own project files build it does not
+survive a vcpkg dynamic triplet.**
+
+- libvgm hardcodes `Iconv_LIBRARY` for MSVC to a **32-bit** libiconv bundled in
+  its own tree, so an x64 build links `machine type 'x86' conflicts with target
+  machine type 'x64'` and dies on three unresolved symbols. The port selects the
+  WinAPI charset backend instead, which is what libvgm picks for itself whenever
+  iconv is absent.
+- libvgm marks **nothing** for export. On MSVC a DLL with no exports produces no
+  import library, so a shared build writes `vgm-emu_Win64d.dll` and then cannot
+  link the next target against a `.lib` that was never created. The port declares
+  `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)`, which is what upstream's own
+  `libEmu.vcxproj` has been saying all along.
+
+Neither is visible from macOS or Linux, whose default triplets are static and
+whose iconv is in libc. When adding a port, the question to ask early is: does
+upstream ship MSVC project files, and what do *they* build? If they build static
+libraries, say so in the portfile rather than letting the triplet ask for
+something the code cannot deliver.
+
+Two things that were *not* problems, recorded so nobody re-litigates them: MSVC
+compiled the 2 MB OPL4 ROM's two-million-element initialiser in about a third of
+a second, and vcpkg's zlib won over libvgm's bundled copy without help.
+
+**The habit that matters more than any of these.** Read the implementation
 first — not only the algorithm, but the code around it that decides how the
 algorithm is *fed*. DSD cost two rounds for exactly that reason: the filter, the
 decoder and the tests were all correct, and it still would not play, because the
 question of what rate the device runs at was answered in `OutputCoreAudio.m` and
-nobody had read it.
+nobody had read it. libvgm cost two rounds for the same reason on the build side:
+the answer was in a `.vcxproj` nobody opened.
 
 ### Waiting on a Mac
 
