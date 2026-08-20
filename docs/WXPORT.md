@@ -104,6 +104,28 @@ wrote a temporary file. `Library::artwork()` returns the original encoded blob a
 always did. Handing each backend those bytes deletes a decode-and-re-encode round
 trip from all three.
 
+### Every `wxString` is built from UTF-8 explicitly, or it is a bug
+
+`QString::fromStdString` is UTF-8 in Qt 6. `wxString(const char*)` is **not** — on
+Windows it decodes using the current 8-bit locale. There are 294 `QString` uses to
+translate, most of them wrapping tag text straight out of a `PlaylistEntry`, so the
+mechanical translation produces mojibake on every non-ASCII tag on Windows — and
+passes CI, whose fixtures are ASCII.
+
+The rule, and it is grep-able: **a `wxString` is constructed from a string literal
+or from `wxString::FromUTF8`, never from a `std::string` or a `const char*` holding
+data.** Two helpers land before any window is written:
+
+```cpp
+inline wxString    toWx(std::string_view s)  { return wxString::FromUTF8(s.data(), s.size()); }
+inline std::string toUtf8(const wxString& s) { return s.utf8_string(); }
+```
+
+The test that catches it is a round trip of `Sigur Rós / Ágætis byrjun` — the string the
+single-instance test already uses — through the playlist, the window title and the
+settings store. It will pass on macOS and Linux while failing on Windows, which is
+exactly why it has to exist.
+
 ### Settings and the library must land on the bytes that are already there
 
 Two paths are not free to change, because a working installation already has files
@@ -149,18 +171,46 @@ None is large; one is risky.
 | Undo stack | `QUndoStack` / `QUndoCommand` | ~120 lines |
 | Playlist view model | `QAbstractTableModel` + `QSortFilterProxyModel` | folds two classes into one |
 | Resource embedding | `qt_add_resources()` | done — see above |
-| **MPRIS on raw libdbus-1** | `QDBusAbstractAdaptor` | ~700–900 lines |
+| **MPRIS on GDBus** | `QDBusAbstractAdaptor` | ~420 lines |
 | Taskbar overlay badge | `QImage` + `QPainter` → `HICON` | ~80 lines |
 
-The MPRIS rewrite is the one to be careful with. `QDBusAbstractAdaptor` turns a
-`Q_OBJECT` into a D-Bus interface by introspecting its metaobject; without it,
-the introspection XML, the `org.freedesktop.DBus.Properties` dispatch, the
+The MPRIS rewrite is the one to be careful with, and the choice of D-Bus binding
+decides how careful. `QDBusAbstractAdaptor` turns a `Q_OBJECT` into a D-Bus
+interface by introspecting its metaobject, and nothing else offers that -- so the
+introspection XML, the `org.freedesktop.DBus.Properties` dispatch, the
 `PropertiesChanged` emission and the `MediaPlayer2` / `MediaPlayer2.Player` method
-tables are all hand-written. The failure mode is a desktop panel that shows
-nothing and reports nothing, so it wants testing against a real session bus rather
-than trusting that it compiles. libdbus-1 comes from the system via `pkg-config`
-rather than from vcpkg: every Linux desktop already has it, and there is no
-`sdbus-c++` in this project's vcpkg baseline.
+tables are hand-written whichever binding is used.
+
+**GDBus, from `gio-2.0`.** Three candidates were weighed and the first two lose
+badly:
+
+- *libdbus-1* is the low-level reference implementation. It works, it is on every
+  desktop, and it makes you own main-loop integration yourself -- which means
+  either a thread pumping the connection and a marshalling hop back, or hooking
+  its watch/timeout callbacks into whatever loop wx is running. 600–700 lines.
+- *sdbus-c++* is in the baseline after all, contrary to a first reading. It is
+  still wrong: vcpkg's port depends on `libsystemd`, which is a full systemd source
+  build -- meson, gperf, libcap, libmount, libxcrypt, lz4, zstd, liblzma. That is
+  an absurd dependency for eleven methods.
+- *GDBus* wins on the one property that matters here. wxGTK's event loop **is** a
+  `GMainLoop` on the default main context, so an object registered from the GUI
+  thread has its method calls delivered on the GUI thread -- exactly the guarantee
+  QtDBus was quietly providing. No pump thread, no dispatcher, no `CallAfter`.
+  GLib is already linked, because vcpkg's wxwidgets depends on gtk3 on Linux.
+  `g_dbus_connection_register_object()` takes the introspection XML and one vtable;
+  `g_dbus_connection_emit_signal()` does `PropertiesChanged` in a single call.
+
+So this comes out at roughly **420 lines against today's 488** -- the one hand-written
+item that is smaller than what it replaces.
+
+What does not change is the risk. The failure mode is a desktop panel that shows
+nothing and reports nothing, the file is compiled only by CI and only on Linux, and
+there is no test. All four of the non-obvious spec facts recorded in
+`LinuxMediaIntegration.cpp` -- properties do not self-announce, times are signed
+microseconds, `mpris:trackid` is an object path, `Position` must not be announced --
+carry across verbatim, as does the `Seek`-is-relative / `SetPosition`-is-absolute
+resolution. Copy those comments; do not re-derive them.
+
 
 ## Deliberate regressions
 
@@ -180,21 +230,45 @@ Stated here rather than discovered later.
   alpha planes, so the panel repacks RGBX to RGB24 each redraw.
 - **`wxDataViewCtrl` is not `QTableView`.** Expect drift in header sorting,
   in-place editing and selection rendering.
+- **On Linux, vcpkg builds GTK3 from source.** wxwidgets' vcpkg port depends on
+  gtk3, which pulls glib, pango, cairo, gdk-pixbuf, harfbuzz, at-spi2-core,
+  libepoxy and wayland. On Windows and macOS the wx build is small and
+  self-contained; on Linux it is not, and `x64-linux` is a static triplet by
+  default, which parts of that stack have never been happy about. This is the one
+  item that could derail the port rather than merely cost time, and it is why
+  `cmake/XPCogWx.cmake` has a module-mode fallback from the first commit: a Linux
+  developer, and possibly CI, should use the distribution's wxGTK rather than
+  building GTK twice. **Unresolved, and unresolvable from this machine.**
 
 ## Staging
 
-Each step ends with a building tree and a green `ctest`, except where noted.
+**Every step ends with a building tree and a green `ctest`.** No step is allowed to
+leave the application unbuildable, and that is a deliberate constraint rather than
+a nicety: a 7,500-line interface that has never once compiled produces a wall of
+errors with no bisect point in it.
+
+What makes that affordable is that the two applications coexist. `xpcog-app` keeps
+building on Qt while `xpcog-app-wx` grows beside it, so every step has a working
+player to compare against and the wx one can be launched half-finished. Qt is
+deleted in one piece at the end, once the new window has been driven by hand and
+found to match. The cost is that `XPCOG_QT_ROOT` stays required until step 8; the
+wx target never needs it.
 
 | | Step | State |
 |---|---|---|
 | ✅ | **1** — Branch, `vcpkg.json` `gui` feature, `XPCogWx.cmake`, resource embedding | done |
-| | **2** — De-Qt `platform/`: four headers, four backends, the settings store, the dispatcher | |
-| | **3** — Leaf pieces: undo stack, `LucideIcon`, `AppIcon`, `PlaybackController`, `ScanTask`, `SingleInstance`, and their tests | |
-| | **4** — The playlist view model and its test | |
-| | **5** — The main window. The Qt application is deleted here | |
-| | **6** — Preferences, info, about, open-URL, equaliser, mini player | |
+| | **2** — De-Qt `platform/` entirely: four headers, four backends, the settings store, the dispatcher. The Qt app adapts in place and keeps running | |
+| | **3** — Core gains what the UI will need: undo stack, `SerialExecutor`, the playlist view model. `PlaylistCommands` and `ScanTask` move down with them, and four test files move into the headless suite | |
+| | **4** — `xpcog-app-wx` exists: `wxApp`, an empty frame, embedded resources, `LucideIcon`, `AppIcon`, the UTF-8 helpers | |
+| | **5** — The main window: menus on command IDs, `wxDataViewCtrl`, transport, `SeekBar`, `FileTree`, drag and drop, `wxAuiManager` docks. **The wx build plays audio here** | |
+| | **6** — Preferences, info, about, open-URL, equaliser, mini player, tray presence, single instance | |
 | | **7** — The painted widgets: spectrum, SC-55 panel | |
-| | **8** — Finish the purge: delete `XPCogQt.cmake`, widen `CheckNoQt`, update CI, presets and README | |
+| | **8** — Delete the Qt application and `XPCogQt.cmake`, widen `CheckNoQt` to the whole tree, update CI, presets and README | |
+
+Steps 2 and 3 are worth doing even if the port were abandoned: they move roughly
+600 lines of test out of the GUI suite and into the headless one, and they delete
+`PlaylistModel`'s `rows_` bridge, which exists only because two frameworks
+disagreed about when to speak.
 
 ### Step 1 — scaffolding (done)
 
