@@ -9,6 +9,8 @@
 #include "MiniFrame.hpp"
 #include "OpenUrlDialog.hpp"
 #include "PreferencesDialog.hpp"
+#include "Sc55Panel.hpp"
+#include "SpectrumPanel.hpp"
 #include "LucideIcon.hpp"
 #include "PlaylistDataModel.hpp"
 #include "SeekBar.hpp"
@@ -195,12 +197,25 @@ void MainFrame::buildUi() {
     info_ = new InfoPanel(root, library_.get());
     info_->Hide();
 
+    spectrum_ = new SpectrumPanel(root, playback_->tap());
+    spectrum_->applySettings(settings_);
+    spectrum_->Hide();
+
+#ifdef XPCOG_HAVE_SC55_PANEL
+    sc55_ = new Sc55Panel(root, [this] { return playback_->position(); });
+    sc55_->Hide();
+#endif
+
     auto* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(transport, 0, wxEXPAND);
     sizer->Add(new wxStaticLine(root), 0, wxEXPAND);
     sizer->Add(splitter_, 1, wxEXPAND);
+    sizer->Add(spectrum_, 0, wxEXPAND);
     sizer->Add(equalizer_, 0, wxEXPAND);
     sizer->Add(info_, 0, wxEXPAND);
+#ifdef XPCOG_HAVE_SC55_PANEL
+    sizer->Add(sc55_, 0, wxEXPAND);
+#endif
     root->SetSizer(sizer);
 
     // Three fields: the summary, the now-playing text, and room for the scan
@@ -350,6 +365,16 @@ void MainFrame::wireUp() {
         clock_->SetLabelText(toWx(formatClock(seconds) + " / " + formatClock(duration_)));
     });
 
+    // --- the spectrum ----------------------------------------------------
+    //
+    // The sample rate is what its band table is built against, and it is not
+    // known until a device has been negotiated -- which happens when a track
+    // starts, not when the panel is created.
+    observe(playback_->playbackStateChanged, [this](bool playing, bool paused) {
+        spectrum_->setSampleRate(playback_->sampleRate());
+        spectrum_->setActive(spectrum_->IsShown() && playing && !paused);
+    });
+
     // --- the equaliser ---------------------------------------------------
     observe(equalizer_->settingChanged,
             [this](const std::string& key) { onSettingChanged(key); });
@@ -485,6 +510,11 @@ void MainFrame::onSettingChanged(const std::string& key) {
 
     if (key == "floatingMiniWindow" && mini_ != nullptr) {
         mini_->setFloating(settings_.FloatingMiniWindow());
+        return;
+    }
+
+    if (key.starts_with("spectrum")) {
+        spectrum_->applySettings(settings_);
     }
 }
 
@@ -602,6 +632,17 @@ void MainFrame::bindCommands() {
         }
     });
     on(ViewMiniPlayer, [this] { setMiniMode(mini_ == nullptr || !mini_->IsShown()); });
+    on(ViewSpectrum, [this] {
+        const bool showing = !spectrum_->IsShown();
+        togglePanel(spectrum_, showing);
+        // The clock only runs while the panel is both visible and playing: a
+        // 4096-point transform sixty times a second for a hidden widget is the
+        // cost this guard exists to avoid.
+        spectrum_->setActive(showing && playback_->playing() && !playback_->paused());
+    });
+#ifdef XPCOG_HAVE_SC55_PANEL
+    on(ViewSc55Panel, [this] { togglePanel(sc55_, !sc55_->IsShown()); });
+#endif
     on(ViewFileTree, [this] {
         if (splitter_->IsSplit()) {
             splitter_->Unsplit(tree_);
@@ -684,11 +725,18 @@ void MainFrame::bindUpdateUi() {
     update(ViewMiniPlayer, [this](wxUpdateUIEvent& event) {
         event.Check(mini_ != nullptr && mini_->IsShown());
     });
-    // Present and inert until the panels behind them exist, which is deliberate:
-    // a command that appears and disappears as it is implemented is worse than
-    // one that is briefly quiet.
-    update(ViewSpectrum, [](wxUpdateUIEvent& event) { event.Enable(false); });
+    update(ViewSpectrum,
+           [this](wxUpdateUIEvent& event) { event.Check(spectrum_->IsShown()); });
+#ifdef XPCOG_HAVE_SC55_PANEL
+    update(ViewSc55Panel,
+           [this](wxUpdateUIEvent& event) { event.Check(sc55_->IsShown()); });
+#else
+    // Present even in a build without MIDI, where there is no emulator to render
+    // a panel state and nothing that produces one. A command that appears and
+    // disappears with a compile flag is worse than one that is occasionally
+    // inert -- which is the same reasoning the Qt build's ActionRegistry gave.
     update(ViewSc55Panel, [](wxUpdateUIEvent& event) { event.Enable(false); });
+#endif
 
     // The two exclusive groups read their state from the playlist rather than
     // being remembered here, so a change made anywhere shows up on the menu.

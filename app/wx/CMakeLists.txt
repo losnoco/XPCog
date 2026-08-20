@@ -38,6 +38,8 @@ add_library(xpcog-wxcore STATIC
     PreferencesDialog.hpp
     SeekBar.cpp
     SeekBar.hpp
+    SpectrumPanel.cpp
+    SpectrumPanel.hpp
     SingleInstance.cpp
     SingleInstance.hpp
     StatusPresence.cpp
@@ -101,6 +103,7 @@ xpcog_embed_resources(
 # is no emulator to render a panel state and nothing that produces one.
 if(XPCOG_WITH_MIDI)
     target_compile_definitions(xpcog-wxcore PUBLIC XPCOG_HAVE_SC55_PANEL=1)
+    target_sources(xpcog-wxcore PRIVATE Sc55Panel.cpp Sc55Panel.hpp)
     # 776 KiB of raw RGBA, compiled in rather than found at runtime: it is part of
     # the emulator the way its ROMs are not -- shippable, and useless on its own.
     xpcog_embed_resources(

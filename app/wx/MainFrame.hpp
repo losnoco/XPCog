@@ -62,7 +62,9 @@ class FileTree;
 class InfoPanel;
 class MiniFrame;
 class PlaylistDataModel;
+class Sc55Panel;
 class SeekBar;
+class SpectrumPanel;
 
 using Dispatcher = std::function<void(std::function<void()>)>;
 
@@ -164,7 +166,14 @@ private:
     /// looks like a Windows application, and none of these needs tearing off.
     EqualizerPanel* equalizer_ = nullptr;
     InfoPanel*      info_      = nullptr;
-    wxWindow*       spectrum_  = nullptr;
+    SpectrumPanel*  spectrum_  = nullptr;
+#ifdef XPCOG_HAVE_SC55_PANEL
+    /// The SC-55's front panel. Hidden, and not built into the default
+    /// layout: it is one synthesiser of three, for one format among many, and
+    /// a photograph of a 1993 sound module is not what someone who opened a
+    /// music player asked to look at.
+    Sc55Panel* sc55_ = nullptr;
+#endif
 
     /// Built the first time it is asked for. Null until then: most sessions
     /// never open it, and it holds a seek bar that would otherwise be

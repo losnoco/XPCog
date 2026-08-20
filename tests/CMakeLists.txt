@@ -384,7 +384,6 @@ if(XPCOG_BUILD_APP)
         app/test_appicon.cpp
         app/test_infopanel.cpp
         app/test_lucideicon.cpp
-        app/test_sc55panel.cpp
         app/test_singleinstance.cpp
     )
 
@@ -436,6 +435,12 @@ if(XPCOG_BUILD_APP)
         wx/test_embedded_icons.cpp
         wx/test_helpers.cpp
     )
+
+    # The panel photograph only exists in a MIDI build, and so does the test
+    # that checks it is still there.
+    if(XPCOG_WITH_MIDI)
+        target_sources(xpcog-wx-tests PRIVATE wx/test_sc55panel.cpp)
+    endif()
 
     target_link_libraries(xpcog-wx-tests PRIVATE
         xpcog-wxcore

@@ -266,7 +266,7 @@ wx target never needs it.
 | ✅ | **4** — `xpcog-app-wx` exists: `wxApp`, an empty frame, embedded resources, `LucideIcon`, `AppIcon`, the UTF-8 helpers | done |
 | ✅ | **5** — The main window: menus on command IDs, `wxDataViewCtrl`, transport, `SeekBar`, `FileTree`, drag and drop. **The wx build plays audio here** | done |
 | ✅ | **6** — Preferences, info, about, open-URL, equaliser, mini player, tray presence, single instance | done |
-| | **7** — The painted widgets: spectrum, SC-55 panel | |
+| ✅ | **7** — The painted widgets: spectrum, SC-55 panel | done |
 | | **8** — Delete the Qt application and `XPCogQt.cmake`, widen `CheckNoQt` to the whole tree, update CI, presets and README | |
 
 Steps 2 and 3 are worth doing even if the port were abandoned: they move roughly
