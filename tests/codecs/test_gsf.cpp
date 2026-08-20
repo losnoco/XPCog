@@ -11,6 +11,7 @@
 // Rips cannot be committed, so these run against a corpus already on the
 // machine (`-DXPCOG_PSF_CORPUS=<path>`) and skip without one.
 
+#include "PsfCorpus.hpp"
 #include "psf/PsfFile.hpp"
 
 #include "xpcog/core/AudioChunk.hpp"
@@ -30,70 +31,18 @@
 
 using namespace xpcog;
 using namespace xpcog::codecs;
+using namespace xpcog::testing;
 namespace fs = std::filesystem;
 
 namespace {
 
-PluginRegistry& registry() {
-    static PluginRegistry instance;
-    static const bool     once = [] {
-        registerAllCodecs(instance);
-        return true;
-    }();
-    (void)once;
-    return instance;
-}
-
-#ifdef XPCOG_PSF_CORPUS
-constexpr bool kHaveCorpus = true;
-[[nodiscard]] fs::path corpusRoot() { return fs::path{XPCOG_PSF_CORPUS}; }
-#else
-constexpr bool kHaveCorpus = false;
-[[nodiscard]] fs::path corpusRoot() { return {}; }
-#endif
-
-[[nodiscard]] std::string lowerExtension(const fs::path& path) {
-    std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return extension;
-}
+PluginRegistry& registry() { return psfRegistry(); }
 
 /// Up to `want` playable GSFs, taken from as many different games as possible.
 /// One game's rips share a `.gsflib` and so share a sample rate; six files from
 /// one set would test the rate once.
 [[nodiscard]] std::vector<fs::path> findGsfs(std::size_t want) {
-    std::vector<fs::path> found;
-    if (!kHaveCorpus) {
-        return found;
-    }
-
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        return found;
-    }
-
-    fs::path lastDirectory;
-    for (const fs::directory_entry& entry : walk) {
-        if (found.size() >= want) {
-            break;
-        }
-        if (!entry.is_regular_file(error)) {
-            continue;
-        }
-        const std::string extension = lowerExtension(entry.path());
-        if (extension != ".gsf" && extension != ".minigsf") {
-            continue;
-        }
-        if (entry.path().parent_path() == lastDirectory) {
-            continue;
-        }
-        lastDirectory = entry.path().parent_path();
-        found.push_back(entry.path());
-    }
-    return found;
+    return findPsfFiles({".gsf", ".minigsf"}, {.want = want, .onePerDirectory = true});
 }
 
 struct Decoded {
@@ -149,7 +98,7 @@ TEST_CASE("the GSF decoder is registered for both spellings", "[gsf]") {
 }
 
 TEST_CASE("a GSF renders audio, not silence", "[gsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -177,7 +126,7 @@ TEST_CASE("a GSF renders audio, not silence", "[gsf][corpus]") {
 }
 
 TEST_CASE("the sample rate is the one the GBA chose", "[gsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -202,8 +151,15 @@ TEST_CASE("the sample rate is the one the GBA chose", "[gsf][corpus]") {
     //
     // What it can see is that 32768 is the value a too-early probe returns, so
     // an entire corpus reporting exactly the reset default is the signature of
-    // the regression. A corpus made up solely of genuine 32 kHz rips would need
-    // this relaxed; the 783 files this was written against are all 65536.
+    // the regression. That is a statement about a corpus, and it needs enough
+    // games in it to be one: a single genuine 32 kHz rip trips it on its own,
+    // which is what a corpus holding one `.minigsf` did. So the check is made
+    // only where there is a sample to generalise from -- see kEnoughGamesToTell.
+    //
+    // Golden Sun (AGB-BGOE) is the rip in question and it really does run at
+    // 32768. Measured, not assumed: widening the probe to a hundred seconds of
+    // emulation with ten seconds of required stability leaves the answer
+    // unchanged, so the game never writes SOUNDBIAS at all.
     std::vector<double> rates;
     for (const fs::path& path : gsfs) {
         INFO(path.filename().string());
@@ -221,6 +177,17 @@ TEST_CASE("the sample rate is the one the GBA chose", "[gsf][corpus]") {
     }
     REQUIRE_FALSE(rates.empty());
 
+    // Two is the smallest number that makes "all of them" mean anything. It is
+    // still a weak threshold, and deliberately so: the check exists to catch a
+    // whole corpus collapsing to one value, and raising the bar further would
+    // switch it off for most collections that are not the 783-file one it was
+    // written against.
+    constexpr std::size_t kEnoughGamesToTell = 2;
+    if (rates.size() < kEnoughGamesToTell) {
+        SUCCEED("one game is not a corpus: the reset-default check needs a sample");
+        return;
+    }
+
     constexpr double kResetDefault = 32768.0;
     const bool anyPastReset =
         std::any_of(rates.begin(), rates.end(),
@@ -231,7 +198,7 @@ TEST_CASE("the sample rate is the one the GBA chose", "[gsf][corpus]") {
 }
 
 TEST_CASE("a GSF honours the length and fade tags", "[gsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -266,7 +233,7 @@ TEST_CASE("a GSF honours the length and fade tags", "[gsf][corpus]") {
 }
 
 TEST_CASE("a GSF fades out rather than being cut off", "[gsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -300,28 +267,19 @@ TEST_CASE("a GSF fades out rather than being cut off", "[gsf][corpus]") {
 }
 
 TEST_CASE("the GSF core refuses another console's PSF", "[gsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        SKIP("corpus is not readable");
+    const auto usfs = findPsfFiles({".usf", ".miniusf"}, {.want = 1});
+    if (usfs.empty()) {
+        SKIP("corpus holds no USF to check the version byte against");
     }
 
     // A USF handed to a GBA is not a near miss. The container refuses it on the
     // version byte rather than mGBA discovering it by executing a save state.
-    for (const fs::directory_entry& entry : walk) {
-        if (!entry.is_regular_file(error) || lowerExtension(entry.path()) != ".miniusf") {
-            continue;
-        }
-        INFO(entry.path().filename().string());
-        const Url url = Url::fromLocalPath(entry.path());
-        CHECK(loadPsf(url, registry()).has_value());
-        CHECK_FALSE(loadPsf(url, registry(), 0x22).has_value());
-        return;
-    }
-    SKIP("corpus holds no USF to check the version byte against");
+    INFO(usfs.front().filename().string());
+    const Url url = Url::fromLocalPath(usfs.front());
+    CHECK(loadPsf(url, registry()).has_value());
+    CHECK_FALSE(loadPsf(url, registry(), 0x22).has_value());
 }

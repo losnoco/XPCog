@@ -12,6 +12,7 @@
 // Rips cannot be committed, so these run against a corpus already on the
 // machine (`-DXPCOG_PSF_CORPUS=<path>`) and skip without one.
 
+#include "PsfCorpus.hpp"
 #include "psf/PsfFile.hpp"
 
 #include "xpcog/core/AudioChunk.hpp"
@@ -31,70 +32,19 @@
 
 using namespace xpcog;
 using namespace xpcog::codecs;
+using namespace xpcog::testing;
 namespace fs = std::filesystem;
 
 namespace {
 
-PluginRegistry& registry() {
-    static PluginRegistry instance;
-    static const bool     once = [] {
-        registerAllCodecs(instance);
-        return true;
-    }();
-    (void)once;
-    return instance;
-}
-
-#ifdef XPCOG_PSF_CORPUS
-constexpr bool kHaveCorpus = true;
-[[nodiscard]] fs::path corpusRoot() { return fs::path{XPCOG_PSF_CORPUS}; }
-#else
-constexpr bool kHaveCorpus = false;
-[[nodiscard]] fs::path corpusRoot() { return {}; }
-#endif
-
-[[nodiscard]] std::string lowerExtension(const fs::path& path) {
-    std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return extension;
-}
+PluginRegistry& registry() { return psfRegistry(); }
 
 /// Up to `want` playable NCSFs, one per directory -- one game's rips share a
 /// `.snsflib` and testing six of them tests one cartridge.
 [[nodiscard]] std::vector<fs::path> findNcsfs(std::size_t want,
                                               bool onePerDirectory = true) {
-    std::vector<fs::path> found;
-    if (!kHaveCorpus) {
-        return found;
-    }
-
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        return found;
-    }
-
-    fs::path lastDirectory;
-    for (const fs::directory_entry& entry : walk) {
-        if (found.size() >= want) {
-            break;
-        }
-        if (!entry.is_regular_file(error)) {
-            continue;
-        }
-        const std::string extension = lowerExtension(entry.path());
-        if (extension != ".ncsf" && extension != ".minincsf") {
-            continue;
-        }
-        if (onePerDirectory && entry.path().parent_path() == lastDirectory) {
-            continue;
-        }
-        lastDirectory = entry.path().parent_path();
-        found.push_back(entry.path());
-    }
-    return found;
+    return findPsfFiles({".ncsf", ".minincsf"},
+                        {.want = want, .onePerDirectory = onePerDirectory});
 }
 
 struct Decoded {
@@ -151,7 +101,7 @@ TEST_CASE("the NCSF decoder is registered for both spellings", "[ncsf]") {
 }
 
 TEST_CASE("an NCSF renders audio, not silence", "[ncsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -175,7 +125,7 @@ TEST_CASE("an NCSF renders audio, not silence", "[ncsf][corpus]") {
 }
 
 TEST_CASE("the sequence number selects the track", "[ncsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -205,7 +155,7 @@ TEST_CASE("the sequence number selects the track", "[ncsf][corpus]") {
 }
 
 TEST_CASE("an NCSF honours the length and fade tags", "[ncsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -237,13 +187,14 @@ TEST_CASE("an NCSF honours the length and fade tags", "[ncsf][corpus]") {
 }
 
 TEST_CASE("opening an NCSF does not parse the archive", "[ncsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
-    const auto ncsfs = findNcsfs(1);
+    const auto ncsfs =
+        findPsfFiles({".ncsf", ".minincsf"}, {.want = 1, .chainedOnly = true});
     if (ncsfs.empty()) {
-        SKIP("corpus holds no NCSF files");
+        SKIP("corpus holds no chained NCSF");
     }
 
     // One .ncsflib serves a whole set, so the cheap path matters here as much
@@ -271,30 +222,19 @@ TEST_CASE("opening an NCSF does not parse the archive", "[ncsf][corpus]") {
 }
 
 TEST_CASE("the NCSF core refuses another console's PSF", "[ncsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        SKIP("corpus is not readable");
+    const auto others = findPsfFiles(
+        {".minigsf", ".miniusf", ".mini2sf", ".minisnsf", ".minissf", ".dsf"},
+        {.want = 1});
+    if (others.empty()) {
+        SKIP("corpus holds no other PSF to check the version byte against");
     }
 
-    for (const fs::directory_entry& entry : walk) {
-        const std::string extension = lowerExtension(entry.path());
-        if (!entry.is_regular_file(error) ||
-            (extension != ".minigsf" && extension != ".miniusf" &&
-             extension != ".mini2sf" && extension != ".minisnsf" &&
-             extension != ".minissf" && extension != ".dsf")) {
-            continue;
-        }
-        INFO(entry.path().filename().string());
-        const Url url = Url::fromLocalPath(entry.path());
-        CHECK(loadPsf(url, registry()).has_value());
-        CHECK_FALSE(loadPsf(url, registry(), 0x25).has_value());
-        return;
-    }
-    SKIP("corpus holds no other PSF to check the version byte against");
+    INFO(others.front().filename().string());
+    const Url url = Url::fromLocalPath(others.front());
+    CHECK(loadPsf(url, registry()).has_value());
+    CHECK_FALSE(loadPsf(url, registry(), 0x25).has_value());
 }

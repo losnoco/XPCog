@@ -12,6 +12,7 @@
 // Rips cannot be committed, so these run against a corpus already on the
 // machine (`-DXPCOG_PSF_CORPUS=<path>`) and skip without one.
 
+#include "PsfCorpus.hpp"
 #include "psf/PsfFile.hpp"
 
 #include "xpcog/core/AudioChunk.hpp"
@@ -31,34 +32,12 @@
 
 using namespace xpcog;
 using namespace xpcog::codecs;
+using namespace xpcog::testing;
 namespace fs = std::filesystem;
 
 namespace {
 
-PluginRegistry& registry() {
-    static PluginRegistry instance;
-    static const bool     once = [] {
-        registerAllCodecs(instance);
-        return true;
-    }();
-    (void)once;
-    return instance;
-}
-
-#ifdef XPCOG_PSF_CORPUS
-constexpr bool kHaveCorpus = true;
-[[nodiscard]] fs::path corpusRoot() { return fs::path{XPCOG_PSF_CORPUS}; }
-#else
-constexpr bool kHaveCorpus = false;
-[[nodiscard]] fs::path corpusRoot() { return {}; }
-#endif
-
-[[nodiscard]] std::string lowerExtension(const fs::path& path) {
-    std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return extension;
-}
+PluginRegistry& registry() { return psfRegistry(); }
 
 /// Up to `want` playable PSFs or PSF2s, one per directory -- one game's rips share a
 /// `.snsflib` and testing six of them tests one cartridge.
@@ -69,45 +48,14 @@ constexpr bool kHaveCorpus = false;
 [[nodiscard]] std::vector<fs::path> findPsx(std::size_t want,
                                             bool onePerDirectory  = true,
                                             std::string_view only = {}) {
-    std::vector<fs::path> found;
-    if (!kHaveCorpus) {
-        return found;
+    const PsfSearch search{.want = want, .onePerDirectory = onePerDirectory};
+    if (only == "psf2") {
+        return findPsfFiles({".psf2", ".minipsf2"}, search);
     }
-
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        return found;
+    if (only == "psf") {
+        return findPsfFiles({".psf", ".minipsf"}, search);
     }
-
-    fs::path lastDirectory;
-    for (const fs::directory_entry& entry : walk) {
-        if (found.size() >= want) {
-            break;
-        }
-        if (!entry.is_regular_file(error)) {
-            continue;
-        }
-        const std::string extension = lowerExtension(entry.path());
-        const bool isPs2 = extension == ".psf2" || extension == ".minipsf2";
-        const bool isPs1 = extension == ".psf" || extension == ".minipsf";
-        if (!isPs1 && !isPs2) {
-            continue;
-        }
-        if (only == "psf2" && !isPs2) {
-            continue;
-        }
-        if (only == "psf" && !isPs1) {
-            continue;
-        }
-        if (onePerDirectory && entry.path().parent_path() == lastDirectory) {
-            continue;
-        }
-        lastDirectory = entry.path().parent_path();
-        found.push_back(entry.path());
-    }
-    return found;
+    return findPsfFiles({".psf", ".minipsf", ".psf2", ".minipsf2"}, search);
 }
 
 struct Decoded {
@@ -168,7 +116,7 @@ TEST_CASE("the PlayStation decoder is registered for all four spellings", "[psx]
 }
 
 TEST_CASE("a PSF or PSF2 renders audio at its console's rate", "[psx][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -207,7 +155,7 @@ TEST_CASE("a PSF or PSF2 renders audio at its console's rate", "[psx][corpus]") 
 }
 
 TEST_CASE("a PSF2 carries a filesystem rather than an executable", "[psx][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -236,7 +184,7 @@ TEST_CASE("a PSF2 carries a filesystem rather than an executable", "[psx][corpus
 }
 
 TEST_CASE("a PSF carries a PS-EXE", "[psx][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -265,7 +213,7 @@ TEST_CASE("a PSF carries a PS-EXE", "[psx][corpus]") {
 }
 
 TEST_CASE("a PSF honours the length and fade tags", "[psx][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -297,31 +245,20 @@ TEST_CASE("a PSF honours the length and fade tags", "[psx][corpus]") {
 }
 
 TEST_CASE("the PlayStation core refuses another console's PSF", "[psx][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        SKIP("corpus is not readable");
+    const auto others = findPsfFiles(
+        {".minigsf", ".miniusf", ".mini2sf", ".minisnsf", ".minincsf", ".dsf"},
+        {.want = 1});
+    if (others.empty()) {
+        SKIP("corpus holds no other PSF to check the version byte against");
     }
 
-    for (const fs::directory_entry& entry : walk) {
-        const std::string extension = lowerExtension(entry.path());
-        if (!entry.is_regular_file(error) ||
-            (extension != ".minigsf" && extension != ".miniusf" &&
-             extension != ".mini2sf" && extension != ".minisnsf" &&
-             extension != ".minincsf" && extension != ".dsf")) {
-            continue;
-        }
-        INFO(entry.path().filename().string());
-        const Url url = Url::fromLocalPath(entry.path());
-        CHECK(loadPsf(url, registry()).has_value());
-        CHECK_FALSE(loadPsf(url, registry(), 0x01).has_value());
-        CHECK_FALSE(loadPsf(url, registry(), 0x02).has_value());
-        return;
-    }
-    SKIP("corpus holds no other PSF to check the version byte against");
+    INFO(others.front().filename().string());
+    const Url url = Url::fromLocalPath(others.front());
+    CHECK(loadPsf(url, registry()).has_value());
+    CHECK_FALSE(loadPsf(url, registry(), 0x01).has_value());
+    CHECK_FALSE(loadPsf(url, registry(), 0x02).has_value());
 }

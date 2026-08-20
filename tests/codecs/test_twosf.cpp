@@ -10,6 +10,7 @@
 // Rips cannot be committed, so these run against a corpus already on the
 // machine (`-DXPCOG_PSF_CORPUS=<path>`) and skip without one.
 
+#include "PsfCorpus.hpp"
 #include "psf/PsfFile.hpp"
 
 #include "xpcog/core/AudioChunk.hpp"
@@ -29,70 +30,18 @@
 
 using namespace xpcog;
 using namespace xpcog::codecs;
+using namespace xpcog::testing;
 namespace fs = std::filesystem;
 
 namespace {
 
-PluginRegistry& registry() {
-    static PluginRegistry instance;
-    static const bool     once = [] {
-        registerAllCodecs(instance);
-        return true;
-    }();
-    (void)once;
-    return instance;
-}
-
-#ifdef XPCOG_PSF_CORPUS
-constexpr bool kHaveCorpus = true;
-[[nodiscard]] fs::path corpusRoot() { return fs::path{XPCOG_PSF_CORPUS}; }
-#else
-constexpr bool kHaveCorpus = false;
-[[nodiscard]] fs::path corpusRoot() { return {}; }
-#endif
-
-[[nodiscard]] std::string lowerExtension(const fs::path& path) {
-    std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return extension;
-}
+PluginRegistry& registry() { return psfRegistry(); }
 
 /// Up to `want` playable GSFs, taken from as many different games as possible.
 /// One game's rips share a `.gsflib` and so share a sample rate; six files from
 /// one set would test the rate once.
 [[nodiscard]] std::vector<fs::path> findTwoSfs(std::size_t want) {
-    std::vector<fs::path> found;
-    if (!kHaveCorpus) {
-        return found;
-    }
-
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        return found;
-    }
-
-    fs::path lastDirectory;
-    for (const fs::directory_entry& entry : walk) {
-        if (found.size() >= want) {
-            break;
-        }
-        if (!entry.is_regular_file(error)) {
-            continue;
-        }
-        const std::string extension = lowerExtension(entry.path());
-        if (extension != ".2sf" && extension != ".mini2sf") {
-            continue;
-        }
-        if (entry.path().parent_path() == lastDirectory) {
-            continue;
-        }
-        lastDirectory = entry.path().parent_path();
-        found.push_back(entry.path());
-    }
-    return found;
+    return findPsfFiles({".2sf", ".mini2sf"}, {.want = want, .onePerDirectory = true});
 }
 
 struct Decoded {
@@ -149,7 +98,7 @@ TEST_CASE("the 2SF decoder is registered for both spellings", "[2sf]") {
 }
 
 TEST_CASE("a 2SF renders audio, not silence", "[2sf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -183,7 +132,7 @@ TEST_CASE("a 2SF renders audio, not silence", "[2sf][corpus]") {
 }
 
 TEST_CASE("the 2SF sample rate is the DS SPU's", "[2sf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -208,13 +157,14 @@ TEST_CASE("the 2SF sample rate is the DS SPU's", "[2sf][corpus]") {
 }
 
 TEST_CASE("opening a 2SF does not boot a DS", "[2sf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
-    const auto twosfs = findTwoSfs(1);
+    const auto twosfs =
+        findPsfFiles({".2sf", ".mini2sf"}, {.want = 1, .chainedOnly = true});
     if (twosfs.empty()) {
-        SKIP("corpus holds no 2SF files");
+        SKIP("corpus holds no chained 2SF");
     }
 
     // Same contract as the USF core, and testable the same way: the tags-only
@@ -241,7 +191,7 @@ TEST_CASE("opening a 2SF does not boot a DS", "[2sf][corpus]") {
 }
 
 TEST_CASE("a 2SF honours the length and fade tags", "[2sf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -273,26 +223,17 @@ TEST_CASE("a 2SF honours the length and fade tags", "[2sf][corpus]") {
 }
 
 TEST_CASE("the 2SF core refuses another console's PSF", "[2sf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        SKIP("corpus is not readable");
+    const auto others = findPsfFiles({".minigsf"}, {.want = 1});
+    if (others.empty()) {
+        SKIP("corpus holds no GSF to check the version byte against");
     }
 
-    for (const fs::directory_entry& entry : walk) {
-        if (!entry.is_regular_file(error) || lowerExtension(entry.path()) != ".minigsf") {
-            continue;
-        }
-        INFO(entry.path().filename().string());
-        const Url url = Url::fromLocalPath(entry.path());
-        CHECK(loadPsf(url, registry()).has_value());
-        CHECK_FALSE(loadPsf(url, registry(), 0x24).has_value());
-        return;
-    }
-    SKIP("corpus holds no GSF to check the version byte against");
+    INFO(others.front().filename().string());
+    const Url url = Url::fromLocalPath(others.front());
+    CHECK(loadPsf(url, registry()).has_value());
+    CHECK_FALSE(loadPsf(url, registry(), 0x24).has_value());
 }

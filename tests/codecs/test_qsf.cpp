@@ -16,6 +16,7 @@
 // Rips cannot be committed, so these run against a corpus already on the
 // machine (`-DXPCOG_PSF_CORPUS=<path>`) and skip without one.
 
+#include "PsfCorpus.hpp"
 #include "psf/PsfFile.hpp"
 
 #include "xpcog/core/AudioChunk.hpp"
@@ -35,67 +36,19 @@
 
 using namespace xpcog;
 using namespace xpcog::codecs;
+using namespace xpcog::testing;
 namespace fs = std::filesystem;
 
 namespace {
 
-PluginRegistry& registry() {
-    static PluginRegistry instance;
-    static const bool     once = [] {
-        registerAllCodecs(instance);
-        return true;
-    }();
-    (void)once;
-    return instance;
-}
-
-#ifdef XPCOG_PSF_CORPUS
-constexpr bool kHaveCorpus = true;
-[[nodiscard]] fs::path corpusRoot() { return fs::path{XPCOG_PSF_CORPUS}; }
-#else
-constexpr bool kHaveCorpus = false;
-[[nodiscard]] fs::path corpusRoot() { return {}; }
-#endif
-
-[[nodiscard]] std::string lowerExtension(const fs::path& path) {
-    std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return extension;
-}
+PluginRegistry& registry() { return psfRegistry(); }
 
 /// Every QSF in the corpus, grouped by the folder it sits in.
 ///
 /// Grouped rather than flat because the interesting case needs two rips that
 /// share a library, and a folder is what a set is.
 [[nodiscard]] std::map<fs::path, std::vector<fs::path>> findQsfSets() {
-    std::map<fs::path, std::vector<fs::path>> sets;
-    if (!kHaveCorpus) {
-        return sets;
-    }
-
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        return sets;
-    }
-
-    for (const fs::directory_entry& entry : walk) {
-        if (!entry.is_regular_file(error)) {
-            continue;
-        }
-        const std::string extension = lowerExtension(entry.path());
-        if (extension != ".qsf" && extension != ".miniqsf") {
-            continue;
-        }
-        sets[entry.path().parent_path()].push_back(entry.path());
-    }
-    for (auto& [directory, files] : sets) {
-        (void)directory;
-        std::sort(files.begin(), files.end());
-    }
-    return sets;
+    return findPsfSets({".qsf", ".miniqsf"});
 }
 
 struct Decoded {
@@ -155,7 +108,7 @@ TEST_CASE("the QSF decoder is registered for both spellings", "[qsf]") {
 }
 
 TEST_CASE("a QSF renders audio, not silence", "[qsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -183,7 +136,7 @@ TEST_CASE("a QSF renders audio, not silence", "[qsf][corpus]") {
 }
 
 TEST_CASE("two QSFs from one library play different tracks", "[qsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -223,7 +176,7 @@ TEST_CASE("two QSFs from one library play different tracks", "[qsf][corpus]") {
 }
 
 TEST_CASE("the QSF core refuses another console's PSF", "[qsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -242,7 +195,7 @@ TEST_CASE("the QSF core refuses another console's PSF", "[qsf][corpus]") {
 }
 
 TEST_CASE("seeking a QSF lands on the frame it was asked for", "[qsf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 

@@ -11,6 +11,7 @@
 // parsing needs no fixture and always runs -- it is pure text, and it is the
 // part that silently truncates a track when it is wrong.
 
+#include "PsfCorpus.hpp"
 #include "psf/PsfFile.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
@@ -26,71 +27,17 @@
 
 using namespace xpcog;
 using namespace xpcog::codecs;
+using namespace xpcog::testing;
 namespace fs = std::filesystem;
 
 namespace {
 
-PluginRegistry& registry() {
-    static PluginRegistry instance;
-    static const bool     once = [] {
-        registerAllCodecs(instance);
-        return true;
-    }();
-    (void)once;
-    return instance;
-}
-
-#ifdef XPCOG_PSF_CORPUS
-constexpr bool kHaveCorpus = true;
-[[nodiscard]] fs::path corpusRoot() { return fs::path{XPCOG_PSF_CORPUS}; }
-#else
-constexpr bool kHaveCorpus = false;
-[[nodiscard]] fs::path corpusRoot() { return {}; }
-#endif
-
-/// A handful of mini-PSFs, which are the interesting case: each one is an
-/// override that means nothing without the library it names.
-[[nodiscard]] std::vector<fs::path> findMiniPsfs(std::size_t want) {
-    std::vector<fs::path> found;
-    if (!kHaveCorpus) {
-        return found;
-    }
-
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        return found;
-    }
-
-    for (const fs::directory_entry& entry : walk) {
-        if (found.size() >= want) {
-            break;
-        }
-        if (!entry.is_regular_file(error)) {
-            continue;
-        }
-        std::string extension = entry.path().extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        // All ten spellings. This list held only the first three formats
-        // ported and was never extended, so a corpus of, say, PSF and QSF rips
-        // looked empty to these tests.
-        if (extension == ".minipsf" || extension == ".minipsf2" ||
-            extension == ".minissf" || extension == ".minidsf" ||
-            extension == ".miniusf" || extension == ".minigsf" ||
-            extension == ".minisnsf" || extension == ".mini2sf" ||
-            extension == ".minincsf" || extension == ".miniqsf") {
-            found.push_back(entry.path());
-        }
-    }
-    return found;
-}
+PluginRegistry& registry() { return psfRegistry(); }
 
 }  // namespace
 
 TEST_CASE("a mini-PSF pulls in the library it names", "[psf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -134,7 +81,7 @@ TEST_CASE("a mini-PSF pulls in the library it names", "[psf][corpus]") {
 }
 
 TEST_CASE("tags come from the outermost file", "[psf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -164,7 +111,7 @@ TEST_CASE("tags come from the outermost file", "[psf][corpus]") {
 }
 
 TEST_CASE("reading tags does not inflate the program", "[psf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -186,7 +133,7 @@ TEST_CASE("reading tags does not inflate the program", "[psf][corpus]") {
 }
 
 TEST_CASE("a missing library is a failure, not a partial load", "[psf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 

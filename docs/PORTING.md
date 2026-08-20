@@ -2616,17 +2616,29 @@ Six things left behind, none of them blocking:
 - **Nothing creates a `silence://` URL yet.** The decoder plays one; wiring it
   into the failed-open path would change `PlaybackController`'s existing, tested
   behaviour and is a product decision rather than a porting one.
-- **95 `C4127` warnings on MSVC**, one per corpus test's `if (!kHaveCorpus || …)`
-  guard, because `kHaveCorpus` is a `constexpr bool`. The pattern predates the
-  new decoders and now spans 22 test files. Nothing is wrong with any of them
-  individually; collectively they are loud enough to hide a real warning, and
-  fixing it means touching every corpus test at once.
+- **The 95 `C4127` warnings on MSVC do not reproduce, and the entry that claimed
+  them was wrong.** It said there was one per corpus test's
+  `if (!kHaveCorpus || …)` guard, because `kHaveCorpus` is a `constexpr bool`,
+  across 22 test files. A clean rebuild of `xpcog-tests` — which does link
+  `XPCog::warnings` and so really is at `/W4` — emits **zero** of them on VS 18
+  BuildTools. Current MSVC does not warn on a `constexpr` condition, which is the
+  whole point of writing the guard that way.
 
-#### The 60 skips, and the one that is worth clearing
+  Left here rather than deleted, because the useful part is the reminder: a
+  warning count is a property of one toolchain at one version, and this one was
+  written down as if it were a property of the code. The tree's actual warning
+  state on this host is **one** `C4267` in `tests/core/test_realfft.cpp:80`,
+  which predates all of this.
 
-`ctest` skips 60 cases on a fully-configured machine. Most want assets no package
-manager can supply, and the breakdown is worth knowing before assuming a green
-run means everything ran:
+  The PSF guards are gone regardless — `psfCorpusPresent()` is a function, so
+  there is no constant to fold — but that was a consequence of sharing the
+  finders, not a fix for anything.
+
+#### The skips, and the one that was worth clearing
+
+Most skips want assets no package manager can supply, and the breakdown is worth
+knowing before assuming a green run means everything ran. This was the state
+before the PSF corpus was pointed at a real collection:
 
 | Skips | Wants |
 |---|---|
@@ -2636,14 +2648,54 @@ run means everything ran:
 | 3 | `XPCOG_SOUNDFONT` |
 | 2 | `XPCOG_MIDI_CORPUS` |
 
-**The 44 are the ones to fix, and they are blocked by the corpus rather than by
-the tests.** Pointing `XPCOG_PSF_CORPUS` at a real collection clears the skips
-and fails twelve cases, because the core PSF tests walk recursively, take the
-first match, and require audio — while a `psf/orphan/` directory holds minis with
-their libraries deliberately removed. Those tests already build their own orphans
-in temp directories, so the fix is to teach the finders to skip files whose
-library chain does not resolve. That is more robust than dropping the directory,
-and it is the difference between 44 tests that have never run and 44 that have.
+**The 44 are done.** Pointing `XPCOG_PSF_CORPUS` at a real collection now runs
+48 of the 53 PSF-family cases and passes all of them; the other five say what
+the corpus does not hold rather than what the machine does not have. The
+prediction above was right about the shape and close on the number — ten cases
+failed, not twelve — and getting there turned up two things the prediction did
+not contain, both recorded under "What running the PSF corpus turned up" below.
+
+The finders live in [`tests/codecs/PsfCorpus.hpp`](../tests/codecs/PsfCorpus.hpp)
+now, one implementation instead of nine, and the fix is `psfChainLength()`: a
+file is a candidate only when `loadPsf()` resolves its chain. Asking through
+`loadPsf()` rather than a cheaper hand-rolled walk of the `_lib` tags is
+deliberate — "playable" in a test must not be able to come to mean something
+different from what the decoder does.
+
+#### What running the PSF corpus turned up
+
+Nine of the ten failures were the orphans, as predicted. The other two findings
+were not, and both are the same mistake in different clothes: **a test that
+inferred a property from a file name instead of asking the file.**
+
+- **The orphan cases were copying a file that needed no library.** Five tests
+  build their own orphan — copy a rip into a temp directory, away from the
+  `.psflib` it names, and check that it opens on tags alone and then plays
+  nothing. Each took the first file its format's finder returned, on the
+  assumption that a `mini` spelling means a chained file. It does not: a corpus
+  holding both `psf/2sf/` and `psf/mini2sf/` walks the self-contained one first,
+  so the 2SF case copied a complete rip away from a library it never needed and
+  then failed to find the silence it was looking for. `PsfSearch::chainedOnly`
+  asks instead — more than one program image back from `loadPsf()` is the only
+  dependable way to say "this file needs a library".
+
+  Worth noting *why* this survived: the assumption was correct for every other
+  format in the corpus, because none of the others ship a directory of
+  self-contained rips beside the minis. One corpus layout was hiding it.
+
+- **The GSF sample-rate check is a statement about a corpus, and needs one.**
+  It fires when every sampled game reports 32,768 Hz, which is the reset default
+  and therefore the signature of a probe that stops before the game writes
+  SOUNDBIAS. With one `.minigsf` in the corpus, "every sampled game" is one
+  game, and a single genuine 32 kHz rip trips it on its own. It now needs two
+  games before it will speak.
+
+  The decoder was cleared by measuring rather than by reasoning, which is the
+  only reason this is a test fix and not a decoder fix: widening the probe from
+  five seconds of emulation to a hundred, and the stability window from half a
+  second to ten, leaves Golden Sun (AGB-BGOE) reporting 32,768. The game never
+  writes SOUNDBIAS. Had the number moved, the same experiment would have proved
+  the opposite and `kRateStableFrames` would have been the bug.
 
 #### What the two Windows failures taught, which will recur
 

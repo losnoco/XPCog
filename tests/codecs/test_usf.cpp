@@ -12,6 +12,7 @@
 // extension and assert on relationships -- length against the tag, loudness
 // against silence -- never on a particular game.
 
+#include "PsfCorpus.hpp"
 #include "psf/PsfFile.hpp"
 
 #include "xpcog/core/AudioChunk.hpp"
@@ -31,63 +32,17 @@
 
 using namespace xpcog;
 using namespace xpcog::codecs;
+using namespace xpcog::testing;
 namespace fs = std::filesystem;
 
 namespace {
 
-PluginRegistry& registry() {
-    static PluginRegistry instance;
-    static const bool     once = [] {
-        registerAllCodecs(instance);
-        return true;
-    }();
-    (void)once;
-    return instance;
-}
-
-#ifdef XPCOG_PSF_CORPUS
-constexpr bool kHaveCorpus = true;
-[[nodiscard]] fs::path corpusRoot() { return fs::path{XPCOG_PSF_CORPUS}; }
-#else
-constexpr bool kHaveCorpus = false;
-[[nodiscard]] fs::path corpusRoot() { return {}; }
-#endif
-
-[[nodiscard]] std::string lowerExtension(const fs::path& path) {
-    std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return extension;
-}
+PluginRegistry& registry() { return psfRegistry(); }
 
 /// Up to `want` playable USFs. `.usflib` is skipped deliberately: it is the
 /// game's program with no track in it, and no decoder claims it.
 [[nodiscard]] std::vector<fs::path> findUsfs(std::size_t want) {
-    std::vector<fs::path> found;
-    if (!kHaveCorpus) {
-        return found;
-    }
-
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        return found;
-    }
-
-    for (const fs::directory_entry& entry : walk) {
-        if (found.size() >= want) {
-            break;
-        }
-        if (!entry.is_regular_file(error)) {
-            continue;
-        }
-        const std::string extension = lowerExtension(entry.path());
-        if (extension == ".usf" || extension == ".miniusf") {
-            found.push_back(entry.path());
-        }
-    }
-    return found;
+    return findPsfFiles({".usf", ".miniusf"}, {.want = want});
 }
 
 /// The first USF in the corpus that states its own fade, or an empty path. Most
@@ -162,7 +117,7 @@ TEST_CASE("the USF decoder is registered for both spellings", "[usf]") {
 }
 
 TEST_CASE("a USF renders audio, not silence", "[usf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -197,7 +152,7 @@ TEST_CASE("a USF renders audio, not silence", "[usf][corpus]") {
 }
 
 TEST_CASE("a USF starts at the first sound, not at the save state", "[usf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -219,7 +174,7 @@ TEST_CASE("a USF starts at the first sound, not at the save state", "[usf][corpu
 }
 
 TEST_CASE("the length tag is the length of the track", "[usf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -255,7 +210,7 @@ TEST_CASE("the length tag is the length of the track", "[usf][corpus]") {
 }
 
 TEST_CASE("a stated fade actually fades", "[usf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -288,7 +243,7 @@ TEST_CASE("a stated fade actually fades", "[usf][corpus]") {
 }
 
 TEST_CASE("seeking lands on the same audio as playing through", "[usf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -316,13 +271,14 @@ TEST_CASE("seeking lands on the same audio as playing through", "[usf][corpus]")
 }
 
 TEST_CASE("opening a USF does not boot an N64", "[usf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
-    const auto usfs = findUsfs(1);
+    const auto usfs =
+        findPsfFiles({".usf", ".miniusf"}, {.want = 1, .chainedOnly = true});
     if (usfs.empty()) {
-        SKIP("corpus holds no USF files");
+        SKIP("corpus holds no chained USF");
     }
 
     // Scanner::readMetadata opens a decoder for every file it walks, only to
@@ -358,7 +314,7 @@ TEST_CASE("opening a USF does not boot an N64", "[usf][corpus]") {
 }
 
 TEST_CASE("the USF core refuses another console's PSF", "[usf][corpus]") {
-    if (!kHaveCorpus || !fs::exists(corpusRoot())) {
+    if (!psfCorpusPresent()) {
         SKIP("no corpus: configure with -DXPCOG_PSF_CORPUS=<path> to run this");
     }
 
@@ -366,24 +322,15 @@ TEST_CASE("the USF core refuses another console's PSF", "[usf][corpus]") {
     // GBA image to an N64 is not a near miss -- it is arbitrary bytes at the
     // reset vector -- so the container refuses it rather than the core
     // discovering it by executing garbage.
-    std::error_code error;
-    fs::recursive_directory_iterator walk{
-        corpusRoot(), fs::directory_options::skip_permission_denied, error};
-    if (error) {
-        SKIP("corpus is not readable");
+    const auto others = findPsfFiles({".minigsf"}, {.want = 1});
+    if (others.empty()) {
+        SKIP("corpus holds no GSF to check the version byte against");
     }
 
-    for (const fs::directory_entry& entry : walk) {
-        if (!entry.is_regular_file(error) || lowerExtension(entry.path()) != ".minigsf") {
-            continue;
-        }
-        INFO(entry.path().filename().string());
-        const Url url = Url::fromLocalPath(entry.path());
+    INFO(others.front().filename().string());
+    const Url url = Url::fromLocalPath(others.front());
 
-        // Loadable as a PSF, and not loadable as a USF.
-        CHECK(loadPsf(url, registry()).has_value());
-        CHECK_FALSE(loadPsf(url, registry(), 0x21).has_value());
-        return;
-    }
-    SKIP("corpus holds no GSF to check the version byte against");
+    // Loadable as a PSF, and not loadable as a USF.
+    CHECK(loadPsf(url, registry()).has_value());
+    CHECK_FALSE(loadPsf(url, registry(), 0x21).has_value());
 }
