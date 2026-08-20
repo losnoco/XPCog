@@ -19,7 +19,10 @@
 #include <string>
 #include <vector>
 
-wxIMPLEMENT_APP(xpcog::app::XPCogApp);
+// No wxIMPLEMENT_APP here: it defines an entry point, and this file is in a
+// static library that the test binary links too. It lives in app/src/main.cpp,
+// which only the executable compiles, and that file says what went wrong when it
+// did not.
 
 namespace xpcog::app {
 namespace {
