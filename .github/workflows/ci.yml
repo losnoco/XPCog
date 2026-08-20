@@ -119,9 +119,27 @@ jobs:
           $wanted = 'flac.exe','metaflac.exe','wavpack.exe','opusenc.exe','ffmpeg.exe','lame.exe','oggenc.exe','oggenc2.exe'
           $root = Join-Path $env:RUNNER_TEMP 'encoders'
           New-Item -ItemType Directory -Force $root | Out-Null
+          # Six third-party hosts, and any one of them having a slow morning
+          # used to fail the whole Windows job with nothing wrong in the tree --
+          # one connection timeout on rarewares.org was enough.
+          #
+          # Retried rather than tolerated. Skipping an encoder that would not
+          # download turns a red job into a quietly smaller test run, which is
+          # worse: the suite reports the same pass rate against fewer cases.
           foreach ($url in $urls) {
             $zip = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetFileName($url))
-            Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+            $got = $false
+            foreach ($attempt in 1..4) {
+              try {
+                Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 120
+                $got = $true
+                break
+              } catch {
+                Write-Host "attempt $attempt of 4 for $url failed: $($_.Exception.Message)"
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+            if (-not $got) { throw "could not download $url after 4 attempts" }
             Expand-Archive -Path $zip -DestinationPath (Join-Path $root ([IO.Path]::GetFileNameWithoutExtension($zip))) -Force
           }
           Get-ChildItem $root -Recurse -File -Include 'oggenc2.exe' |
@@ -288,12 +306,22 @@ jobs:
       # from, because a vcpkg feature cannot be removed by overriding: the preset
       # sets the list and this replaces it wholesale. Getting it wrong costs a
       # GTK build for a configuration that links no toolkit.
+      #
+      # The quotes around it are load-bearing, and their absence is worth
+      # recording because the failure looked like anything but a shell problem.
+      # A CMake list separator is a semicolon and a shell statement separator is
+      # a semicolon, so unquoted this ran `cmake ... -D
+      # VCPKG_MANIFEST_FEATURES=ffmpeg` and then tried to execute `vgmstream`,
+      # `mgba` and the rest as commands. vcpkg dutifully installed the ffmpeg
+      # feature alone, and the configure died much later at
+      # `find_package(libmpcdec)` in codecs/musepack -- a missing port, with
+      # nothing anywhere near it mentioning quoting.
       - name: Configure without a toolkit
         id: configure
         run: >-
           cmake --preset linux-debug
           -D XPCOG_BUILD_APP=OFF
-          -D VCPKG_MANIFEST_FEATURES=ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm
+          -D "VCPKG_MANIFEST_FEATURES=ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
 
       - name: Build
         run: cmake --build --preset linux-debug
