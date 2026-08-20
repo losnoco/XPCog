@@ -384,7 +384,6 @@ if(XPCOG_BUILD_APP)
         app/test_appicon.cpp
         app/test_infopanel.cpp
         app/test_lucideicon.cpp
-        app/test_openurldialog.cpp
         app/test_sc55panel.cpp
         app/test_singleinstance.cpp
     )
@@ -435,6 +434,7 @@ endif()
 if(XPCOG_BUILD_APP)
     add_executable(xpcog-wx-tests
         wx/test_embedded_icons.cpp
+        wx/test_helpers.cpp
     )
 
     target_link_libraries(xpcog-wx-tests PRIVATE

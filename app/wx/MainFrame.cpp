@@ -1,8 +1,14 @@
 #include "MainFrame.hpp"
 
+#include "AboutDialog.hpp"
 #include "AppIcon.hpp"
 #include "Commands.hpp"
+#include "EqualizerPanel.hpp"
 #include "FileTree.hpp"
+#include "InfoPanel.hpp"
+#include "MiniFrame.hpp"
+#include "OpenUrlDialog.hpp"
+#include "PreferencesDialog.hpp"
 #include "LucideIcon.hpp"
 #include "PlaylistDataModel.hpp"
 #include "SeekBar.hpp"
@@ -130,6 +136,8 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
     media_             = platform::MediaIntegration::create(dispatch_, handle);
     taskbar_           = platform::TaskbarIntegration::create(handle);
 
+    presence_ = std::make_unique<StatusPresence>(this);
+
     wireUp();
     restoreState();
 
@@ -173,10 +181,26 @@ void MainFrame::buildUi() {
     auto* transport = new wxPanel(root, wxID_ANY);
     buildTransport(transport);
 
+    // The optional panels, below the playlist and hidden until asked for.
+    //
+    // Panels rather than dockable panes. wxAUI would give tear-off windows, and
+    // draws its own captions to do it -- which on macOS especially reads as a
+    // Windows application wearing the wrong chrome. None of these three needs to
+    // float, and Cog itself gives its equaliser and info inspector windows of
+    // their own rather than docks, so nothing is lost by showing and hiding them
+    // in place.
+    equalizer_ = new EqualizerPanel(root, settings_);
+    equalizer_->Hide();
+
+    info_ = new InfoPanel(root, library_.get());
+    info_->Hide();
+
     auto* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(transport, 0, wxEXPAND);
     sizer->Add(new wxStaticLine(root), 0, wxEXPAND);
     sizer->Add(splitter_, 1, wxEXPAND);
+    sizer->Add(equalizer_, 0, wxEXPAND);
+    sizer->Add(info_, 0, wxEXPAND);
     root->SetSizer(sizer);
 
     // Three fields: the summary, the now-playing text, and room for the scan
@@ -326,6 +350,17 @@ void MainFrame::wireUp() {
         clock_->SetLabelText(toWx(formatClock(seconds) + " / " + formatClock(duration_)));
     });
 
+    // --- the equaliser ---------------------------------------------------
+    observe(equalizer_->settingChanged,
+            [this](const std::string& key) { onSettingChanged(key); });
+
+    // --- the playlist selection ------------------------------------------
+    //
+    // Cog's rule: the info panel follows the selection when there is one, and the
+    // playing track otherwise.
+    list_->Bind(wxEVT_DATAVIEW_SELECTION_CHANGED,
+                [this](wxDataViewEvent&) { refreshInfo(); });
+
     // --- the undo stack --------------------------------------------------
     //
     // Only the status line: the menu labels come from EVT_UPDATE_UI, which asks
@@ -393,12 +428,136 @@ void MainFrame::wireUp() {
     });
 
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& event) {
+        // Layout and playlist are saved whichever way this goes, and *before* the
+        // decision below: the state is the same either way, and saving only on a
+        // real quit means a session that ends in the tray loses everything.
         persistState();
+
+        // Close to tray, where there is a tray and the listener asked for it.
+        // hasTrayIcon() rather than "is there any presence": on macOS the Dock
+        // menu exists while a tray icon does not, and hiding there would leave
+        // nothing to click.
+        if (!quitting_ && settings_.CloseToTray() && presence_->hasTrayIcon() &&
+            event.CanVeto()) {
+            event.Veto();
+            Hide();
+            if (!trayHintShown_) {
+                trayHintShown_ = true;
+                presence_->notify("XPCog is still running",
+                                  "Playback continues. Use the tray icon to bring "
+                                  "the window back or to quit.");
+            }
+            return;
+        }
+
+        // The mini player is a child frame and vetoes its own close, so it has to
+        // be destroyed explicitly or the application never exits.
+        if (mini_ != nullptr) {
+            mini_->Destroy();
+            mini_ = nullptr;
+        }
+        // The tray icon holds a reference to this window; removing it first stops
+        // a menu built during teardown from reaching a half-destroyed frame.
+        presence_->RemoveIcon();
         event.Skip();
     });
 
     bindCommands();
     bindUpdateUi();
+}
+
+void MainFrame::onSettingChanged(const std::string& key) {
+    // The equaliser and the DSP chain are read by the engine when it is asked to,
+    // so a band that moves has to say so or the slider does nothing until the
+    // next track.
+    if (key.starts_with("eq") || key == "enableFSurround" || key == "enableFading" ||
+        key == "volumeScaling" || key == "enableHDCD") {
+        playback_->reloadDsp();
+        return;
+    }
+
+    // The device is read when the engine opens it, which is when a track starts.
+    // Moving what is already playing is what reopenOutput() is for.
+    if (key == "outputDeviceId" || key == "exclusiveOutput") {
+        playback_->reopenOutput();
+        return;
+    }
+
+    if (key == "floatingMiniWindow" && mini_ != nullptr) {
+        mini_->setFloating(settings_.FloatingMiniWindow());
+    }
+}
+
+void MainFrame::togglePanel(wxWindow* panel, bool show) {
+    if (panel == nullptr) {
+        return;
+    }
+    panel->Show(show);
+    Layout();
+}
+
+void MainFrame::refreshInfo() {
+    // Returns immediately while the panel is hidden, which is most of the time --
+    // and matters, because metadata arriving during a scan would otherwise redraw
+    // twenty fields per file.
+    if (info_ == nullptr || !info_->IsShown()) {
+        return;
+    }
+
+    const std::vector<TrackId> selection = selectedTracks();
+    const TrackId shown = selection.empty() ? currentTrack_ : selection.front();
+    info_->showEntry(playlist_.find(shown));
+}
+
+void MainFrame::setMiniMode(bool mini) {
+    if (mini) {
+        if (mini_ == nullptr) {
+            mini_ = new MiniFrame(this, *playback_, settings_);
+            subscriptions_.push_back(
+                mini_->dismissed.connect([this] { setMiniMode(false); }));
+            subscriptions_.push_back(mini_->volumeChanged.connect([this](double gain) {
+                volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
+            }));
+        }
+        mini_->refreshVolume();
+        mini_->setNowPlaying(
+            playlist_.find(currentTrack_) != nullptr ? playlist_.find(currentTrack_)->title()
+                                                     : std::string{},
+            playlist_.find(currentTrack_) != nullptr ? playlist_.find(currentTrack_)->artist
+                                                     : std::string{});
+        mini_->Show();
+        mini_->Raise();
+        Hide();
+        return;
+    }
+
+    if (mini_ != nullptr) {
+        mini_->Hide();
+    }
+    Show();
+    Raise();
+}
+
+void MainFrame::openUrl() {
+    OpenUrlDialog dialog(this, settings_);
+    if (dialog.ShowModal() != wxID_OK) {
+        return;
+    }
+    if (const std::optional<Url> url = Url::parse(dialog.url()); url.has_value()) {
+        openUrls({*url});
+    }
+}
+
+void MainFrame::showPreferences() {
+    PreferencesDialog dialog(this, settings_);
+    const Subscription subscription = dialog.settingChanged.connect(
+        [this](const std::string& key) { onSettingChanged(key); });
+    dialog.ShowModal();
+}
+
+void MainFrame::showAbout() {
+    AboutDialog dialog(this, registry_);
+    dialog.ShowModal();
 }
 
 void MainFrame::bindCommands() {
@@ -408,8 +567,14 @@ void MainFrame::bindCommands() {
 
     on(FileOpen, [this] { openFiles(); });
     on(FileOpenFolder, [this] { openFolder(); });
+    on(FileOpenUrl, [this] { openUrl(); });
     on(FileSavePlaylist, [this] { savePlaylistAs(); });
-    on(FileQuit, [this] { Close(true); });
+    on(FilePreferences, [this] { showPreferences(); });
+    on(HelpAbout, [this] { showAbout(); });
+    on(FileQuit, [this] {
+        quitting_ = true;
+        Close(true);
+    });
 
     on(EditUndo, [this] { undo_.undo(); });
     on(EditRedo, [this] { undo_.redo(); });
@@ -428,6 +593,15 @@ void MainFrame::bindCommands() {
     on(PlaybackEnqueue, [this] { enqueueSelected(); });
 
     on(ViewFileTreeRoot, [this] { tree_->chooseRootPath(); });
+    on(ViewEqualizer, [this] { togglePanel(equalizer_, !equalizer_->IsShown()); });
+    on(ViewInfo, [this] {
+        const bool showing = !info_->IsShown();
+        togglePanel(info_, showing);
+        if (showing) {
+            refreshInfo();
+        }
+    });
+    on(ViewMiniPlayer, [this] { setMiniMode(mini_ == nullptr || !mini_->IsShown()); });
     on(ViewFileTree, [this] {
         if (splitter_->IsSplit()) {
             splitter_->Unsplit(tree_);
@@ -504,6 +678,17 @@ void MainFrame::bindUpdateUi() {
 
     update(ViewFileTree,
            [this](wxUpdateUIEvent& event) { event.Check(splitter_->IsSplit()); });
+    update(ViewEqualizer,
+           [this](wxUpdateUIEvent& event) { event.Check(equalizer_->IsShown()); });
+    update(ViewInfo, [this](wxUpdateUIEvent& event) { event.Check(info_->IsShown()); });
+    update(ViewMiniPlayer, [this](wxUpdateUIEvent& event) {
+        event.Check(mini_ != nullptr && mini_->IsShown());
+    });
+    // Present and inert until the panels behind them exist, which is deliberate:
+    // a command that appears and disappears as it is implemented is worse than
+    // one that is briefly quiet.
+    update(ViewSpectrum, [](wxUpdateUIEvent& event) { event.Enable(false); });
+    update(ViewSc55Panel, [](wxUpdateUIEvent& event) { event.Enable(false); });
 
     // The two exclusive groups read their state from the playlist rather than
     // being remembered here, so a change made anywhere shows up on the menu.
@@ -735,6 +920,9 @@ void MainFrame::onPositionChanged(double seconds, double duration) {
     if (!seekBar_->scrubbing()) {
         clock_->SetLabelText(toWx(formatClock(seconds) + " / " + formatClock(duration)));
     }
+    if (mini_ != nullptr && mini_->IsShown()) {
+        mini_->setPosition(seconds, duration);
+    }
 
     // The OS extrapolates from the rate it was given, so pushing every tick would
     // be four rewrites a second for a display that is already counting correctly
@@ -757,11 +945,23 @@ void MainFrame::onCurrentTrackChanged(TrackId id) {
     SetTitle(text.empty() ? wxString("XPCog") : toWx(text + " — XPCog"));
     SetStatusText(toWx(text), 1);
 
+    const std::string title  = entry != nullptr ? entry->title() : std::string{};
+    const std::string artist = entry != nullptr ? entry->artist : std::string{};
+    presence_->setNowPlaying(title, artist);
+    if (mini_ != nullptr) {
+        mini_->setNowPlaying(title, artist);
+    }
+
     publishNowPlaying(id);
+    refreshInfo();
 }
 
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {
     taskbar_->setPlaybackState(playing, paused);
+    presence_->setPlaybackState(playing, paused);
+    if (mini_ != nullptr) {
+        mini_->setPlaybackState(playing, paused);
+    }
 
     if (!playing) {
         seekBar_->setDuration(0.0);

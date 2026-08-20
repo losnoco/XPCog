@@ -10,22 +10,38 @@
 # library so the models and helpers can be tested without opening a window.
 
 add_library(xpcog-wxcore STATIC
+    AboutDialog.cpp
+    AboutDialog.hpp
     AppIcon.cpp
     AppIcon.hpp
     Commands.cpp
     Commands.hpp
+    EqualizerPanel.cpp
+    EqualizerPanel.hpp
     FileTree.cpp
     FileTree.hpp
+    InfoPanel.cpp
+    InfoPanel.hpp
     LucideIcon.cpp
     LucideIcon.hpp
     MainFrame.cpp
     MainFrame.hpp
+    MiniFrame.cpp
+    MiniFrame.hpp
+    OpenUrlDialog.cpp
+    OpenUrlDialog.hpp
     PlaybackController.cpp
     PlaybackController.hpp
     PlaylistDataModel.cpp
     PlaylistDataModel.hpp
+    PreferencesDialog.cpp
+    PreferencesDialog.hpp
     SeekBar.cpp
     SeekBar.hpp
+    SingleInstance.cpp
+    SingleInstance.hpp
+    StatusPresence.cpp
+    StatusPresence.hpp
     Text.hpp
     XPCogApp.cpp
     XPCogApp.hpp

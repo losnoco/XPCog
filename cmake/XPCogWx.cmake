@@ -31,7 +31,17 @@ endif()
 #
 # `adv` is deliberately absent: wxWidgets 3.3 merged wxadv into core, and asking
 # for it by name fails on exactly the version this project targets.
-set(_xpcog_wx_components aui html core base)
+#
+# `net` is here for wxIPC, not for anything that touches a network: wx puts the
+# socket classes in that library, and the single-instance handover is their only
+# user. Worth knowing how it was found missing, because the failure mode is
+# instructive -- the application linked without it, since SingleInstance sits in a
+# static library and the linker extracts only the members that resolve an
+# undefined symbol. Nothing in the executable referenced it, so the object was
+# silently dropped. The test that names it directly is what pulled it in and
+# turned a runtime absence into a link error, which is the same hazard
+# cmake/XPCogCodec.cmake documents for self-registering codecs.
+set(_xpcog_wx_components aui html core net base)
 
 find_package(wxWidgets CONFIG QUIET)
 

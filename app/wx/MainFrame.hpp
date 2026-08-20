@@ -26,6 +26,7 @@
 #pragma once
 
 #include "PlaybackController.hpp"
+#include "StatusPresence.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
@@ -56,7 +57,10 @@ class wxStaticText;
 
 namespace xpcog::app {
 
+class EqualizerPanel;
 class FileTree;
+class InfoPanel;
+class MiniFrame;
 class PlaylistDataModel;
 class SeekBar;
 
@@ -81,7 +85,31 @@ private:
 
     void openFiles();
     void openFolder();
+    void openUrl();
     void savePlaylistAs();
+    void showPreferences();
+    void showAbout();
+
+    /// A setting changed and something has to be told. Shared by the
+    /// preferences dialog and the equaliser panel, which both publish the same
+    /// keys -- and the equaliser's is the case that must not be forgotten,
+    /// since a band that does not reach the engine is a slider that does
+    /// nothing.
+    void onSettingChanged(const std::string& key);
+
+    /// Switches between the full window and the mini player. A mode, as in
+    /// Cog: one is shown and the other hidden, never both.
+    void setMiniMode(bool mini);
+
+    /// Redraws the info panel. Cog's rule (InfoWindowController): the playlist
+    /// selection when there is one, the playing track otherwise. Cheap to call
+    /// from anywhere, because it returns immediately while the panel is hidden
+    /// -- which is most of the time, and matters because metadata arriving
+    /// during a scan would otherwise redraw twenty fields per file.
+    void refreshInfo();
+
+    /// Shows or hides one of the side panels, and keeps the layout sane.
+    void togglePanel(wxWindow* panel, bool show);
 
     void addUrls(const std::vector<Url>& urls, int atRow = -1);
 
@@ -130,6 +158,31 @@ private:
     /// Reference-counted by the control, so this is a borrowed pointer and must
     /// not be deleted here.
     PlaylistDataModel* model_ = nullptr;
+
+    /// The three optional panels. Shown and hidden rather than docked: wxAUI
+    /// draws its own captions on every platform, which on macOS especially
+    /// looks like a Windows application, and none of these needs tearing off.
+    EqualizerPanel* equalizer_ = nullptr;
+    InfoPanel*      info_      = nullptr;
+    wxWindow*       spectrum_  = nullptr;
+
+    /// Built the first time it is asked for. Null until then: most sessions
+    /// never open it, and it holds a seek bar that would otherwise be
+    /// following the position for nobody.
+    MiniFrame* mini_ = nullptr;
+
+    /// The tray icon, or the Dock menu on macOS. Never null, but its methods
+    /// do nothing where the platform has no notification area.
+    std::unique_ptr<StatusPresence> presence_;
+
+    /// So the "still running" notification appears once, not on every close.
+    bool trayHintShown_ = false;
+
+    /// Set while shutting down, so the close handler knows this is a real quit
+    /// rather than a close to be intercepted. Without it, close-to-tray would
+    /// make Quit hide the window and leave the application running with no way
+    /// to stop it.
+    bool quitting_ = false;
 
     SeekBar*      seekBar_    = nullptr;
     wxSlider*     volume_     = nullptr;
