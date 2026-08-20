@@ -418,3 +418,34 @@ if(XPCOG_BUILD_APP)
         catch_discover_tests(xpcog-app-tests)
     endif()
 endif()
+
+# ---------------------------------------------------------------------------
+# The wxWidgets half.
+#
+# Separate from the Qt one for the same reasons that one is separate from the
+# core suite: the headless preset builds no application at all, and these link a
+# different toolkit. It uses Catch2's own main -- unlike the Qt suite, which needs
+# a QCoreApplication alive for QCollator. Nothing here wants an application
+# object, and that is deliberate: everything that needed one moved into core in
+# the commit before this, and what is left reads bytes.
+#
+# Grows as the port does. When app/src/ goes, this absorbs what is left of
+# xpcog-app-tests and the Qt target above disappears.
+# ---------------------------------------------------------------------------
+if(XPCOG_BUILD_APP)
+    add_executable(xpcog-wx-tests
+        wx/test_embedded_icons.cpp
+    )
+
+    target_link_libraries(xpcog-wx-tests PRIVATE
+        xpcog-wxcore
+        Catch2::Catch2WithMain
+        XPCog::warnings)
+
+    set_target_properties(xpcog-wx-tests PROPERTIES FOLDER tests)
+
+    # No DL_PATHS here, unlike the Qt suite: wx comes from vcpkg, so vcpkg's
+    # applocal post-build step has already copied its DLLs beside the binary.
+    # That is the windeployqt replacement, and it needs no configuration.
+    catch_discover_tests(xpcog-wx-tests)
+endif()

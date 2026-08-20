@@ -51,7 +51,11 @@ endif()
 
 if(XPCOG_BUILD_APP)
     add_subdirectory(platform)
+    # Both interfaces, until the port finishes. See docs/WXPORT.md and
+    # app/wx/CMakeLists.txt for why they coexist rather than one replacing the
+    # other in a single commit.
     add_subdirectory(app)
+    add_subdirectory(app/wx)
 endif()
 
 if(XPCOG_BUILD_TESTS)
