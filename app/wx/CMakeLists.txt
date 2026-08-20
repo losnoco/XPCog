@@ -12,10 +12,20 @@
 add_library(xpcog-wxcore STATIC
     AppIcon.cpp
     AppIcon.hpp
+    Commands.cpp
+    Commands.hpp
+    FileTree.cpp
+    FileTree.hpp
     LucideIcon.cpp
     LucideIcon.hpp
     MainFrame.cpp
     MainFrame.hpp
+    PlaybackController.cpp
+    PlaybackController.hpp
+    PlaylistDataModel.cpp
+    PlaylistDataModel.hpp
+    SeekBar.cpp
+    SeekBar.hpp
     Text.hpp
     XPCogApp.cpp
     XPCogApp.hpp

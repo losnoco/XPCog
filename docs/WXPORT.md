@@ -264,7 +264,7 @@ wx target never needs it.
 | ✅ | **2** — De-Qt `platform/` entirely: four headers, four backends, the settings store, the dispatcher. The Qt app adapts in place and keeps running | done |
 | ✅ | **3** — Core gains what the UI will need: undo stack, `SerialExecutor`, the playlist view model. `PlaylistCommands` and `ScanTask` move down with them, and four test files move into the headless suite | done |
 | ✅ | **4** — `xpcog-app-wx` exists: `wxApp`, an empty frame, embedded resources, `LucideIcon`, `AppIcon`, the UTF-8 helpers | done |
-| | **5** — The main window: menus on command IDs, `wxDataViewCtrl`, transport, `SeekBar`, `FileTree`, drag and drop, `wxAuiManager` docks. **The wx build plays audio here** | |
+| ✅ | **5** — The main window: menus on command IDs, `wxDataViewCtrl`, transport, `SeekBar`, `FileTree`, drag and drop. **The wx build plays audio here** | done |
 | | **6** — Preferences, info, about, open-URL, equaliser, mini player, tray presence, single instance | |
 | | **7** — The painted widgets: spectrum, SC-55 panel | |
 | | **8** — Delete the Qt application and `XPCogQt.cmake`, widen `CheckNoQt` to the whole tree, update CI, presets and README | |
