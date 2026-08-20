@@ -69,20 +69,29 @@ jobs:
       # expects the package manager to supply it everywhere else, so without it
       # the ffmpeg port fails during configure rather than during the build.
       #
-      # autoconf-archive is here for gperf, which nothing in this project asks
-      # for: wxWidgets pulls GTK on Linux, GTK pulls fontconfig, and fontconfig
-      # builds gperf. vcpkg's autotools ports check for their host tools by name
-      # and stop with a clear message naming the four they want -- autoconf,
-      # autoconf-archive, automake and libtoolize -- and this list had three of
-      # them. The headless job deliberately does not have it: it omits the `gui`
-      # feature, so no GTK, so no gperf, and nothing there needs the extra apt
-      # time.
+      # autoconf-archive and libltdl-dev are here for ports nothing in this
+      # project asks for, and they arrived one CI round apart. wxWidgets pulls
+      # GTK on Linux and GTK pulls a long tail: fontconfig builds gperf, which
+      # wants autoconf-archive, and further down libxcrypt wants ltdl
+      # development files. libtool supplies libtoolize but not libltdl-dev --
+      # they are separate packages.
+      #
+      # Only the hard failures are listed. cairo and libepoxy also print
+      # "currently requires ... from the system package manager" for X11 and
+      # GLES headers, and both build anyway because libgtk-3-dev has already
+      # pulled what they need. Adding those names on the strength of a warning
+      # risks an apt step that fails on a package Ubuntu has since renamed,
+      # which is a worse failure than the one it would be preventing.
+      #
+      # The headless job deliberately has none of this: it omits the `gui`
+      # feature, so no GTK, so no gperf and no libxcrypt.
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
+            ninja-build pkg-config autoconf autoconf-archive automake libtool \
+            libltdl-dev nasm \
             libgl1-mesa-dev libglu1-mesa-dev \
             libgtk-3-dev libglib2.0-dev \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
