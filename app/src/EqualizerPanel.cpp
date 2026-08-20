@@ -50,7 +50,10 @@ constexpr int kEqScale = 10;
 }  // namespace
 
 EqualizerPanel::EqualizerPanel(wxWindow* parent, Settings& settings)
-    : wxPanel(parent, wxID_ANY), settings_(settings) {
+    : wxScrolled<wxPanel>(parent, wxID_ANY), settings_(settings) {
+    // Horizontally only: the columns are as tall as they are and scrolling them
+    // vertically would hide the readouts or the labels rather than help.
+    SetScrollRate(FromDIP(8), 0);
     auto* layout = new wxBoxSizer(wxVERTICAL);
 
     // One column per band, plus the preamp on its own at the left, matching the
@@ -90,6 +93,10 @@ EqualizerPanel::EqualizerPanel(wxWindow* parent, Settings& settings)
     layout->Add(footer, 0, wxEXPAND | wxALL, FromDIP(4));
 
     SetSizer(layout);
+    // The virtual size, which is what the scrollbar is calculated from. Without
+    // it the panel reports the pane's width as its content width and never
+    // scrolls -- it just clips, which is the bug this replaced.
+    FitInside();
 }
 
 wxSlider* EqualizerPanel::addBand(wxBoxSizer* columns, const std::string& caption,

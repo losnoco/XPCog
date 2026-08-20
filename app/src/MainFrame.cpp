@@ -23,6 +23,7 @@
 
 #include <wx/bmpbuttn.h>
 #include <wx/dataview.h>
+#include <wx/display.h>
 #include <wx/dnd.h>
 #include <wx/filedlg.h>
 #include <wx/dirdlg.h>
@@ -209,6 +210,22 @@ void MainFrame::buildUi() {
     // a *dockable* one. Hiding the only play button leaves a window with no way to
     // start playback and no obvious way back, which is why the Qt build removed
     // the transport from its own context menu too.
+    // Resizable, and that is the fix rather than an oversight corrected.
+    //
+    // Resizable(false) is Fixed(), and framemanager.cpp sets a fixed pane's
+    // proportion to 0 -- so it gets exactly its best size inside the dock and the
+    // rest of the dock stays empty. That is why the transport sat at its natural
+    // width with a gap beside it instead of spanning the window.
+    //
+    // What was actually wanted is fixed *vertically* and stretched horizontally,
+    // which is two different flags. DockFixed keeps the dock's thickness -- its
+    // height, here -- from being dragged, while the pane keeps a proportion and
+    // fills the width.
+    //
+    // MaxSize is deliberately not used for this: wxAUI reads it only for floating
+    // panes and when saving a perspective, and it has no effect at all on a
+    // docked one. Reaching for it first was the wrong guess.
+    const int transportHeight = transport->GetBestSize().GetHeight();
     auiManager_.AddPane(transport, wxAuiPaneInfo()
                                        .Name("transport")
                                        .Top()
@@ -217,9 +234,10 @@ void MainFrame::buildUi() {
                                        .Dockable(false)
                                        .Floatable(false)
                                        .Movable(false)
-                                       .Resizable(false)
+                                       .DockFixed(true)
                                        .Layer(10)
-                                       .BestSize(-1, transport->GetBestSize().GetHeight()));
+                                       .MinSize(FromDIP(320), transportHeight)
+                                       .BestSize(FromDIP(900), transportHeight));
 
     auiManager_.AddPane(spectrum_, wxAuiPaneInfo()
                                        .Name("spectrum")
@@ -232,12 +250,18 @@ void MainFrame::buildUi() {
     // Hidden rather than absent, so it keeps a place in the layout to come back
     // to. 31 sliders is a lot of window to open on someone who wanted a music
     // player.
+    // Sized from the panel rather than guessed at. Thirty-two columns have a
+    // real height -- readout, slider, label, and the footer under them -- and a
+    // pane shorter than that clips the labels off the bottom, where there is no
+    // vertical scrolling to reach them. The width is asked for generously and
+    // scrolls horizontally when it cannot be had.
+    const wxSize equalizerBest = equalizer_->GetBestSize();
     auiManager_.AddPane(equalizer_, wxAuiPaneInfo()
                                         .Name("equalizer")
                                         .Caption("Equalizer")
                                         .Bottom()
-                                        .BestSize(FromDIP(wxSize(600, 230)))
-                                        .MinSize(FromDIP(wxSize(300, 180)))
+                                        .BestSize(equalizerBest)
+                                        .MinSize(FromDIP(240), equalizerBest.GetHeight())
                                         .Hide());
 
     auiManager_.AddPane(info_, wxAuiPaneInfo()
@@ -529,6 +553,17 @@ void MainFrame::wireUp() {
         // a menu built during teardown from reaching a half-destroyed frame.
         presence_->RemoveIcon();
         event.Skip();
+    });
+
+    // Geometry, tracked as it changes. Both events, because a window can be
+    // moved without being resized and the reverse.
+    Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
+        event.Skip();
+        rememberGeometry();
+    });
+    Bind(wxEVT_MOVE, [this](wxMoveEvent& event) {
+        event.Skip();
+        rememberGeometry();
     });
 
     // A pane closed by its own button, rather than from the View menu. Nothing
@@ -1171,9 +1206,40 @@ void MainFrame::setStatusText(const std::string& text) {
     SetStatusText(toWx(text), 0);
 }
 
+void MainFrame::rememberGeometry() {
+    if (!IsMaximized() && !IsIconized() && IsShown()) {
+        normalRect_ = GetRect();
+    }
+}
+
 void MainFrame::restoreState() {
     // Window geometry lives beside the settings rather than in settings.def: it
     // is this application's own state, not a Cog setting to stay compatible with.
+    if (const std::string geometry = settings_.rawValue("xpcog.window.geometry");
+        !geometry.empty()) {
+        int x = 0;
+        int y = 0;
+        int width = 0;
+        int height = 0;
+        int maximised = 0;
+        if (std::sscanf(geometry.c_str(), "%d,%d,%d,%d,%d", &x, &y, &width, &height,
+                        &maximised) == 5 &&
+            width > 0 && height > 0) {
+            const wxRect saved(x, y, width, height);
+            // Only if some display still contains it. A rectangle saved on a
+            // second monitor that is no longer attached would put the window
+            // somewhere the user cannot reach, and "my player will not open" is a
+            // much worse bug than "my player forgot where it was".
+            if (wxDisplay::GetFromPoint(saved.GetTopLeft()) != wxNOT_FOUND) {
+                SetSize(saved);
+                normalRect_ = saved;
+            }
+            if (maximised != 0) {
+                Maximize(true);
+            }
+        }
+    }
+
     if (const std::string root = settings_.rawValue("xpcog.fileTree.root");
         !root.empty()) {
         tree_->setRootPath(root);
@@ -1210,6 +1276,16 @@ void MainFrame::restoreState() {
 
 void MainFrame::persistState() {
     settings_.setRawValue("xpcog.fileTree.root", tree_->rootPath());
+
+    if (!normalRect_.IsEmpty()) {
+        settings_.setRawValue(
+            "xpcog.window.geometry",
+            std::to_string(normalRect_.GetX()) + "," +
+                std::to_string(normalRect_.GetY()) + "," +
+                std::to_string(normalRect_.GetWidth()) + "," +
+                std::to_string(normalRect_.GetHeight()) + "," +
+                (IsMaximized() ? "1" : "0"));
+    }
     if (splitter_->IsSplit()) {
         settings_.setRawValue("xpcog.window.sash",
                               std::to_string(splitter_->GetSashPosition()));

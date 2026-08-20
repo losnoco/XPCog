@@ -155,6 +155,15 @@ private:
     void persistState();
     void restoreState();
 
+    /// Remembers the window's un-maximised rectangle.
+    ///
+    /// Tracked as it changes rather than read at save time, because a
+    /// maximised window reports the maximised rectangle and there is no way
+    /// to ask wx for the one it would restore to. Saving that would give a
+    /// window that un-maximises to full screen -- which looks like the
+    /// setting not working at all.
+    void rememberGeometry();
+
     [[nodiscard]] std::string statusSummary() const;
 
     void setStatusText(const std::string& text);
@@ -175,6 +184,10 @@ private:
     /// destroyed after them -- though UnInit() in the destructor is what
     /// actually makes teardown safe, and is not optional.
     wxAuiManager auiManager_;
+
+    /// The last rectangle the window had while neither maximised nor
+    /// minimised. See rememberGeometry().
+    wxRect normalRect_;
 
     wxSplitterWindow* splitter_ = nullptr;
     FileTree*         tree_     = nullptr;

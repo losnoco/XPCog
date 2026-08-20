@@ -410,7 +410,7 @@ visible" the normal path, and a layout captured then is not the one the listener
 arranged. Pane *names* are load-bearing in the same way object names were —
 renaming one silently discards that pane's saved position.
 
-### Four things that only show up when you click them
+### Nine things that only show up when you click them
 
 The suite was green through all of this and had nothing to say about any of them.
 Each was found by running the application.
@@ -433,6 +433,38 @@ no bitmap on it. The button had to be told separately, which is now
 `refreshTransportIcons()`: one function that re-strokes for the palette *and*
 picks the glyph from state, so the ordering hazard the Qt build had -- an icon
 refresh putting "play" back over a running track -- cannot come back.
+
+**Opening the executable started a second player.** `SingleInstance` was written,
+compiled, covered by a test for its payload encoding, and never constructed. The
+whole mechanism was dead code for two commits.
+
+That is the failure worth naming, because the test did not and could not catch it:
+a class can be complete, correct and covered while being unreachable. The
+assertions were about what `encode()` and `decode()` do, and both would still pass
+with the file deleted from the application.
+
+**Window geometry did not persist**, because nothing saved it. The perspective and
+the splitter sash were written; the frame's own rectangle never was. It is tracked
+as it changes rather than read at save time -- a maximised window reports the
+maximised rectangle and wx offers no way to ask what it would restore to -- and it
+is only restored if some display still contains it. A rectangle saved on a monitor
+that is no longer attached would put the window where nobody can reach it.
+
+**The transport stopped filling the width.** `Resizable(false)` is `Fixed()`, and
+`framemanager.cpp` sets a fixed pane's proportion to 0: it gets exactly its best
+size inside the dock and the rest of the dock stays empty. Fixed *vertically* and
+stretched horizontally is two flags, not one — `DockFixed(true)` locks the dock's
+thickness while the pane keeps its proportion. `MaxSize` was the first guess and is
+worth recording as wrong: wxAUI reads it only for floating panes and when saving a
+perspective, never for a docked one.
+
+**The equaliser and the album art were cut off by the pane's width.** The same
+shape of mistake twice: sizing for a fixed dimension inside a container whose other
+dimension is now the user's to drag. Thirty-two columns have a natural width a
+narrow pane does not have, so the equaliser scrolls horizontally and takes its
+pane height from its own best size. The cover fits whichever constraint binds
+first and rescales on resize, from the original rather than from the last scaled
+copy.
 
 **HiDPI was pixelated on Windows.** Qt's platform plugin carried a DPI-awareness
 manifest; nothing did afterwards, so Windows marked the process unaware and

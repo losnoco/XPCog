@@ -16,7 +16,7 @@
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Signal.hpp"
 
-#include <wx/panel.h>
+#include <wx/scrolwin.h>
 
 #include <string>
 #include <vector>
@@ -27,7 +27,11 @@ class wxStaticText;
 
 namespace xpcog::app {
 
-class EqualizerPanel : public wxPanel {
+/// Scrolled horizontally, because 32 columns have a natural width the pane may
+/// not have. Cog's equaliser lives in a window of its own and can simply be
+/// made wide enough; a dock cannot, so the choice is between clipping the top
+/// bands off -- which is what happened -- and scrolling to them.
+class EqualizerPanel : public wxScrolled<wxPanel> {
 public:
     EqualizerPanel(wxWindow* parent, Settings& settings);
 

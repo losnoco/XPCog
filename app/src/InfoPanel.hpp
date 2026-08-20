@@ -23,6 +23,7 @@
 
 #include "xpcog/core/library/PlaylistEntry.hpp"
 
+#include <wx/image.h>
 #include <wx/scrolwin.h>
 
 #include <cstdint>
@@ -103,8 +104,23 @@ private:
 
     void set(Field field, const std::string& value);
 
-    const Library*           library_ = nullptr;
-    wxStaticBitmap*          art_     = nullptr;
+    /// Rescales the cover to whatever room there is now.
+    ///
+    /// Called from showEntry and again on every resize, because the pane is
+    /// dockable: it can be dragged from the right edge to the bottom, where
+    /// it is a completely different shape. Scaling to a fixed height alone --
+    /// which is what Cog's fixed-size HUD could get away with -- overruns the
+    /// width the moment the pane is narrower than the cover is wide.
+    void updateArt();
+
+    const Library*  library_ = nullptr;
+    wxStaticBitmap* art_     = nullptr;
+
+    /// The cover at its own size. Kept so a resize rescales from the original
+    /// rather than from the last scaled copy, which would lose a little more
+    /// detail every time the pane moved.
+    wxImage artOriginal_;
+    wxSize  artDrawnAt_;
     std::vector<wxTextCtrl*> values_;
 };
 

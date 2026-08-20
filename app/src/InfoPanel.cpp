@@ -139,7 +139,15 @@ constexpr std::array<const char*, 20> kLabels = {
 
 InfoPanel::InfoPanel(wxWindow* parent, const Library* library) : library_(library) {
     Create(parent, wxID_ANY);
-    SetScrollRate(0, FromDIP(8));
+    // Both axes. A field with a long value -- a path, a cuesheet -- is wider than
+    // a narrow pane, and horizontal scrolling is what reaches it rather than the
+    // text being cut off.
+    SetScrollRate(FromDIP(8), FromDIP(8));
+
+    Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
+        event.Skip();
+        updateArt();
+    });
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
 
@@ -257,7 +265,7 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
 
     set(Comment, entry->comment);
 
-    wxBitmap cover;
+    artOriginal_ = wxImage{};
     if (library_ != nullptr && !entry->artHash.empty()) {
         const std::vector<std::byte> bytes = library_->artwork(entry->artHash);
         if (!bytes.empty()) {
@@ -265,26 +273,51 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
             wxImage             image;
             // wxBITMAP_TYPE_ANY: the artwork is whatever the file carried, which
             // is usually JPEG and sometimes PNG.
-            if (image.LoadFile(stream, wxBITMAP_TYPE_ANY) && image.GetHeight() > 0) {
-                const int height = FromDIP(kArtHeight);
-                const int width =
-                    (image.GetWidth() * height) / image.GetHeight();
-                cover = wxBitmap(
-                    image.Scale(width, height, wxIMAGE_QUALITY_HIGH));
+            if (image.LoadFile(stream, wxBITMAP_TYPE_ANY) && image.GetHeight() > 0 &&
+                image.GetWidth() > 0) {
+                artOriginal_ = image;
             }
         }
     }
 
-    if (cover.IsOk()) {
-        art_->SetBitmap(cover);
-        art_->Show();
-    } else {
-        art_->SetBitmap(wxNullBitmap);
-        art_->Hide();
-    }
-
+    updateArt();
     Layout();
     FitInside();
+}
+
+void InfoPanel::updateArt() {
+    if (art_ == nullptr) {
+        return;
+    }
+    if (!artOriginal_.IsOk()) {
+        art_->SetBitmap(wxNullBitmap);
+        art_->Hide();
+        artDrawnAt_ = wxSize{};
+        return;
+    }
+
+    // Whichever constraint binds first. GetClientSize() is the visible width
+    // rather than the virtual one, which is what stops the cover from being the
+    // thing that makes the panel need a horizontal scrollbar.
+    const int margin    = FromDIP(16);
+    const int available = std::max(FromDIP(48), GetClientSize().GetWidth() - margin);
+
+    int height = FromDIP(kArtHeight);
+    int width  = (artOriginal_.GetWidth() * height) / artOriginal_.GetHeight();
+    if (width > available) {
+        width  = available;
+        height = std::max(1, (artOriginal_.GetHeight() * width) / artOriginal_.GetWidth());
+    }
+
+    // Rescaling a large cover is not free, and a resize sends a stream of these.
+    if (artDrawnAt_ == wxSize(width, height)) {
+        return;
+    }
+    artDrawnAt_ = wxSize(width, height);
+
+    art_->SetBitmap(wxBitmap(artOriginal_.Scale(width, height, wxIMAGE_QUALITY_HIGH)));
+    art_->Show();
+    Layout();
 }
 
 }  // namespace xpcog::app

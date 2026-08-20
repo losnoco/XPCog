@@ -2,6 +2,7 @@
 
 #include "AppIcon.hpp"
 #include "MainFrame.hpp"
+#include "StatusPresence.hpp"
 #include "Text.hpp"
 
 #include "xpcog/platform/FileAssociations.hpp"
@@ -71,6 +72,32 @@ bool XPCogApp::OnInit() {
         return false;
     }
 
+    // Before anything expensive is constructed. A later launch's only job is to
+    // hand its files over and go, and every decoder registered or database opened
+    // first is latency the user waits through for a process that is about to
+    // exit -- and, in the library's case, a second connection to a file the
+    // running instance already holds.
+    //
+    // This existed for a whole commit before anything called it, which is the
+    // failure a dead-code check would have caught and a test suite did not: the
+    // class was complete, compiled, and unreachable, so every double-click opened
+    // a second player.
+#ifndef __WXOSX__
+    instance_ = std::make_unique<SingleInstance>();
+    {
+        std::vector<std::string> arguments;
+        arguments.reserve(pending_.GetCount());
+        for (const wxString& name : pending_) {
+            arguments.push_back(toUtf8(name));
+        }
+        if (!instance_->claim(arguments)) {
+            // Handed over. Returning false from OnInit exits without an event
+            // loop and without a window, which is the whole point.
+            return false;
+        }
+    }
+#endif
+
     store_    = platform::makeNativeSettingsStore();
     settings_ = std::make_unique<Settings>(*store_);
     settings_->applyMigrations();
@@ -84,6 +111,26 @@ bool XPCogApp::OnInit() {
 
     frame_ = new MainFrame(*registry_, *settings_, dispatcher());
     frame_->Show();
+
+    // A later launch: take its files and come to the front. Raising even when it
+    // brought none is the point -- someone who runs the application again while
+    // it is minimised is asking for the window, and a launch that appears to do
+    // nothing reads as the program having failed to start.
+#ifndef __WXOSX__
+    launchSubscription_ =
+        instance_->launched.connect([this](const std::vector<std::string>& received) {
+            std::vector<Url> urls;
+            urls.reserve(received.size());
+            for (const std::string& argument : received) {
+                urls.push_back(
+                    Url::fromLocalPath(std::filesystem::path{toWx(argument).ToStdWstring()}));
+            }
+            if (!urls.empty()) {
+                frame_->openUrls(urls);
+            }
+            raiseWindow(frame_);
+        });
+#endif
 
     if (!pending_.IsEmpty()) {
         std::vector<Url> urls;

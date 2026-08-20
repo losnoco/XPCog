@@ -23,8 +23,11 @@
 
 #pragma once
 
+#include "SingleInstance.hpp"
+
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
+#include "xpcog/core/Signal.hpp"
 
 #include <wx/app.h>
 #include <wx/arrstr.h>
@@ -63,6 +66,17 @@ public:
 
 private:
     bool performRegistration(bool unregister);
+
+    /// One player per user. Claimed before anything expensive is built, so a
+    /// second launch hands its files over and exits without opening a
+    /// database connection the running instance already holds.
+    ///
+    /// Absent on macOS, where LaunchServices delivers a second open as an
+    /// event to the running application rather than starting a process --
+    /// claiming a name there would add a failure mode to solve a problem the
+    /// platform does not have.
+    std::unique_ptr<SingleInstance> instance_;
+    Subscription                    launchSubscription_;
 
     std::unique_ptr<ISettingsStore> store_;
     std::unique_ptr<Settings>       settings_;
