@@ -421,20 +421,30 @@ std::filesystem::path buildTimedId3Ts(
     return std::filesystem::exists(out) ? out : std::filesystem::path{};
 }
 
-const bool kHaveHls = [] {
+/// A function rather than a namespace-scope `const bool`, and the difference is
+/// not style: initialising one of those calls registerAllCodecs() *before main*,
+/// where a codec whose registrar reads another translation unit's globals reads
+/// them before that unit has initialised them. AdPlug is such a codec and this
+/// crashed the whole suite at startup when it landed. See test_containers.cpp.
+[[nodiscard]] bool claims(std::string_view extension) {
     const auto extensions = registry().allExtensions();
-    return std::find(extensions.begin(), extensions.end(), "m3u8") != extensions.end();
-}();
+    return std::find(extensions.begin(), extensions.end(), extension) != extensions.end();
+}
 
-const bool kHaveFFmpeg = [] {
-    const auto extensions = registry().allExtensions();
-    return std::find(extensions.begin(), extensions.end(), "aac") != extensions.end();
-}();
+[[nodiscard]] bool haveHls() {
+    static const bool answer = claims("m3u8");
+    return answer;
+}
+
+[[nodiscard]] bool haveFFmpeg() {
+    static const bool answer = claims("aac");
+    return answer;
+}
 
 }  // namespace
 
 TEST_CASE("a mid-stream ID3v2 chunk updates the tags", "[ffmpeg][streamtags]") {
-    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+    if (!haveFFmpeg()) SKIP("the FFmpeg decoder is not built into this configuration");
 
     const auto path = buildTaggedStream();
     if (path.empty()) SKIP("ffmpeg not available to build an ADTS fixture");
@@ -488,7 +498,7 @@ TEST_CASE("a mid-stream ID3v2 chunk updates the tags", "[ffmpeg][streamtags]") {
 }
 
 TEST_CASE("a stream with no mid-stream tags announces nothing", "[ffmpeg][streamtags]") {
-    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+    if (!haveFFmpeg()) SKIP("the FFmpeg decoder is not built into this configuration");
 
     // The other half of the check: harvesting on every packet instead of on the
     // demuxer's flag would also make the test above pass, while reporting a track
@@ -517,8 +527,8 @@ TEST_CASE("a stream with no mid-stream tags announces nothing", "[ffmpeg][stream
 
 TEST_CASE("an HLS rendition's per-segment tags reach the playlist",
           "[ffmpeg][streamtags][hls]") {
-    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
-    if (!kHaveHls) SKIP("HLS is not built into this configuration");
+    if (!haveFFmpeg()) SKIP("the FFmpeg decoder is not built into this configuration");
+    if (!haveHls()) SKIP("HLS is not built into this configuration");
 
     // The whole path, which is what the feature is for: the fetcher concatenates
     // segments, each segment leads with its own ID3v2 tag, the ADTS demuxer
@@ -566,7 +576,7 @@ TEST_CASE("an HLS rendition's per-segment tags reach the playlist",
 
 TEST_CASE("MPEG-TS timed metadata renames the playing track",
           "[ffmpeg][streamtags]") {
-    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+    if (!haveFFmpeg()) SKIP("the FFmpeg decoder is not built into this configuration");
 
     // The other way HLS carries a now-playing title. A packed-audio rendition
     // splices ID3 into the audio, where the ADTS demuxer parses it; a transport
@@ -601,7 +611,7 @@ TEST_CASE("MPEG-TS timed metadata renames the playing track",
 
 TEST_CASE("MPEG-TS timed metadata that repeats is announced once",
           "[ffmpeg][streamtags]") {
-    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+    if (!haveFFmpeg()) SKIP("the FFmpeg decoder is not built into this configuration");
 
     // Every HLS transport-stream segment carries a timed-ID3 packet whether or
     // not the programme moved on -- with the Apple timestamp PRIV frame in it,
@@ -643,7 +653,7 @@ TEST_CASE("MPEG-TS timed metadata that repeats is announced once",
 }
 
 TEST_CASE("a broadcast that repeats its title is announced once", "[ffmpeg][streamtags]") {
-    if (!kHaveFFmpeg) SKIP("the FFmpeg decoder is not built into this configuration");
+    if (!haveFFmpeg()) SKIP("the FFmpeg decoder is not built into this configuration");
 
     // Taken from a real station, whose segments each lead with the same artist,
     // title and album plus Apple's per-segment timestamp. Nothing about the

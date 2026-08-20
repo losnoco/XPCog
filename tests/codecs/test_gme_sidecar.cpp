@@ -46,14 +46,20 @@ std::filesystem::path writeFile(const std::string& name, const std::string& cont
     return path;
 }
 
-const bool kHavePlaylists = [] {
-    return registry().isContainer(Url::fromLocalPath("dummy.m3u"));
-}();
+/// A function rather than a namespace-scope `const bool`, and the difference is
+/// not style: initialising one of those calls registerAllCodecs() *before main*,
+/// where a codec whose registrar reads another translation unit's globals reads
+/// them before that unit has initialised them. AdPlug is such a codec and this
+/// crashed the whole suite at startup when it landed. See test_containers.cpp.
+[[nodiscard]] bool havePlaylists() {
+    static const bool answer = registry().isContainer(Url::fromLocalPath("dummy.m3u"));
+    return answer;
+}
 
 }  // namespace
 
 TEST_CASE("a Game_Music_Emu sidecar is not read as a playlist", "[containers][gme]") {
-    if (!kHavePlaylists) {
+    if (!havePlaylists()) {
         SKIP("playlist containers not built");
     }
 
@@ -69,7 +75,7 @@ TEST_CASE("a Game_Music_Emu sidecar is not read as a playlist", "[containers][gm
 }
 
 TEST_CASE("an IPv6 host is not mistaken for a sidecar", "[containers][gme]") {
-    if (!kHavePlaylists) {
+    if (!havePlaylists()) {
         SKIP("playlist containers not built");
     }
 

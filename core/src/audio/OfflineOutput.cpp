@@ -199,12 +199,34 @@ private:
         // quiet bug: neither the volume nor a transport fade reached the last
         // fraction of a second of any capture, which is precisely where a fade
         // out lives.
-        for (;;) {
-            const std::size_t got = sink_.read(scratch.data(), scratch.size());
+        //
+        // Counted like every other read, and that is not housekeeping. These
+        // frames were delivered, so a clock that omits them disagrees with the
+        // capture it sits beside -- which stayed invisible while the only thing
+        // that stopped a device was the end of playback, and stops being
+        // invisible the moment a device is stopped mid-track for a live switch.
+        //
+        // Bounded by what is in the ring when the drain stops rather than by the
+        // ring running dry, and those are only the same thing when the producer
+        // has already gone. At the end of playback it has -- stop() joins the
+        // feeder and the DSP thread before it touches the output. Stopping a
+        // device mid-track for a live switch does neither, so "read until it
+        // returns nothing" is a race against a thread still writing, and a run
+        // that kept winning it swallowed nearly a second of the *next* device's
+        // audio.
+        std::size_t owed = sink_.availableToRead();
+        while (owed > 0) {
+            const std::size_t got =
+                sink_.read(scratch.data(), std::min(scratch.size(), owed));
             if (got == 0) {
                 break;
             }
+            owed -= got;
             append(scratch.data(), got);
+            if (format_.channels > 0) {
+                framesPlayed_.fetch_add(got / format_.channels,
+                                        std::memory_order_relaxed);
+            }
         }
     }
 

@@ -147,8 +147,14 @@ Watch the skip count in `ctest` output, not just the pass rate. With the encoder
 installed a full run is **497 tests, 65 skipped**, and those 64 want something no
 package manager can supply: rips of copyrighted game programs, a Roland's
 firmware, a SoundFont bank. Point `XPCOG_PSF_CORPUS`, `XPCOG_VGM_CORPUS`,
-`XPCOG_SID_CORPUS`, `XPCOG_MIDI_CORPUS`, `XPCOG_SC55_ROMS`, `XPCOG_SOUNDFONT`
-or `XPCOG_DSD_FILE` at one and the matching cases run.
+`XPCOG_SID_CORPUS`, `XPCOG_MIDI_CORPUS`, `XPCOG_HIVELY_CORPUS`,
+`XPCOG_ADPLUG_CORPUS`, `XPCOG_ORGANYA_CORPUS`, `XPCOG_SYNTRAX_CORPUS`,
+`XPCOG_DSD_CORPUS`, `XPCOG_SC55_ROMS`, `XPCOG_SOUNDFONT`, `XPCOG_SHORTEN_FILE`
+or `XPCOG_DSD_FILE` at one and the matching cases run. `XPCOG_VGM_CORPUS` is read
+by two codecs' tests — vgmstream's and libvgm's — because a folder of game rips
+holds streamed audio and chip logs side by side. Organya, Shorten and the
+`silence://` track need a corpus least: most of what those three assert runs
+against files the tests write themselves.
 Without the encoders, 41 more go quiet.
 
 Note that the encoders alone were not enough before the fixture commands stopped

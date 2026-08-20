@@ -114,6 +114,11 @@ constexpr std::array kCuratedKeys = {
     // floatingMiniWindow is deliberately absent: the mini player carries its
     // own checkbox for it and applies it as it is clicked, so a second one
     // here would be the copy that does nothing until the window is rebuilt.
+    //
+    // closeToTray is listed on every platform even though macOS builds draw no
+    // row for it. It does nothing there -- see buildAppearancePane() -- and a
+    // key with no effect belongs in Advanced even less than it belongs in
+    // Appearance, so this list keeps it out of both.
     "widgetStyle", "closeToTray",
     // Spectrum
     "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode",
@@ -460,8 +465,8 @@ QWidget* PreferencesDialog::buildOutputPane() {
     row.toggle(tr("Release the audio device while paused"), "suspendOutputOnPause");
 
     row.note(tr("Volume scaling and resampler quality take effect on the next "
-                "track. Changing the device or exclusive mode restarts what is "
-                "playing, from where it had reached."));
+                "track. The device and exclusive mode move whatever is playing "
+                "on to the new device, with a short break while it opens."));
 
     return pane;
 }
@@ -531,6 +536,17 @@ QWidget* PreferencesDialog::buildAppearancePane() {
     });
     layout->addRow(tr("Style"), box);
 
+    // Absent on macOS, where the question it asks does not arise. Closing the
+    // window there hides it and leaves XPCog running -- unconditionally, because
+    // that is the platform's convention rather than a preference (see
+    // MainWindow::closeEvent) -- and there is no tray icon to hide to in any
+    // case. A checkbox offering to choose something already chosen is the same
+    // fault as one that does nothing; this is that fault, not a missing feature.
+    //
+    // The key stays in settings.def and in kCuratedKeys, so a settings file that
+    // has travelled from Windows keeps its value and Advanced does not offer a
+    // raw box for it here.
+#ifndef Q_OS_MACOS
     auto* closeToTray = new QCheckBox(tr("Closing the window keeps XPCog running"));
     closeToTray->setChecked(settings_.CloseToTray());
     // Offered only where there is somewhere to hide to. Without a notification area
@@ -547,6 +563,7 @@ QWidget* PreferencesDialog::buildAppearancePane() {
         emit settingChanged(QStringLiteral("closeToTray"));
     });
     layout->addRow(QString{}, closeToTray);
+#endif
 
     auto* note = new QLabel(
         tr("On Windows, \"Windows 11\" is the modern chrome and \"Windows Vista\" "

@@ -1,0 +1,12 @@
+{
+  "name": "adplug",
+  "version-string": "2.3.4-beta",
+  "description": "AdLib/OPL2 music player library: around forty DOS-era formats on an OPL emulator",
+  "homepage": "https://github.com/adplug/adplug",
+  "license": "LGPL-2.1-or-later",
+  "dependencies": [
+    "libbinio",
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

@@ -9,6 +9,7 @@ add_executable(xpcog-tests
     core/test_freesurround.cpp
     core/test_gapless.cpp
     core/test_m1c.cpp
+    core/test_output_device.cpp
     core/test_panelfeed.cpp
     core/test_library.cpp
     core/test_loop_policy.cpp
@@ -62,6 +63,97 @@ if(XPCOG_WITH_FLAC)
     target_sources(xpcog-tests PRIVATE codecs/test_flac_chained.cpp)
 endif()
 
+if(XPCOG_WITH_HIVELY)
+    target_sources(xpcog-tests PRIVATE codecs/test_hively.cpp)
+
+    # Its own corpus variable, for the same reason SID has one: an AHX
+    # collection is a different thing from a PSF rip archive, and pointing one
+    # at the other only produces skips that read like failures.
+    #   -DXPCOG_HIVELY_CORPUS=/path/to/modules
+    # Unset, the corpus cases skip and the registration and rejection ones still
+    # run.
+    set(XPCOG_HIVELY_CORPUS "" CACHE PATH
+        "AHX and HVL modules, for decode fixtures that cannot be committed; empty to skip")
+    if(XPCOG_HIVELY_CORPUS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_HIVELY_CORPUS=\"${XPCOG_HIVELY_CORPUS}\"")
+        message(STATUS "Hively corpus tests: ${XPCOG_HIVELY_CORPUS}")
+    endif()
+endif()
+
+if(XPCOG_WITH_ADPLUG)
+    target_sources(xpcog-tests PRIVATE codecs/test_adplug.cpp)
+
+    # Its own corpus variable. An AdLib collection is a different thing again
+    # from a tracker one, and the formats these tests separate -- .raw against
+    # vgmstream, .s3m against OpenMPT -- only exist to be separated where both
+    # kinds of file are present.
+    #   -DXPCOG_ADPLUG_CORPUS=/path/to/adlib
+    set(XPCOG_ADPLUG_CORPUS "" CACHE PATH
+        "AdLib and OPL2 modules, for decode fixtures that cannot be committed; empty to skip")
+    if(XPCOG_ADPLUG_CORPUS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_ADPLUG_CORPUS=\"${XPCOG_ADPLUG_CORPUS}\"")
+        message(STATUS "AdPlug corpus tests: ${XPCOG_ADPLUG_CORPUS}")
+    endif()
+endif()
+
+if(XPCOG_WITH_ORGANYA)
+    target_sources(xpcog-tests PRIVATE codecs/test_organya.cpp)
+
+    # Most of the Organya cases build their own songs and need nothing, which
+    # is unusual enough to be worth saying: the format is documented and
+    # uncompressed, so a fixture can be written rather than found. This variable
+    # only widens the same claims over real music.
+    #   -DXPCOG_ORGANYA_CORPUS=/path/to/org
+    set(XPCOG_ORGANYA_CORPUS "" CACHE PATH
+        "Organya (.org) songs, for breadth over real music; empty to skip those cases")
+    if(XPCOG_ORGANYA_CORPUS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_ORGANYA_CORPUS=\"${XPCOG_ORGANYA_CORPUS}\"")
+        message(STATUS "Organya corpus tests: ${XPCOG_ORGANYA_CORPUS}")
+    endif()
+endif()
+
+if(XPCOG_WITH_SILENCE)
+    # No fixture and no corpus: the format has no bytes.
+    target_sources(xpcog-tests PRIVATE codecs/test_silence.cpp)
+endif()
+
+if(XPCOG_WITH_FFMPEG)
+    target_sources(xpcog-tests PRIVATE codecs/test_shorten.cpp)
+
+    # Shorten is FFmpeg's to decode; what is ours is the length, and the length
+    # parser is tested against files this builds itself. The variable only adds
+    # the end-to-end case, and it names one file rather than a corpus because
+    # one is all it takes.
+    #   -DXPCOG_SHORTEN_FILE=/path/to/something.shn
+    set(XPCOG_SHORTEN_FILE "" CACHE FILEPATH
+        "A .shn file, for the end-to-end Shorten case; empty to skip it")
+    if(XPCOG_SHORTEN_FILE)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_SHORTEN_FILE=\"${XPCOG_SHORTEN_FILE}\"")
+        message(STATUS "Shorten file tests: ${XPCOG_SHORTEN_FILE}")
+    endif()
+endif()
+
+if(XPCOG_WITH_SYNTRAX)
+    target_sources(xpcog-tests PRIVATE codecs/test_syntrax.cpp)
+
+    # Unlike Organya, a .jxs cannot reasonably be written by a test -- the
+    # header is a packed struct of counts, followed by whole subsong, pattern
+    # and instrument structures -- so everything but registration and rejection
+    # needs a collection.
+    #   -DXPCOG_SYNTRAX_CORPUS=/path/to/jxs
+    set(XPCOG_SYNTRAX_CORPUS "" CACHE PATH
+        "Syntrax (.jxs) modules, for decode fixtures that cannot be committed; empty to skip")
+    if(XPCOG_SYNTRAX_CORPUS)
+        target_compile_definitions(xpcog-tests
+            PRIVATE "XPCOG_SYNTRAX_CORPUS=\"${XPCOG_SYNTRAX_CORPUS}\"")
+        message(STATUS "Syntrax corpus tests: ${XPCOG_SYNTRAX_CORPUS}")
+    endif()
+endif()
+
 if(XPCOG_WITH_VORBIS AND XPCOG_WITH_OPUS AND XPCOG_WITH_OGGCHAIN)
     target_sources(xpcog-tests PRIVATE codecs/test_ogg_chained.cpp)
 endif()
@@ -78,27 +170,55 @@ if(XPCOG_WITH_HLS)
     target_sources(xpcog-tests PRIVATE codecs/test_hls.cpp)
 endif()
 
+# A folder of game rips, read by two codecs' tests.
+#
+# Every fixture these formats need is a rip of copyrighted game audio, so none
+# of it can live in this repository -- which left the vgmstream decoder with no
+# automated decode coverage at all, and its worst bug (every rip decoding to
+# zero frames, silently) was exactly what a decode test catches first.
+#
+# So point the suite at a corpus that already exists on the machine running
+# it:  -DXPCOG_VGM_CORPUS=D:/vgm
+#
+# Declared out here rather than inside either codec's block because both
+# vgmstream and libvgm read it: a folder of rips holds streamed audio and chip
+# logs side by side, and asking for the same tree twice under two names would
+# only produce skips that read like failures.
+#
+# Unset, the cases skip. CI and every other clone are unaffected and nothing
+# copyrighted is committed, downloaded or referenced.
+set(XPCOG_VGM_CORPUS "" CACHE PATH
+    "Folder of game rips to decode in the vgmstream and libvgm tests; empty to skip")
+if(XPCOG_VGM_CORPUS)
+    target_compile_definitions(xpcog-tests
+        PRIVATE "XPCOG_VGM_CORPUS=\"${XPCOG_VGM_CORPUS}\"")
+    message(STATUS "Game-rip corpus tests: ${XPCOG_VGM_CORPUS}")
+endif()
+
 if(XPCOG_WITH_VGMSTREAM)
     target_sources(xpcog-tests PRIVATE
         codecs/test_vgmstream.cpp
         codecs/test_vgmstream_corpus.cpp)
+endif()
 
-    # Every fixture these formats need is a rip of copyrighted game audio, so
-    # none of it can live in this repository -- which left the decoder with no
-    # automated decode coverage at all, and its worst bug (every rip decoding to
-    # zero frames, silently) was exactly what a decode test catches first.
-    #
-    # So point the suite at a corpus that already exists on the machine running
-    # it:  -DXPCOG_VGM_CORPUS=D:/vgm
-    #
-    # Unset, the cases skip. CI and every other clone are unaffected and nothing
-    # copyrighted is committed, downloaded or referenced.
-    set(XPCOG_VGM_CORPUS "" CACHE PATH
-        "Folder of game rips to decode in the vgmstream tests; empty to skip")
-    if(XPCOG_VGM_CORPUS)
+if(XPCOG_WITH_LIBVGM)
+    target_sources(xpcog-tests PRIVATE codecs/test_libvgm.cpp)
+endif()
+
+if(XPCOG_WITH_DSD)
+    target_sources(xpcog-tests PRIVATE codecs/test_dsd_containers.cpp)
+
+    # A folder of DSD files rather than one, because the case that carries the
+    # most needs a `.dsf` and a `.wv` of the *same* recording sitting beside each
+    # other -- WavPack's DSD path is the only reference this tree has for what
+    # bits a DSD decoder should produce.
+    #   -DXPCOG_DSD_CORPUS=/path/to/dsd
+    set(XPCOG_DSD_CORPUS "" CACHE PATH
+        "Folder of DSF and DSDIFF files; empty to skip")
+    if(XPCOG_DSD_CORPUS)
         target_compile_definitions(xpcog-tests
-            PRIVATE "XPCOG_VGM_CORPUS=\"${XPCOG_VGM_CORPUS}\"")
-        message(STATUS "vgmstream corpus tests: ${XPCOG_VGM_CORPUS}")
+            PRIVATE "XPCOG_DSD_CORPUS=\"${XPCOG_DSD_CORPUS}\"")
+        message(STATUS "DSD corpus tests: ${XPCOG_DSD_CORPUS}")
     endif()
 endif()
 

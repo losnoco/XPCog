@@ -637,6 +637,14 @@ first block after a seek, which is M4's work.
   actually exists — `hasTrayIcon()`, not `isVisible()`, since on macOS the presence
   is the Dock menu and hiding the window there would leave nothing to click.
 
+  **So macOS draws no row for it at all.** The setting answered a question that
+  does not arise there: closing the window already hides it, unconditionally,
+  and there is nothing to hide *to*. A checkbox offering to choose something
+  already chosen is the same fault as one that does nothing. It stays in
+  `settings.def` and in `kCuratedKeys`, so a settings file that has travelled
+  from Windows keeps its value and the generated Advanced pane does not offer a
+  raw box for it in the pane's place.
+
   It also uncovered a bug older than itself. `File → Quit` called
   `QApplication::quit()`, which exits the event loop *without* closing any window —
   so `closeEvent` never ran and **the playlist and window geometry were saved only
@@ -1958,6 +1966,395 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   Cog parses the two offsets with `-[NSString intValue]` under a comment reading
   "bugs with files over 2GB". These are 64-bit here.
 
+- **AHX and Hively**, the first of the decoders Cog has and this did not.
+
+  The replayer is [`vendor/hively`](../vendor/hively) rather than an overlay
+  port, and the rule in [`ports/README.md`](../ports/README.md) is what decides
+  it: upstream is HivelyTracker, a GUI application rather than a released
+  library, and Cog's copy has grown a blip_buf resampler with every symbol
+  renamed `hvl_blip_*`. That addition is not cosmetic — it is what lets the
+  replayer run at a device's rate rather than the Amiga's, so taking it away
+  takes the sample-rate handling with it. `sinc_generator.c` comes along and is
+  deliberately not built: it is a standalone program with its own `main()` whose
+  output is the `bl_step` table already baked into `blip_buf.c`.
+
+  **`.ahx` is what this settles**, and `docs/MIDI.md` had been carrying it as an
+  open question — vgmstream claims the same extension for CRI's entirely
+  unrelated format. It needed no decision in the end, because content already
+  makes it: both sit at the default priority, vgmstream is offered the file
+  first, sniffs it, declines, and the registry moves on. Exactly how `.mus` was
+  settled between MIDI and SID. Giving either one a priority would be the
+  fragile answer to a question nothing was actually asking.
+
+  **The container reads the subsong table rather than counting it, and the
+  corpus is what showed why.** A subsong is a starting index into the position
+  list; `ht_SubsongNr` is how many the header claims; and the replayer clamps
+  any entry pointing past the end of that list to zero, which starts the tune
+  where the main song starts. Cog expands on the count, so every such entry
+  becomes a playlist row that plays the main song again. Over 826 modules: 94
+  declare subsongs, only 34 hold one that begins anywhere else, and Cog's rule
+  turns those 826 files into 1,164 rows of which 925 are distinct. Reading the
+  entries and taking each start position once gives the 925 directly. The test
+  for it renders two rows and compares them, because counting rows passes either
+  way — which is how the defect was found in the first place.
+
+  Two smaller differences. The frame count per replayer tick is derived from
+  `hvl_DecodeFrame`'s own expression, `(freq / 50 / mult) * mult`, rather than
+  Cog's `ceil(freq / 50)` — those agree at speed multipliers 1, 2 and 3 and
+  disagree by two frames at 4, where Cog re-reads the tail of the previous tick.
+  And seeking renders into a discard buffer instead of stepping the sequencer
+  alone, so the filters and envelopes arrive at the seek point with the history
+  they would actually have.
+
+  **Some modules are simply louder than full scale**, and that is the format
+  rather than the port. The mix gain is a per-file field, the nominal divisor is
+  1 << 24, and over a forty-module sample the median peak is 0.52 with three past
+  1.0 and the loudest at 1.82. Cog divides by the same number and produces the
+  same floats. Clamping in the decoder would throw away headroom the float format
+  exists to carry, so it does not — but a listener meeting one of those modules is
+  meeting a clipped one, and a preference along the lines of `HalveDsdVolume` is
+  where that would be answered.
+
+- **AdPlug**, the largest of the decoders Cog has and this did not: around
+  forty DOS-era AdLib and OPL2 formats on an emulated chip.
+
+  Two overlay ports rather than a `vendor/` directory, because both have a real
+  upstream to pin — `kode54/adplug` at the commit Cog's `.gitmodules` names, and
+  `adplug/libbinio` beneath it. Each carries its own `CMakeLists.txt` for the
+  reason libsidplayfp's does, and it was a smaller job than that one: nothing
+  under AdPlug's `src/` includes a `config.h` at all, so the replacement is a
+  source list, one generated header and two definitions. libbinio's own
+  CMakeLists exists and cannot be used — it installs nothing, and its
+  `configure_file()` writes a generated header back into the *source* tree.
+
+  **The song database is compiled in.** Most of these formats carry no title,
+  no author and no length; AdPlug's answer is a CRC-keyed database shipped as a
+  separate repository, which Cog loads from its plugin bundle. There is no
+  bundle here and there are three platforms, so `adplug.db` is turned into a
+  byte array by CMake and read through libbinio's memory stream. 7.8 KB, no
+  install step, no search path, and no failure mode where the database is
+  missing and the symptom is a playlist of filenames.
+
+  **`.raw` is why the priority matters.** Cog runs AdPlug at 0.5 against a
+  default of 1.0 and a vgmstream of 0.0 — above the catch-alls, below everything
+  dedicated. That ordering is load-bearing: an AdLib Rdos capture and a
+  headerless PCM dump share the extension, vgmstream accepts anything under it,
+  and before this landed `LAME intro tune for Xerox of INC.raw` played as noise
+  with nothing to say it had gone wrong. This tree's catch-alls sit at 0.5
+  rather than 0.0, so the same *relative* order is 0.75 here. `.s3m` is the same
+  argument the other way — OpenMPT keeps it, one notch above — and both are
+  pinned by tests, because a wrong number here produces audio rather than an
+  error.
+
+  **The file provider is the half of the port with the work in it.** AdPlug has
+  no open-this-buffer entry point: `CAdPlug::factory()` takes a filename and a
+  `CFileProvider`, and walks its whole player list asking each in turn. Five of
+  those players reach for a *second* file beside the first — KSM's `insts.dat`,
+  ROL's instrument bank, and the ones in adtrack, mid and mus — by rewriting the
+  last component of the name they were given. So the name handed in has to
+  survive that rewrite and come back as something openable, which is why it is a
+  percent-decoded URL rather than a path, exactly as in Cog.
+
+  That is also where the one real bug was, and the corpus is what found it.
+  Re-encoding with `percentEncodePath()` escapes the colon in `file:`, which
+  parses as nothing — so every Sierra SCI file in the corpus failed to open with
+  its instrument bank sitting next to it, 120 of them, while all thirteen other
+  format families worked. The fix holds the scheme back and encodes only what
+  follows.
+
+  **Empty subsongs are left out of the playlist**, on the same reasoning as
+  Hively's duplicates. Westwood's ADL is a bank of slots rather than a list of
+  songs: Dune II's `DUNE20.adl` declares seventy-four and exactly half are zero
+  seconds long. Cog offers all seventy-four. Asking `songlength()` per subsong
+  costs a few milliseconds for the whole file and turns 74 rows into 37.
+
+  Of 1,044 corpus files, 1,027 open and expand to 1,988 playlist rows. The
+  seventeen that do not are extensions AdPlug does not claim — the `.003` SCI
+  patch banks, which are companion files rather than tracks, and ten Westwood
+  `.ad_` variants of a format it claims only as `.adl`.
+
+  **One trap that is not AdPlug's and cost the most to find.** Its player table
+  is a `std::list` of objects holding strings, filled by a dynamic initialiser
+  in its own translation unit — so asking the library which extensions it plays
+  is unsafe before `main`. Six test files initialised a namespace-scope
+  `const bool` by calling `registerAllCodecs()`, which had been harmless until a
+  codec's registrar read another unit's globals; the suite then segfaulted at
+  startup with no output at all. They are functions now. There is no working
+  around it in the codec: an unconstructed `std::list` has no state that can be
+  checked.
+
+- **`.dsf` and `.dff`, the containers DSD ships in.** The decoding had been
+  here since the DSD work landed — `vendor/dsd2pcm` decimating, one filter per
+  channel ahead of everything else — and only a `.wv` could reach it.
+
+  **The plan for this was wrong, and finding out took one command.** It said to
+  do this inside `codecs/ffmpeg`, matching `AV_CODEC_ID_DSD_LSBF` and handing
+  the packets on untouched, which is what Cog does. **FFmpeg has no DSDIFF
+  demuxer.** It has `dsf` and nothing for `.dff`; Cog's FFmpeg plugin claims
+  `dff`, `dsdiff` and `wsd` anyway, which is a claim its demuxer cannot honour.
+  So half of this needed a reader written here whatever was decided — and with
+  that true, `XPCOG_WITH_FFMPEG` being **off by default** settled the rest:
+  putting `.dsf` behind it would have made one container depend on a large
+  optional dependency while its sibling did not.
+
+  So `codecs/dsd` reads both. They are a header and a run of bytes each, the
+  one convention that matters lives in one file, and the codec has no external
+  dependency at all.
+
+  **The two things that had to be right are invisible when they are wrong.**
+  DSDIFF stores its bytes interleaved and most-significant-bit first, which is
+  what `dsd2pcm` wants, so it feeds straight through. DSF stores them
+  least-significant-bit first in per-channel blocks of 4096, so both have to be
+  undone in the same pass. Get either wrong and nothing errors: a one-bit stream
+  read backwards is still a legal one-bit stream, and it plays — as a rasp.
+  Reading blocks as interleaved does the same. Neither is something a test
+  asserting "audio came out" can fail on, and the level after decimation turns
+  out not to separate them either, which was checked rather than assumed.
+
+  **What separates them is a coincidence in the fixtures.** A DSF and a WavPack
+  of the *same* recording were sitting beside each other, and WavPack's DSD path
+  is already verified — so it stands as a reference for the bytes a DSD decoder
+  should produce, and bit order becomes an equality instead of a listening
+  judgement. The two decode identically from the first byte and identically
+  again after a seek to a deliberately non-block-aligned position. Removing the
+  bit reversal, or reading the blocks as interleaved, trips exactly those two
+  assertions and nothing else.
+
+  DSDIFF has no such reference here, and its correctness rests on a simpler
+  layout and on its header having been read against a hand-parse of the
+  container. If a `.dff` and a `.wv` of one recording ever land in the same
+  folder the comparison picks them up with no change.
+
+  **Three smaller things.** DST-compressed DSDIFF is declined rather than played
+  — it is losslessly compressed DSD and needs a decoder of its own, and the
+  `CMPR` chunk says which it is. DSF's final block is zero-padded past the stated
+  sample count, and a DSD zero byte is not silence but full-scale negative, so
+  the padding is clamped away rather than played as a click. And `wsd` is not
+  claimed even though Cog claims it: it is a third container again, and claiming
+  an extension whose layout has never been read against a real file is how a
+  decoder comes to play noise confidently.
+
+  **`.dsf` means two unrelated things**, and both are now in this tree: Sony's
+  DSD Stream File and Sega's Dreamcast Sound Format, which `codecs/sdsf` has
+  claimed since M6. Neither carries a priority. Each recognises its own magic
+  and declines the rest, so the registry moves on — the rule that settled
+  `.ahx` between Hively and vgmstream, and `.mus` between MIDI and SID before
+  it. Checked against a real file of each rather than reasoned about.
+
+  One pre-existing test was wrong and had never run: it pinned the DSD byte rate
+  to 352,800 or 705,600, which is DSD64 and DSD128, and the fixture is DSD256.
+  It asks for the family now.
+
+- **Organya**, Cave Story's music format, and the first decoder here that is not
+  a library at all.
+
+  There is nothing to vendor and nothing to package: the whole player is four
+  hundred lines, and Cog carries those four hundred lines inline in
+  `Plugins/Organya/OrganyaDecoder.mm`. It is Joel Yliluoma's, written against
+  NX-Engine, and it defines the format as much as any specification does — the
+  note-to-frequency constant, the 4e-6 master volume and the Lanczos-2 window on
+  the wavetable lookup are all choices that player made and every Organya
+  listener has since heard. So [`codecs/organya`](../codecs/organya) keeps the
+  arithmetic exactly and changes everything around it.
+
+  **The data is compiled in.** A hundred melodic waveforms (`wavetable.dat`) and
+  six PixTone parameter sets the percussion is synthesised from (`fx9*.pxt`) are
+  Pixel's, and Cog looks them up through `NSBundle` at startup. 34 KB turned into
+  byte arrays by CMake removes an install step, a search path, and the failure
+  mode where the data is missing on somebody's machine and the symptom is a song
+  with no drums — the same arrangement, for the same reasons, as the AdPlug
+  database. The files stay in `data/` as the upstream artefacts, and the drum
+  table looks each one up by the number in its name, so adding a drum is
+  dropping a file in.
+
+  **Seeking is exact, and that is the entry's one real idea.** A sequencer has no
+  random access, so the usual answers are to replay the gap (slow) or to jump and
+  lose every note still sounding (which is what Cog does — `cur_beat` is assigned
+  and the first seconds after a seek are a different arrangement). But a track's
+  state after a beat is only *phase advanced by the sample count* and *remaining
+  note length reduced by the same*, and neither depends on the samples that came
+  out: the mixer reads the waveform and never writes back to it. So `renderBeat`
+  takes a null pointer and does the same arithmetic with the audio thrown away
+  before it is computed rather than after. The test asserts audio after a seek is
+  **bit-identical** to the same audio decoded straight through, which is only
+  sayable because the two paths share one line.
+
+  **The length agrees with the audio, which Cog's does not.** The format counts
+  beats in whole milliseconds and the mixer renders them in whole samples, and
+  that conversion truncates. Cog derives the track length from the milliseconds
+  while rendering from the samples, so the two drift by half a sample per beat on
+  any song whose beat is not a whole number of frames — 36 frames on the
+  synthetic fixture, and it grows with the song. Here the length is beats times
+  samples-per-beat.
+
+  Verified against Cog's player rather than against itself: its `namespace
+  Organya` was lifted out of the `.mm` with only the file I/O replaced, and over
+  forty of the corpus's 247 songs the largest sample difference is 4.8e-7 —
+  float rounding from computing the phase rather than accumulating it, which is
+  the more accurate of the two. Peaks over unity are common (median 0.95, sixteen
+  of forty past 1.0, loudest 1.62) and are the master volume rather than the
+  port, exactly as with Hively.
+
+- **Syntrax**, through libjaytrax — Reinier van Vliet's tracker for DOS and
+  Windows, descended from the Amiga's Mugician.
+
+  The replayer is [`vendor/syntrax`](../vendor/syntrax) rather than an overlay
+  port, on the same rule as Hively: upstream is an untagged Mercurial repository
+  on Bitbucket with no build system to package, and Cog's copy has grown
+  `jxsfile_readSongMem` (upstream reads a path with `fopen`, which is no use to a
+  decoder handed an archive member), `jaytrax_getLength`, `absPosition`, and a
+  sinc interpolator. Take those away and there is no decoder.
+
+  **A URL fragment could read past the end of an array.**
+  `jaytrax_changeSubsong` bounds-checks with `subsongnr > nrofsongs`, which lets
+  a number *equal* to the count through — and `subsongs[]` holds exactly that
+  many pointers. Cog takes the fragment straight off the URL with no check of its
+  own, so `something.jxs#3` on a three-subsong module is an out-of-bounds read.
+  Clamped in the decoder rather than patched upstream, so the vendored replayer
+  stays comparable to Cog's copy; the test for it reproduces the crash when the
+  clamp is removed.
+
+  Seeking renders and discards for the same reason Hively's does:
+  `jaytrax_renderChunk` accepts a null buffer and advances the sequencer without
+  mixing, and the mixer is where voice sample positions, synth phase, the echo
+  delay lines and the declick overlap buffer all live. The bit-identical
+  assertion holds here too, and it says a second thing by accident — the seek
+  leaves the decoder mid-chunk relative to a straight decode, so the replayer's
+  output does not depend on how the request is divided up.
+
+  Two smaller ones. `jaytrax_getLength` gives up after thirty minutes and answers
+  -1, which Cog adds the fade to and reports as a track of negative length; here
+  that falls back on `SynthDefaultSeconds`. And a one-subsong module stays one
+  playlist row rather than becoming `something.jxs#0` — a fragment carrying no
+  information on a row that no longer matches the file the listener dragged in.
+
+- **Shorten**, which turned out to be a question about a number rather than
+  about a decoder.
+
+  Cog carries `Frameworks/Shorten` for this: xmms-shn, about six thousand lines,
+  whose reader spawns a decoding thread, feeds a ring buffer, and takes a
+  *filesystem path* — so Cog's own plugin refuses any URL that is not `file://`,
+  and a `.shn` inside an archive does not play. FFmpeg has demuxed and decoded
+  shorten for years, through an `AVIOContext`, and this build already links it.
+  So `.shn` is one line on `codecs/ffmpeg`'s extension list, and the decoded
+  audio is bit-identical to what the FFmpeg CLI produces.
+
+  **What FFmpeg does not give is the length.** Shorten states it only in the WAV
+  header it wraps — the first command in the stream is `FN_VERBATIM` carrying the
+  original RIFF bytes — and FFmpeg's demuxer does not read that header, so a
+  `.shn` opened with no duration at all: 0:00 in the playlist and no scrub range.
+  [`codecs/common/ShortenHeader`](../codecs/common/ShortenHeader.hpp) recovers it
+  from the first kilobyte, which means implementing enough of the bitstream to
+  reach the first command — a Rice/Golomb reader and six header fields — and then
+  a plain RIFF walk. About a hundred lines that decode nothing.
+
+  The tests write their own `.shn` headers, because the encoder is the same
+  twenty lines as the decoder, so every case including the rejections runs without
+  a fixture. Two things were found by doing it that way: the file type field names
+  the *sample* format (`TYPE_S16LH`) and not the container, so gating on
+  `TYPE_RIFF_WAVE` rejected every real file — xmms-shn does not test it either,
+  it parses whatever the verbatim chunk turns out to hold. And running off the end
+  of the one-kilobyte window is ordinary rather than an error, since what follows
+  the header is audio; the first draft treated it as failure and lost the length
+  on any file whose header ended near the boundary. The recovered length matches
+  the `.ape` and `.tta` copies of the same recording to the frame.
+
+- **libvgm**, the last of the decoders Cog has and this did not, and the largest
+  in reach: around fifty emulated sound chips behind four formats.
+
+  A `.vgm`, `.s98`, `.dro` or `.gym` is not a music file in the ordinary sense
+  and not a tracker module either. Each is a timestamped log of everything that
+  was written to a sound chip's registers, so playing one means emulating the
+  chip and feeding it the writes at the right moments. That is why one library
+  covers a shelf of consoles: the YM2612 in a Mega Drive, the SN76489 in a
+  Master System, the OPL family, the SCC, the C140, the Namco WSG.
+
+  [`ports/libvgm`](../ports/libvgm) pins ValleyBell's library at the same commit
+  Cog ships prebuilt in its `ThirdParty/libvgm` (867223e, recorded in that
+  directory's README). Upstream has no tags at all, so a commit is the only thing
+  to pin, and taking Cog's means the emulator revision is the one Cog's listeners
+  have been hearing. It exports a proper CMake config package, so unlike most of
+  the overlay-ported libraries here there is no target to assemble by hand --
+  four of its six build options are off because they build *programs* rather than
+  libraries, plus `BUILD_LIBAUDIO`, which is an output backend this already has.
+
+  **The priority is the interesting part, and testing it taught me what it does
+  not do.** Every extension is already claimed: `.vgm` and `.vgz` by both
+  Game_Music_Emu and vgmstream, `.gym` by Game_Music_Emu, `.dro` by AdPlug and
+  vgmstream. Unlike `.ahx` or `.mus`, content cannot settle it, because all of
+  them genuinely read these files -- they just read fewer chips. So 1.25, which
+  is Cog's number. What sabotaging it showed is that at the *default* priority
+  libvgm still wins, because ties break by registration order and
+  `codecs/CMakeLists.txt` happens to enter this directory before gme's. Below the
+  catch-alls, a Mega CD VGM opens as Game_Music_Emu's "Sega MegaCD / SegaCD"
+  instead. The number is insurance against an ordering nobody chose, and the
+  comment in the codec says so rather than claiming more.
+
+  Cog gets the same effect a different way: its container appends `#0` to every
+  URL, with the comment "these are included so they can override AdPlug and
+  VGMStream" -- a fragment carrying no information, on a format with no subsongs,
+  doing a priority's job. There is no container here at all.
+
+  **The length is Cog's other bug in this plugin.** Cog reports
+  `Tick2Second(GetTotalTicks())`, which is one pass through the file and nothing
+  else, while `PlayerA` goes on to play `loopCount` passes, fade over the
+  configured seconds, and add half a second of silence. On a looping VGM -- which
+  is most of them -- its playlist shows roughly half the time the track takes.
+  `GetTotalTime()` with the loop, fade and silence flags is the number PlayerA is
+  actually working to, and the test asserts the frames delivered equal the frames
+  reported.
+
+  **Verified against libvgm's own renderer.** `vgm2wav` is one of the programs
+  the port turns off; built separately from the same source and run at matching
+  settings, its output is **byte-identical** to this decoder's across all 63 VGM
+  files in the corpus -- 47 MB apiece on the longest -- with exactly the extra
+  half second of trailing silence this configuration adds and vgm2wav's does not.
+  That covers the render loop, the chunking, the loop count, the fade and the
+  24-bit packing in one comparison. It is recorded here rather than as a test,
+  because a test that shells out to a tool nobody has is a test that always skips.
+
+  **The OPL4 sample ROM ships, as a binary rather than as source.**
+  `yrw801.rom` is the 2 MB Yamaha wavetable the YMF278B plays its sample-based
+  instruments from. Cog carries it as a 14 MB header of one byte per line; here
+  it is `codecs/libvgm/data/yrw801.rom` and CMake turns it into an array at build
+  time, the same arrangement as Organya's wavetable and AdPlug's song database —
+  2 MB in the repository instead of 14, and the same 2 MB in the binary.
+  Its licence is Yamaha's and has never been established by anyone shipping it;
+  that question is open and is listed with Organya's under item 5.
+
+  The lookup has a second step Cog has not: a ROM found beside the file being
+  played is used when none was compiled in, so a build with `data/` emptied still
+  works for somebody who keeps one next to their music. Finding neither is not a
+  failure — libvgm warns and renders the chip's FM half, which is most of an OPL4
+  track. Nothing in the corpus uses the chip, so what the tests can check is that
+  the blob is 2 MB rather than that it sounds right; a truncated or wrong file
+  dropped into `data/` is the realistic fault and is what that case catches.
+
+- **A `silence://` track**, which is the smallest thing in this milestone and the
+  one whose purpose is least visible from its code.
+
+  Nothing in Cog's interface offers to insert a gap. The two places that build
+  one of these URLs are both failure paths: `PlaylistEntry.m`'s `urlForPath()`
+  when an entry has no path at all, and `BufferChain.m` when a source will not
+  open. Ten seconds of silence instead of a stall -- the playlist keeps moving
+  and the listener hears that the track is broken rather than watching the player
+  stop.
+
+  Neither of those is wired here, deliberately: `PlaybackController` answers a
+  failed open by moving on and remembering the failure (`failedStarts_`), which
+  is a different and mostly better answer than playing a gap. What this adds is
+  the piece that makes the other one *possible*, and the thing that lets a Cog
+  playlist holding `silence://10` -- which `cogimport` will eventually read --
+  play the same thing here.
+
+  It is also the only place in the registry where the MIME lookup is the primary
+  path rather than a fallback: there is no extension on `silence://10`, so the
+  source's `audio/x-silence` is what finds the decoder. Two differences from Cog:
+  fractional seconds work (`-intValue` makes `silence://2.5` two seconds there,
+  and nothing Cog writes has a fraction in it), and the track *ends* -- Cog
+  clamps the frame count to what is left and then hands back zero-frame chunks
+  for ever, which its engine happens to treat as an ending.
+
 **Then:**
 
 - The rest of M6, itemised under "Where to pick up next" below — that is the
@@ -2018,9 +2415,76 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   `MA_SHARE_MODE_NOT_SUPPORTED`, and falling back to sharing is a better answer
   than refusing to play. `exclusiveHeld()` reports what was actually granted.
 
-  Both are read when the device is opened, which is when a track starts, so
-  changing either restarts the current track and seeks back to where it had
-  reached — see "Where to pick up next" for what switching live would take.
+  Both are read when the device is opened, which is when a track starts. That
+  used to mean changing either restarted the track; it now moves under the
+  running stream instead — see the next entry.
+
+- **Switching the output device without restarting the track.** Cog
+  reconfigures its AUHAL under the running stream. This stops one device and
+  starts the next, which is a gap of however long the driver takes to open
+  rather than however long the file takes to re-open, decode and seek.
+
+  What makes it cheap is that **nothing is thrown away**. Both rings hold
+  float32 already converted for the format the device is running, so a device
+  that will run that same format simply takes them over and resumes at the next
+  sample. That is also the condition, and it is checked rather than assumed:
+  `startDeviceForSwitch()` compares `negotiatedFormat()` against the running one
+  and refuses a device that answers differently, because queued audio at another
+  rate is queued audio at the wrong pitch. `play()` is free to accept whatever it
+  is given — it converts the track into it — and this is not.
+
+  **The clock is the whole difficulty, and it was not where it looked.**
+  `framesPlayed()` counts from zero at every device start, and every position
+  the engine records — seam positions, the seek base, `framesWritten_` — is an
+  absolute count measured against it. The obvious fix is to re-base all of them
+  at the switch. The one actually taken is a single number, `deviceFramesBase_`:
+  what earlier devices delivered, added to what the current one reports. Nothing
+  else in the engine ever learns that the device changed.
+
+  It has to move *with* `framesPlayed()`, though, and that is the second half.
+  Both are read under `seamMutex_`, and the switch holds that lock across the
+  stop and the start — so a reader sees the pair before or after and never half
+  way. Read outside it, a position poll landing mid-switch pairs the old base
+  with the new zero and reports the track as having jumped back to its
+  beginning. The cost is that a position poll blocks for as long as the driver
+  takes to open, which is a UI tick waiting on a device the user just asked for.
+
+  **No fade, and that is not a compromise.** `pause()` and `stop()` fade because
+  they end in silence. This does not: the waveform stops and continues from the
+  very next sample, so there is no step in amplitude to cover. Fading out and
+  then starting the new device would *add* one — `IAudioOutput::start()` resets
+  the transport gain to unity, so the audio would resume at full volume
+  immediately after having been faded to nothing. A fade on both sides needs a
+  way to start a device silent, which the interface does not have and does not
+  need for anything else.
+
+  Two failures, and neither may be silent. A device that will not open, or one
+  that negotiates another format, puts the stream back on the device that was
+  playing and reports `Delegate::outputSwitchFailed()`; `PlaybackController`
+  answers that by re-opening the track and seeking back, which is what used to
+  happen every time. And if the old device will not come back either — the
+  hardware gone mid-switch — the transport ends, because the feeder's three
+  "wait for the buffers to empty" loops are each a wait for something that
+  cannot happen once nothing is draining them. That one deadlocked before it had
+  a test.
+
+  **Two defects came out of writing the tests rather than the code**, and both
+  were inaudible. A device change requested during an ordinary song was never
+  serviced at all: decoding runs hundreds of times faster than playback, so a
+  track shorter than the deep ring is fully decoded within moments of starting
+  and the feeder spends nearly its whole life in the drain-out loop, which did
+  not look at the request. And `OfflineOutput`'s exit drain read until the ring
+  ran dry, which is only the same thing as "take what the feeder left behind"
+  when the feeder has already been joined — true at the end of playback, false
+  for a device stopped mid-track, where it is a race against a thread still
+  writing. One run of it swallowed nearly a second of the next device's audio.
+
+  **The fallback was already broken, which is why it is now tested.**
+  `reopenOutput()` read the position, called `playTrack()` and then `seek()` —
+  but `requestStart()` is asynchronous and `seek()` declines while a start is in
+  flight, so the seek was a call that quietly did nothing and every device change
+  sent the track back to its beginning. The position is carried through the start
+  now and applied in `finishStart()`.
 
 Milestone 1's narrow format scope was a fastest-path-to-execution choice, not the
 destination. The architecture is sized for full Cog parity throughout: if adding a
@@ -2033,27 +2497,35 @@ rest of this file. Ordered by what each one is worth, not by size. Everything
 here is reachable from a clean checkout — `cmake --preset <platform>-debug` and
 the README's asset variables are the whole setup.
 
-**1. `.dsf` and `.dff`, the other DSD containers.** Small now that the DSD path
-exists, and the last format gap in the family. Cog reads them through FFmpeg but
-**not** through FFmpeg's DSD decoders: `FFMPEGDecoder.m:259` matches
-`AV_CODEC_ID_DSD_LSBF`, `_MSBF` and their planar variants, sets `rawDSD`, and
-hands the packets on untouched so Cog's own filter does the decimation. Our
-`codecs/ffmpeg` claims neither extension today. The work is claiming them,
-detecting those codec ids, reporting `SampleFormat::DSD` at the byte rate — the
-convention `codecs/wavpack` already uses — and honouring the two variations Cog
-tracks: LSB-first bit order (`rawDSDReverseBits`) and planar layout
-(`rawDSDPlanar`). `AudioConverter` and `vendor/dsd2pcm` need no changes at all.
-There is no `.dsf` in the corpus here, so this needs one to verify.
+**1. What is left of the DSD containers.** `codecs/dsd` reads DSF and
+uncompressed DSDIFF; see the entry above. Two things it does not do:
 
-**2. Switching the output device live.** Today a device change restarts the
-track and seeks back to where it was — a short gap, honest but not what Cog
-does. Cog switches under the running stream. The obstacle is the position clock:
-`audibleTrackStart_` and `seekPlayedBase_` are absolute counts of
-`output_.framesPlayed()`, which returns to zero when the device restarts, so
-they have to be rebased — the same arithmetic `performSeek()` already does for
-the seek base. The second half is the ring: it holds audio converted for the old
-device format, so a device at another rate means flushing it and reconfiguring
-the converter, which is what `AudioEngine::play()` does from scratch.
+- **DST-compressed DSDIFF is declined.** It is losslessly compressed DSD, the
+  `CMPR` chunk announces it, and it needs a real decoder rather than a stub. No
+  fixture here holds one.
+- **`wsd` is not claimed**, though Cog claims it beside the other two. Wideband
+  Single-bit Data is a third container and there is no file to read one against.
+
+**2. What is left of switching the output device live.** The switch itself is
+done — `AudioEngine::switchOutputDevice()` moves the running stream and keeps
+both rings, and the entry under "Then" above says how. Three things it does
+*not* do, in the order they are worth having:
+
+- **A device at another format still cannot take the stream.** It is refused,
+  and the caller re-opens the track instead, which is honest and is the old
+  behaviour. Doing better means flushing both rings, reconfiguring the converter
+  and the chain, and seeking the decoder back to the audible position — and the
+  hard part is that a gapless handoff may already have moved the decoder on to
+  the *next* track, so "back to the audible position" can mean re-opening the
+  previous one. That is why it is not done rather than half done.
+- **`preferredSampleRate()` answers for the default device**, not for the one
+  about to be opened: `MiniaudioOutput` passes a null id to
+  `ma_context_get_device_info`, and the comment beside it says "since nothing
+  selects another one yet", which stopped being true when the picker landed. It
+  only bites where the track's own rate is refused, which today means DSD.
+- **The gap has never been listened to.** The tests establish which samples came
+  out and what the clock said; how long the driver takes to hand over, and
+  whether that reads as a seam or as a stumble, needs two real devices.
 
 **3. Native output backends, replacing miniaudio.** miniaudio is a stopgap;
 `IAudioOutput` is the seam that makes it a swap rather than a rewrite. A native
@@ -2075,12 +2547,47 @@ the device has to be switched to 24-bit integer output
 (`DoPIntegerRenderFormatForDeviceFormat`), because the marker bytes must survive
 bit-exactly and a float path that scales or dithers destroys them.
 
-**5. The decoders Cog has and this does not.** Each is one `xpcog_add_codec()`
-call plus one vcpkg overlay port, which is the claim this architecture makes
-about itself. AdPlug (~40 formats, and it overlaps the MIDI stack at `.lds`),
-Hively — which settles the `.ahx` question `docs/MIDI.md` has been carrying —
-Organya, Syntrax, libvgmPlayer, Shorten, SilenceDecoder. Cog's BASSMODS, Dumb,
-modplay and playptmod are all tracker players that OpenMPT already covers here.
+**5. The decoders Cog has and this does not. — DONE.** Each was one
+`xpcog_add_codec()` call plus one vcpkg overlay port — or one `vendor/` directory
+where there was no upstream to pin, or nothing at all where the player was small
+enough to be the codec — which is the claim this architecture makes about itself.
+**Hively, AdPlug, Organya, Syntrax, Shorten, libvgm and the `silence://` track
+are all in**; see the entries above.
+
+The claim mostly held. Only two needed a change outside their own directory:
+AdPlug's dynamic initialiser made six test files stop registering codecs before
+`main`, and Shorten added one extension to `codecs/ffmpeg` and one parser to
+`codecs/common` rather than becoming a codec at all.
+
+Cog's BASSMODS, Dumb, modplay and playptmod are deliberately not ported: all four
+are tracker players that OpenMPT already covers here. That leaves nothing on
+Cog's decoder list unaccounted for.
+
+One thing still missing rather than declined: AdPlug does not claim `.ad_`, which
+ten Westwood files in the corpus use for a format it reads as `.adl` — upstream's
+list is upstream's, and hardcoding around it would break the property that a
+player added upstream appears here without an edit.
+
+Five things the finished ones left behind, none of them blocking:
+
+- **DST-compressed DSDIFF** is still declined; that is item 1 above.
+- **Three third-party data blobs are compiled into the binary** and nobody has
+  asked the licensing question about any of them: Organya's wavetable and PixTone
+  parameters (Pixel's, 34 KB), AdPlug's song database (7.8 KB), and libvgm's
+  OPL4 sample ROM (Yamaha's, 2 MB). Cog ships all three under the same GPL and
+  the same silence. The ROM is the one worth looking at first, on size and on
+  provenance both.
+- **`.shn` reports the length its wrapped header claims**, which for a truncated
+  file is more than it can deliver. That is the file describing itself and is the
+  right answer, but it means a damaged `.shn` ends early rather than at its
+  stated end.
+- **libjaytrax is GPL-3.0-only** while this project is GPL-2.0-or-later. They
+  combine — the "or later" is what makes them — but a build with
+  `XPCOG_WITH_SYNTRAX` on is GPL-3.0 rather than GPL-2.0. Cog ships the same
+  sources under the same project licence and inherits the same result.
+- **Nothing creates a `silence://` URL yet.** The decoder plays one; wiring it
+  into the failed-open path would change `PlaybackController`'s existing, tested
+  behaviour and is a product decision rather than a porting one.
 
 **6. `cogimport`.** Reading an existing Cog installation — its playlists, its
 SQLite library, its defaults — is the difference between a port and something a

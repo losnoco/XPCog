@@ -94,7 +94,7 @@ constexpr double kDsdRate = 705600.0;
     double      sum   = 0.0;
     std::size_t count = 0;
     for (std::size_t i = skip * 2; i < out.size(); ++i) {
-        sum += out[i];
+        sum += static_cast<double>(out[i]);
         ++count;
     }
     return count == 0 ? 0.0 : sum / static_cast<double>(count);
@@ -277,9 +277,20 @@ TEST_CASE("a DSD file reaches the converter as DSD", "[audio][dsd]") {
     // PCM samples, which is what a DSD file sounded like before M6.
     CHECK(props.format.format == xpcog::SampleFormat::DSD);
     CHECK(props.format.bitsPerSample == 1);
-    // DSD64 is 2.8224 MHz and DSD128 twice that; over eight, the byte rate is
-    // 352,800 or 705,600. Anything else means the native rate leaked in.
-    CHECK((props.format.sampleRate == 352800.0 || props.format.sampleRate == 705600.0));
+    // The byte rate, which is the native rate over eight. DSD is named by its
+    // multiple of 44,100: DSD64 is 2.8224 MHz and each step up doubles it, so
+    // the byte rates are 352,800, 705,600, 1,411,200 and 2,822,400.
+    //
+    // Written as the family rather than as a list of two, which is what it was
+    // until a DSD256 rip was pointed at it -- the assertion had never run,
+    // because it needs a fixture nobody had. Anything outside the family means
+    // the native bit rate leaked in, which is the failure worth catching.
+    const double byteRate = props.format.sampleRate;
+    bool         isDsdRate = false;
+    for (double rate = 352800.0; rate <= 2822400.0; rate *= 2.0) {
+        isDsdRate = isDsdRate || byteRate == rate;
+    }
+    CHECK(isDsdRate);
 
     xpcog::AudioConverter converter;
     REQUIRE(converter.setOutputFormat(44100.0, props.format.channels, "high"));

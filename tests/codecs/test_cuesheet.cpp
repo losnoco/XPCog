@@ -161,7 +161,15 @@ double dominantFrequency(const std::vector<float>& pcm) {
     return static_cast<double>(crossings) * kRate / (2.0 * static_cast<double>(end - begin));
 }
 
-const bool kHaveCue = registry().isContainer(Url::fromLocalPath("x.cue"));
+/// A function rather than a namespace-scope `const bool`, and the difference is
+/// not style: initialising one of those calls registerAllCodecs() *before main*,
+/// where a codec whose registrar reads another translation unit's globals reads
+/// them before that unit has initialised them. AdPlug is such a codec and this
+/// crashed the whole suite at startup when it landed. See test_containers.cpp.
+[[nodiscard]] bool haveCue() {
+    static const bool answer = registry().isContainer(Url::fromLocalPath("x.cue"));
+    return answer;
+}
 
 }  // namespace
 
@@ -255,7 +263,7 @@ TEST_CASE("cue track lookup tolerates zero padding", "[cue]") {
 // --- decoding -------------------------------------------------------------
 
 TEST_CASE("cue tracks decode the correct span of the audio file", "[cue]") {
-    if (!kHaveCue) SKIP("cue sheet support not built");
+    if (!haveCue()) SKIP("cue sheet support not built");
     const auto flac = albumFlac();
     if (flac.empty()) SKIP("the `flac` command-line tool is not available");
 
@@ -290,7 +298,7 @@ TEST_CASE("cue tracks decode the correct span of the audio file", "[cue]") {
 }
 
 TEST_CASE("a cue track reports its own duration, not the file's", "[cue]") {
-    if (!kHaveCue) SKIP("cue sheet support not built");
+    if (!haveCue()) SKIP("cue sheet support not built");
     if (albumFlac().empty()) SKIP("the `flac` command-line tool is not available");
 
     const Url cue = Url::fromLocalPath(albumCue());
@@ -304,7 +312,7 @@ TEST_CASE("a cue track reports its own duration, not the file's", "[cue]") {
 }
 
 TEST_CASE("seeking within a cue track stays inside the track", "[cue]") {
-    if (!kHaveCue) SKIP("cue sheet support not built");
+    if (!haveCue()) SKIP("cue sheet support not built");
     if (albumFlac().empty()) SKIP("the `flac` command-line tool is not available");
 
     const Url cue    = Url::fromLocalPath(albumCue());
@@ -335,7 +343,7 @@ TEST_CASE("seeking within a cue track stays inside the track", "[cue]") {
 }
 
 TEST_CASE("a cue URL without a fragment does not decode", "[cue]") {
-    if (!kHaveCue) SKIP("cue sheet support not built");
+    if (!haveCue()) SKIP("cue sheet support not built");
     if (albumFlac().empty()) SKIP("the `flac` command-line tool is not available");
 
     // Nothing identifies which track to play, so this must fail rather than

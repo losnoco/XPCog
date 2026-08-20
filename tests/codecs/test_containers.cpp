@@ -56,15 +56,26 @@ std::string leaf(const Url& url) {
     return path ? path->filename().string() : std::string{};
 }
 
-const bool kHavePlaylists = [] {
-    // The containers are optional at configure time.
-    return registry().isContainer(Url::fromLocalPath("dummy.m3u"));
-}();
+/// The containers are optional at configure time.
+///
+/// A function rather than a namespace-scope `const bool`, and the difference is
+/// not style. Initialising one of those calls registerAllCodecs() *before main*,
+/// and a codec whose registrar reads a global belonging to another translation
+/// unit then reads it before that unit has initialised it. AdPlug is such a
+/// codec -- it asks its library which extensions it plays, and that list is a
+/// std::list built by a dynamic initialiser -- so this line crashed the whole
+/// suite at startup the moment that codec was added. Every other test file here
+/// already reaches the registry through a function; this was the one that did
+/// not.
+[[nodiscard]] bool havePlaylists() {
+    static const bool answer = registry().isContainer(Url::fromLocalPath("dummy.m3u"));
+    return answer;
+}
 
 }  // namespace
 
 TEST_CASE("M3U skips comments and blank lines", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     const auto path = writeFile("basic.m3u",
                                 "#EXTM3U\n"
@@ -82,7 +93,7 @@ TEST_CASE("M3U skips comments and blank lines", "[containers]") {
 }
 
 TEST_CASE("M3U resolves relative paths against the playlist", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     const auto path    = writeFile("relative.m3u", "./sub/track.flac\ntrack2.flac\n");
     const auto entries = expand(path);
@@ -99,7 +110,7 @@ TEST_CASE("M3U resolves relative paths against the playlist", "[containers]") {
 }
 
 TEST_CASE("M3U converts Windows separators", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     const auto entries = expand(writeFile("windows.m3u", "sub\\dir\\track.flac\n"));
     REQUIRE(entries.size() == 1);
@@ -111,7 +122,7 @@ TEST_CASE("M3U converts Windows separators", "[containers]") {
 }
 
 TEST_CASE("M3U preserves a trailing subsong fragment", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     // "#3" is a subsong or cue-track index, not part of the filename.
     const auto entries = expand(writeFile("fragment.m3u", "album.flac#3\n"));
@@ -121,7 +132,7 @@ TEST_CASE("M3U preserves a trailing subsong fragment", "[containers]") {
 }
 
 TEST_CASE("M3U keeps a hash that is part of the filename", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     // Only a trailing all-digit run is a fragment; '#' is legal in filenames.
     const auto entries = expand(writeFile("hashname.m3u", "Track #1 Intro.flac\n"));
@@ -131,7 +142,7 @@ TEST_CASE("M3U keeps a hash that is part of the filename", "[containers]") {
 }
 
 TEST_CASE("M3U passes absolute URLs through untouched", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     const auto entries =
         expand(writeFile("remote.m3u", "http://example.com/stream.mp3\nlocal.flac\n"));
@@ -142,7 +153,7 @@ TEST_CASE("M3U passes absolute URLs through untouched", "[containers]") {
 }
 
 TEST_CASE("M3U declines HLS manifests", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     // An HLS manifest wears the same extension but is not a track list; it must
     // fall through to the decoder layer rather than being torn into segments.
@@ -159,7 +170,7 @@ TEST_CASE("M3U declines HLS manifests", "[containers]") {
 }
 
 TEST_CASE("M3U handles CRLF and a UTF-8 BOM", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     const auto entries =
         expand(writeFile("crlf.m3u", "\xEF\xBB\xBF" "one.flac\r\ntwo.flac\r\n"));
@@ -170,7 +181,7 @@ TEST_CASE("M3U handles CRLF and a UTF-8 BOM", "[containers]") {
 }
 
 TEST_CASE("PLS returns entries in numeric order", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     // Deliberately written out of order: FileN numbering defines the order, not
     // the order the lines happen to appear in.
@@ -191,7 +202,7 @@ TEST_CASE("PLS returns entries in numeric order", "[containers]") {
 }
 
 TEST_CASE("PLS ignores non-File keys", "[containers]") {
-    if (!kHavePlaylists) SKIP("playlist containers not built");
+    if (!havePlaylists()) SKIP("playlist containers not built");
 
     const auto entries = expand(writeFile("keys.pls",
                                           "[playlist]\n"

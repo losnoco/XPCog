@@ -125,16 +125,45 @@ void PlaybackController::reopenOutput() {
     if (current == kInvalidTrackId || !playing()) {
         return;
     }
-    const double resumeAt = position();
-    playTrack(current);
-    if (resumeAt > 0.0) {
-        seek(resumeAt);
+
+    // Under the running stream where that is possible. The decoded audio is
+    // already converted for the format the device is running, so a device that
+    // will run the same format can simply take it over -- no re-open, no seek,
+    // and nothing lost across the seam. The engine answers false only when
+    // there is nothing to move (paused, most often); a switch that is accepted
+    // and then fails comes back through outputSwitchFailed().
+    if (engine_ && engine_->switchOutputDevice()) {
+        return;
     }
+
+    restartForOutputChange();
+}
+
+void PlaybackController::restartForOutputChange() {
+    const TrackId current = currentTrack();
+    if (current == kInvalidTrackId) {
+        return;
+    }
+    // Not playTrack(): the resume position has to survive the start, and
+    // playTrack() clears it because an ordinary gesture begins at the top.
+    failedStarts_.clear();
+    resumeAt_ = position();
+    requestStart(current);
+}
+
+void PlaybackController::outputSwitchFailed() {
+    // On the feeder thread, like every other delegate call. The restart touches
+    // the playlist and the engine's lifecycle, both of which belong to the GUI
+    // thread.
+    QMetaObject::invokeMethod(this, [this] { restartForOutputChange(); },
+                              Qt::QueuedConnection);
 }
 
 void PlaybackController::playTrack(TrackId id) {
-    // A fresh gesture, so the record of what has already failed starts empty.
+    // A fresh gesture, so the record of what has already failed starts empty
+    // and the track begins at its top rather than wherever the last one was.
     failedStarts_.clear();
+    resumeAt_ = 0.0;
     requestStart(id);
 }
 
@@ -187,9 +216,18 @@ void PlaybackController::finishStart(TrackId id, bool opened,
         audible_ = id;
         emit currentTrackChanged(audible_);
         emitState();
+
+        // Here rather than beside the request, because seek() declines while a
+        // start is in flight and this is the first moment it does not.
+        if (resumeAt_ > 0.0) {
+            const double target = resumeAt_;
+            resumeAt_           = 0.0;
+            seek(target);
+        }
         return;
     }
 
+    resumeAt_ = 0.0;
     emit playbackFailed(id, tr("No decoder could open this file"));
     failedStarts_.push_back(id);
 

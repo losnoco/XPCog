@@ -52,7 +52,11 @@ rather than by priority in the end: both claimants sit at the default, MIDI is
 registered first, midi_processing sniffs the file, and a Commodore 64 `.mus`
 fails to parse here and falls through to the SID decoder. The container path
 does the same, since returning the URL unchanged is how a container declines.
-That leaves `.ahx` between vgmstream and Hively still needing a decision.
+`.ahx` between vgmstream and Hively went the same way, and needed no decision
+at all. vgmstream claims it for CRI's unrelated format; both sit at the default
+priority; vgmstream is offered the file first, sniffs it, declines, and the
+registry moves on to `codecs/hively`. So the rule that settled `mus` and `lds`
+settles this too, and neither codec carries a priority for it.
 
 ## Stages
 

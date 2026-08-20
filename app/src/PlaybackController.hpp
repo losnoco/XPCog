@@ -91,14 +91,18 @@ public slots:
     /// `seconds` into the audible track.
     void seek(double seconds);
 
-    /// Reopens the audio device, resuming where playback had reached.
+    /// Moves playback to the device the settings now name.
     ///
     /// For a device or share-mode change, which the engine reads when it opens
     /// the device and therefore only when a track starts. Cog switches the
-    /// device under the running stream; this restarts the track and seeks back,
-    /// which is a short gap rather than a seam, and is honest about what it is
-    /// doing. Does nothing when nothing is playing -- the next track will pick
-    /// the new device up by itself.
+    /// device under the running stream, and so does this where it can:
+    /// AudioEngine::switchOutputDevice() keeps the decoded audio and hands it to
+    /// the new device, so the gap is the driver's rather than the track's.
+    ///
+    /// Where it cannot -- paused, or a device that will not run the format
+    /// already queued -- the track is re-opened and seeks back to where it had
+    /// reached, which is what used to happen every time. Does nothing when
+    /// nothing is playing; the next track picks the new device up by itself.
     void reopenOutput();
 
     /// Asks the engine to re-read the DSP settings, so an equaliser change is
@@ -141,6 +145,7 @@ private:
     void               trackBegan(const Url& url) override;
     void               stoppedNaturally() override;
     void               trackFailed(const Url& url) override;
+    void               outputSwitchFailed() override;
     void streamMetadataChanged(const Url& url, const MetadataMap& tags) override;
 
     void emitState();
@@ -149,6 +154,11 @@ private:
     void requestStart(TrackId id);
     /// The starter thread's answer, back on the GUI thread.
     void finishStart(TrackId id, bool opened, std::uint64_t generation);
+
+    /// Re-opens the current track and returns to where it had reached. The
+    /// fallback for an output change that could not be made under the running
+    /// stream.
+    void restartForOutputChange();
 
     const PluginRegistry& registry_;
     Playlist&             playlist_;
@@ -183,6 +193,15 @@ private:
     /// engine's advance loop does: nextForPlayback() answers from the repeat
     /// rules, so with repeat on it offers the same dead entry for ever.
     std::vector<TrackId> failedStarts_;
+
+    /// Where a start now in flight should land, or 0 to begin at the top.
+    ///
+    /// Carried through the start rather than applied after it, and that is the
+    /// whole reason it exists: requestStart() is asynchronous and seek() refuses
+    /// while a start is in flight, so seeking straight after playTrack() is a
+    /// call that quietly does nothing. Restarting for a device change used to do
+    /// exactly that, which sent the track back to its beginning.
+    double resumeAt_ = 0.0;
 
     /// What the engine is currently playing, as far as the GUI thread knows.
     TrackId audible_ = kInvalidTrackId;

@@ -53,6 +53,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -82,6 +83,17 @@ public:
 
         /// A track could not be opened and was skipped.
         virtual void trackFailed(const Url& /*url*/) {}
+
+        /// A live output switch could not be made and playback stayed on the
+        /// device it was already using -- the new one would not open, or would
+        /// not run the format the queued audio is already in.
+        ///
+        /// The engine cannot do more than that on its own: it has no idea what
+        /// is in the playlist, and re-opening the track is the caller's move.
+        /// Restarting and seeking back is what happened unconditionally before
+        /// switching under the stream existed, so the fallback is the old path
+        /// rather than new code.
+        virtual void outputSwitchFailed() {}
 
         /// The source reported tags that changed while the track was playing --
         /// a SHOUTcast StreamTitle naming the song currently on the radio.
@@ -159,6 +171,29 @@ public:
     /// slider in silence, which reads as broken rather than as deferred.
     void reloadDsp() { dspDirty_.store(true, std::memory_order_relaxed); }
 
+    /// Moves the running stream onto the device the settings now name, without
+    /// restarting the track. For a device or share-mode change.
+    ///
+    /// Cog reconfigures its AUHAL under the running stream; this stops one
+    /// device and starts the next, which is a gap of however long the driver
+    /// takes to open rather than a gap of however long the track takes to
+    /// re-open and seek. Nothing is lost across it: both rings keep what they
+    /// hold, so the new device resumes at the very next sample.
+    ///
+    /// That only works while the format does not change, which is exactly the
+    /// condition under which the queued audio is still meaningful -- it was
+    /// converted for the format that was running. A device that will not run
+    /// that format is reported through Delegate::outputSwitchFailed(), and
+    /// playback stays where it was.
+    ///
+    /// Returns false when there is nothing playing to move, which includes
+    /// being paused: the feeder services the switch, and a paused feeder is
+    /// blocked on a ring nothing is draining. The caller's fallback covers it.
+    /// A true return means the request was accepted, not that it succeeded --
+    /// the work happens on the feeder thread, and failure arrives at the
+    /// delegate.
+    bool switchOutputDevice();
+
 private:
     struct Seam {
         /// Total frames delivered to the device before this track becomes audible.
@@ -173,6 +208,19 @@ private:
 
     /// Applies a pending seek. Feeder thread only.
     void performSeek(std::int64_t frame);
+
+    /// Moves the device under the running stream. Feeder thread only, for the
+    /// same reason performSeek() is: this rewrites the position clock, and
+    /// publishSeams() reads it on every pass.
+    void performDeviceSwitch();
+
+    /// Opens `config` and keeps it only if the device will run the format the
+    /// queued audio is already in. Records what was asked for on success.
+    [[nodiscard]] bool startDeviceForSwitch(const IAudioOutput::Config& config);
+
+    /// Total frames delivered since play(), across device changes. Call with
+    /// seamMutex_ held -- the two halves are only consistent together.
+    [[nodiscard]] std::uint64_t totalFramesPlayedLocked() const;
 
     /// Asks the source whether the stream renamed itself, and tells the delegate.
     void pollStreamMetadata();
@@ -282,6 +330,23 @@ private:
 
     std::atomic<std::int64_t> pendingSeek_{-1};
 
+    /// Raised by switchOutputDevice(), consumed by the feeder. A flag rather
+    /// than a queue: two device changes in flight mean the second one's answer
+    /// is the one wanted, and both read the settings when they run.
+    std::atomic<bool> pendingDeviceSwitch_{false};
+
+    /// What was asked for when the running device was opened -- asked for, not
+    /// granted, because that is what a later request has to be compared
+    /// against. Feeder and play() only.
+    std::string openDeviceId_;
+    bool        openExclusive_ = false;
+
+    /// Set when a switch has left the engine with no device at all: the new one
+    /// would not open and neither would the one that was running. The feeder
+    /// then ends the transport rather than going on writing into a ring nothing
+    /// drains, which is a wedge rather than a stop.
+    std::atomic<bool> deviceLost_{false};
+
     /// Frames the device had played when the seek landed, and where in the track
     /// it landed. Together these re-base trackPositionSeconds(), which otherwise
     /// keeps counting from the start of the track and would report the old
@@ -293,6 +358,22 @@ private:
     /// Feeder-thread only.
     std::uint64_t pendingSeekTrack_ = 0;
     bool          seekBasePending_  = false;
+
+    /// Frames delivered by devices opened before the one now running.
+    ///
+    /// Every position the engine records -- seam positions, the seek base,
+    /// framesWritten_ -- is one absolute count of frames since play(), and
+    /// framesPlayed() is what they are measured against. A device restarts that
+    /// counter at zero, and a live switch is the one thing that restarts it
+    /// while a track is still playing. Carrying the difference here means the
+    /// switch rewrites one number instead of every recorded position, and the
+    /// rest of the engine never learns that the device changed.
+    ///
+    /// Under seamMutex_ for a reason worth stating: this and framesPlayed() are
+    /// only meaningful added together, so a reader that took one before the
+    /// switch and the other after would see the clock jump. The mutex is held
+    /// across the whole device change for exactly that window.
+    std::uint64_t      deviceFramesBase_ = 0;
 
     mutable std::mutex seamMutex_;
     std::deque<Seam>   pendingSeams_;

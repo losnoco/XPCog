@@ -115,17 +115,28 @@ std::string readWhole(ISource& source) {
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
 
-const bool kHaveArchive = registry().makeSource(
-                              *Url::parse("unpack://fex|1|a|b")) != nullptr;
+/// A function rather than a namespace-scope `const bool`, and the difference is
+/// not style: initialising one of those calls registerAllCodecs() *before main*,
+/// where a codec whose registrar reads another translation unit's globals reads
+/// them before that unit has initialised them. AdPlug is such a codec and this
+/// crashed the whole suite at startup when it landed. See test_containers.cpp.
+[[nodiscard]] bool haveArchive() {
+    static const bool answer =
+        registry().makeSource(*Url::parse("unpack://fex|1|a|b")) != nullptr;
+    return answer;
+}
 
 /// Whether a module decoder is in this build, which is what decides if `.mod`
 /// counts as playable and so whether an archive will offer one.
-const bool kHaveModules = registry().isPlayableExtension("it");
+[[nodiscard]] bool haveModules() {
+    static const bool answer = registry().isPlayableExtension("it");
+    return answer;
+}
 
 }  // namespace
 
 TEST_CASE("a member is read out of an archive", "[archive]") {
-    if (!kHaveArchive) {
+    if (!haveArchive()) {
         SKIP("archive codec not built");
     }
 
@@ -155,7 +166,7 @@ TEST_CASE("a member is read out of an archive", "[archive]") {
 }
 
 TEST_CASE("a member the archive does not hold does not open", "[archive]") {
-    if (!kHaveArchive) {
+    if (!haveArchive()) {
         SKIP("archive codec not built");
     }
 
@@ -170,10 +181,10 @@ TEST_CASE("a member the archive does not hold does not open", "[archive]") {
 }
 
 TEST_CASE("an archive offers only the members something can play", "[archive]") {
-    if (!kHaveArchive) {
+    if (!haveArchive()) {
         SKIP("archive codec not built");
     }
-    if (!kHaveModules) {
+    if (!haveModules()) {
         SKIP("no module decoder built, so nothing in the archive is playable");
     }
 
@@ -213,7 +224,7 @@ TEST_CASE("archive bookkeeping files are recognised as such", "[archive]") {
 }
 
 TEST_CASE("a compressed module is unwrapped where nobody sees it", "[archive][module]") {
-    if (!kHaveArchive) {
+    if (!haveArchive()) {
         SKIP("archive codec not built");
     }
 
@@ -237,7 +248,7 @@ TEST_CASE("a compressed module is unwrapped where nobody sees it", "[archive][mo
 }
 
 TEST_CASE("the wrapper skips bookkeeping to find the module", "[archive][module]") {
-    if (!kHaveArchive) {
+    if (!haveArchive()) {
         SKIP("archive codec not built");
     }
 
@@ -255,7 +266,7 @@ TEST_CASE("the wrapper skips bookkeeping to find the module", "[archive][module]
 
 TEST_CASE("a compressed extension over something that is not an archive fails",
           "[archive][module]") {
-    if (!kHaveArchive) {
+    if (!haveArchive()) {
         SKIP("archive codec not built");
     }
 
@@ -271,7 +282,7 @@ TEST_CASE("a compressed extension over something that is not an archive fails",
 }
 
 TEST_CASE("only the claimed extensions are wrapped", "[archive][module]") {
-    if (!kHaveArchive) {
+    if (!haveArchive()) {
         SKIP("archive codec not built");
     }
 
@@ -287,7 +298,7 @@ TEST_CASE("only the claimed extensions are wrapped", "[archive][module]") {
 
 TEST_CASE("the module decoder claims exactly what can be unwrapped",
           "[archive][module]") {
-    if (!kHaveArchive || !kHaveModules) {
+    if (!haveArchive() || !haveModules()) {
         SKIP("archive codec or module decoder not built");
     }
 

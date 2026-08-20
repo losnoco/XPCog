@@ -10,6 +10,7 @@
 // the vcpkg FFmpeg here is fully portable.
 
 #include "../common/Id3v2.hpp"
+#include "../common/ShortenHeader.hpp"
 
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
@@ -24,10 +25,12 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -100,6 +103,37 @@ bool openFormatContext(ISource* source, AVIOContext*& ioContext, AVFormatContext
     }
 
     return true;
+}
+
+/// The length a .shn declares, or 0 if it declares none.
+///
+/// Reads the head of the file directly rather than through the AVIO context:
+/// the demuxer is already positioned somewhere in the stream and its buffer is
+/// its own, so the source is borrowed for a kilobyte and handed back exactly
+/// where it was. A source that cannot seek -- shorten over HTTP, which nothing
+/// serves -- simply reports no length.
+[[nodiscard]] std::int64_t shortenFrameCount(ISource& source) {
+    if (!source.seekable()) {
+        return 0;
+    }
+    const std::int64_t saved = source.tell();
+    if (!source.seek(0, SEEK_SET)) {
+        return 0;
+    }
+
+    std::array<std::byte, 1024> head{};
+    const std::int64_t read = source.read(head.data(), static_cast<std::int64_t>(head.size()));
+
+    // Put it back before anything can care, including on the failure paths
+    // below -- the demuxer's next read continues from here.
+    source.seek(saved, SEEK_SET);
+
+    if (read <= 0) {
+        return 0;
+    }
+    const auto found = codecs::readShortenLength(
+        std::span<const std::byte>{head.data(), static_cast<std::size_t>(read)});
+    return found ? found->frames : 0;
 }
 
 /// The subsong a fragment names. We number subsongs starting from zero.
@@ -183,6 +217,15 @@ public:
         } else if (format_ctx_->duration != AV_NOPTS_VALUE) {
             totalFrames_ = av_rescale(format_ctx_->duration, codec_ctx_->sample_rate,
                                       AV_TIME_BASE);
+        }
+
+        // Shorten states its length in the WAV header it wraps, and FFmpeg's
+        // demuxer does not read that header -- so without this a .shn opens
+        // with no duration at all: 0:00 in the playlist and no scrub range.
+        // The number is in the first kilobyte of the file; see
+        // codecs/common/ShortenHeader.hpp for what it costs to get at it.
+        if (totalFrames_ == 0 && codec_ctx_->codec_id == AV_CODEC_ID_SHORTEN) {
+            totalFrames_ = shortenFrameCount(*source_);
         }
 
         subsongIndex_ = songFromFragment(source->url());
@@ -675,6 +718,18 @@ constexpr std::string_view kExtensions[] = {
     "caf", "dts", "eac3", "m4a", "m4b",  "mka",  "mkv", "mp4", "mpc", "oma",
     "opus", "ra", "rm",  "tak",  "tta",  "wav",  "wma", "wv",  "flac", "mp3",
     "ogg", "webm",
+    // Shorten. Cog has a dedicated plugin for this one -- xmms-shn's shn_reader,
+    // six thousand lines of it, which spawns a decoding thread, feeds a ring
+    // buffer, and takes a *filesystem path* rather than a stream, so Cog's own
+    // decoder refuses any URL that is not file://. FFmpeg's demuxer probes the
+    // "ajkg" magic and its decoder is synchronous and reads through an AVIO
+    // context, which means a .shn inside an archive or behind HTTP plays here
+    // and does not in Cog.
+    //
+    // What is given up is the length: shorten stores it only in the RIFF header
+    // it wraps, which FFmpeg's demuxer does not parse, so a .shn reports no
+    // duration until it has been decoded through. See docs/PORTING.md.
+    "shn",
     // MPEG-TS. Cog claims none of these and its HLS plugin works around that by
     // instantiating FFMPEGDecoder by class name; here the HLS decoder names what
     // it fetched and lets the registry choose, so the transport stream has to be
@@ -691,7 +746,9 @@ constexpr std::string_view kMimeTypes[] = {
     "audio/aacp",
     // The MIME half of the MPEG-TS entry above, for a segment whose name says
     // nothing.
-    "video/mp2t", "audio/mp2t"};
+    "video/mp2t", "audio/mp2t",
+    // Cog's, and it notes the same caveat: nothing serves shorten over HTTP.
+    "application/x-shorten"};
 
 }  // namespace
 }  // namespace xpcog

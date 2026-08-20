@@ -632,15 +632,24 @@ std::vector<float> drain(IDecoder& decoder) {
     return out;
 }
 
-const bool kHaveHls = [] {
-    const auto extensions = registry().allExtensions();
-    return std::find(extensions.begin(), extensions.end(), "m3u8") != extensions.end();
-}();
+/// A function rather than a namespace-scope `const bool`, and the difference is
+/// not style: initialising one of those calls registerAllCodecs() *before main*,
+/// where a codec whose registrar reads another translation unit's globals reads
+/// them before that unit has initialised them. AdPlug is such a codec and this
+/// crashed the whole suite at startup when it landed. See test_containers.cpp.
+[[nodiscard]] bool haveHls() {
+    static const bool answer = [] {
+        const auto extensions = registry().allExtensions();
+        return std::find(extensions.begin(), extensions.end(), "m3u8") !=
+               extensions.end();
+    }();
+    return answer;
+}
 
 }  // namespace
 
 TEST_CASE("an HLS stream decodes to the signal it was built from", "[hls][conformance]") {
-    if (!kHaveHls) SKIP("HLS is not built into this configuration");
+    if (!haveHls()) SKIP("HLS is not built into this configuration");
 
     const auto manifest = buildStream();
     if (manifest.empty()) SKIP("ffmpeg not available to build an HLS fixture");
@@ -682,7 +691,7 @@ TEST_CASE("an HLS stream decodes to the signal it was built from", "[hls][confor
 }
 
 TEST_CASE("seeking an HLS stream lands on the right audio", "[hls][conformance]") {
-    if (!kHaveHls) SKIP("HLS is not built into this configuration");
+    if (!haveHls()) SKIP("HLS is not built into this configuration");
 
     const auto manifest = buildStream();
     if (manifest.empty()) SKIP("ffmpeg not available to build an HLS fixture");

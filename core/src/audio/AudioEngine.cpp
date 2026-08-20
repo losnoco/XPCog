@@ -213,6 +213,8 @@ bool AudioEngine::play(const Url& url) {
     preRing_.clear();
 
     framesWritten_ = 0;
+    pendingDeviceSwitch_.store(false, std::memory_order_relaxed);
+    deviceLost_.store(false, std::memory_order_relaxed);
     {
         std::lock_guard lock(seamMutex_);
         pendingSeams_.clear();
@@ -220,6 +222,8 @@ bool AudioEngine::play(const Url& url) {
         seekTrackBase_  = 0;
         audibleUrl_        = url;
         audibleTrackStart_ = 0;
+        // A fresh device, counting from zero, and no earlier one behind it.
+        deviceFramesBase_ = 0;
     }
     {
         std::lock_guard lock(finishedMutex_);
@@ -269,6 +273,12 @@ bool AudioEngine::play(const Url& url) {
         closeTrack();
         return false;
     }
+
+    // What the running device was asked for, so a later request can be told
+    // apart from the same one arriving again -- a settings write that resolves
+    // to the device already playing must not interrupt it.
+    openDeviceId_  = config.deviceId;
+    openExclusive_ = config.exclusive;
 
     status_.store(PlaybackStatus::Playing, std::memory_order_relaxed);
     feeder_ = std::thread([this] { feederLoop(); });
@@ -443,6 +453,18 @@ void AudioEngine::feederLoop() {
             pendingPause_.store(false, std::memory_order_release);
         }
 
+        // Before the seek, so a device change and a seek arriving together are
+        // applied in the order that leaves the shorter gap: the switch keeps
+        // what is queued, and the seek then throws it away. The other order
+        // discards the queue and then stops the device that was about to be
+        // refilled.
+        if (pendingDeviceSwitch_.exchange(false, std::memory_order_acq_rel)) {
+            performDeviceSwitch();
+            if (deviceLost_.load(std::memory_order_acquire)) {
+                break;
+            }
+        }
+
         if (const std::int64_t requested =
                 pendingSeek_.exchange(-1, std::memory_order_acq_rel);
             requested >= 0) {
@@ -466,7 +488,7 @@ void AudioEngine::feederLoop() {
             // The stale audio is gone, so what the device reports having played
             // is now the true starting point for the new position.
             std::lock_guard lock(seamMutex_);
-            seekPlayedBase_  = output_.framesPlayed();
+            seekPlayedBase_  = totalFramesPlayedLocked();
             seekTrackBase_   = pendingSeekTrack_;
             framesWritten_   = seekPlayedBase_;
             seekBasePending_ = false;
@@ -559,7 +581,13 @@ void AudioEngine::feederLoop() {
 
     // Flush the resampler's delay line, or the last fraction of a second of the
     // final track is silently dropped.
-    if (running_.load(std::memory_order_acquire)) {
+    //
+    // Not when the device is gone, though: writeSamples() blocks until there is
+    // room, and with nothing draining the rings there never will be. The tail
+    // of a track is not worth deadlocking the feeder for, and it has nowhere to
+    // go in any case.
+    if (running_.load(std::memory_order_acquire) &&
+        !deviceLost_.load(std::memory_order_acquire)) {
         converted_.clear();
         converter_.drain(converted_);
         if (!converted_.empty()) {
@@ -576,10 +604,26 @@ void AudioEngine::feederLoop() {
     // few milliseconds of every track: inaudible enough to survive listening
     // tests, and caught by a test that renders the same tone twice and compares
     // the lengths, where it showed up as a capture short by exactly one block.
+    // deviceLost_ short-circuits it: with nothing draining the ring, "wait for
+    // the buffers to empty" is a wait for something that cannot happen.
     while (running_.load(std::memory_order_acquire) &&
+           !deviceLost_.load(std::memory_order_acquire) &&
            (preRing_.availableToRead() > 0 ||
             dspBusy_.load(std::memory_order_acquire) ||
             ring_.availableToRead() > 0)) {
+        // Here as well as above, and this is not belt and braces. Decoding runs
+        // hundreds of times faster than playback, so a track shorter than the
+        // deep ring is fully decoded within moments of starting and the feeder
+        // spends nearly all of its life right here -- which made a device
+        // change requested during an ordinary song a request that was simply
+        // never read. There is still a device delivering audio; it is still
+        // just as switchable.
+        if (pendingDeviceSwitch_.exchange(false, std::memory_order_acq_rel)) {
+            performDeviceSwitch();
+            if (deviceLost_.load(std::memory_order_acquire)) {
+                break;
+            }
+        }
         publishSeams();
         std::this_thread::sleep_for(kFeederBackoff);
     }
@@ -661,6 +705,104 @@ std::string resolveOutputDevice(const std::vector<DeviceInfo>& devices,
     return {};
 }
 
+bool AudioEngine::switchOutputDevice() {
+    // Playing, and not merely non-stopped. The feeder is what services this,
+    // and a paused feeder is parked inside writeSamples() waiting for room in a
+    // ring nothing is draining -- so the request would sit unread until the
+    // device came back, which is the one moment it is no longer wanted.
+    if (status_.load(std::memory_order_relaxed) != PlaybackStatus::Playing) {
+        return false;
+    }
+    pendingDeviceSwitch_.store(true, std::memory_order_release);
+    return true;
+}
+
+bool AudioEngine::startDeviceForSwitch(const IAudioOutput::Config& config) {
+    if (!output_.start(config)) {
+        return false;
+    }
+
+    // The whole point of switching under the stream is that both rings keep
+    // what they hold -- and what they hold was converted for the format that
+    // was running. A device that negotiates another rate or another channel
+    // count would play it at the wrong pitch or with the channels interleaved
+    // wrongly, so it is refused here rather than fed. play() is free to accept
+    // whatever it is given, because it converts the track into it; this is not.
+    const AudioFormat negotiated = output_.negotiatedFormat();
+    if (negotiated.sampleRate != format_.sampleRate ||
+        negotiated.channels != format_.channels) {
+        output_.stop();
+        return false;
+    }
+
+    openDeviceId_  = config.deviceId;
+    openExclusive_ = config.exclusive;
+    return true;
+}
+
+void AudioEngine::performDeviceSwitch() {
+    IAudioOutput::Config wanted;
+    wanted.sampleRate = format_.sampleRate;
+    wanted.channels   = format_.channels;
+    wanted.deviceId   = chosenDeviceId();
+    wanted.exclusive  = settings_.OutputExclusive();
+
+    // Asked for, not granted: a device that refused exclusive mode last time
+    // will refuse it again, and comparing against what was granted would tear
+    // the stream down once per settings write for no change at all.
+    if (wanted.deviceId == openDeviceId_ && wanted.exclusive == openExclusive_) {
+        return;
+    }
+
+    IAudioOutput::Config previous = wanted;
+    previous.deviceId             = openDeviceId_;
+    previous.exclusive            = openExclusive_;
+
+    bool switched = false;
+    {
+        // Held across the stop and the start, which is the window this exists to
+        // close. framesPlayed() returns to zero inside start(), and
+        // deviceFramesBase_ is what makes up the difference -- so a reader that
+        // saw one of them move without the other would read a clock that had
+        // jumped to the top of the track and back. See the member's declaration.
+        std::lock_guard lock(seamMutex_);
+
+        output_.stop();
+
+        // After the stop, not before: this is how far the old device actually
+        // got, and an output is entitled to hand over a last block on its way
+        // out. Read first, it would be short by that much for the rest of the
+        // track.
+        const std::uint64_t delivered = totalFramesPlayedLocked();
+
+        switched = startDeviceForSwitch(wanted);
+        if (!switched && !startDeviceForSwitch(previous)) {
+            // Back to the device that was working was the second attempt, and it
+            // ran this very format a moment ago -- so reaching here means the
+            // hardware went away underneath us and there is nothing left to play
+            // through.
+            deviceLost_.store(true, std::memory_order_release);
+            return;
+        }
+
+        // Either way a device restarted and its counter is back at zero, so the
+        // base takes over what it used to report. Staying on the old device is
+        // not staying on the old clock.
+        deviceFramesBase_ = delivered;
+    }
+
+    // Outside the lock, as every other delegate call is: the delegate runs
+    // application code, and application code is entitled to ask this engine
+    // where it has got to.
+    if (!switched && delegate_ != nullptr) {
+        delegate_->outputSwitchFailed();
+    }
+}
+
+std::uint64_t AudioEngine::totalFramesPlayedLocked() const {
+    return deviceFramesBase_ + output_.framesPlayed();
+}
+
 void AudioEngine::performSeek(std::int64_t frame) {
     if (!track_) {
         return;
@@ -736,12 +878,16 @@ bool AudioEngine::seek(double seconds) {
 }
 
 void AudioEngine::publishSeams() {
-    const std::uint64_t played = output_.framesPlayed();
-
     for (;;) {
         Url became;
         {
             std::lock_guard lock(seamMutex_);
+            // Inside the lock, because a device switch moves the base and the
+            // device's own counter together and only under this lock are the two
+            // consistent. Read outside it, a switch landing in between could put
+            // a seam's position behind the clock and announce the next track
+            // while the current one was still playing.
+            const std::uint64_t played = totalFramesPlayedLocked();
             if (pendingSeams_.empty() || pendingSeams_.front().framePosition > played) {
                 return;
             }
@@ -858,7 +1004,11 @@ float AudioEngine::volume() const { return output_.volume(); }
 
 double AudioEngine::playedSeconds() const {
     const double rate = format_.sampleRate;
-    return (rate > 0.0) ? static_cast<double>(output_.framesPlayed()) / rate : 0.0;
+    if (rate <= 0.0) {
+        return 0.0;
+    }
+    std::lock_guard lock(seamMutex_);
+    return static_cast<double>(totalFramesPlayedLocked()) / rate;
 }
 
 double AudioEngine::trackPositionSeconds() const {
@@ -866,17 +1016,21 @@ double AudioEngine::trackPositionSeconds() const {
     if (rate <= 0.0) {
         return 0.0;
     }
-    std::uint64_t start     = 0;
+    std::uint64_t start      = 0;
     std::uint64_t seekPlayed = 0;
     std::uint64_t seekTrack  = 0;
+    std::uint64_t played     = 0;
     {
         std::lock_guard lock(seamMutex_);
         start      = audibleTrackStart_;
         seekPlayed = seekPlayedBase_;
         seekTrack  = seekTrackBase_;
+        // With the bases rather than after them. A device switch rewrites the
+        // clock's base while the device's own counter returns to zero, and a
+        // read that straddled it would pair one with the other and report the
+        // track as having jumped back to its start.
+        played = totalFramesPlayedLocked();
     }
-
-    const std::uint64_t played = output_.framesPlayed();
 
     // After a seek the track no longer began where the device's frame counter
     // says it did, so the offset is measured from the seek instead. A later

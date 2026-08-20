@@ -85,6 +85,18 @@
       "dependencies": [
         "libsidplayfp"
       ]
+    },
+    "adplug": {
+      "description": "AdPlug: around forty DOS-era AdLib/OPL2 formats (see ports/adplug)",
+      "dependencies": [
+        "adplug"
+      ]
+    },
+    "libvgm": {
+      "description": "libvgm: sound chip emulation behind VGM, S98, DRO and GYM (see ports/libvgm)",
+      "dependencies": [
+        "libvgm"
+      ]
     }
   }
 }

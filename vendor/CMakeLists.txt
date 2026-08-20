@@ -23,10 +23,20 @@
 #             cores: mupen64plus cut down to N64 audio, which is what a USF
 #             plays. Seven more to go; see docs/HIGHLYCOMPLETE.md.
 #   fsurround/<- Cog Audio/ThirdParty/fsurround    (M4) -- data only, done
+#   hively/   <- Cog Frameworks/HivelyPlayer       (M6) -- done. The AHX and
+#             HVL replayer, here rather than in ../ports because Cog's copy
+#             carries a blip_buf resampler upstream has never had.
+#   syntrax/  <- Cog Frameworks/Syntrax-c          (M6) -- done. libjaytrax,
+#             here rather than in ../ports because upstream is an untagged
+#             Bitbucket repository and Cog's copy has grown the memory loader
+#             and the length measurement the decoder is built on.
 
 add_subdirectory(dsd2pcm)
 add_subdirectory(fsurround)
 add_subdirectory(hdcd)
+if(XPCOG_WITH_HIVELY)
+    add_subdirectory(hively)
+endif()
 add_subdirectory(minimp3)
 if(XPCOG_WITH_MIDI)
     add_subdirectory(midi_processing)
@@ -34,6 +44,9 @@ if(XPCOG_WITH_MIDI)
     add_subdirectory(nuked-sc55)
 endif()
 add_subdirectory(miniaudio)
+if(XPCOG_WITH_SYNTRAX)
+    add_subdirectory(syntrax)
+endif()
 if(XPCOG_WITH_PSF)
     add_subdirectory(psflib)
     add_subdirectory(lazyusf2)
