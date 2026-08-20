@@ -27,6 +27,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -100,6 +101,24 @@ struct MidiLoop {
     double end = 0.0;
 };
 
+/// A bank an RMID brought inside itself.
+///
+/// RMID is a RIFF wrapper around a standard MIDI file, and one of the chunks it
+/// may carry is a whole SoundFont or DLS bank -- so the file arrives with the
+/// instruments its author wrote it for, rather than hoping the listener has
+/// them. `bytes` is that chunk verbatim, headers and all, which is exactly what
+/// a bank loader expects to be handed.
+///
+/// `bankOffset` is the number added to every bank-select the file makes, and it
+/// is not decoration: a bank written to sit at MSB 8 plays the wrong
+/// instruments at MSB 0. It comes from the RIFF `DBNK` field when the file
+/// states one, and otherwise from midi_processing scanning the sequence for the
+/// bank numbers it actually selects.
+struct MidiEmbeddedBank {
+    std::vector<std::uint8_t> bytes;
+    std::uint16_t             bankOffset = 0;
+};
+
 /// The parsed file. Copyable only by moving the implementation; the event
 /// vectors are large enough that anything else would be a mistake to allow.
 class MidiFile {
@@ -138,6 +157,15 @@ public:
 
     /// The event stream for `subsong` at `sampleRate`, ready for a synth.
     [[nodiscard]] MidiStream stream(std::size_t subsong, double sampleRate) const;
+
+    /// The bank this file carried, or nullopt when it carried none -- which is
+    /// every file that is not an RMID, and most RMIDs.
+    ///
+    /// A copy rather than a view, because the parse buffer the caller handed to
+    /// parse() is theirs to destroy and this outlives it. The banks that turn
+    /// up here are small by SoundFont standards: an RMID is meant to be one
+    /// self-contained file, so nobody embeds a gigabyte in one.
+    [[nodiscard]] std::optional<MidiEmbeddedBank> embeddedBank() const;
 
 private:
     struct Impl;

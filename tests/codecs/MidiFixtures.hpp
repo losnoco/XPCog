@@ -8,11 +8,14 @@
 
 #pragma once
 
+#include "../TestSignal.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include <cmath>
 #include <string_view>
 #include <vector>
 
@@ -157,6 +160,268 @@ inline std::vector<std::uint8_t> programChangeMidi(bool withProgram) {
     out.insert(out.end(), {'M', 'T', 'r', 'k'});
     be32(out, static_cast<std::uint32_t>(track.size()));
     out.insert(out.end(), track.begin(), track.end());
+    return out;
+}
+
+/// `sequence` wrapped as RMID, carrying `bank` as its embedded soundbank.
+///
+/// RMID is a RIFF container around a standard MIDI file, and the interesting
+/// case is that it may also carry the whole SoundFont the music was written
+/// for. The layout below is not a free choice -- midi_processing's sniffer
+/// requires the `data` chunk at offset 12 and reads it before it will look at a
+/// nested `RIFF`, so a bank placed first is simply not seen.
+///
+/// The `LIST INFO` in between carries `DBNK`, which is how a file states its
+/// bank offset rather than having one guessed by scanning the sequence for the
+/// banks it selects. It also lets the parser stop the moment it has all three
+/// chunks, which matters: the nested-RIFF branch advances by the chunk size
+/// without its own 8-byte header, so anything after it is read from the wrong
+/// place. Every file this is modelled on ends with the bank, so that has never
+/// been reached in practice, and the fixture does not reach it either.
+///
+/// `bank` is a complete RIFF file -- an SF2 begins `RIFF....sfbk` -- because
+/// what the container hands back is the nested chunk verbatim, header included.
+inline std::vector<std::uint8_t> rmidWithBank(const std::vector<std::uint8_t>& sequence,
+                                              const std::vector<std::uint8_t>& bank,
+                                              std::uint16_t bankOffset) {
+    const auto le32 = [](std::vector<std::uint8_t>& v, std::uint32_t x) {
+        for (int shift = 0; shift <= 24; shift += 8) {
+            v.push_back(static_cast<std::uint8_t>((x >> shift) & 0xFF));
+        }
+    };
+
+    std::vector<std::uint8_t> body;
+    body.insert(body.end(), {'R', 'M', 'I', 'D'});
+
+    body.insert(body.end(), {'d', 'a', 't', 'a'});
+    le32(body, static_cast<std::uint32_t>(sequence.size()));
+    body.insert(body.end(), sequence.begin(), sequence.end());
+    if (sequence.size() % 2 == 1) {
+        body.push_back(0);  // RIFF chunks are word-aligned
+    }
+
+    // LIST INFO holding one DBNK field, which is two little-endian bytes.
+    std::vector<std::uint8_t> info;
+    info.insert(info.end(), {'I', 'N', 'F', 'O'});
+    info.insert(info.end(), {'D', 'B', 'N', 'K'});
+    le32(info, 2);
+    info.push_back(static_cast<std::uint8_t>(bankOffset & 0xFF));
+    info.push_back(static_cast<std::uint8_t>(bankOffset >> 8));
+
+    body.insert(body.end(), {'L', 'I', 'S', 'T'});
+    le32(body, static_cast<std::uint32_t>(info.size()));
+    body.insert(body.end(), info.begin(), info.end());
+
+    body.insert(body.end(), bank.begin(), bank.end());
+
+    std::vector<std::uint8_t> out;
+    out.insert(out.end(), {'R', 'I', 'F', 'F'});
+    le32(out, static_cast<std::uint32_t>(body.size()));
+    out.insert(out.end(), body.begin(), body.end());
+    return out;
+}
+
+/// The smallest SoundFont that actually makes a sound: one preset, one
+/// instrument, one zone, one sample.
+///
+/// Built rather than committed, and built rather than borrowed from
+/// `XPCOG_SOUNDFONT`, because the bank these tests were written against is
+/// 1.35 GB -- embedding that in an RMID would produce a 1.35 GB fixture, and
+/// the decoder would refuse it long before the point being tested (there is a
+/// 512 MB read limit on a source, and an RMID is meant to be a small
+/// self-contained file). A few kilobytes here runs the same path on CI.
+///
+/// The structure is the SF2 specification's minimum and every part of it is
+/// load-bearing. Each of the three record lists ends with a terminal entry the
+/// spec requires -- `EOP`, `EOI`, `EOS` -- and a loader that finds none reads
+/// one record past the end. The generator in a preset zone must be
+/// `instrument` (41) and the one in an instrument zone must be `sampleID` (53),
+/// each last in its zone. The sample data is followed by the 46 zero samples
+/// the spec demands after every sample.
+inline std::vector<std::uint8_t> tinySoundFont() {
+    const auto le16 = [](std::vector<std::uint8_t>& v, std::uint16_t x) {
+        v.push_back(static_cast<std::uint8_t>(x & 0xFF));
+        v.push_back(static_cast<std::uint8_t>(x >> 8));
+    };
+    const auto le32 = [](std::vector<std::uint8_t>& v, std::uint32_t x) {
+        for (int shift = 0; shift <= 24; shift += 8) {
+            v.push_back(static_cast<std::uint8_t>((x >> shift) & 0xFF));
+        }
+    };
+    const auto name20 = [](std::vector<std::uint8_t>& v, std::string_view text) {
+        for (std::size_t i = 0; i < 20; ++i) {
+            v.push_back(i < text.size() ? static_cast<std::uint8_t>(text[i]) : 0);
+        }
+    };
+    /// A chunk: four-character id, little-endian size, payload, pad to even.
+    const auto chunk = [&le32](std::vector<std::uint8_t>&       out,
+                               std::string_view                 id,
+                               const std::vector<std::uint8_t>& payload) {
+        out.insert(out.end(), id.begin(), id.end());
+        le32(out, static_cast<std::uint32_t>(payload.size()));
+        out.insert(out.end(), payload.begin(), payload.end());
+        if (payload.size() % 2 == 1) {
+            out.push_back(0);
+        }
+    };
+
+    // --- INFO -----------------------------------------------------------
+    std::vector<std::uint8_t> info;
+    info.insert(info.end(), {'I', 'N', 'F', 'O'});
+    {
+        std::vector<std::uint8_t> ifil;
+        le16(ifil, 2);  // SoundFont 2.01
+        le16(ifil, 1);
+        chunk(info, "ifil", ifil);
+
+        // Zero-terminated, as every SF2 text field is -- and built by
+        // appending the terminator rather than reading one past the string's
+        // end, which is what `end() + 1` on a std::string iterator does.
+        const auto zeroTerminated = [](std::string_view text) {
+            std::vector<std::uint8_t> bytes(text.begin(), text.end());
+            bytes.push_back(0);
+            return bytes;
+        };
+        chunk(info, "isng", zeroTerminated("EMU8000"));
+        chunk(info, "INAM", zeroTerminated("XPCog test bank"));
+    }
+
+    // --- sdta: one cycle of a sine, then the required silent tail --------
+    constexpr std::uint32_t kSampleFrames = 1024;
+    constexpr std::uint32_t kSilentTail   = 46;
+    std::vector<std::uint8_t> sdta;
+    sdta.insert(sdta.end(), {'s', 'd', 't', 'a'});
+    {
+        std::vector<std::uint8_t> smpl;
+        for (std::uint32_t i = 0; i < kSampleFrames; ++i) {
+            const double phase = xpcog::test::kTwoPi * static_cast<double>(i) /
+                                 static_cast<double>(kSampleFrames);
+            le16(smpl, static_cast<std::uint16_t>(
+                           static_cast<std::int16_t>(20000.0 * std::sin(phase))));
+        }
+        for (std::uint32_t i = 0; i < kSilentTail; ++i) {
+            le16(smpl, 0);
+        }
+        chunk(sdta, "smpl", smpl);
+    }
+
+    // --- pdta -----------------------------------------------------------
+    std::vector<std::uint8_t> pdta;
+    pdta.insert(pdta.end(), {'p', 'd', 't', 'a'});
+    {
+        std::vector<std::uint8_t> phdr;
+        name20(phdr, "Test");
+        le16(phdr, 0);   // preset 0
+        le16(phdr, 0);   // bank 0
+        le16(phdr, 0);   // first bag
+        le32(phdr, 0);   // library
+        le32(phdr, 0);   // genre
+        le32(phdr, 0);   // morphology
+        name20(phdr, "EOP");
+        le16(phdr, 0);
+        le16(phdr, 0);
+        le16(phdr, 1);   // one past the last bag
+        le32(phdr, 0);
+        le32(phdr, 0);
+        le32(phdr, 0);
+        chunk(pdta, "phdr", phdr);
+
+        std::vector<std::uint8_t> pbag;
+        le16(pbag, 0);  // generators start at 0
+        le16(pbag, 0);  // modulators start at 0
+        le16(pbag, 1);  // terminal
+        le16(pbag, 0);
+        chunk(pdta, "pbag", pbag);
+
+        // One terminal modulator record, all zero, in each of the two lists.
+        const std::vector<std::uint8_t> terminalMod(10, 0);
+        chunk(pdta, "pmod", terminalMod);
+
+        std::vector<std::uint8_t> pgen;
+        le16(pgen, 41);  // instrument
+        le16(pgen, 0);   // index 0
+        le16(pgen, 0);   // terminal
+        le16(pgen, 0);
+        chunk(pdta, "pgen", pgen);
+
+        std::vector<std::uint8_t> inst;
+        name20(inst, "Inst");
+        le16(inst, 0);
+        name20(inst, "EOI");
+        le16(inst, 1);
+        chunk(pdta, "inst", inst);
+
+        std::vector<std::uint8_t> ibag;
+        le16(ibag, 0);
+        le16(ibag, 0);
+        le16(ibag, 1);
+        le16(ibag, 0);
+        chunk(pdta, "ibag", ibag);
+
+        chunk(pdta, "imod", terminalMod);
+
+        std::vector<std::uint8_t> igen;
+        le16(igen, 53);  // sampleID
+        le16(igen, 0);
+        le16(igen, 0);   // terminal
+        le16(igen, 0);
+        chunk(pdta, "igen", igen);
+
+        std::vector<std::uint8_t> shdr;
+        name20(shdr, "Sine");
+        le32(shdr, 0);                 // start
+        le32(shdr, kSampleFrames);     // end
+        le32(shdr, 0);                 // loop start
+        le32(shdr, kSampleFrames);     // loop end
+        le32(shdr, 44100);             // sample rate
+        shdr.push_back(60);            // original pitch: middle C
+        shdr.push_back(0);             // pitch correction
+        le16(shdr, 0);                 // sample link
+        le16(shdr, 1);                 // monoSample
+        name20(shdr, "EOS");
+        le32(shdr, 0);
+        le32(shdr, 0);
+        le32(shdr, 0);
+        le32(shdr, 0);
+        le32(shdr, 0);
+        shdr.push_back(0);
+        shdr.push_back(0);
+        le16(shdr, 0);
+        le16(shdr, 0);
+        chunk(pdta, "shdr", shdr);
+    }
+
+    std::vector<std::uint8_t> body;
+    body.insert(body.end(), {'s', 'f', 'b', 'k'});
+    chunk(body, "LIST", info);
+    chunk(body, "LIST", sdta);
+    chunk(body, "LIST", pdta);
+
+    std::vector<std::uint8_t> out;
+    out.insert(out.end(), {'R', 'I', 'F', 'F'});
+    le32(out, static_cast<std::uint32_t>(body.size()));
+    out.insert(out.end(), body.begin(), body.end());
+    return out;
+}
+
+/// A RIFF blob shaped like a SoundFont and holding nothing playable.
+///
+/// Enough for the container tests, which are about whether the bytes come back
+/// whole and with the right offset. Whether they *load* is the synthesiser's
+/// question and needs a real bank -- see test_midi_soundfont.cpp.
+inline std::vector<std::uint8_t> fakeSoundBank(std::size_t payload = 64) {
+    std::vector<std::uint8_t> body;
+    body.insert(body.end(), {'s', 'f', 'b', 'k'});
+    for (std::size_t i = 0; i < payload; ++i) {
+        body.push_back(static_cast<std::uint8_t>(i & 0xFF));
+    }
+
+    std::vector<std::uint8_t> out;
+    out.insert(out.end(), {'R', 'I', 'F', 'F'});
+    for (int shift = 0; shift <= 24; shift += 8) {
+        out.push_back(static_cast<std::uint8_t>((body.size() >> shift) & 0xFF));
+    }
+    out.insert(out.end(), body.begin(), body.end());
     return out;
 }
 

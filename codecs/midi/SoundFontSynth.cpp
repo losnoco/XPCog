@@ -155,13 +155,13 @@ SoundFontSynth::SoundFontSynth() : impl_(std::make_unique<Impl>()) {}
 
 SoundFontSynth::~SoundFontSynth() = default;
 
-bool SoundFontSynth::open(const std::filesystem::path& bank, double sampleRate,
-                          SoundFontInterpolation interpolation) {
+bool SoundFontSynth::start(double sampleRate, SoundFontInterpolation interpolation) {
     impl_ = std::make_unique<Impl>();
-    sampleRate_ = 0.0;
-    blockFill_  = 0;
-    blockTaken_ = 0;
+    sampleRate_   = 0.0;
+    blockFill_    = 0;
+    blockTaken_   = 0;
     callerFrames_ = 0;
+    embeddedBank_.clear();
 
     if (!(sampleRate >= kMinSampleRate && sampleRate <= kMaxSampleRate)) {
         return false;
@@ -184,6 +184,54 @@ bool SoundFontSynth::open(const std::filesystem::path& bank, double sampleRate,
     }
     impl_->processor = processor;
 
+    // The engine took an integer rate, so that is the rate, not what was asked
+    // for. Everything above times events against this.
+    sampleRate_ = static_cast<double>(rate);
+    block_.assign(kBlockFrames * 2, 0.0F);
+    return true;
+}
+
+bool SoundFontSynth::openEmbedded(std::span<const std::uint8_t> bank, int bankOffset,
+                                  double                 sampleRate,
+                                  SoundFontInterpolation interpolation) {
+    if (!start(sampleRate, interpolation)) {
+        return false;
+    }
+    if (bank.empty()) {
+        return false;
+    }
+
+    embeddedBank_.assign(bank.begin(), bank.end());
+
+    // `owned` false: the copy above is what stays alive, and freeing it is this
+    // object's business rather than the engine's.
+    SS_File* file =
+        ss_file_open_from_memory(embeddedBank_.data(), embeddedBank_.size(), false);
+    if (file == nullptr) {
+        return false;
+    }
+    SS_SoundBank* loaded = ss_soundbank_load(file);
+    ss_file_close(file);
+    if (loaded == nullptr) {
+        return false;
+    }
+    if (!ss_processor_load_soundbank(impl_->processor, loaded, "embedded", bankOffset,
+                                     false)) {
+        ss_soundbank_free(loaded);
+        return false;
+    }
+
+    displayName_ = "SpessaSynth (embedded bank)";
+    return true;
+}
+
+bool SoundFontSynth::open(const std::filesystem::path& bank, double sampleRate,
+                          SoundFontInterpolation interpolation) {
+    if (!start(sampleRate, interpolation)) {
+        return false;
+    }
+    SS_Processor* processor = impl_->processor;
+
     if (isBankList(bank)) {
         SS_FilteredBanks* banks = loadBankList(bank);
         if (banks == nullptr) {
@@ -204,10 +252,6 @@ bool SoundFontSynth::open(const std::filesystem::path& bank, double sampleRate,
         }
     }
 
-    // The engine took an integer rate, so that is the rate, not what was asked
-    // for. Everything above times events against this.
-    sampleRate_ = static_cast<double>(rate);
-    block_.assign(kBlockFrames * 2, 0.0F);
     displayName_ = "SpessaSynth (" + pathToUtf8(bank.filename()) + ")";
     return true;
 }

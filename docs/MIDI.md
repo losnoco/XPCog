@@ -174,11 +174,49 @@ and `TinySF` to `Spessa`, all three having meant "play the bank I chose", and
 Cog's four-plus-four AudioUnit component code, which names a macOS synthesiser
 that does not exist here.
 
-**Two things Cog has and this does not.** An RMID file can carry its bank inside
-it; `midi_processing` does not extract one, and SpessaSynth's own loader is the
-thing that would. And Cog's `midi.flavor` setting picks a SysEx filter — GM,
-GM2, GS, one of four SC-88 flavours, XG — inside `MIDIPlayer`, which was not
-ported. Both are gaps rather than decisions, and neither stops a file playing.
+**An RMID's embedded bank is read, and this file used to say it was not.** The
+claim was that `midi_processing` does not extract one and SpessaSynth's own
+loader is the thing that would. It does extract one:
+`midi_processor_riff_midi.cpp` calls `assign_embedded_bank()` on the nested
+`RIFF` chunk, and `midi_container::get_embedded_bank()` hands it back with the
+bank offset. So this was never a missing parser — only a wire that had not been
+run, and `MidiFile::embeddedBank()` is that wire.
+
+Why the mistake was easy to make: **Cog never calls any of it.** Cog feeds the
+file to `ss_midi_load` and lets `ss_sequencer_load_midi` auto-load the bank —
+`SpessaPlayer.mm:329` is a bare comment saying exactly that and no code. XPCog
+drives the synthesisers from the flat event stream instead, so the sequencer
+that would have done it silently is not in the path, and the loading is explicit
+(`SoundFontSynth::openEmbedded`).
+
+Two details that are not optional. The **bank offset** is added to every
+bank-select the file makes, and a bank written to sit at MSB 8 plays the wrong
+instruments at MSB 0; it comes from the RIFF `DBNK` field, or from
+midi_processing scanning the sequence when the file does not state one. And the
+engine's memory reader does **not** copy — "it is essential to keep that buffer
+somewhere for the lifetime of the file" — so the synthesiser owns the bytes for
+as long as it lives.
+
+Precedence, which is Cog's: a bank *inside* the file beats a bank *beside* the
+file, and both beat the configured one. All three beat the `midiPlugin` setting,
+because a bank that travelled with the music is part of the music.
+
+**`midi.flavor` is deliberately not ported.** It picks a SysEx filter — GM, GM2,
+GS, one of four Sound Canvas flavours, XG — and injects the matching reset plus,
+for the GS modes, a bank-LSB map selection on all sixteen channels.
+
+The decision is Kevin's and the reasoning is the setting's ancestry: those mode
+names are Sound Canvas VA models, and Cog still carries `SCCore.cpp`, the loader
+for that product's `SCCore.dll`. The filter exists to tell a Sound Canvas which
+of its instrument maps to be.
+
+Recorded accurately, because the tempting summary is wrong: it is **not** dead
+code in Cog today. `MIDIDecoder.mm:204` reads the setting and line 356 applies it
+to whichever player was selected, and `SFPlayer.cpp:220` calls `setFilterMode`
+too — so it currently reaches the SoundFont path as well. Porting it is
+therefore possible and would change what a GS file sounds like on a GS bank. It
+is being left out anyway; if that turns out to matter, this paragraph is where
+to start rather than the assumption that there was nothing there.
 
 ## The SC-55 ROMs are the user's, not ours
 

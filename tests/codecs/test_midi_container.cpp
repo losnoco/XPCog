@@ -156,3 +156,48 @@ TEST_CASE("the corpus parses across every format it holds", "[midi][corpus]") {
 
     CHECK(formatsSeen > 0);
 }
+
+TEST_CASE("an RMID hands back the bank it carries", "[midi]") {
+    // The point of RMID: the file arrives with the instruments its author
+    // wrote it for, so it sounds the same on a machine that has never been
+    // configured. Cog gets this for free because it feeds the file to
+    // SpessaSynth's own loader, which auto-loads the embedded bank; this
+    // reads the container itself, so it has to ask.
+    const std::vector<std::uint8_t> bank = fakeSoundBank();
+
+    codecs::MidiFile file;
+    REQUIRE(file.parse(rmidWithBank(tinyMidi(), bank, 8), "rmi"));
+    CHECK(file.valid());
+
+    // Still a MIDI file underneath the wrapper.
+    REQUIRE(file.subsongCount() == 1);
+    CHECK(file.duration(0) == Catch::Approx(1.0).margin(0.05));
+
+    const auto embedded = file.embeddedBank();
+    REQUIRE(embedded.has_value());
+
+    // Verbatim, header included: what comes back has to be loadable as a file
+    // in its own right, and an SF2 that has lost its `RIFF` is not one.
+    CHECK(embedded->bytes == bank);
+
+    // And the offset the file stated, not one guessed by scanning. A bank
+    // written to sit at MSB 8 plays the wrong instruments at MSB 0, and both
+    // answers are plausible-looking numbers.
+    CHECK(embedded->bankOffset == 8);
+}
+
+TEST_CASE("a MIDI file that carries no bank says so", "[midi]") {
+    // The ordinary case, and it must be distinguishable from a bank of zero
+    // bytes: an empty optional sends the decoder on to the companion bank and
+    // then to the configured one, while an empty bank would be loaded and fail.
+    codecs::MidiFile plain;
+    REQUIRE(plain.parse(tinyMidi(), "mid"));
+    CHECK_FALSE(plain.embeddedBank().has_value());
+
+    // An RMID with no nested RIFF is the other half of it -- the wrapper alone
+    // does not imply a bank.
+    codecs::MidiFile wrapped;
+    REQUIRE(wrapped.parse(rmidWithBank(tinyMidi(), {}, 0), "rmi"));
+    CHECK(wrapped.valid());
+    CHECK_FALSE(wrapped.embeddedBank().has_value());
+}

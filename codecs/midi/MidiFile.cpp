@@ -206,4 +206,25 @@ MidiStream MidiFile::stream(std::size_t subsong, double sampleRate) const {
     return out;
 }
 
+std::optional<MidiEmbeddedBank> MidiFile::embeddedBank() const {
+    if (!valid()) {
+        return std::nullopt;
+    }
+
+    const std::uint8_t* data   = nullptr;
+    std::size_t         size   = 0;
+    std::uint16_t       offset = 0;
+    // Reports by return value: false means the file carried no bank, which is
+    // the ordinary case and not a failure.
+    if (!impl_->container.get_embedded_bank(&data, &size, &offset) || data == nullptr ||
+        size == 0) {
+        return std::nullopt;
+    }
+
+    MidiEmbeddedBank bank;
+    bank.bytes.assign(data, data + size);
+    bank.bankOffset = offset;
+    return bank;
+}
+
 }  // namespace xpcog::codecs

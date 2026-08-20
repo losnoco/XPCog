@@ -2580,13 +2580,23 @@ bit-exactly and a float path that scales or dithers destroys them.
 chain, and the DSP section above notes where it would sit), Last.fm scrobbling,
 global hotkeys.
 
-**7. Three MIDI leftovers**, all recorded in `docs/MIDI.md` and none of them
-blocking: an RMID's embedded soundbank is not extracted (`midi_processing` does
-not, SpessaSynth's own loader would); Cog's `midi.flavor` SysEx filter — GM,
-GM2, GS, four SC-88 flavours, XG — lives in `MIDIPlayer` and was not ported; and
-whether to ship a default SoundFont, which is what lets Cog default to
-SpessaSynth (it carries `GeneralUserXG-SFeTest.sf3`, 11 MB, at its repository
-root) while this defaults to the OPL3.
+**7. The MIDI leftovers**, all recorded in `docs/MIDI.md`. Two of the three are
+now closed and the third is the only one left:
+
+- **An RMID's embedded soundbank is read.** The entry here said
+  `midi_processing` does not extract one; it does, and always did — see
+  `docs/MIDI.md`. What was missing was the wiring, since XPCog drives the
+  synthesisers from the flat event stream rather than through the SpessaSynth
+  sequencer that would have loaded it invisibly.
+- **`midi.flavor` is not being ported**, by decision rather than omission. The
+  reasoning is in `docs/MIDI.md`, along with the correction that it is not the
+  dead SCCore-only setting it looks like.
+- **Whether to ship a default SoundFont** is the one still open, and it is what
+  lets Cog default to SpessaSynth while this defaults to the OPL3. Cog bundles
+  three files: `GeneralUserXG-SFeTest.sf3` (11.2 MB), `GeneralUserGS-Drums.sf3`
+  (1.5 MB) and `tg300b.sflist.json` (51 KB), which names both banks and remaps
+  XG onto GS. It picks the sflist when the file announces GS or GM2 and the
+  bank directly otherwise.
 
 #### The decoder list, and what it left behind
 

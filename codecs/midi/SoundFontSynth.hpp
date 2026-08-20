@@ -79,6 +79,22 @@ public:
     [[nodiscard]] bool open(const std::filesystem::path& bank, double sampleRate,
                             SoundFontInterpolation interpolation);
 
+    /// The same for a bank that arrived inside the MIDI file: an RMID can carry
+    /// one, and then that bank is the one the music was written for.
+    ///
+    /// `bankOffset` is added to every bank-select the file makes; see
+    /// MidiEmbeddedBank in MidiFile.hpp for why it is not optional.
+    ///
+    /// The bytes are copied and kept. The engine's file primitive can be handed
+    /// a buffer it does not own, and then "it is essential to keep that buffer
+    /// somewhere for the lifetime of the file" -- the bank reads samples out of
+    /// it as the music reaches them, exactly as the streaming path does with a
+    /// file on disk. An embedded bank is small enough that owning a copy is the
+    /// cheaper mistake to avoid.
+    [[nodiscard]] bool openEmbedded(std::span<const std::uint8_t> bank, int bankOffset,
+                                    double                 sampleRate,
+                                    SoundFontInterpolation interpolation);
+
     [[nodiscard]] double sampleRate() const noexcept override { return sampleRate_; }
 
     void write(std::uint32_t message) override;
@@ -103,7 +119,16 @@ private:
     /// and applied when its rendering reaches it.
     void submit(const std::uint8_t* data, std::size_t length);
 
+    /// The half both open() and openEmbedded() share: a processor at
+    /// `sampleRate`, with no bank in it yet. False when the rate is one the
+    /// engine will not run at.
+    [[nodiscard]] bool start(double sampleRate, SoundFontInterpolation interpolation);
+
     std::unique_ptr<Impl> impl_;
+
+    /// Held only for openEmbedded(), whose bank reads out of it for as long as
+    /// the synthesiser lives. Empty on the path that opens a file.
+    std::vector<std::uint8_t> embeddedBank_;
 
     double      sampleRate_ = 0.0;
     std::string displayName_ = "SpessaSynth";

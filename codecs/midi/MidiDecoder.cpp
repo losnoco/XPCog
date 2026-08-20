@@ -202,15 +202,25 @@ public:
         choice_ = parseSynthChoice(
             settings_ != nullptr ? settings_->MidiPlugin() : std::string{"DOOM0"});
 
-        // A file that brought its own SoundFont is played with it, whatever the
-        // setting says -- Cog's rule (MIDIDecoder.mm:271), and the reason is
-        // that a bank sitting beside a game rip is part of the rip rather than
-        // a preference. The configured bank is the fallback for everything else.
+        // Which bank plays, in the order Cog decides it (MIDIDecoder.mm:271).
+        // A bank the file brought with it wins over any preference, because it
+        // is part of the music rather than a setting: the author chose those
+        // instruments. Two ways a file can bring one, and the inner one wins.
+        //
+        //  1. Inside the file. An RMID is a RIFF wrapper that may carry a whole
+        //     SoundFont, and then there is nothing to look for on disk.
+        //  2. Beside the file. `song.sf2`, `song.mid.sf2`, `Album/Album.sf2` --
+        //     how a game rip ships its instruments.
+        //  3. The configured bank, for everything else.
+        //
+        // Either of the first two forces the SoundFont backend, since a bank is
+        // meaningless to an OPL3 and an SC-55 alike.
         bank_.reset();
+        embeddedBank_ = file_.embeddedBank();
         if (const auto local = url_.localPath()) {
             bank_ = codecs::findCompanionBank(*local);
         }
-        if (bank_) {
+        if (embeddedBank_ || bank_) {
             choice_.backend = SynthChoice::Backend::SoundFont;
         } else if (choice_.backend == SynthChoice::Backend::SoundFont &&
                    settings_ != nullptr) {
@@ -468,6 +478,19 @@ private:
                 synth_ = std::move(sc55);
                 return true;
             }
+        }
+
+        if (choice_.backend == SynthChoice::Backend::SoundFont && embeddedBank_) {
+            auto soundfont = std::make_unique<codecs::SoundFontSynth>();
+            if (soundfont->openEmbedded(embeddedBank_->bytes,
+                                        static_cast<int>(embeddedBank_->bankOffset),
+                                        configuredSampleRate(), interpolation())) {
+                synth_ = std::move(soundfont);
+                return true;
+            }
+            // Falls through to the companion or configured bank, and then to
+            // the OPL3. A file whose embedded bank will not load is still a
+            // file, and playing it on something is better than refusing it.
         }
 
         if (choice_.backend == SynthChoice::Backend::SoundFont && bank_) {
@@ -728,6 +751,12 @@ private:
     /// one. Empty when neither exists, which is what sends SpessaSynth back to
     /// the OPL3.
     std::optional<std::filesystem::path> bank_;
+
+    /// The bank the file carried inside itself, which outranks both of those.
+    /// Kept rather than handed straight to the synth, because a backwards seek
+    /// builds a new one and re-reading the file to find it again would be
+    /// pointless work at exactly the moment there is none to spare.
+    std::optional<codecs::MidiEmbeddedBank> embeddedBank_;
 
     std::size_t subsong_    = 0;
     AudioFormat format_{};

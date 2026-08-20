@@ -326,3 +326,69 @@ TEST_CASE("seeking a SoundFont track lands where it was asked to",
     }
     CHECK(frames == 44100 - kTarget);
 }
+
+// ---------------------------------------------------------------------------
+// The bank inside the file
+// ---------------------------------------------------------------------------
+//
+// These need a real bank but not a large one, so they build the smallest SF2
+// that makes a sound rather than borrowing `XPCOG_SOUNDFONT` -- which is 1.35 GB
+// on the machine this was written on, and would produce a 1.35 GB RMID that the
+// decoder refuses before reaching anything worth testing. So unlike everything
+// above, these two run everywhere.
+
+TEST_CASE("an RMID plays on the bank it carries", "[midi][soundfont]") {
+    const fs::path path = writeFile(scratch("embedded") / "embedded.rmi",
+                                    rmidWithBank(tinyMidi(), tinySoundFont(), 0));
+
+    Harness harness;
+    // Asked for the OPL, given something else -- the same rule as a bank
+    // sitting beside the file, and for the same reason: a bank inside the file
+    // is part of the music rather than a preference.
+    harness.settings.setMidiPlugin("DOOM0");
+    harness.settings.setSoundFontPath("");
+
+    const Decoded decoded =
+        decode(harness.registry, Url::fromLocalPath(path), 4 * 44100);
+
+    REQUIRE_FALSE(decoded.samples.empty());
+    CHECK(decoded.properties.encoding == "SpessaSynth (embedded bank)");
+    CHECK(peak(decoded.samples) > kAudible);
+}
+
+TEST_CASE("an embedded bank outranks one beside the file", "[midi][soundfont]") {
+    // Both present at once, which is the only way to see which rule wins.
+    const fs::path dir  = scratch("embedded-beats-beside");
+    const fs::path path = writeFile(dir / "both.rmi",
+                                    rmidWithBank(tinyMidi(), tinySoundFont(), 0));
+    writeFile(dir / "both.sf2", tinySoundFont());
+
+    Harness harness;
+    harness.settings.setMidiPlugin("Spessa");
+
+    const Decoded decoded =
+        decode(harness.registry, Url::fromLocalPath(path), 4 * 44100);
+
+    REQUIRE_FALSE(decoded.samples.empty());
+    // Not "SpessaSynth (both.sf2)": the companion bank was found and set aside.
+    CHECK(decoded.properties.encoding == "SpessaSynth (embedded bank)");
+}
+
+TEST_CASE("an RMID whose bank will not load still plays", "[midi][soundfont]") {
+    // A bank that is RIFF-shaped and nothing else. The container hands it over,
+    // the engine refuses it, and the file has to end up somewhere rather than
+    // failing to open -- which is the fallback the decoder spells out.
+    const fs::path path = writeFile(scratch("bad-bank") / "bad.rmi",
+                                    rmidWithBank(tinyMidi(), fakeSoundBank(), 0));
+
+    Harness harness;
+    harness.settings.setMidiPlugin("DOOM0");
+    harness.settings.setSoundFontPath("");
+
+    const Decoded decoded =
+        decode(harness.registry, Url::fromLocalPath(path), 4 * 44100);
+
+    REQUIRE_FALSE(decoded.samples.empty());
+    CHECK(decoded.properties.encoding != "SpessaSynth (embedded bank)");
+    CHECK(peak(decoded.samples) > kAudible);
+}
