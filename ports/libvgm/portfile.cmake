@@ -26,14 +26,29 @@ vcpkg_from_github(
     HEAD_REF master
 )
 
+# Static only, and libvgm's own source is what decides it.
+#
+# Nothing in libvgm's headers is marked for export -- there is no DLLEXPORT
+# macro anywhere in emu/, player/ or utils/, and the `vgm_emu_EXPORTS` define
+# CMake supplies for a shared target is referenced by nothing. On MSVC a DLL
+# that exports no symbols produces no *import library*, so a shared build gets
+# as far as writing `vgm-emu_Win64d.dll` and then dies linking the next target
+# against an import library that was never created:
+#
+#   LINK : fatal error LNK1104: cannot open file 'bin\vgm-emu_Win64d.lib'
+#
+# That is how this port failed CI a second time. It is not a configuration
+# problem: upstream's own libEmu.vcxproj and libAudio.vcxproj build static
+# libraries, which is the shape the code is written for. Declared here so vcpkg
+# builds static under a dynamic triplet rather than producing something broken.
+#
+# Nothing changes on macOS or Linux, whose default triplets were already static.
+vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
+
 # LIBRARY_TYPE is libvgm's own name for what every other project spells
-# BUILD_SHARED_LIBS, so the triplet's preference has to be translated rather
-# than passed through.
-if(VCPKG_LIBRARY_LINKAGE STREQUAL "dynamic")
-    set(LIBVGM_LIBRARY_TYPE "SHARED")
-else()
-    set(LIBVGM_LIBRARY_TYPE "STATIC")
-endif()
+# BUILD_SHARED_LIBS. With the linkage settled above there is only one value it
+# can take.
+set(LIBVGM_LIBRARY_TYPE "STATIC")
 
 # Charset conversion on Windows uses the operating system, not iconv.
 #
