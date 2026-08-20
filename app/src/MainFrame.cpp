@@ -152,6 +152,11 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
 }
 
 MainFrame::~MainFrame() {
+    // Not optional, and not something the destructor ordering can substitute for:
+    // the manager holds pointers to windows that are about to be destroyed with
+    // the frame, and UnInit() is what detaches it from them first.
+    auiManager_.UnInit();
+
     // The scan borrows the registry and the PluginCache, and the cache is a
     // member of this window, so the task has to go first -- otherwise its thread
     // outlives what it is reading from. ~ScanTask cancels and joins.
@@ -159,11 +164,12 @@ MainFrame::~MainFrame() {
 }
 
 void MainFrame::buildUi() {
-    auto* root = new wxPanel(this, wxID_ANY);
+    auiManager_.SetManagedWindow(this);
 
-    // The splitter, not a floating pane: Cog's file tree is a fixed part of the
-    // window and behaves as one.
-    splitter_ = new wxSplitterWindow(root, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+    // The playlist and the file browser are the centre, and the browser is a
+    // splitter pane rather than a dock: Cog's file tree is a fixed part of the
+    // window and behaves as one, and the View menu toggles the split.
+    splitter_ = new wxSplitterWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                                      wxSP_LIVE_UPDATE | wxSP_3DSASH);
     splitter_->SetMinimumPaneSize(FromDIP(140));
 
@@ -180,46 +186,82 @@ void MainFrame::buildUi() {
 
     splitter_->SplitVertically(tree_, list_, FromDIP(260));
 
-    auto* transport = new wxPanel(root, wxID_ANY);
+    auto* transport = new wxPanel(this, wxID_ANY);
     buildTransport(transport);
 
-    // The optional panels, below the playlist and hidden until asked for.
-    //
-    // Panels rather than dockable panes. wxAUI would give tear-off windows, and
-    // draws its own captions to do it -- which on macOS especially reads as a
-    // Windows application wearing the wrong chrome. None of these three needs to
-    // float, and Cog itself gives its equaliser and info inspector windows of
-    // their own rather than docks, so nothing is lost by showing and hiding them
-    // in place.
-    equalizer_ = new EqualizerPanel(root, settings_);
-    equalizer_->Hide();
-
-    info_ = new InfoPanel(root, library_.get());
-    info_->Hide();
-
-    spectrum_ = new SpectrumPanel(root, playback_->tap());
+    // The optional panes, in the places the Qt build docked them: the wide, short
+    // ones along the bottom and the tall column of fields at the right.
+    equalizer_ = new EqualizerPanel(this, settings_);
+    info_      = new InfoPanel(this, library_.get());
+    spectrum_  = new SpectrumPanel(this, playback_->tap());
     spectrum_->applySettings(settings_);
-    spectrum_->Hide();
 
 #ifdef XPCOG_HAVE_SC55_PANEL
-    sc55_ = new Sc55Panel(root, [this] { return playback_->position(); });
-    sc55_->Hide();
+    sc55_ = new Sc55Panel(this, [this] { return playback_->position(); });
 #endif
 
-    auto* sizer = new wxBoxSizer(wxVERTICAL);
-    sizer->Add(transport, 0, wxEXPAND);
-    sizer->Add(new wxStaticLine(root), 0, wxEXPAND);
-    sizer->Add(splitter_, 1, wxEXPAND);
-    sizer->Add(spectrum_, 0, wxEXPAND);
-    sizer->Add(equalizer_, 0, wxEXPAND);
-    sizer->Add(info_, 0, wxEXPAND);
+    // Every pane is named, and the names are what a saved perspective refers to.
+    // Renaming one silently discards that pane's saved position, so these are as
+    // load-bearing as the object names QMainWindow::saveState() needed.
+    auiManager_.AddPane(splitter_, wxAuiPaneInfo().Name("playlist").CenterPane());
+
+    // The transport is a pane so the manager owns the whole frame, but it is not
+    // a *dockable* one. Hiding the only play button leaves a window with no way to
+    // start playback and no obvious way back, which is why the Qt build removed
+    // the transport from its own context menu too.
+    auiManager_.AddPane(transport, wxAuiPaneInfo()
+                                       .Name("transport")
+                                       .Top()
+                                       .CaptionVisible(false)
+                                       .CloseButton(false)
+                                       .Dockable(false)
+                                       .Floatable(false)
+                                       .Movable(false)
+                                       .Resizable(false)
+                                       .Layer(10)
+                                       .BestSize(-1, transport->GetBestSize().GetHeight()));
+
+    auiManager_.AddPane(spectrum_, wxAuiPaneInfo()
+                                       .Name("spectrum")
+                                       .Caption("Spectrum")
+                                       .Bottom()
+                                       .BestSize(FromDIP(wxSize(400, 140)))
+                                       .MinSize(FromDIP(wxSize(120, 60)))
+                                       .Show());
+
+    // Hidden rather than absent, so it keeps a place in the layout to come back
+    // to. 31 sliders is a lot of window to open on someone who wanted a music
+    // player.
+    auiManager_.AddPane(equalizer_, wxAuiPaneInfo()
+                                        .Name("equalizer")
+                                        .Caption("Equalizer")
+                                        .Bottom()
+                                        .BestSize(FromDIP(wxSize(600, 230)))
+                                        .MinSize(FromDIP(wxSize(300, 180)))
+                                        .Hide());
+
+    auiManager_.AddPane(info_, wxAuiPaneInfo()
+                                   .Name("info")
+                                   .Caption("Info")
+                                   .Right()
+                                   .BestSize(FromDIP(wxSize(300, 400)))
+                                   .MinSize(FromDIP(wxSize(220, 200)))
+                                   .Hide());
+
 #ifdef XPCOG_HAVE_SC55_PANEL
-    sizer->Add(sc55_, 0, wxEXPAND);
+    auiManager_.AddPane(sc55_, wxAuiPaneInfo()
+                                   .Name("sc55")
+                                   .Caption("SC-55 Panel")
+                                   .Bottom()
+                                   .BestSize(FromDIP(wxSize(420, 200)))
+                                   .MinSize(FromDIP(wxSize(200, 100)))
+                                   .Hide());
 #endif
-    root->SetSizer(sizer);
 
-    // Three fields: the summary, the now-playing text, and room for the scan
-    // widgets, which are children positioned over the last one.
+    auiManager_.Update();
+
+    // Two fields: the summary, and the now-playing text with the scan widgets
+    // positioned over it.
     CreateStatusBar(2);
 
     scanBar_ = new wxGauge(GetStatusBar(), wxID_ANY, 100, wxDefaultPosition,
@@ -265,6 +307,9 @@ void MainFrame::buildTransport(wxWindow* parent) {
         button->SetBitmapDisabled(lucideIconDisabled(commandIcon(id)));
         sizer->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxALL, FromDIP(2));
         transportButtons_.push_back(button);
+        if (id == PlaybackPlayPause) {
+            playPauseButton_ = button;
+        }
     }
 
     seekBar_ = new SeekBar(parent, kSeekBarId);
@@ -372,7 +417,7 @@ void MainFrame::wireUp() {
     // starts, not when the panel is created.
     observe(playback_->playbackStateChanged, [this](bool playing, bool paused) {
         spectrum_->setSampleRate(playback_->sampleRate());
-        spectrum_->setActive(spectrum_->IsShown() && playing && !paused);
+        spectrum_->setActive(paneShown(spectrum_) && playing && !paused);
     });
 
     // --- the equaliser ---------------------------------------------------
@@ -443,13 +488,12 @@ void MainFrame::wireUp() {
     Bind(wxEVT_SYS_COLOUR_CHANGED, [this](wxSysColourChangedEvent& event) {
         event.Skip();
         forgetLucideIcons();
-        for (std::size_t i = 0; i < transportButtons_.size(); ++i) {
-            const CommandId id = transportLayout()[i];
-            transportButtons_[i]->SetBitmap(lucideIcon(commandIcon(id)));
-            transportButtons_[i]->SetBitmapDisabled(lucideIconDisabled(commandIcon(id)));
-        }
+        refreshTransportIcons();
         scanCancel_->SetBitmap(lucideIcon("x"));
         tree_->refreshIcons();
+        if (mini_ != nullptr) {
+            mini_->refreshIcons();
+        }
     });
 
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& event) {
@@ -487,6 +531,16 @@ void MainFrame::wireUp() {
         event.Skip();
     });
 
+    // A pane closed by its own button, rather than from the View menu. Nothing
+    // has to be recorded -- EVT_UPDATE_UI reads the manager, so the menu's tick
+    // follows on its own -- but the spectrum's clock is not the manager's to stop.
+    Bind(wxEVT_AUI_PANE_CLOSE, [this](wxAuiManagerEvent& event) {
+        event.Skip();
+        if (event.GetPane() != nullptr && event.GetPane()->window == spectrum_) {
+            spectrum_->setActive(false);
+        }
+    });
+
     bindCommands();
     bindUpdateUi();
 }
@@ -518,19 +572,39 @@ void MainFrame::onSettingChanged(const std::string& key) {
     }
 }
 
-void MainFrame::togglePanel(wxWindow* panel, bool show) {
-    if (panel == nullptr) {
+void MainFrame::togglePane(wxWindow* pane, bool show) {
+    if (pane == nullptr) {
         return;
     }
-    panel->Show(show);
-    Layout();
+    wxAuiPaneInfo& info = auiManager_.GetPane(pane);
+    if (!info.IsOk()) {
+        return;
+    }
+    info.Show(show);
+    // The manager, not Layout(). A pane's window is a child of the frame but its
+    // *placement* is the manager's, so showing the window without this leaves it
+    // sized zero and invisible.
+    auiManager_.Update();
+}
+
+bool MainFrame::paneShown(wxWindow* pane) const {
+    if (pane == nullptr) {
+        return false;
+    }
+    // const_cast because wxAuiManager::GetPane has no const overload. Nothing is
+    // mutated -- IsShown() is a read -- and the alternative is holding a second
+    // copy of state the manager already owns, which is exactly the sort of
+    // duplicate the Qt build's dock bookkeeping went wrong on.
+    const wxAuiPaneInfo& info =
+        const_cast<wxAuiManager&>(auiManager_).GetPane(pane);
+    return info.IsOk() && info.IsShown();
 }
 
 void MainFrame::refreshInfo() {
     // Returns immediately while the panel is hidden, which is most of the time --
     // and matters, because metadata arriving during a scan would otherwise redraw
     // twenty fields per file.
-    if (info_ == nullptr || !info_->IsShown()) {
+    if (!paneShown(info_)) {
         return;
     }
 
@@ -590,9 +664,41 @@ void MainFrame::showAbout() {
     dialog.ShowModal();
 }
 
+void MainFrame::refreshTransportIcons() {
+    for (std::size_t i = 0; i < transportButtons_.size(); ++i) {
+        const CommandId id = transportLayout()[i];
+        transportButtons_[i]->SetBitmap(lucideIcon(commandIcon(id)));
+        transportButtons_[i]->SetBitmapDisabled(lucideIconDisabled(commandIcon(id)));
+    }
+
+    // Play/Pause carries whichever of the two the transport is asking for.
+    // EVT_UPDATE_UI relabels the *menu* item from state every idle, but a
+    // wxUpdateUIEvent can set a label and an enabled state and nothing else --
+    // there is no bitmap on it -- so the button has to be told separately. That
+    // is why the button kept showing a play triangle over a playing track.
+    if (playPauseButton_ != nullptr) {
+        const bool playing = playback_->playing() && !playback_->paused();
+        const char* glyph  = playing ? "pause" : "play";
+        playPauseButton_->SetBitmap(lucideIcon(glyph));
+        playPauseButton_->SetBitmapDisabled(lucideIconDisabled(glyph));
+        playPauseButton_->SetToolTip(playing ? "Pause" : "Play");
+    }
+}
+
 void MainFrame::bindCommands() {
+    // Both event types, for every command.
+    //
+    // A menu item and an accelerator raise wxEVT_MENU; a wxBitmapButton raises
+    // wxEVT_BUTTON. They are different events carrying the same id, and binding
+    // only the first is why the transport buttons did nothing at all while the
+    // menu entries behind them worked -- a failure with no error attached to it,
+    // because the event simply reached the end of the chain unhandled.
+    //
+    // Binding both here rather than translating at each button keeps the rule
+    // that a command has one handler, whatever surface posts it.
     const auto on = [this](CommandId id, auto handler) {
         Bind(wxEVT_MENU, [handler](wxCommandEvent&) { handler(); }, id);
+        Bind(wxEVT_BUTTON, [handler](wxCommandEvent&) { handler(); }, id);
     };
 
     on(FileOpen, [this] { openFiles(); });
@@ -623,25 +729,25 @@ void MainFrame::bindCommands() {
     on(PlaybackEnqueue, [this] { enqueueSelected(); });
 
     on(ViewFileTreeRoot, [this] { tree_->chooseRootPath(); });
-    on(ViewEqualizer, [this] { togglePanel(equalizer_, !equalizer_->IsShown()); });
+    on(ViewEqualizer, [this] { togglePane(equalizer_, !paneShown(equalizer_)); });
     on(ViewInfo, [this] {
-        const bool showing = !info_->IsShown();
-        togglePanel(info_, showing);
+        const bool showing = !paneShown(info_);
+        togglePane(info_, showing);
         if (showing) {
             refreshInfo();
         }
     });
     on(ViewMiniPlayer, [this] { setMiniMode(mini_ == nullptr || !mini_->IsShown()); });
     on(ViewSpectrum, [this] {
-        const bool showing = !spectrum_->IsShown();
-        togglePanel(spectrum_, showing);
-        // The clock only runs while the panel is both visible and playing: a
+        const bool showing = !paneShown(spectrum_);
+        togglePane(spectrum_, showing);
+        // The clock only runs while the pane is both visible and playing: a
         // 4096-point transform sixty times a second for a hidden widget is the
         // cost this guard exists to avoid.
         spectrum_->setActive(showing && playback_->playing() && !playback_->paused());
     });
 #ifdef XPCOG_HAVE_SC55_PANEL
-    on(ViewSc55Panel, [this] { togglePanel(sc55_, !sc55_->IsShown()); });
+    on(ViewSc55Panel, [this] { togglePane(sc55_, !paneShown(sc55_)); });
 #endif
     on(ViewFileTree, [this] {
         if (splitter_->IsSplit()) {
@@ -720,16 +826,16 @@ void MainFrame::bindUpdateUi() {
     update(ViewFileTree,
            [this](wxUpdateUIEvent& event) { event.Check(splitter_->IsSplit()); });
     update(ViewEqualizer,
-           [this](wxUpdateUIEvent& event) { event.Check(equalizer_->IsShown()); });
-    update(ViewInfo, [this](wxUpdateUIEvent& event) { event.Check(info_->IsShown()); });
+           [this](wxUpdateUIEvent& event) { event.Check(paneShown(equalizer_)); });
+    update(ViewInfo, [this](wxUpdateUIEvent& event) { event.Check(paneShown(info_)); });
     update(ViewMiniPlayer, [this](wxUpdateUIEvent& event) {
         event.Check(mini_ != nullptr && mini_->IsShown());
     });
     update(ViewSpectrum,
-           [this](wxUpdateUIEvent& event) { event.Check(spectrum_->IsShown()); });
+           [this](wxUpdateUIEvent& event) { event.Check(paneShown(spectrum_)); });
 #ifdef XPCOG_HAVE_SC55_PANEL
     update(ViewSc55Panel,
-           [this](wxUpdateUIEvent& event) { event.Check(sc55_->IsShown()); });
+           [this](wxUpdateUIEvent& event) { event.Check(paneShown(sc55_)); });
 #else
     // Present even in a build without MIDI, where there is no emulator to render
     // a panel state and nothing that produces one. A command that appears and
@@ -1005,6 +1111,7 @@ void MainFrame::onCurrentTrackChanged(TrackId id) {
 }
 
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {
+    refreshTransportIcons();
     taskbar_->setPlaybackState(playing, paused);
     presence_->setPlaybackState(playing, paused);
     if (mini_ != nullptr) {
@@ -1079,6 +1186,26 @@ void MainFrame::restoreState() {
             // A value someone edited by hand. The default is fine.
         }
     }
+
+    // The docking layout: where each pane sits, how big it is, whether it is
+    // floating and whether it is open at all. This is what QMainWindow's
+    // saveState()/restoreState() carried.
+    //
+    // After every pane has been added, because LoadPerspective matches on the
+    // names given there and silently ignores a name it does not recognise -- so
+    // loading first would restore nothing and look like the setting was empty.
+    if (const std::string layout = settings_.rawValue("xpcog.window.layout");
+        !layout.empty()) {
+        auiManager_.LoadPerspective(toWx(layout), true);
+    }
+
+    // Whatever the perspective said, the transport is on screen. A saved layout
+    // from a build where it was closable would otherwise leave a window with no
+    // play button and no way to get one back.
+    if (wxAuiPaneInfo& transport = auiManager_.GetPane("transport"); transport.IsOk()) {
+        transport.Show();
+        auiManager_.Update();
+    }
 }
 
 void MainFrame::persistState() {
@@ -1086,6 +1213,19 @@ void MainFrame::persistState() {
     if (splitter_->IsSplit()) {
         settings_.setRawValue("xpcog.window.sash",
                               std::to_string(splitter_->GetSashPosition()));
+    }
+
+    // Only while the window is actually on screen.
+    //
+    // This is the trap the Qt build documented at length and it applies here for
+    // the same reason: close-to-tray makes "save a layout with nothing visible"
+    // the normal path, and a layout captured then is not the one the listener
+    // arranged. Skipping is right rather than merely safe -- the values already
+    // stored were written while the window *was* visible, so they are the last
+    // true ones.
+    if (IsShown()) {
+        settings_.setRawValue("xpcog.window.layout",
+                              toUtf8(auiManager_.SavePerspective()));
     }
 
     if (library_ && !library_->savePlaylist(playlist_)) {

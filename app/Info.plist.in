@@ -1,20 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-    Qt's own Info.plist.app.in, plus CFBundleIconName.
+    The bundle's Info.plist.
 
-    Kept as a copy rather than patched at build time because there is no seam to
-    patch: Qt picks its template only when MACOSX_BUNDLE_INFO_PLIST is unset, so
-    naming one here replaces the file wholesale. Everything below the icon keys
-    is Qt's, verbatim, and wants re-checking against
-    lib/cmake/Qt6/macos/Info.plist.app.in on a Qt upgrade.
+    This began as Qt's own Info.plist.app.in plus CFBundleIconName, because Qt
+    supplied a template unless one was named here. Nothing supplies one now, so it
+    is simply the file this application wants -- but it is left as it stands
+    rather than trimmed, because every key below has been through a real bundle
+    and pruning a plist by guesswork is how a bundle stops launching.
 
-    Two substitution passes run over this, in order, and the difference matters:
+    One substitution pass runs over it, not the two the Qt build needed, and both
+    forms go through it: CMake generates the plist with configure_file() in its
+    default mode, which expands ${FOO} and @FOO@ alike.
 
-      @FOO@    Qt, via configure_file(@ONLY), while the target is finalised.
-               This is what makes the icon-name entry conditional -- CMake's own
-               pass has no way to omit a key.
-      ${FOO}   CMake, from the MACOSX_BUNDLE_* target properties.
+      ${FOO}   the MACOSX_BUNDLE_* target properties.
+      @FOO@    variables set in app/CMakeLists.txt before set_target_properties
+               runs. This is what makes the icon-name entry conditional: an empty
+               value leaves nothing behind, where a key written unconditionally
+               would have LaunchServices look up a name that is not there.
 -->
 <plist version="1.0">
 <dict>

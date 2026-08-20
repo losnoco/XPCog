@@ -1,60 +1,71 @@
-// The bridge between the Qt-free engine and the widgets.
+// The bridge between the toolkit-free engine and the widgets.
 //
 // This is where Cog's AppController + PlaybackController + the KVO web between
 // them lands, and it is deliberately the *only* place that knows both worlds.
-// Everything below it is Qt-free; everything above it never touches
+// Everything below it is toolkit-free; everything above it never touches
 // AudioEngine, Playlist or the registry directly.
 //
 // Threading is the whole point of the class, and it runs in both directions.
 //
 // Inbound, AudioEngine::Delegate is called from the feeder thread -- never the
-// GUI thread -- so each callback does nothing but emit a queued signal.
-// Touching a widget from there would be an intermittent crash rather than an
-// obvious one, which is why the delegate methods here are three lines each and
-// stay that way.
+// interface's -- so each callback does nothing but hand a closure to the
+// dispatcher. Touching a widget from there would be an intermittent crash rather
+// than an obvious one, which is why the delegate methods here are three lines
+// each and stay that way.
 //
 // Outbound, the two engine calls that block -- play() and stop() -- run on a
-// starter thread of this class's own, because starting a track opens its source
+// SerialExecutor of this class's own, because starting a track opens its source
 // and primes about a second and a half of audio. For a file that is
 // microseconds. For a URL it is a network round trip, and a station that is slow
 // to answer froze the window for as long as it took. Cog opens URLs from a
 // background queue (-addURLsInBackground:) for exactly this reason.
 //
-// While a start is in flight the GUI thread must not touch the engine at all,
-// because the starter thread is inside it reconfiguring the device. That is what
-// `starting_` is for: the getters answer with neutral values and the cheap
+// While a start is in flight the interface must not touch the engine at all,
+// because the executor's thread is inside it reconfiguring the device. That is
+// what `starting_` is for: the getters answer with neutral values and the cheap
 // controls decline, rather than reading state that is being rebuilt.
+//
+// What changed from the Qt version is only how the hops are spelled. QThread plus
+// a bare QObject that existed to own an event-loop slot became SerialExecutor;
+// queued signals became an injected dispatcher and xpcog::Signal. Every atomic,
+// every generation counter and every ordering comment below is unchanged, because
+// none of them were about Qt.
 
 #pragma once
 
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/SerialExecutor.hpp"
 #include "xpcog/core/Settings.hpp"
+#include "xpcog/core/Signal.hpp"
 #include "xpcog/core/audio/AudioEngine.hpp"
-#include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/AudioTap.hpp"
+#include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/library/Playlist.hpp"
 
-#include <QObject>
-#include <QString>
-#include <QThread>
-#include <QTimer>
+#include <wx/event.h>
+#include <wx/timer.h>
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace xpcog::app {
 
-class PlaybackController : public QObject, private AudioEngine::Delegate {
-    Q_OBJECT
-
+class PlaybackController : private AudioEngine::Delegate {
 public:
+    using Dispatcher = std::function<void(std::function<void()>)>;
+
     PlaybackController(const PluginRegistry& registry, Playlist& playlist,
-                       Settings& settings, QObject* parent = nullptr);
+                       Settings& settings, Dispatcher dispatch);
     ~PlaybackController() override;
+
+    PlaybackController(const PlaybackController&)            = delete;
+    PlaybackController& operator=(const PlaybackController&) = delete;
 
     [[nodiscard]] Playlist& playlist() noexcept { return playlist_; }
 
@@ -74,12 +85,13 @@ public:
 
     /// The audio being played, for a visualiser to look at.
     ///
-    /// Owned here because this owns the output that fills it, and the output writes
-    /// to it from the device callback -- so its lifetime has to be at least the
-    /// output's. Borrowed by whoever draws it.
+    /// Owned here because this owns the output that fills it, and the output
+    /// writes to it from the device callback -- so its lifetime has to be at
+    /// least the output's. Borrowed by whoever draws it.
     [[nodiscard]] AudioTap& tap() noexcept { return tap_; }
 
-public slots:
+    // --- commands ----------------------------------------------------------
+
     /// Starts the playlist entry `id`, or resumes/starts the current one when
     /// `id` is absent.
     void playTrack(TrackId id);
@@ -101,8 +113,8 @@ public slots:
     ///
     /// Where it cannot -- paused, or a device that will not run the format
     /// already queued -- the track is re-opened and seeks back to where it had
-    /// reached, which is what used to happen every time. Does nothing when
-    /// nothing is playing; the next track picks the new device up by itself.
+    /// reached. Does nothing when nothing is playing; the next track picks the
+    /// new device up by itself.
     void reopenOutput();
 
     /// Asks the engine to re-read the DSP settings, so an equaliser change is
@@ -113,31 +125,28 @@ public slots:
     void setVolume(double linear);
     [[nodiscard]] double volume() const;
 
-signals:
+    // --- notifications, all delivered on the interface's thread -------------
+
     /// The playing entry changed, or playback stopped (kInvalidTrackId).
-    void currentTrackChanged(TrackId id);
+    Signal<TrackId> currentTrackChanged;
 
-    /// Emitted a few times a second while playing, for the seek bar and clock.
-    void positionChanged(double seconds, double duration);
+    /// Published a few times a second while playing, for the seek bar and clock.
+    Signal<double, double> positionChanged;
 
-    void playbackStateChanged(bool playing, bool paused);
+    Signal<bool, bool> playbackStateChanged;
 
     /// A playing stream renamed itself: the entry's tags have already been
     /// updated, and the row and the now-playing display need redrawing.
-    void trackMetadataChanged(TrackId id);
+    Signal<TrackId> trackMetadataChanged;
 
     /// A start is in flight: the source is being opened, which for a URL is a
     /// network round trip. Nothing is audible yet, and the window is free --
     /// this exists so it can say so rather than simply looking stuck.
-    void startPending(TrackId id);
+    Signal<TrackId> startPending;
 
     /// A file could not be opened. Playback carries on, matching Cog's
     /// behaviour of not stalling on one bad file.
-    ///
-    /// Named apart from AudioEngine::Delegate::trackFailed on purpose: a signal
-    /// overloaded with an ordinary virtual in the same class is legal but
-    /// confuses both moc and the reader.
-    void playbackFailed(TrackId id, const QString& reason);
+    Signal<TrackId, std::string> playbackFailed;
 
 private:
     // --- AudioEngine::Delegate, all called on the feeder thread ---------
@@ -148,11 +157,11 @@ private:
     void               outputSwitchFailed() override;
     void streamMetadataChanged(const Url& url, const MetadataMap& tags) override;
 
-    void emitState();
+    void publishState();
 
-    /// Queues a start on the starter thread. Returns immediately.
+    /// Queues a start on the executor. Returns immediately.
     void requestStart(TrackId id);
-    /// The starter thread's answer, back on the GUI thread.
+    /// The executor's answer, back on the interface's thread.
     void finishStart(TrackId id, bool opened, std::uint64_t generation);
 
     /// Re-opens the current track and returns to where it had reached. The
@@ -163,6 +172,7 @@ private:
     const PluginRegistry& registry_;
     Playlist&             playlist_;
     Settings&             settings_;
+    Dispatcher            dispatch_;
 
     // Declaration order is load-bearing: the engine borrows the ring and the
     // output, and the output borrows the ring, so the ring must outlive both and
@@ -172,20 +182,25 @@ private:
     std::unique_ptr<IAudioOutput> output_;
     std::unique_ptr<AudioEngine>  engine_;
 
-    QTimer* ticker_ = nullptr;
+    /// Drives positionChanged while playing. A wxTimer needs an event handler to
+    /// deliver to and this class is not a window, so it owns a bare one.
+    wxEvtHandler sink_;
+    wxTimer      ticker_;
 
-    /// Where play() and stop() actually run. `starter_` is a bare QObject whose
-    /// only job is to own an event loop slot on that thread.
-    QThread* starterThread_ = nullptr;
-    QObject* starter_       = nullptr;
+    /// Where play() and stop() actually run.
+    ///
+    /// Declared after the engine so it is destroyed first: a task still inside
+    /// engine_->play() when the engine went away would be reading freed memory,
+    /// and ~SerialExecutor joins.
+    std::unique_ptr<SerialExecutor> starter_;
 
     /// Bumped by every start request. A result carrying a stale generation is
     /// dropped, so a burst of double-clicks settles on the last one rather than
-    /// on whichever connection happened to answer first.
+    /// on whichever call happened to answer first.
     std::atomic<std::uint64_t> startGeneration_{0};
 
-    /// Set between requesting a start and hearing back. Read from the GUI thread
-    /// to decide whether the engine is safe to touch.
+    /// Set between requesting a start and hearing back. Read from the
+    /// interface's thread to decide whether the engine is safe to touch.
     std::atomic<bool> starting_{false};
 
     /// Entries that failed to open during the current gesture. The skip-to-next
@@ -203,7 +218,7 @@ private:
     /// exactly that, which sent the track back to its beginning.
     double resumeAt_ = 0.0;
 
-    /// What the engine is currently playing, as far as the GUI thread knows.
+    /// What the engine is currently playing, as far as the interface knows.
     TrackId audible_ = kInvalidTrackId;
     bool    paused_  = false;
 };

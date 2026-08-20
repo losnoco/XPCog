@@ -4,8 +4,8 @@
 // That is two different objects on two platforms, deliberately.
 //
 // Windows and Linux have a notification area, and a media player absent from it
-// is one you have to find and raise in order to pause. So they get a
-// QSystemTrayIcon carrying a transport menu.
+// is one you have to find and raise in order to pause. So they get a tray icon
+// carrying a transport menu.
 //
 // macOS does not get one. Cog contains no NSStatusItem anywhere -- zero matches
 // across the whole tree -- and instead hangs its transport off the Dock: a
@@ -15,8 +15,9 @@
 // already has, putting the same four commands in two places at once, and the
 // Dock icon is the one the user cannot remove.
 //
-// So the menu is built once and attached differently: to a tray icon off macOS,
-// to the Dock tile on it, through QMenu::setAsDockMenu().
+// wx spells both with the same class: wxTaskBarIcon, constructed with wxTBI_DOCK
+// on macOS, is the Dock menu. That is a closer fit than Qt managed, where the
+// tray was QSystemTrayIcon and the Dock menu was QMenu::setAsDockMenu().
 //
 // The two attachments do not carry the same items, which is the part that would
 // be wrong if this were written as one menu for both. AppKit appends Quit, Show
@@ -25,93 +26,76 @@
 // tray platforms, where nothing else supplies them. Adding them on macOS would
 // produce a menu with two Quits.
 //
-// Every command in the menu is a QAction the registry already owns, so the tray
-// and the menu bar enable and disable together and there is no second play
-// button to keep in step.
+// Every entry in the menu posts a command id the frame already handles, so the
+// tray and the menu bar enable and disable together through EVT_UPDATE_UI and
+// there is no second play button to keep in step.
 
 #pragma once
 
-#include <QObject>
-#include <QString>
+#include <wx/taskbar.h>
+#include <wx/toplevel.h>
 
-class QAction;
-class QMenu;
-class QSystemTrayIcon;
-class QWidget;
+#include <string>
 
 namespace xpcog::app {
 
-class ActionRegistry;
+class MainFrame;
 
 /// Un-minimises, raises and focuses `window`.
 ///
 /// Three calls, because none of them alone does the job: a minimised window
-/// ignores raise(), and a raised window belonging to an inactive application
-/// does not take focus. Shared with the single-instance handler, which has to
-/// do exactly this when a second launch arrives.
-void raiseWindow(QWidget* window);
+/// ignores Raise(), and a raised window belonging to an inactive application does
+/// not take focus. Shared with the single-instance handler, which has to do
+/// exactly this when a second launch arrives.
+void raiseWindow(wxTopLevelWindow* window);
 
-class StatusPresence : public QObject {
-    Q_OBJECT
-
+class StatusPresence : public wxTaskBarIcon {
 public:
-    /// `window` is the window to raise, and the menu's parent; it must outlive
-    /// this object, which it does because the window owns it.
-    StatusPresence(const ActionRegistry& actions, QWidget* window,
-                   QObject* parent = nullptr);
+    /// `frame` is the window to raise and where commands are posted; it must
+    /// outlive this object, which it does because the frame owns it.
+    explicit StatusPresence(MainFrame* frame);
 
     /// The track now playing, at the top of the menu as in Cog's dock menu.
-    /// Either string may be empty -- an unknown artist hides its row rather
-    /// than leaving a blank one, which is what Cog does by removing the item.
-    void setNowPlaying(const QString& title, const QString& artist);
+    /// Either string may be empty -- an unknown artist hides its row rather than
+    /// leaving a blank one, which is what Cog does by removing the item.
+    void setNowPlaying(const std::string& title, const std::string& artist);
 
-    /// Playing, paused or stopped. Reaches the tooltip, not the icon -- see
-    /// refreshTooltip() for why the image stays the application's.
+    /// Playing, paused or stopped. Reaches the tooltip, not the icon -- the image
+    /// stays the application's, because a tray icon that changes shape is harder
+    /// to find than one that does not.
     void setPlaybackState(bool playing, bool paused);
 
-    /// Nothing is playing: drop the track rows and go back to the stopped glyph.
+    /// Nothing is playing: drop the track rows and go back to the stopped text.
     void clear();
-
-    /// False when there is no presence at all -- a Linux session with no
-    /// notification area. Exposed so a caller can tell "no tray" from "tray that
-    /// does nothing" rather than wondering why its updates go nowhere.
-    [[nodiscard]] bool isVisible() const { return tray_ != nullptr || menu_ != nullptr; }
 
     /// Whether there is a real tray icon -- not merely *some* presence.
     ///
-    /// The distinction matters, and it is not pedantry: on macOS isVisible() is true
-    /// because the Dock menu exists, while tray_ is null. Anything that hides the
-    /// window and relies on getting it back has to ask this one, or it will hide the
-    /// window on macOS and leave nothing to click.
-    [[nodiscard]] bool hasTrayIcon() const { return tray_ != nullptr; }
+    /// The distinction matters, and it is not pedantry: on macOS the Dock menu
+    /// exists while a tray icon does not. Anything that hides the window and
+    /// relies on getting it back has to ask this, or it will hide the window on
+    /// macOS and leave nothing to click.
+    [[nodiscard]] bool hasTrayIcon() const { return hasTrayIcon_; }
 
-    /// A transient notification from the tray icon, or nothing where there is no
-    /// tray. Used once, to say the application is still running after its window
-    /// disappeared.
-    void showMessage(const QString& title, const QString& body);
+    /// A transient notification, or nothing where there is no tray. Used once, to
+    /// say the application is still running after its window disappeared.
+    void notify(const std::string& title, const std::string& body);
+
+    // --- wxTaskBarIcon ----------------------------------------------------
+    wxMenu* CreatePopupMenu() override;
 
 private:
     void refreshTooltip();
 
-    QWidget* window_ = nullptr;
-    QMenu*   menu_   = nullptr;
-
-    /// Null on macOS, and on any system with no notification area.
-    QSystemTrayIcon* tray_ = nullptr;
-
-    /// The two disabled rows at the top, plus the separator below them. Held so
-    /// they can be hidden as a group when nothing is playing.
-    QAction* artistRow_ = nullptr;
-    QAction* titleRow_  = nullptr;
-    QAction* infoSplit_ = nullptr;
+    MainFrame* frame_ = nullptr;
 
     /// The track, kept because the tooltip is rebuilt from scratch whenever
     /// either the track or the state changes and the two arrive separately.
-    QString title_;
-    QString artist_;
+    std::string title_;
+    std::string artist_;
 
-    bool playing_ = false;
-    bool paused_  = false;
+    bool playing_     = false;
+    bool paused_      = false;
+    bool hasTrayIcon_ = false;
 };
 
 }  // namespace xpcog::app

@@ -79,6 +79,12 @@ private:
     wxStaticText* clock_   = nullptr;
 
     std::vector<wxBitmapButton*> buttons_;
+    /// The one whose glyph follows the transport rather than the palette.
+    wxBitmapButton* playPauseButton_ = nullptr;
+
+    /// What refreshIcons() should draw on it. Kept because the palette can
+    /// change while paused, and re-stroking must not also reset the glyph.
+    bool showingPause_ = false;
 
     /// The audible track's length, kept so the clock can show a scrub position
     /// against it without asking the controller mid-drag.

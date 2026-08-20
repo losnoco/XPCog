@@ -2,9 +2,8 @@
 
 #include "xpcog/core/audio/PanelFeed.hpp"
 
-#include <QMetaObject>
-
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 namespace xpcog::app {
@@ -28,54 +27,43 @@ constexpr int kTickMs = 250;
 
 }  // namespace
 
-PlaybackController::PlaybackController(const PluginRegistry& registry, Playlist& playlist,
-                                       Settings& settings, QObject* parent)
-    : QObject(parent),
-      registry_(registry),
+PlaybackController::PlaybackController(const PluginRegistry& registry,
+                                       Playlist& playlist, Settings& settings,
+                                       Dispatcher dispatch)
+    : registry_(registry),
       playlist_(playlist),
       settings_(settings),
-      ring_(kRingSamples) {
+      dispatch_(std::move(dispatch)),
+      ring_(kRingSamples),
+      ticker_(&sink_) {
     output_ = makeMiniaudioOutput(ring_);
     // Attached for the life of the output, whether or not anything is drawing it.
     // The cost when nothing is looking is one atomic load and a mono mixdown per
-    // callback, which is far below the cost of attaching and detaching it as a panel
-    // is shown and hidden -- and that would have to be done from the UI thread while
-    // the callback reads the pointer.
+    // callback, which is far below the cost of attaching and detaching it as a
+    // panel is shown and hidden -- and that would have to be done from the
+    // interface's thread while the callback reads the pointer.
     output_->setTap(&tap_);
     engine_ = std::make_unique<AudioEngine>(registry_, *output_, ring_, settings_);
     engine_->setDelegate(this);
     engine_->setVolume(static_cast<float>(settings_.Volume()));
 
-    // Where the two blocking engine calls run. Not parented, because it is
-    // moved to another thread and Qt requires a parentless object for that.
-    starterThread_ = new QThread(this);
-    starterThread_->setObjectName(QStringLiteral("xpcog-starter"));
-    starter_ = new QObject;
-    starter_->moveToThread(starterThread_);
-    starterThread_->start();
+    starter_ = std::make_unique<SerialExecutor>();
 
-    ticker_ = new QTimer(this);
-    ticker_->setInterval(kTickMs);
-    connect(ticker_, &QTimer::timeout, this, [this] {
-        emit positionChanged(position(), duration());
+    sink_.Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
+        positionChanged.publish(position(), duration());
     });
 }
 
 PlaybackController::~PlaybackController() {
-    // The starter thread calls into the engine and reports back through this
-    // object, so it has to be finished before either is torn down. A start that
-    // is mid-connect delays this by up to the source's own header timeout;
-    // bumping the generation first means it returns without doing the work.
+    // The executor calls into the engine and reports back through this object, so
+    // it has to be finished before either is torn down. A start that is
+    // mid-connect delays this by up to the source's own header timeout; bumping
+    // the generation first means it returns without doing the work.
     ++startGeneration_;
-    if (starterThread_ != nullptr) {
-        starterThread_->quit();
-        starterThread_->wait();
-    }
-    delete starter_;
-    starter_ = nullptr;
+    starter_.reset();
 
     // Before the engine goes: its delegate is this object, and a callback
-    // arriving mid-destruction would touch a half-dead QObject.
+    // arriving mid-destruction would touch a half-dead object.
     if (engine_) {
         engine_->setDelegate(nullptr);
         engine_->stop();
@@ -109,12 +97,12 @@ double PlaybackController::duration() const {
 
 TrackId PlaybackController::currentTrack() const { return audible_; }
 
-void PlaybackController::emitState() {
-    emit playbackStateChanged(playing(), paused_);
+void PlaybackController::publishState() {
+    playbackStateChanged.publish(playing(), paused_);
     if (playing() && !paused_) {
-        ticker_->start();
+        ticker_.Start(kTickMs);
     } else {
-        ticker_->stop();
+        ticker_.Stop();
     }
 }
 
@@ -129,9 +117,9 @@ void PlaybackController::reopenOutput() {
     // Under the running stream where that is possible. The decoded audio is
     // already converted for the format the device is running, so a device that
     // will run the same format can simply take it over -- no re-open, no seek,
-    // and nothing lost across the seam. The engine answers false only when
-    // there is nothing to move (paused, most often); a switch that is accepted
-    // and then fails comes back through outputSwitchFailed().
+    // and nothing lost across the seam. The engine answers false only when there
+    // is nothing to move (paused, most often); a switch that is accepted and then
+    // fails comes back through outputSwitchFailed().
     if (engine_ && engine_->switchOutputDevice()) {
         return;
     }
@@ -153,15 +141,14 @@ void PlaybackController::restartForOutputChange() {
 
 void PlaybackController::outputSwitchFailed() {
     // On the feeder thread, like every other delegate call. The restart touches
-    // the playlist and the engine's lifecycle, both of which belong to the GUI
-    // thread.
-    QMetaObject::invokeMethod(this, [this] { restartForOutputChange(); },
-                              Qt::QueuedConnection);
+    // the playlist and the engine's lifecycle, both of which belong to the
+    // interface's thread.
+    dispatch_([this] { restartForOutputChange(); });
 }
 
 void PlaybackController::playTrack(TrackId id) {
-    // A fresh gesture, so the record of what has already failed starts empty
-    // and the track begins at its top rather than wherever the last one was.
+    // A fresh gesture, so the record of what has already failed starts empty and
+    // the track begins at its top rather than wherever the last one was.
     failedStarts_.clear();
     resumeAt_ = 0.0;
     requestStart(id);
@@ -180,14 +167,14 @@ void PlaybackController::requestStart(TrackId id) {
     // Nothing is audible until the answer comes back, and the ticker must not
     // read a device that is being reconfigured underneath it.
     audible_ = kInvalidTrackId;
-    ticker_->stop();
+    ticker_.Stop();
     starting_.store(true);
 
     const std::uint64_t generation = ++startGeneration_;
-    emit startPending(id);
-    emit playbackStateChanged(false, false);
+    startPending.publish(id);
+    playbackStateChanged.publish(false, false);
 
-    QMetaObject::invokeMethod(starter_, [this, id, url, generation] {
+    starter_->post([this, id, url, generation] {
         bool opened = false;
         // A newer request landed while this one waited its turn. Doing the work
         // anyway would open a source only to tear it down a moment later --
@@ -196,16 +183,14 @@ void PlaybackController::requestStart(TrackId id) {
             engine_->stop();
             opened = engine_->play(url);
         }
-        QMetaObject::invokeMethod(this, [this, id, opened, generation] {
-            finishStart(id, opened, generation);
-        }, Qt::QueuedConnection);
-    }, Qt::QueuedConnection);
+        dispatch_([this, id, opened, generation] { finishStart(id, opened, generation); });
+    });
 }
 
 void PlaybackController::finishStart(TrackId id, bool opened,
                                      std::uint64_t generation) {
-    // Superseded: a newer request owns the engine and the state now, and this
-    // one must not report a track as current that nothing is playing.
+    // Superseded: a newer request owns the engine and the state now, and this one
+    // must not report a track as current that nothing is playing.
     if (generation != startGeneration_.load()) {
         return;
     }
@@ -214,8 +199,8 @@ void PlaybackController::finishStart(TrackId id, bool opened,
     if (opened) {
         failedStarts_.clear();
         audible_ = id;
-        emit currentTrackChanged(audible_);
-        emitState();
+        currentTrackChanged.publish(audible_);
+        publishState();
 
         // Here rather than beside the request, because seek() declines while a
         // start is in flight and this is the first moment it does not.
@@ -228,14 +213,14 @@ void PlaybackController::finishStart(TrackId id, bool opened,
     }
 
     resumeAt_ = 0.0;
-    emit playbackFailed(id, tr("No decoder could open this file"));
+    playbackFailed.publish(id, "No decoder could open this file");
     failedStarts_.push_back(id);
 
-    // Cog does not stall the playlist on one bad file, and neither does this:
-    // ask for the next one exactly as an end-of-track would. But
-    // nextForPlayback() answers from the repeat rules, so with repeat on and
-    // nothing playable left it offers the same entry for ever -- hence the
-    // memory of what has already been tried this gesture.
+    // Cog does not stall the playlist on one bad file, and neither does this: ask
+    // for the next one exactly as an end-of-track would. But nextForPlayback()
+    // answers from the repeat rules, so with repeat on and nothing playable left
+    // it offers the same entry for ever -- hence the memory of what has already
+    // been tried this gesture.
     const auto following = playlist_.nextForPlayback();
     if (following.has_value() &&
         std::find(failedStarts_.begin(), failedStarts_.end(), *following) ==
@@ -246,13 +231,13 @@ void PlaybackController::finishStart(TrackId id, bool opened,
 
     failedStarts_.clear();
     audible_ = kInvalidTrackId;
-    emit currentTrackChanged(audible_);
-    emitState();
+    currentTrackChanged.publish(audible_);
+    publishState();
 }
 
 void PlaybackController::playPause() {
-    // A start already in flight: the button press has nothing to act on yet,
-    // and pausing an engine that is being rebuilt is not a defined thing to do.
+    // A start already in flight: the button press has nothing to act on yet, and
+    // pausing an engine that is being rebuilt is not a defined thing to do.
     if (starting_.load()) {
         return;
     }
@@ -275,7 +260,7 @@ void PlaybackController::playPause() {
         engine_->pause();
         paused_ = true;
     }
-    emitState();
+    publishState();
 }
 
 void PlaybackController::reloadDsp() {
@@ -294,17 +279,16 @@ double PlaybackController::sampleRate() const {
 }
 
 void PlaybackController::stop() {
-    // Cancels a start in flight as well as stopping what is playing: bumping
-    // the generation is what makes the starter thread drop its result instead
-    // of reporting a track as current after the user asked for silence.
+    // Cancels a start in flight as well as stopping what is playing: bumping the
+    // generation is what makes the executor drop its result instead of reporting
+    // a track as current after the user asked for silence.
     ++startGeneration_;
     starting_.store(false);
     failedStarts_.clear();
 
-    // Queued, because stop() blocks: it plays out the fade and joins two
-    // threads. Short, but it is the same thread that draws the window.
-    QMetaObject::invokeMethod(starter_, [this] { engine_->stop(); },
-                              Qt::QueuedConnection);
+    // Posted, because stop() blocks: it plays out the fade and joins two threads.
+    // Short, but it is the same thread that draws the window.
+    starter_->post([this] { engine_->stop(); });
 
     // So the visualiser goes quiet with the audio rather than holding the last
     // window on screen. Only on an explicit stop: a gapless advance never comes
@@ -313,8 +297,8 @@ void PlaybackController::stop() {
     tap_.clear();
     paused_  = false;
     audible_ = kInvalidTrackId;
-    emit currentTrackChanged(audible_);
-    emitState();
+    currentTrackChanged.publish(audible_);
+    publishState();
 }
 
 void PlaybackController::next() {
@@ -346,7 +330,7 @@ void PlaybackController::seek(double seconds) {
     }
     if (engine_) {
         static_cast<void>(engine_->seek(seconds));
-        emit positionChanged(position(), duration());
+        positionChanged.publish(position(), duration());
     }
 }
 
@@ -363,14 +347,14 @@ double PlaybackController::volume() const {
 // --- AudioEngine::Delegate ----------------------------------------------
 //
 // Everything below runs on the feeder thread. Nothing here may touch a widget,
-// and nothing may take a lock the GUI thread holds -- hence queued signals and
-// no more work than choosing what to say.
+// and nothing may take a lock the interface's thread holds -- hence the
+// dispatcher and no more work than choosing what to say.
 
 std::optional<Url> PlaybackController::nextTrack() {
-    // Reading the playlist from this thread is safe only because the GUI thread
+    // Reading the playlist from this thread is safe only because the interface
     // does not mutate it during playback without stopping first. That is the one
-    // rule this class relies on and the reason playlist edits go through
-    // PlaylistModel rather than being touched here.
+    // rule this class relies on, and the reason playlist edits go through the
+    // undo stack on the interface's thread rather than being touched here.
     const auto id = playlist_.nextForPlayback();
     if (!id) {
         return std::nullopt;
@@ -380,33 +364,33 @@ std::optional<Url> PlaybackController::nextTrack() {
 }
 
 void PlaybackController::trackBegan(const Url& url) {
-    // Said here rather than on the GUI thread below, because it is what makes a
-    // front panel show the right track's display: across a gapless seam two
-    // decoders are producing at once, and until this lands the queue does not
+    // Said here rather than on the interface's thread below, because it is what
+    // makes a front panel show the right track's display: across a gapless seam
+    // two decoders are producing at once, and until this lands the queue does not
     // know which of them is being heard.
     PanelFeed::instance().setAudibleTrack(url);
 
-    // The seam reached the speaker. Find which entry that was and tell the GUI
-    // thread; QueuedConnection is what moves the work across.
+    // The seam reached the speaker. Find which entry that was and tell the
+    // interface; the dispatcher is what moves the work across.
     const std::string text = url.toString();
-    QMetaObject::invokeMethod(this, [this, text] {
+    dispatch_([this, text] {
         for (std::size_t i = 0; i < playlist_.size(); ++i) {
             if (playlist_.at(i).url.toString() == text) {
                 audible_ = playlist_.at(i).id;
                 playlist_.setCurrent(audible_);
-                emit currentTrackChanged(audible_);
-                emitState();
+                currentTrackChanged.publish(audible_);
+                publishState();
                 return;
             }
         }
-    }, Qt::QueuedConnection);
+    });
 }
 
 void PlaybackController::streamMetadataChanged(const Url& url, const MetadataMap& tags) {
     // Copied across rather than referenced: the feeder thread owns neither the
-    // playlist nor the map by the time the GUI thread runs this.
+    // playlist nor the map by the time the interface runs this.
     const std::string text = url.toString();
-    QMetaObject::invokeMethod(this, [this, text, tags] {
+    dispatch_([this, text, tags] {
         for (std::size_t i = 0; i < playlist_.size(); ++i) {
             if (playlist_.at(i).url.toString() != text) {
                 continue;
@@ -415,29 +399,28 @@ void PlaybackController::streamMetadataChanged(const Url& url, const MetadataMap
             // playlist's own change notification fires and the id index stays
             // intact.
             const TrackId id = playlist_.at(i).id;
-            playlist_.update(id, [&tags](PlaylistEntry& entry) {
-                entry.applyMetadata(tags);
-            });
-            emit trackMetadataChanged(id);
+            playlist_.update(id,
+                             [&tags](PlaylistEntry& entry) { entry.applyMetadata(tags); });
+            trackMetadataChanged.publish(id);
             return;
         }
-    }, Qt::QueuedConnection);
+    });
 }
 
 void PlaybackController::stoppedNaturally() {
-    QMetaObject::invokeMethod(this, [this] {
+    dispatch_([this] {
         audible_ = kInvalidTrackId;
         paused_  = false;
-        emit currentTrackChanged(audible_);
-        emitState();
-    }, Qt::QueuedConnection);
+        currentTrackChanged.publish(audible_);
+        publishState();
+    });
 }
 
 void PlaybackController::trackFailed(const Url& url) {
-    const QString name = QString::fromStdString(url.toString());
-    QMetaObject::invokeMethod(this, [this, name] {
-        emit playbackFailed(kInvalidTrackId, tr("Could not play %1").arg(name));
-    }, Qt::QueuedConnection);
+    const std::string name = url.toString();
+    dispatch_([this, name] {
+        playbackFailed.publish(kInvalidTrackId, "Could not play " + name);
+    });
 }
 
 }  // namespace xpcog::app

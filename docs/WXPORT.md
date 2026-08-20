@@ -232,6 +232,11 @@ Stated here rather than discovered later.
 - **The SC-55 panel gains a per-frame copy.** The emulator's `lcd_buffer_t` was
   wrapped zero-copy as a `QImage::Format_RGBX8888`. wx wants separate RGB and
   alpha planes, so the panel repacks RGBX to RGB24 each redraw.
+- **The single-instance handover has no test any more.** The Qt suite had one that
+  claimed a name, connected to it and checked the arguments arrived. Its wx
+  equivalent needs a running event loop for `wxTCPServer` to accept on, and this
+  suite deliberately has no application object. The payload's encoding is covered;
+  the handshake is a hand check.
 - **`wxDataViewCtrl` is not `QTableView`.** Expect drift in header sorting,
   in-place editing and selection rendering.
 - **On Linux, vcpkg builds GTK3 from source.** wxwidgets' vcpkg port depends on
@@ -267,7 +272,7 @@ wx target never needs it.
 | ✅ | **5** — The main window: menus on command IDs, `wxDataViewCtrl`, transport, `SeekBar`, `FileTree`, drag and drop. **The wx build plays audio here** | done |
 | ✅ | **6** — Preferences, info, about, open-URL, equaliser, mini player, tray presence, single instance | done |
 | ✅ | **7** — The painted widgets: spectrum, SC-55 panel | done |
-| | **8** — Delete the Qt application and `XPCogQt.cmake`, widen `CheckNoQt` to the whole tree, update CI, presets and README | |
+| ✅ | **8** — Delete the Qt application and `XPCogQt.cmake`, widen the layering check to the whole tree, update CI and README | done |
 
 Steps 2 and 3 are worth doing even if the port were abandoned: they move roughly
 600 lines of test out of the GUI suite and into the headless one, and they delete
@@ -355,3 +360,91 @@ artwork. Those are hand checks:
    scrubber seeking.
 4. **All three** — settings and the playlist survive a restart, which is the check
    that the store landed on the same bytes the Qt build used.
+
+### Step 8 — the purge (done)
+
+`app/wx/` became `app/src/`, `xpcog-wxcore` became `xpcog-appcore`, and the Qt
+application, `cmake/XPCogQt.cmake`, `XPCOG_QT_ROOT`, the `deploy` target, the Qt
+matrix in CI and the `install-qt-action` step are all gone. `app/CMakeLists.txt`
+kept its macOS `actool` block, its `Info.plist.in` and its Windows version
+resource verbatim: none of that ever knew what drew the windows.
+
+**`cmake/CheckNoQt.cmake` became `cmake/CheckNoToolkit.cmake`**, and grew from one
+rule scoped to `core/` into three scoped to the tree:
+
+1. Nothing anywhere includes Qt.
+2. `core/` and `codecs/` include no UI toolkit at all.
+3. `platform/`'s **public headers** name none either -- the implementations may,
+   and do not.
+
+The old check had become tautological: with Qt gone it could only ever pass. The
+new one was tested by breaking it, twice, with a `#include <QString>` and then a
+`#include <wx/window.h>` dropped into `core/src/`. Both fail the build with the
+right message.
+
+### The docks are docks
+
+An earlier pass replaced the four `QDockWidget`s with panels shown and hidden in a
+box sizer, on the reasoning that wxAUI draws its own captions and none of the four
+needed tearing off. That was wrong, and worth recording as wrong: a dock that
+cannot be moved, re-tabbed or floated is not a dock, it is a panel with a menu
+item. `QDockWidget` gave all three and the port has to as well.
+
+So `wxAuiManager` manages the frame, and the spectrum, equaliser, info panel and
+SC-55 panel are panes: draggable to any edge, tabbable with each other, floatable
+into real windows, closable by their own button. The file browser stays a splitter
+pane rather than a dock, which is the Qt build's own choice and Cog's shape — its
+tree is a fixed part of the window.
+
+Two things are deliberately not dockable. The transport is a pane so the manager
+owns the whole frame, but it is fixed and has no close button: hiding the only
+play button leaves a window with no way to start playback and no obvious way back,
+which is why the Qt build removed the transport from its own context menu too. And
+`restoreState()` forces the transport visible whatever the saved layout says, so a
+perspective written by a build that allowed closing it cannot strand anyone.
+
+`SavePerspective()` and `LoadPerspective()` are what `saveState()` and
+`restoreState()` were, with the same trap carried across: the layout is saved only
+while the window is on screen. Close-to-tray makes "save a layout with nothing
+visible" the normal path, and a layout captured then is not the one the listener
+arranged. Pane *names* are load-bearing in the same way object names were —
+renaming one silently discards that pane's saved position.
+
+### Four things that only show up when you click them
+
+The suite was green through all of this and had nothing to say about any of them.
+Each was found by running the application.
+
+**The transport buttons did nothing.** A menu item and an accelerator raise
+`wxEVT_MENU`; a `wxBitmapButton` raises `wxEVT_BUTTON`. The commands were bound on
+the first, so the buttons posted an event that reached the end of the chain
+unhandled -- no error, no warning, nothing. Every command now binds both, which
+keeps the rule that a command has one handler whatever surface posts it.
+
+**The panels would not appear.** `togglePanel()` called `Show()` and then
+`Layout()` on the frame. The frame has no sizer: its single child does, and that
+child owns the panels. So the panel really was shown, at zero height, and the View
+menu looked inert.
+
+**Play never became Pause.** `EVT_UPDATE_UI` relabels the menu item from state
+every idle, and that is genuinely better than the Qt build's refresh call -- but a
+`wxUpdateUIEvent` carries a label and an enabled state and nothing else. There is
+no bitmap on it. The button had to be told separately, which is now
+`refreshTransportIcons()`: one function that re-strokes for the palette *and*
+picks the glyph from state, so the ordering hazard the Qt build had -- an icon
+refresh putting "play" back over a running track -- cannot come back.
+
+**HiDPI was pixelated on Windows.** Qt's platform plugin carried a DPI-awareness
+manifest; nothing did afterwards, so Windows marked the process unaware and
+bitmap-scaled the whole window. `wx/msw/wx.rc` supplies one, and getting it in
+took three attempts worth recording:
+
+- `wxUSE_DPI_AWARE_MANIFEST 2` alone does nothing. `wx.rc` emits **no** manifest
+  unless `wxUSE_RC_MANIFEST` is also defined and non-zero.
+- With both set, MSVC's linker generates its own manifest as well, and the build
+  fails at the resource-to-COFF step with `CVT1100: duplicate resource` -- which
+  reads like a corrupt object file rather than like two people writing the same
+  thing. `/MANIFEST:NO` is the documented way to embed your own.
+- The check that it worked is looking for `dpiAwareness` in the linked binary,
+  not reading the header. The first attempt shipped an unaware process that looked
+  exactly like the bug it was meant to fix.

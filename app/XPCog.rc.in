@@ -2,11 +2,10 @@
 // comes from PROJECT_VERSION rather than being maintained twice.
 //
 // This is the Windows equivalent of the Info.plist that MACOSX_BUNDLE_* fills
-// in, and it is hand-written because Qt does not supply one: the QT_TARGET_*
-// properties look like they would, but _qt_internal_generate_win32_rc_file() is
-// only ever called from Qt's own internal build helpers, never from the public
-// qt_add_executable(). Setting those properties on an application target has no
-// effect at all.
+// in. It was hand-written under Qt because Qt did not supply one -- the
+// QT_TARGET_* properties look like they would, but the generator behind them is
+// only ever called from Qt's own internal build helpers -- and it stays
+// hand-written now for the simpler reason that nothing else writes one.
 //
 // FileDescription is what Task Manager shows in place of the raw image name, and
 // what the Details tab of the file's properties reads.
@@ -23,10 +22,41 @@
 // need a signing certificate. docs/PORTING.md records the whole finding rather
 // than this file pretending a version resource could do it.
 //
-// (Note: lives here rather than under src/windows/, which holds the application's
-// *windows* -- MainWindow and the dialogs -- and has nothing to do with the OS.)
-
 #include <winver.h>
+
+// ---------------------------------------------------------------------------
+// wx's own resources, and they are not optional.
+//
+// Two things live in wx.rc that the application is visibly wrong without, and
+// both were previously supplied by Qt's platform plugin rather than by this file:
+//
+//   * The **DPI-awareness manifest**. Without it Windows marks the process
+//     DPI-unaware and bitmap-scales the entire window to the monitor's scale
+//     factor -- so every control, every icon and every glyph is drawn at 96 dpi
+//     and then stretched. The symptom is exactly what it sounds like: the window
+//     looks soft and pixelated on a HiDPI display while every other application
+//     looks sharp. wxUSE_DPI_AWARE_MANIFEST=2 asks for Per-Monitor V2, which is
+//     what makes FromDIP() mean anything and what lets the window re-scale when
+//     it is dragged between monitors.
+//
+//   * The **common-controls v6 manifest**. Without it the native controls fall
+//     back to their Windows 95 appearance, which is the other half of "this does
+//     not look like a native application".
+//
+// Both symbols are needed, and the first is easy to miss: wx.rc emits *no*
+// manifest at all unless wxUSE_RC_MANIFEST is defined and non-zero, so setting
+// only the DPI one produces a binary with neither. Verified by looking for
+// "dpiAwareness" in the linked executable rather than by reading the header --
+// the first attempt here set only the second symbol and shipped an unaware
+// process that looked exactly like the bug it was meant to fix.
+//
+// Ahead of the icon deliberately. wx.rc defines its resources by name
+// (wxICON_AAA and friends) rather than by number, so it cannot take id 1 from the
+// icon below -- but the include has to precede anything that depends on the
+// manifest being present.
+#define wxUSE_RC_MANIFEST 1
+#define wxUSE_DPI_AWARE_MANIFEST 2
+#include "wx/msw/wx.rc"
 
 // The application icon. Resource id 1 by convention: Explorer, the taskbar and
 // Alt-Tab all take the *numerically lowest* icon resource in the executable, so

@@ -40,6 +40,7 @@
 #include "xpcog/platform/MediaIntegration.hpp"
 #include "xpcog/platform/TaskbarIntegration.hpp"
 
+#include <wx/aui/aui.h>
 #include <wx/frame.h>
 
 #include <functional>
@@ -50,6 +51,7 @@
 class wxDataViewCtrl;
 class wxGauge;
 class wxBitmapButton;
+class wxPanel;
 class wxSearchCtrl;
 class wxSlider;
 class wxSplitterWindow;
@@ -80,6 +82,15 @@ public:
 private:
     void buildUi();
     void buildTransport(wxWindow* parent);
+
+    /// Re-strokes the transport glyphs, and points Play/Pause at whichever of
+    /// the two the current state calls for.
+    ///
+    /// Both jobs in one place because they are the same job: the bitmap has to
+    /// be chosen from state *and* re-stroked when the system appearance
+    /// changes, and two functions doing half each is how the Qt build ended up
+    /// with an icon refresh that put "play" back over a running track.
+    void refreshTransportIcons();
     /// Every connection this window owns, in one place.
     void wireUp();
     void bindCommands();
@@ -110,8 +121,14 @@ private:
     /// during a scan would otherwise redraw twenty fields per file.
     void refreshInfo();
 
-    /// Shows or hides one of the side panels, and keeps the layout sane.
-    void togglePanel(wxWindow* panel, bool show);
+    /// Shows or hides one of the dockable panes.
+    void togglePane(wxWindow* pane, bool show);
+
+    /// Whether a pane is currently on screen -- which is not the same as
+    /// wxWindow::IsShown(): a floating pane's window is shown while the pane
+    /// itself may be closed, and a docked one in a hidden notebook tab is the
+    /// reverse. The manager is the authority.
+    [[nodiscard]] bool paneShown(wxWindow* pane) const;
 
     void addUrls(const std::vector<Url>& urls, int atRow = -1);
 
@@ -154,6 +171,11 @@ private:
 
     std::unique_ptr<PlaybackController> playback_;
 
+    /// The docking manager. Declared before the panes it manages so it is
+    /// destroyed after them -- though UnInit() in the destructor is what
+    /// actually makes teardown safe, and is not optional.
+    wxAuiManager auiManager_;
+
     wxSplitterWindow* splitter_ = nullptr;
     FileTree*         tree_     = nullptr;
     wxDataViewCtrl*   list_     = nullptr;
@@ -161,17 +183,17 @@ private:
     /// not be deleted here.
     PlaylistDataModel* model_ = nullptr;
 
-    /// The three optional panels. Shown and hidden rather than docked: wxAUI
-    /// draws its own captions on every platform, which on macOS especially
-    /// looks like a Windows application, and none of these needs tearing off.
+    /// The dockable panes. Each can be dragged to another edge, tabbed with
+    /// another, torn off into a floating window and closed -- which is what
+    /// QDockWidget gave and what a panel in a sizer would not. Their
+    /// arrangement is saved as a perspective; see persistState().
     EqualizerPanel* equalizer_ = nullptr;
     InfoPanel*      info_      = nullptr;
     SpectrumPanel*  spectrum_  = nullptr;
 #ifdef XPCOG_HAVE_SC55_PANEL
-    /// The SC-55's front panel. Hidden, and not built into the default
-    /// layout: it is one synthesiser of three, for one format among many, and
-    /// a photograph of a 1993 sound module is not what someone who opened a
-    /// music player asked to look at.
+    /// The SC-55's front panel. Closed by default: it is one synthesiser of
+    /// three, for one format among many, and a photograph of a 1993 sound
+    /// module is not what someone who opened a music player asked to look at.
     Sc55Panel* sc55_ = nullptr;
 #endif
 
@@ -201,6 +223,9 @@ private:
     wxBitmapButton* scanCancel_ = nullptr;
 
     std::vector<wxBitmapButton*> transportButtons_;
+    /// Held out of that list as well, because it is the one button whose
+    /// bitmap changes with the transport rather than only with the palette.
+    wxBitmapButton* playPauseButton_ = nullptr;
 
     /// The OS's Now Playing entry and media keys. Never null -- platforms
     /// without an implementation get a base-class instance that does nothing.

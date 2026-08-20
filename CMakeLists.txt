@@ -24,19 +24,14 @@ include(XPCogOptions)
 include(XPCogWarnings)
 include(XPCogCodec)
 include(XPCogResources)
-# The UI toolkit. Unlike the Qt below it, this is an ordinary vcpkg dependency
-# and needs no environment variable and no deploy step.
+# The UI toolkit. An ordinary vcpkg dependency: no environment variable to set,
+# no separate installer, and no deploy step. See docs/WXPORT.md for what that
+# replaced.
 include(XPCogWx)
-# Still here while the wxWidgets port is in progress: the Qt application and
-# the Qt half of platform/ build alongside the new one until the last window is
-# ported, and this include goes with them. See docs/WXPORT.md.
-#
-# Before any add_subdirectory that calls find_package(Qt6): it contributes to
-# CMAKE_PREFIX_PATH, which has to be set by then.
-include(XPCogQt)
 
 # ---------------------------------------------------------------------------
-# Layers, innermost first. See docs: core must never link Qt.
+# Layers, innermost first. core and codecs link no toolkit; platform links no
+# toolkit either. cmake/CheckNoToolkit.cmake is what keeps that true.
 # ---------------------------------------------------------------------------
 add_subdirectory(vendor)
 add_subdirectory(core)
@@ -51,11 +46,7 @@ endif()
 
 if(XPCOG_BUILD_APP)
     add_subdirectory(platform)
-    # Both interfaces, until the port finishes. See docs/WXPORT.md and
-    # app/wx/CMakeLists.txt for why they coexist rather than one replacing the
-    # other in a single commit.
     add_subdirectory(app)
-    add_subdirectory(app/wx)
 endif()
 
 if(XPCOG_BUILD_TESTS)

@@ -374,83 +374,38 @@ include(Catch)
 catch_discover_tests(xpcog-tests)
 
 # ---------------------------------------------------------------------------
-# The Qt half. Separate because the headless preset builds no app at all, and
-# because these need a QCoreApplication that the core tests must not have.
+# The application's own suite.
+#
+# Separate from the core one because the headless preset builds no application at
+# all, and these link the toolkit. It uses Catch2's own main: nothing here wants
+# an application object, and that is deliberate rather than lucky -- everything
+# that needed one is either in core now or is a free function, which is why this
+# suite is four files rather than nine.
 # ---------------------------------------------------------------------------
 if(XPCOG_BUILD_APP)
     add_executable(xpcog-app-tests
-        app/main.cpp
-        app/QtStringMaker.hpp
-        app/test_appicon.cpp
+        app/test_embedded_icons.cpp
+        app/test_helpers.cpp
         app/test_infopanel.cpp
-        app/test_lucideicon.cpp
-        app/test_singleinstance.cpp
-    )
-
-    target_link_libraries(xpcog-app-tests PRIVATE
-        xpcog-appcore
-        Catch2::Catch2
-        XPCog::warnings)
-
-    set_target_properties(xpcog-app-tests PROPERTIES
-        AUTOMOC ON
-        FOLDER tests)
-
-    # Windows resolves DLLs from PATH, having no RPATH equivalent. Test
-    # discovery *runs* this executable to enumerate its cases, and it cannot
-    # start without Qt's DLLs reachable -- the build failed at that step with
-    # 0xc0000135 (STATUS_DLL_NOT_FOUND) rather than at link time, which makes it
-    # look like a Catch2 fault instead of a missing library. vcpkg's applocal
-    # step copies the vcpkg DLLs next to the binary, but Qt deliberately does
-    # not come from vcpkg, so nothing copies Qt's.
-    #
-    # DL_PATHS is Catch2's hook for precisely this: it prepends to PATH both
-    # when listing the tests and when ctest runs them. macOS and Linux need
-    # nothing here, where the RPATH baked into the binary already resolves Qt.
-    if(WIN32)
-        # Qt6_DIR is <prefix>/lib/cmake/Qt6; the same relative walk the
-        # windeployqt lookup in app/CMakeLists.txt uses.
-        get_filename_component(_xpcog_qt_bin "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        catch_discover_tests(xpcog-app-tests DL_PATHS "${_xpcog_qt_bin}")
-    else()
-        catch_discover_tests(xpcog-app-tests)
-    endif()
-endif()
-
-# ---------------------------------------------------------------------------
-# The wxWidgets half.
-#
-# Separate from the Qt one for the same reasons that one is separate from the
-# core suite: the headless preset builds no application at all, and these link a
-# different toolkit. It uses Catch2's own main -- unlike the Qt suite, which needs
-# a QCoreApplication alive for QCollator. Nothing here wants an application
-# object, and that is deliberate: everything that needed one moved into core in
-# the commit before this, and what is left reads bytes.
-#
-# Grows as the port does. When app/src/ goes, this absorbs what is left of
-# xpcog-app-tests and the Qt target above disappears.
-# ---------------------------------------------------------------------------
-if(XPCOG_BUILD_APP)
-    add_executable(xpcog-wx-tests
-        wx/test_embedded_icons.cpp
-        wx/test_helpers.cpp
     )
 
     # The panel photograph only exists in a MIDI build, and so does the test
     # that checks it is still there.
     if(XPCOG_WITH_MIDI)
-        target_sources(xpcog-wx-tests PRIVATE wx/test_sc55panel.cpp)
+        target_sources(xpcog-app-tests PRIVATE app/test_sc55panel.cpp)
     endif()
 
-    target_link_libraries(xpcog-wx-tests PRIVATE
-        xpcog-wxcore
+    target_link_libraries(xpcog-app-tests PRIVATE
+        xpcog-appcore
         Catch2::Catch2WithMain
         XPCog::warnings)
 
-    set_target_properties(xpcog-wx-tests PROPERTIES FOLDER tests)
+    set_target_properties(xpcog-app-tests PROPERTIES FOLDER tests)
 
-    # No DL_PATHS here, unlike the Qt suite: wx comes from vcpkg, so vcpkg's
+    # No DL_PATHS, which the Qt suite needed: test discovery *runs* this binary
+    # to enumerate its cases, and under Qt it could not start without the Qt DLLs
+    # on PATH -- failing at that step with 0xc0000135 rather than at link time,
+    # which made it look like a Catch2 fault. wx comes from vcpkg, so vcpkg's
     # applocal post-build step has already copied its DLLs beside the binary.
-    # That is the windeployqt replacement, and it needs no configuration.
-    catch_discover_tests(xpcog-wx-tests)
+    catch_discover_tests(xpcog-app-tests)
 endif()

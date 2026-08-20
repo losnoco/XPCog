@@ -91,18 +91,25 @@ target_link_libraries(xpcog-core
 set_target_properties(xpcog-core PROPERTIES FOLDER core)
 
 # --------------------------------------------------------------------------
-# xpcog-core must never link Qt. This is not a style rule -- it is what keeps
-# the engine embeddable, headless-testable, and usable from xpcog-cli.
+# The layering rules, checked on every build.
 #
-# The primary enforcement is structural: xpcog-cli links no Qt, so a QtCore leak
+# core and codecs must link no UI toolkit: that is what keeps the engine
+# embeddable, headless-testable, and usable from xpcog-cli. platform's public
+# headers must name none either, which is what makes app/ replaceable -- a claim
+# the wxWidgets port put to the test, and which held.
+#
+# The primary enforcement is structural: xpcog-cli links no toolkit, so a leak
 # breaks that build immediately. This check catches it earlier, with a clearer
 # message, and runs on every build rather than only when the CLI is enabled.
+#
+# Attached to core because core is the innermost target and always built, not
+# because the scope is core's -- the check itself reads the whole tree.
 # --------------------------------------------------------------------------
-add_custom_target(xpcog-core-no-qt ALL
+add_custom_target(xpcog-no-toolkit ALL
     COMMAND "${CMAKE_COMMAND}"
-            -D "XPCOG_CORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
-            -P "${CMAKE_SOURCE_DIR}/cmake/CheckNoQt.cmake"
-    COMMENT "Checking that xpcog-core stays Qt-free"
+            -D "XPCOG_ROOT_DIR=${CMAKE_SOURCE_DIR}"
+            -P "${CMAKE_SOURCE_DIR}/cmake/CheckNoToolkit.cmake"
+    COMMENT "Checking the toolkit layering rules"
     VERBATIM)
-add_dependencies(xpcog-core xpcog-core-no-qt)
-set_target_properties(xpcog-core-no-qt PROPERTIES FOLDER core)
+add_dependencies(xpcog-core xpcog-no-toolkit)
+set_target_properties(xpcog-no-toolkit PROPERTIES FOLDER core)

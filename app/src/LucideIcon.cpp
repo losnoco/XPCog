@@ -1,121 +1,144 @@
 #include "LucideIcon.hpp"
 
-#include <QApplication>
-#include <QByteArray>
-#include <QFile>
-#include <QHash>
-#include <QPainter>
-#include <QPalette>
-#include <QPixmap>
-#include <QSvgRenderer>
+#include "icons_resources.hpp"
+
+#include <wx/settings.h>
+
+#include <map>
+#include <string>
+#include <utility>
 
 namespace xpcog::app {
 namespace {
 
-/// The sizes a toolbar, a menu and a small button ask for. Rendered rather than
-/// scaled: these are vectors, and a 16px glyph rasterised from the outline is
-/// sharper than a 32px one shrunk.
-constexpr int kSizes[] = {16, 20, 24, 32, 48};
+/// The size the SVG is rendered at when a caller asks for no particular one.
+/// wxBitmapBundle re-renders from the outline for other sizes and scale factors,
+/// so this is a default rather than a limit -- unlike the Qt version, which had
+/// to rasterise a fixed list of five sizes up front.
+constexpr int kDefaultSize = 24;
 
 /// Lucide's placeholder for "the colour of the surrounding text".
-constexpr auto kCurrentColor = "currentColor";
+constexpr std::string_view kCurrentColor = "currentColor";
 
-/// How much of the stroke the disabled state keeps. Qt's own disabled rendering
-/// greys a pixmap towards the window colour, which on a stroked outline reads as
-/// a smudge; fading it keeps the shape and loses the emphasis, which is what
-/// "disabled" is meant to say.
+/// How much of the stroke the disabled state keeps. Greying a stroked outline
+/// towards the window colour -- which is what a toolkit's own disabled rendering
+/// does -- reads as a smudge; fading keeps the shape and loses the emphasis,
+/// which is what "disabled" is meant to say.
 constexpr double kDisabledOpacity = 0.35;
 
-/// The fade is applied by the painter rather than by putting an alpha into the
-/// colour. `QColor::name(QColor::HexArgb)` spells it `#AARRGGBB`, and the
-/// eight-digit form SVG understands is `#RRGGBBAA` -- the same eight characters
-/// in a different order, which parses without complaint as the wrong colour.
-[[nodiscard]] QPixmap render(const QByteArray& svg, int size, double opacity) {
-    QSvgRenderer renderer{svg};
-    if (!renderer.isValid()) {
-        return {};
+[[nodiscard]] std::string hex(const wxColour& colour) {
+    static constexpr char kDigits[] = "0123456789abcdef";
+    std::string           text      = "#";
+    for (const unsigned char channel : {colour.Red(), colour.Green(), colour.Blue()}) {
+        text += kDigits[channel >> 4];
+        text += kDigits[channel & 0x0F];
     }
-
-    QPixmap pixmap{size, size};
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter{&pixmap};
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setOpacity(opacity);
-    renderer.render(&painter);
-    return pixmap;
+    return text;
 }
 
-[[nodiscard]] QIcon build(const QString& name, const QColor& colour) {
-    QFile file{QStringLiteral(":/icons/lucide/%1.svg").arg(name)};
-    if (!file.open(QIODevice::ReadOnly)) {
-        return {};
-    }
-    const QByteArray source = file.readAll();
+/// Replaces every `currentColor`, and optionally dims the stroke.
+[[nodiscard]] std::string stroke(std::string_view source, const wxColour& colour,
+                                 double opacity) {
+    std::string out;
+    out.reserve(source.size() + 64);
 
-    QByteArray stroked = source;
-    stroked.replace(kCurrentColor, colour.name(QColor::HexRgb).toUtf8());
-
-    QIcon icon;
-    for (const int size : kSizes) {
-        if (const QPixmap pixmap = render(stroked, size, 1.0); !pixmap.isNull()) {
-            icon.addPixmap(pixmap, QIcon::Normal);
+    const std::string replacement = hex(colour);
+    std::size_t       at          = 0;
+    for (;;) {
+        const std::size_t found = source.find(kCurrentColor, at);
+        if (found == std::string_view::npos) {
+            out.append(source.substr(at));
+            break;
         }
-        if (const QPixmap pixmap = render(stroked, size, kDisabledOpacity);
-            !pixmap.isNull()) {
-            icon.addPixmap(pixmap, QIcon::Disabled);
+        out.append(source.substr(at, found - at));
+        out.append(replacement);
+        at = found + kCurrentColor.size();
+    }
+
+    if (opacity < 1.0) {
+        // On the root element, where Lucide already puts stroke and stroke-width,
+        // so the children inherit it. nanosvg parses stroke-opacity; `opacity` as
+        // a group property also works but is one more layer of its behaviour to
+        // depend on, and these icons are stroke-only.
+        const std::size_t tag = out.find("<svg");
+        if (tag != std::string::npos) {
+            out.insert(tag + 4, R"( stroke-opacity="0.35")");
         }
     }
-    return icon;
+    return out;
+}
+
+/// Keyed on name, colour and opacity together, so a change of system appearance
+/// produces a new set rather than serving the old palette's icons for the rest of
+/// the session.
+using Cache = std::map<std::string, wxBitmapBundle>;
+
+Cache& cache() {
+    static Cache instances;
+    return instances;
+}
+
+[[nodiscard]] wxColour defaultColour() {
+    // Button text rather than window text: almost every one of these sits on a
+    // toolbar button or a menu item, and on the platforms that distinguish them
+    // it is the one that matches the label beside it.
+    return wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT);
 }
 
 }  // namespace
 
-QIcon lucideIcon(const QString& name, const QColor& colour) {
-    // Keyed on the colour as well as the name, so switching style -- which
-    // XPCog offers at run time -- produces a new set rather than serving the old
-    // palette's icons for the rest of the session.
-    static QHash<QString, QIcon> cache;
+std::string lucideIconPath(std::string_view name) {
+    return "lucide/" + std::string{name} + ".svg";
+}
 
-    const QString key = name + QLatin1Char('@') + colour.name(QColor::HexArgb);
-    if (const auto found = cache.constFind(key); found != cache.constEnd()) {
-        return *found;
+wxBitmapBundle lucideIcon(std::string_view name, const wxColour& colour, double opacity) {
+    const std::string key =
+        std::string{name} + "@" + hex(colour) + (opacity < 1.0 ? "/dim" : "");
+
+    if (const auto found = cache().find(key); found != cache().end()) {
+        return found->second;
     }
-    return *cache.insert(key, build(name, colour));
+
+    const std::span<const std::byte> source = resources::icons(lucideIconPath(name));
+    if (source.empty()) {
+        return cache().emplace(key, wxBitmapBundle{}).first->second;
+    }
+
+    const std::string stroked =
+        stroke(std::string_view{reinterpret_cast<const char*>(source.data()), source.size()},
+               colour, opacity);
+
+    wxBitmapBundle bundle =
+        wxBitmapBundle::FromSVG(stroked.c_str(), wxSize(kDefaultSize, kDefaultSize));
+    return cache().emplace(key, std::move(bundle)).first->second;
 }
 
-QIcon lucideIcon(const QString& name) {
-    // ButtonText rather than WindowText: almost every one of these is on a
-    // toolbar button or a menu item, and on the styles that distinguish them it
-    // is the one that matches the label beside it.
-    //
-    // The *application* palette, deliberately, and not the palette of whatever
-    // widget is asking. These are rebuilt from QWidget::changeEvent on
-    // QEvent::StyleChange, and at that moment the application palette already
-    // holds the incoming style's colours while a widget's own palette has not
-    // been re-resolved yet -- measured, on a switch into windowsvista, as
-    // app=#000000 while the widget still said #ffffff. Asking the widget would
-    // rebuild every icon in the colour being replaced, which is the exact bug
-    // this refresh exists to fix.
-    return lucideIcon(name, QApplication::palette().color(QPalette::ButtonText));
+wxBitmapBundle lucideIcon(std::string_view name) {
+    return lucideIcon(name, defaultColour(), 1.0);
 }
 
-QStringList lucideIconNames() {
+wxBitmapBundle lucideIconDisabled(std::string_view name) {
+    return lucideIcon(name, defaultColour(), kDisabledOpacity);
+}
+
+void forgetLucideIcons() { cache().clear(); }
+
+std::vector<std::string> lucideIconNames() {
     return {
         // Transport.
-        QStringLiteral("play"),
-        QStringLiteral("pause"),
-        QStringLiteral("square"),
-        QStringLiteral("skip-back"),
-        QStringLiteral("skip-forward"),
+        "play",
+        "pause",
+        "square",
+        "skip-back",
+        "skip-forward",
         // View menu.
-        QStringLiteral("audio-lines"),
-        QStringLiteral("sliders-vertical"),
-        QStringLiteral("info"),
-        QStringLiteral("panel-left"),
+        "audio-lines",
+        "sliders-vertical",
+        "info",
+        "panel-left",
         // Elsewhere.
-        QStringLiteral("folder-open"),
-        QStringLiteral("x"),
+        "folder-open",
+        "x",
     };
 }
 

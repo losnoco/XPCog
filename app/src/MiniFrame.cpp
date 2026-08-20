@@ -55,6 +55,9 @@ MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& s
         button->SetBitmapDisabled(lucideIconDisabled(commandIcon(id)));
         row->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxALL, FromDIP(2));
         buttons_.push_back(button);
+        if (id == PlaybackPlayPause) {
+            playPauseButton_ = button;
+        }
     }
 
     seekBar_ = new SeekBar(panel, kMiniSeekId);
@@ -123,7 +126,9 @@ void MiniFrame::setPosition(double seconds, double duration) {
 }
 
 void MiniFrame::setPlaybackState(bool playing, bool paused) {
-    (void)paused;
+    showingPause_ = playing && !paused;
+    refreshIcons();
+
     if (!playing) {
         seekBar_->setDuration(0.0);
         clock_->SetLabelText("0:00");
@@ -152,6 +157,15 @@ void MiniFrame::refreshIcons() {
         const CommandId id = transportLayout()[i];
         buttons_[i]->SetBitmap(lucideIcon(commandIcon(id)));
         buttons_[i]->SetBitmapDisabled(lucideIconDisabled(commandIcon(id)));
+    }
+
+    // After the loop, because the loop has just drawn "play" over it from the
+    // command table. Same ordering hazard the Qt build had, and the same fix:
+    // one function that does both, so the two cannot run in the wrong order.
+    if (playPauseButton_ != nullptr) {
+        const char* glyph = showingPause_ ? "pause" : "play";
+        playPauseButton_->SetBitmap(lucideIcon(glyph));
+        playPauseButton_->SetBitmapDisabled(lucideIconDisabled(glyph));
     }
 }
 
