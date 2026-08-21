@@ -56,7 +56,11 @@ private:
     [[nodiscard]] wxWindow* buildPlaylistPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildOutputPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildMidiPane(wxWindow* parent);
+    // Appearance is not built on macOS: its one control is Windows and Linux only,
+    // and what would be left is a category holding a single greyed-out paragraph.
+#ifndef __WXOSX__
     [[nodiscard]] wxWindow* buildAppearancePane(wxWindow* parent);
+#endif
     [[nodiscard]] wxWindow* buildSpectrumPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildAdvancedPane(wxWindow* parent);
 

@@ -119,6 +119,11 @@ constexpr std::array kCuratedKeys = {
     // rather than merely unused, and a dead key belongs in Advanced even less
     // than it belongs in Appearance. Kept in settings.def so a settings file that
     // has travelled from a Qt build keeps its value rather than losing it.
+    //
+    // Both stay listed on macOS, where the pane itself is not built. Curated is
+    // the right side of this list for them there too: closeToTray is answered by
+    // the platform and widgetStyle is dead, and neither belongs in Advanced,
+    // where a raw editable row would offer control that does not exist.
     "widgetStyle", "closeToTray",
     // Spectrum
     "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode", "spectrumFloorDb",
@@ -404,7 +409,16 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings)
     // Cog's order, with its unported panes taken out rather than reshuffled.
     page(buildPlaylistPane(book), "Playlist");
     page(buildOutputPane(book), "Output");
+    // Absent on macOS. Its only control is the close-to-tray checkbox, which is
+    // already Windows and Linux only -- macOS closes to the Dock unconditionally,
+    // by platform convention rather than by preference -- so what remains there is
+    // a category whose page is one greyed-out paragraph. That reads as a screen
+    // that failed to load, and the paragraph says nothing a macOS user needs
+    // telling: following the system appearance is what every application on the
+    // platform does.
+#ifndef __WXOSX__
     page(buildAppearancePane(book), "Appearance");
+#endif
     page(buildMidiPane(book), "MIDI");
     page(buildSpectrumPane(book), "Spectrum");
     page(buildAdvancedPane(book), "Advanced");
@@ -574,6 +588,10 @@ wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
     return pane;
 }
 
+// Not built on macOS at all -- see the page list in the constructor. The guard is
+// here rather than only around the caller so the pane's one control keeps its
+// single `#ifndef`, instead of an empty function surviving for no one to call.
+#ifndef __WXOSX__
 wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     auto* pane = new wxPanel(parent, wxID_ANY);
     auto* form = makeForm(pane->FromDIP(6));
@@ -586,12 +604,12 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     // that travelled from a Qt build keeps its value, and kCuratedKeys keeps it
     // out of Advanced, where a dead key would be worse.
 
-    // Absent on macOS, where the question it asks does not arise. Closing the
-    // window there hides it and leaves XPCog running -- unconditionally, because
-    // that is the platform's convention rather than a preference -- and there is
-    // no tray icon to hide to in any case. A checkbox offering to choose something
-    // already chosen is the same fault as one that does nothing.
-#ifndef __WXOSX__
+    // The reason this whole pane is absent on macOS: the question this asks does
+    // not arise there. Closing the window hides it and leaves XPCog running --
+    // unconditionally, because that is the platform's convention rather than a
+    // preference -- and there is no tray icon to hide to in any case. A checkbox
+    // offering to choose something already chosen is the same fault as one that
+    // does nothing.
     auto* closeToTray =
         new wxCheckBox(pane, wxID_ANY, "Closing the window keeps XPCog running");
     closeToTray->SetValue(settings_.CloseToTray());
@@ -609,9 +627,6 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
         settingChanged.publish("closeToTray");
     });
     row.add("", closeToTray);
-#else
-    (void)row;
-#endif
 
     auto* note = new wxStaticText(
         pane, wxID_ANY,
@@ -628,6 +643,7 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     pane->SetSizer(layout);
     return pane;
 }
+#endif  // !__WXOSX__
 
 wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
     auto* pane = new wxPanel(parent, wxID_ANY);
