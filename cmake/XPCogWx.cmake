@@ -76,6 +76,7 @@ if(wxWidgets_FOUND AND TARGET wx::core)
     add_library(xpcog-wx INTERFACE)
     target_link_libraries(xpcog-wx INTERFACE ${_xpcog_wx_libs})
     set(XPCOG_WX_DISCOVERY "CONFIG" CACHE INTERNAL "How wxWidgets was found")
+    set(_xpcog_wx_version "${wxWidgets_VERSION}")
 else()
     # vcpkg's toolchain file prepends its own installed tree to
     # CMAKE_FIND_ROOT_PATH, and FindwxWidgets looks for wx-config with
@@ -131,9 +132,50 @@ else()
     target_compile_options(xpcog-wx INTERFACE ${wxWidgets_CXX_FLAGS})
     target_link_libraries(xpcog-wx INTERFACE ${wxWidgets_LIBRARIES})
     set(XPCOG_WX_DISCOVERY "MODULE" CACHE INTERNAL "How wxWidgets was found")
+
+    # The version is established here rather than taken from the find, because on
+    # this path it may not have one. FindwxWidgets is documented to set
+    # wxWidgets_VERSION and does so on macOS, but came back from the Ubuntu 24.04
+    # runner with it empty -- MODULE mode, a working wx 3.2.4, no version. The
+    # cause is not established; the remedy does not depend on knowing it.
+    #
+    # It matters because of what an empty version does to the `3.2` above:
+    # find_package_handle_standard_args accepts a package whose VERSION_VAR is
+    # empty and drops the requested version silently, so the floor enforced
+    # nothing there and passed only because Ubuntu happens to ship 3.2.4. Asking
+    # wx-config directly is the last resort, and it is the same program the module
+    # itself read to find wx in the first place.
+    set(_xpcog_wx_version "${wxWidgets_VERSION}")
+    if(NOT _xpcog_wx_version)
+        set(_xpcog_wx_version "${wxWidgets_VERSION_STRING}")
+    endif()
+    if(NOT _xpcog_wx_version AND wxWidgets_CONFIG_EXECUTABLE)
+        execute_process(COMMAND sh "${wxWidgets_CONFIG_EXECUTABLE}" --version
+                        OUTPUT_VARIABLE _xpcog_wx_version
+                        OUTPUT_STRIP_TRAILING_WHITESPACE
+                        ERROR_QUIET)
+    endif()
+endif()
+
+# The floor, checked rather than requested -- see above for why the version
+# argument to find_package cannot be relied on to do it. 3.2 is where
+# wxTaskBarIcon and wxNotificationMessage are reachable from `core`.
+#
+# A version that could not be read at all is a warning and not an error: every
+# source above would have to fail at once for that, and refusing to build a wx
+# that is probably fine, over a number, would be the worse trade.
+if(NOT _xpcog_wx_version)
+    message(WARNING "XPCog: the wxWidgets version could not be determined, so the "
+                    "3.2 minimum is unchecked. A wx older than that fails later, "
+                    "at compile time, rather than here.")
+elseif(_xpcog_wx_version VERSION_LESS 3.2)
+    message(FATAL_ERROR
+            "wxWidgets ${_xpcog_wx_version} is too old: 3.2 or newer is needed.\n"
+            "  wxTaskBarIcon and wxNotificationMessage moved into `core` during "
+            "3.1, and this links no `adv` library to find them in.")
 endif()
 
 add_library(XPCog::wx ALIAS xpcog-wx)
 
-message(STATUS "XPCog: wxWidgets ${wxWidgets_VERSION} found in "
+message(STATUS "XPCog: wxWidgets ${_xpcog_wx_version} found in "
                "${XPCOG_WX_DISCOVERY} mode")
