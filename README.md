@@ -101,10 +101,20 @@ triplet is static and there is nothing to copy. What remains is signing, and
 `XPCOG_CODESIGN_IDENTITY` names a Developer ID identity.
 
 wxWidgets is declared under a `gui` feature rather than as a plain dependency, so
-a headless configuration (`-D XPCOG_BUILD_APP=OFF`) builds no toolkit at all — and
-on Linux, no GTK. If you would rather use a wxWidgets your distribution already
-supplies, `cmake/XPCogWx.cmake` falls back to CMake's `FindwxWidgets` when no
-vcpkg one is present.
+a headless configuration (`-D XPCOG_BUILD_APP=OFF`) builds no toolkit at all.
+
+**On Linux the toolkit comes from the distribution**, not from vcpkg — install
+`libwxgtk3.2-dev` (Debian/Ubuntu), `wxGTK-devel` (Fedora) or `wxgtk3` (Arch).
+vcpkg's `wxwidgets` port depends on its `gtk3` port, so asking vcpkg for wx there
+builds 57 packages from source — wx, GTK and 55 more beneath them: glib, pango,
+cairo, harfbuzz, fontconfig, at-spi2, dbus, seven X11 libraries — on a machine
+that already has all of them. 98 packages for the Linux build against 41
+without. The Linux presets therefore leave `gui` out, and
+`cmake/XPCogWx.cmake` finds the system wx through CMake's `FindwxWidgets`. It
+needs **wxWidgets 3.2 or newer** — the oldest release carrying `wxTaskBarIcon` and
+`wxNotificationMessage` in `core` rather than in the since-merged `adv` library.
+To build the toolkit through vcpkg anyway, add the feature back:
+`cmake --preset linux-debug -D "VCPKG_MANIFEST_FEATURES=gui;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"`.
 
 ### Other prerequisites
 
@@ -114,7 +124,8 @@ also needs `pkg-config` for vcpkg's ports.
 
 ```sh
 brew install ninja pkg-config nasm                              # macOS
-sudo apt install ninja-build pkg-config nasm autoconf automake libtool  # Debian/Ubuntu
+sudo apt install ninja-build pkg-config nasm autoconf automake libtool \
+                libwxgtk3.2-dev libglib2.0-dev                  # Debian/Ubuntu
 ```
 
 macOS builds the app icon from `app/icons/xpcog.icon`, an Icon Composer package,

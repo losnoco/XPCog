@@ -200,7 +200,9 @@ badly:
   `GMainLoop` on the default main context, so an object registered from the GUI
   thread has its method calls delivered on the GUI thread -- exactly the guarantee
   QtDBus was quietly providing. No pump thread, no dispatcher, no `CallAfter`.
-  GLib is already linked, because vcpkg's wxwidgets depends on gtk3 on Linux.
+  GLib is already linked, because wxGTK is built on it -- via the distribution's
+  toolkit now rather than a vcpkg gtk3, which changes where it comes from and not
+  whether it is there. `libglib2.0-dev` is named in CI for this, not for wx.
   `g_dbus_connection_register_object()` takes the introspection XML and one vtable;
   `g_dbus_connection_emit_signal()` does `PropertiesChanged` in a single call.
 
@@ -239,15 +241,21 @@ Stated here rather than discovered later.
   the handshake is a hand check.
 - **`wxDataViewCtrl` is not `QTableView`.** Expect drift in header sorting,
   in-place editing and selection rendering.
-- **On Linux, vcpkg builds GTK3 from source.** wxwidgets' vcpkg port depends on
-  gtk3, which pulls glib, pango, cairo, gdk-pixbuf, harfbuzz, at-spi2-core,
-  libepoxy and wayland. On Windows and macOS the wx build is small and
-  self-contained; on Linux it is not, and `x64-linux` is a static triplet by
-  default, which parts of that stack have never been happy about. This is the one
-  item that could derail the port rather than merely cost time, and it is why
-  `cmake/XPCogWx.cmake` has a module-mode fallback from the first commit: a Linux
-  developer, and possibly CI, should use the distribution's wxGTK rather than
-  building GTK twice. **Unresolved, and unresolvable from this machine.**
+- ~~**On Linux, vcpkg builds GTK3 from source.**~~ **Resolved.** wxwidgets' vcpkg
+  port depends on gtk3, which pulled glib, pango, cairo, gdk-pixbuf, harfbuzz,
+  at-spi2-core, libepoxy and the X11 stack: 98 packages for the Linux job against
+  41 without. On Windows and macOS the wx build is small and self-contained; on
+  Linux it never was. The module-mode fallback `cmake/XPCogWx.cmake` has carried
+  from the first commit is now the Linux path rather than a courtesy — the Linux
+  presets leave `gui` out of `VCPKG_MANIFEST_FEATURES` and `libwxgtk3.2-dev`
+  supplies the toolkit, which is what the fallback was put there for.
+
+  Two corrections came out of finally exercising it, neither visible from reading
+  the code. `FindwxWidgets` looks for `wx-config` with `ONLY_CMAKE_FIND_ROOT_PATH`
+  and vcpkg's toolchain re-roots every search inside `vcpkg_installed`, so the find
+  failed on a machine that has wx; and the `adv` component this file used to reason
+  about is needed by no supported version, because those classes moved to `core`
+  during 3.1. Both are documented at the discovery code in Step 1 above.
 
 ## Staging
 
@@ -283,18 +291,55 @@ disagreed about when to speak.
 
 `wxwidgets` joins `vcpkg.json` under a new `gui` feature rather than as a plain
 dependency, so `macos-headless` — which builds no application — does not drag the
-toolkit, and on Linux GTK, into a configuration that links neither. A vcpkg
-feature cannot be subtracted by an inheriting preset, so `macos-headless` restates
-the feature list without it.
+toolkit into a configuration that links none. A vcpkg feature cannot be subtracted
+by an inheriting preset, so `macos-headless` restates the feature list without it.
+
+**The Linux presets restate it without `gui` too, and take wx from the
+distribution.** vcpkg's `wxwidgets` port depends on its `gtk3` port, so requesting
+it on Linux builds GTK from source and, under it, glib, pango, cairo, harfbuzz,
+fontconfig, at-spi2, dbus, libsystemd and seven X11 libraries: 98 packages for the
+Linux job against 41 without, none of which is anything a Linux machine is short
+of. It is also where the last two rounds of CI churn came from — fontconfig builds
+gperf, which wants `autoconf-archive`; libxcrypt wants ltdl development files —
+and both apt entries left with the tree that needed them, along with the two mesa
+`-dev` packages that were there for vcpkg's `opengl` port, a wxWidgets dependency
+and nothing else's. Windows and macOS keep the vcpkg build, because neither
+platform packages wx at all.
 
 `cmake/XPCogWx.cmake` tries CONFIG mode first, which is what vcpkg's own `usage`
 file recommends and what its port installs, then falls back to CMake's bundled
-`FindwxWidgets` for a wx that came from the system package manager. A Linux
-developer with `libwxgtk3.2-dev` already installed should not have to build GTK
-through vcpkg to compile this. Either path produces one target, `XPCog::wx`.
+`FindwxWidgets`, which reads `wx-config`. That fallback is now the Linux path
+rather than a convenience. Either produces one target, `XPCog::wx`.
 
-`adv` is deliberately absent from the component list: wxWidgets 3.3 merged wxadv
-into core, and asking for it by name fails on exactly the version this targets.
+Two things had to be right for the MODULE path to work, and the first was not
+visible from reading it.
+
+**`FindwxWidgets` cannot see a system `wx-config` under the vcpkg toolchain.** It
+looks for the program with `ONLY_CMAKE_FIND_ROOT_PATH`, an option that overrides
+the `CMAKE_FIND_ROOT_PATH_MODE_*` variables rather than deferring to them, and
+vcpkg's toolchain file prepends its own installed tree to `CMAKE_FIND_ROOT_PATH`.
+Every search path is therefore re-rooted inside `vcpkg_installed` — the one
+directory a system `wx-config` cannot be in — and the configure fails on a machine
+where `wx-config --version` answers perfectly well from a shell. The module puts
+the real root back for the duration of the find and restores it immediately after.
+This was found by building against a keg-only Homebrew wx 3.2 rather than by
+reading, and it would have failed identically on Ubuntu.
+
+**`adv` is not needed, and the reason to state that precisely is that the obvious
+guess fails silently.** wxadv did merge into core — but during 3.1, not at 3.3.
+`wxTaskBarIcon` and `wxNotificationMessage`, the only two classes here that ever
+lived there, are `WXDLLIMPEXP_CORE` in 3.1.5 and in every release since, Ubuntu
+24.04's 3.2.4 included. That is also where the 3.2 floor comes from. Naming the
+component anyway would not have been caught by a build: `wx-config` drops a library
+it does not know and still exits 0, and `FindwxWidgets` does not set
+`wxWidgets_<component>_FOUND` on the wx-config path at all — there is a FIXME in
+the module saying so — so a wrong component list configures cleanly and surfaces
+later as an undefined symbol, if anything references it at all.
+
+What the arrangement costs is a toolkit version that follows the distribution: wx
+3.2 on Ubuntu 24.04 against vcpkg's 3.3.1 on the other two platforms. Nothing in
+the source uses an API newer than 3.1.6, so the gap is currently theoretical, and
+the Linux CI job is what keeps it that way.
 
 The resource generator wraps hex into lines *before* expanding it into `0x..,`
 literals, so the line-breaking pass runs over the hex rather than over the

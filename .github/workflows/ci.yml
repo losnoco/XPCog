@@ -69,31 +69,34 @@ jobs:
       # expects the package manager to supply it everywhere else, so without it
       # the ffmpeg port fails during configure rather than during the build.
       #
-      # autoconf-archive and libltdl-dev are here for ports nothing in this
-      # project asks for, and they arrived one CI round apart. wxWidgets pulls
-      # GTK on Linux and GTK pulls a long tail: fontconfig builds gperf, which
-      # wants autoconf-archive, and further down libxcrypt wants ltdl
-      # development files. libtool supplies libtoolize but not libltdl-dev --
-      # they are separate packages.
+      # libwxgtk3.2-dev is the toolkit, and it is an apt package rather than a
+      # vcpkg feature on purpose. vcpkg's wxwidgets port depends on its gtk3
+      # port, so asking vcpkg for wx here meant building GTK from source and,
+      # under it, glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus,
+      # libsystemd and seven X11 libraries -- 98 packages for the Linux job
+      # against 41 without. Every one of them is already on the runner.
       #
-      # Only the hard failures are listed. cairo and libepoxy also print
-      # "currently requires ... from the system package manager" for X11 and
-      # GLES headers, and both build anyway because libgtk-3-dev has already
-      # pulled what they need. Adding those names on the strength of a warning
-      # risks an apt step that fails on a package Ubuntu has since renamed,
-      # which is a worse failure than the one it would be preventing.
+      # That is also where two entries this list used to carry came from, one CI
+      # round apart, both for ports nothing in this project asks for: fontconfig
+      # built gperf, which wanted autoconf-archive, and further down libxcrypt
+      # wanted ltdl development files. Both are gone with the tree that needed
+      # them, as are libgl1-mesa-dev and libglu1-mesa-dev, which were there for
+      # vcpkg's opengl port -- a wxWidgets dependency and nothing else's.
       #
-      # The headless job deliberately has none of this: it omits the `gui`
-      # feature, so no GTK, so no gperf and no libxcrypt.
+      # libglib2.0-dev stays, and not for the toolkit: platform/ talks to MPRIS
+      # over GDBus, so gio-2.0 is a direct dependency of this project on Linux.
+      #
+      # What this costs is a wxWidgets version that follows Ubuntu rather than
+      # vcpkg -- 3.2 here, 3.3 on macOS and Windows. Nothing in the source uses an
+      # API newer than 3.1.6, so the gap is theoretical today, and this job is what
+      # keeps it that way.
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config autoconf autoconf-archive automake libtool \
-            libltdl-dev nasm \
-            libgl1-mesa-dev libglu1-mesa-dev \
-            libgtk-3-dev libglib2.0-dev \
+            ninja-build pkg-config autoconf automake libtool nasm \
+            libwxgtk3.2-dev libglib2.0-dev \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
 
       - name: Install macOS build dependencies
@@ -273,8 +276,11 @@ jobs:
     # genuine link-time dependency, and it is the job that proved the rule held
     # when the toolkit was swapped.
     #
-    # It also stays cheap, which is why `gui` is a vcpkg feature: without it this
-    # job builds no GTK.
+    # It also stays cheap, which is why `gui` is a vcpkg feature rather than a
+    # plain dependency: this job builds no toolkit at all. On Linux that is no
+    # longer what keeps GTK out of the build -- the Linux presets leave the
+    # feature off too, and take wx from apt -- but it is still what keeps wx
+    # itself out of a configuration that links no toolkit.
     name: Headless (no toolkit)
     runs-on: ubuntu-24.04
     # See the matrix job above for why.
@@ -327,8 +333,13 @@ jobs:
       #
       # The quotes around it are load-bearing, and their absence is worth
       # recording because the failure looked like anything but a shell problem.
-      # A CMake list separator is a semicolon and a shell statement separator is
-      # a semicolon, so unquoted this ran `cmake ... -D
+      # The feature list used to be restated here to subtract `gui` from it. The
+      # linux presets no longer carry `gui` in the first place, so the override
+      # said exactly what the preset says and is gone -- one list, in one file.
+      #
+      # Worth keeping the reason it was quoted, because the next person to add a
+      # -D of a CMake list will meet it: a CMake list separator is a semicolon
+      # and so is a shell statement separator, so unquoted this ran `cmake ... -D
       # VCPKG_MANIFEST_FEATURES=ffmpeg` and then tried to execute `vgmstream`,
       # `mgba` and the rest as commands. vcpkg dutifully installed the ffmpeg
       # feature alone, and the configure died much later at
@@ -339,7 +350,6 @@ jobs:
         run: >-
           cmake --preset linux-debug
           -D XPCOG_BUILD_APP=OFF
-          -D "VCPKG_MANIFEST_FEATURES=ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
 
       - name: Build
         run: cmake --build --preset linux-debug

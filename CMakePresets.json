@@ -73,30 +73,34 @@
       ]
     },
     {
-      "name": "linux-debug",
-      "displayName": "Linux (Debug)",
-      "inherits": [
-        "base",
-        "debug"
-      ],
+      "name": "linux",
+      "hidden": true,
+      "inherits": "base",
+      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui`, which is how the toolkit is left to the distribution here. vcpkg's wxwidgets port depends on its gtk3 port, so asking vcpkg for wx on Linux builds GTK and about thirty packages under it -- glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus, seven X11 libraries -- from source, on a machine that already has every one of them. Install libwxgtk3.2-dev instead; cmake/XPCogWx.cmake finds it. A feature cannot be subtracted from an inherited list, hence the restatement rather than an override, the same way macos-headless does it.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
       }
+    },
+    {
+      "name": "linux-debug",
+      "displayName": "Linux (Debug)",
+      "inherits": [
+        "linux",
+        "debug"
+      ]
     },
     {
       "name": "linux-release",
       "displayName": "Linux (RelWithDebInfo)",
       "inherits": [
-        "base",
+        "linux",
         "release"
-      ],
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      }
+      ]
     },
     {
       "name": "windows-debug",

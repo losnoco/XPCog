@@ -35,7 +35,7 @@
   ],
   "features": {
     "gui": {
-      "description": "wxWidgets: the application's UI toolkit. A feature rather than a plain dependency so the headless presets, which build no app, do not drag in wx -- and on Linux, GTK -- for a target that links no toolkit at all",
+      "description": "wxWidgets: the application's UI toolkit on Windows and macOS, neither of which packages it. A feature rather than a plain dependency for two reasons. The headless presets build no app and should not drag a toolkit into a target that links none -- and the Linux presets leave it off as well, because this port depends on vcpkg's gtk3 port: requesting it there builds 57 packages from source -- wx, GTK, glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus and seven X11 libraries -- on a machine that already has every one of them. Linux takes wx from the distribution instead (libwxgtk3.2-dev); see cmake/XPCogWx.cmake",
       "dependencies": [
         {
           "name": "wxwidgets",
