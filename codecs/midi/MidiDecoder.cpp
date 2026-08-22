@@ -220,13 +220,15 @@ public:
         // meaningless to an OPL3 and an SC-55 alike. The last two do not: a
         // listener who asked for the OPL3 or the SC-55 gets it.
         bank_.reset();
+        fileBank_.reset();
         embeddedBank_ = file_.embeddedBank();
         if (const auto local = url_.localPath()) {
-            bank_ = codecs::findCompanionBank(*local);
+            fileBank_ = codecs::findCompanionBank(*local);
         }
-        if (embeddedBank_ || bank_) {
+        if (embeddedBank_ || fileBank_) {
             choice_.backend = SynthChoice::Backend::SoundFont;
-        } else if (choice_.backend == SynthChoice::Backend::SoundFont) {
+        }
+        if (choice_.backend == SynthChoice::Backend::SoundFont) {
             const std::string configured =
                 settings_ != nullptr ? settings_->SoundFontPath() : std::string{};
             if (!configured.empty()) {
@@ -491,25 +493,23 @@ private:
             }
         }
 
-        if (choice_.backend == SynthChoice::Backend::SoundFont && embeddedBank_) {
+        if (choice_.backend == SynthChoice::Backend::SoundFont &&
+                (bank_ || fileBank_ || embeddedBank_)) {
             auto soundfont = std::make_unique<codecs::SoundFontSynth>();
-            if (soundfont->openEmbedded(embeddedBank_->bytes,
-                                        static_cast<int>(embeddedBank_->bankOffset),
-                                        configuredSampleRate(), interpolation())) {
+            if (embeddedBank_)
+                soundfont->addEmbeddedBank(embeddedBank_->bytes,
+                                           static_cast<int>(embeddedBank_->bankOffset));
+            if (fileBank_)
+                soundfont->addFileBank(*fileBank_);
+            if (bank_)
+                soundfont->addGlobalBank(*bank_);
+            if (soundfont->open(configuredSampleRate(), interpolation())) {
                 synth_ = std::move(soundfont);
                 return true;
             }
             // Falls through to the companion or configured bank, and then to
             // the OPL3. A file whose embedded bank will not load is still a
             // file, and playing it on something is better than refusing it.
-        }
-
-        if (choice_.backend == SynthChoice::Backend::SoundFont && bank_) {
-            auto soundfont = std::make_unique<codecs::SoundFontSynth>();
-            if (soundfont->open(*bank_, configuredSampleRate(), interpolation())) {
-                synth_ = std::move(soundfont);
-                return true;
-            }
         }
 
         auto opl = std::make_unique<codecs::OplSynth>();
@@ -758,10 +758,13 @@ private:
     /// fresh machine without going back to disk.
     std::optional<codecs::Sc55RomSet> roms_;
 
-    /// The SoundFont this file plays on: the one beside it, or the configured
-    /// one. Empty when neither exists, which is what sends SpessaSynth back to
-    /// the OPL3.
+    /// The configured global SoundFont. When neither this nor any of the
+    /// companion banks exist, we fall back on OPL3.
     std::optional<std::filesystem::path> bank_;
+
+    /// The companion SoundFont this file references, if one exists. Empty
+    /// when no companion exists.
+    std::optional<std::filesystem::path> fileBank_;
 
     /// The bank the file carried inside itself, which outranks both of those.
     /// Kept rather than handed straight to the synth, because a backwards seek
