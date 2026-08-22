@@ -220,15 +220,13 @@ public:
         // meaningless to an OPL3 and an SC-55 alike. The last two do not: a
         // listener who asked for the OPL3 or the SC-55 gets it.
         bank_.reset();
-        fileBank_.reset();
         embeddedBank_ = file_.embeddedBank();
         if (const auto local = url_.localPath()) {
-            fileBank_ = codecs::findCompanionBank(*local);
+            bank_ = codecs::findCompanionBank(*local);
         }
-        if (embeddedBank_ || fileBank_) {
+        if (embeddedBank_ || bank_) {
             choice_.backend = SynthChoice::Backend::SoundFont;
-        }
-        if (choice_.backend == SynthChoice::Backend::SoundFont) {
+        } else if (choice_.backend == SynthChoice::Backend::SoundFont) {
             const std::string configured =
                 settings_ != nullptr ? settings_->SoundFontPath() : std::string{};
             if (!configured.empty()) {
@@ -369,8 +367,8 @@ public:
             std::optional<std::uint32_t>         bend;
             std::map<std::uint8_t, std::uint8_t> controllers;
         };
-        std::array<ChannelState, 64> channels;
-        std::vector<std::pair<unsigned int, std::span<const std::uint8_t>>> sysex;
+        std::array<ChannelState, 16> channels;
+        std::vector<std::uint32_t>   sysex;
 
         std::size_t index = 0;
         for (; index < stream_.events.size() &&
@@ -381,11 +379,11 @@ public:
                 continue;
             }
             if (event.isSysex) {
-                sysex.push_back({event.port, event.sysex});
+                sysex.push_back(event.message);
                 continue;
             }
             const auto status  = static_cast<std::uint8_t>(event.message & 0xFF);
-            const auto channel = static_cast<std::size_t>((status & 0x0F) + event.port * 16);
+            const auto channel = static_cast<std::size_t>(status & 0x0F);
             switch (status & 0xF0) {
                 case 0xB0:
                     channels[channel].controllers[static_cast<std::uint8_t>(
@@ -410,30 +408,34 @@ public:
         // a GS reset arriving after a controller would undo it, and the
         // collapsed values are the ones that survived to the seek point.
         std::size_t sent = 0;
-        for (const auto& entry : sysex) {
-            synth_->writeSysex(entry.first, entry.second);
-            sent += entry.second.size();
-            drainIfFull(sent);
+        for (const std::uint32_t entry : sysex) {
+            if (entry < stream_.sysex.size()) {
+                const codecs::MidiSysex& message = stream_.sysex[entry];
+                if (message.port == 0 && !message.data.empty()) {
+                    synth_->writeSysex(message.data);
+                    sent += message.data.size();
+                    drainIfFull(sent);
+                }
+            }
         }
         for (std::size_t channel = 0; channel < channels.size(); ++channel) {
-            const ChannelState& state  = channels[channel];
-            const auto          status = static_cast<std::uint32_t>(channel & 0x0F);
-            const auto          port   = static_cast<std::uint32_t>(channel / 16);
+            const ChannelState& state = channels[channel];
+            const auto          status = static_cast<std::uint32_t>(channel);
             // Ascending, so bank select (0 and 32) lands before the program
             // change that reads it.
             for (const auto& [controller, value] : state.controllers) {
-                synth_->write(port, 0xB0u | status | (std::uint32_t{controller} << 8) |
+                synth_->write(0xB0u | status | (std::uint32_t{controller} << 8) |
                               (std::uint32_t{value} << 16));
                 sent += 3;
                 drainIfFull(sent);
             }
             if (state.program) {
-                synth_->write(port, 0xC0u | status | (std::uint32_t{*state.program} << 8));
+                synth_->write(0xC0u | status | (std::uint32_t{*state.program} << 8));
                 sent += 2;
                 drainIfFull(sent);
             }
             if (state.bend) {
-                synth_->write(port, *state.bend);
+                synth_->write(*state.bend);
                 sent += 3;
                 drainIfFull(sent);
             }
@@ -489,23 +491,25 @@ private:
             }
         }
 
-        if (choice_.backend == SynthChoice::Backend::SoundFont &&
-                (bank_ || fileBank_ || embeddedBank_)) {
+        if (choice_.backend == SynthChoice::Backend::SoundFont && embeddedBank_) {
             auto soundfont = std::make_unique<codecs::SoundFontSynth>();
-            if (embeddedBank_)
-                soundfont->addEmbeddedBank(embeddedBank_->bytes,
-                                           static_cast<int>(embeddedBank_->bankOffset));
-            if (fileBank_)
-                soundfont->addFileBank(*fileBank_);
-            if (bank_)
-                soundfont->addGlobalBank(*bank_);
-            if (soundfont->open(configuredSampleRate(), interpolation())) {
+            if (soundfont->openEmbedded(embeddedBank_->bytes,
+                                        static_cast<int>(embeddedBank_->bankOffset),
+                                        configuredSampleRate(), interpolation())) {
                 synth_ = std::move(soundfont);
                 return true;
             }
             // Falls through to the companion or configured bank, and then to
             // the OPL3. A file whose embedded bank will not load is still a
             // file, and playing it on something is better than refusing it.
+        }
+
+        if (choice_.backend == SynthChoice::Backend::SoundFont && bank_) {
+            auto soundfont = std::make_unique<codecs::SoundFontSynth>();
+            if (soundfont->open(*bank_, configuredSampleRate(), interpolation())) {
+                synth_ = std::move(soundfont);
+                return true;
+            }
         }
 
         auto opl = std::make_unique<codecs::OplSynth>();
@@ -697,12 +701,22 @@ private:
     }
 
     void dispatch(const codecs::MidiStreamEvent& event) {
+        // One synthesiser, so one port. A file naming a second wants a second
+        // machine, which is what Cog builds for it and what this does not.
+        if (event.port != 0) {
+            return;
+        }
         if (!event.isSysex) {
-            synth_->write(event.port, event.message);
+            synth_->write(event.message);
             return;
         }
         // A synthesiser with nowhere to put a SysEx ignores it; the OPL is one.
-        synth_->writeSysex(event.port, event.sysex);
+        if (event.message < stream_.sysex.size()) {
+            const codecs::MidiSysex& sysex = stream_.sysex[event.message];
+            if (sysex.port == 0 && !sysex.data.empty()) {
+                synth_->writeSysex(sysex.data);
+            }
+        }
     }
 
     void applyFade(float* frames, std::size_t count) {
@@ -744,13 +758,10 @@ private:
     /// fresh machine without going back to disk.
     std::optional<codecs::Sc55RomSet> roms_;
 
-    /// The configured global SoundFont. When neither this nor any of the
-    /// companion banks exist, we fall back on OPL3.
+    /// The SoundFont this file plays on: the one beside it, or the configured
+    /// one. Empty when neither exists, which is what sends SpessaSynth back to
+    /// the OPL3.
     std::optional<std::filesystem::path> bank_;
-
-    /// The companion SoundFont this file references, if one exists. Empty
-    /// when no companion exists.
-    std::optional<std::filesystem::path> fileBank_;
 
     /// The bank the file carried inside itself, which outranks both of those.
     /// Kept rather than handed straight to the synth, because a backwards seek

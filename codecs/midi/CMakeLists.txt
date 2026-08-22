@@ -16,7 +16,7 @@
 add_library(xpcog-codec-midi STATIC MidiFile.cpp)
 target_include_directories(xpcog-codec-midi PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(xpcog-codec-midi
-    PUBLIC xpcog-core
+    PUBLIC xpcog-core vendor-midi-processing
     PRIVATE XPCog::warnings)
 set_target_properties(xpcog-codec-midi PROPERTIES FOLDER codecs)
 
@@ -48,11 +48,6 @@ if(NOT TARGET spessasynth::spessasynth)
             IMPORTED_LOCATION_DEBUG "${SPESSASYNTH_LIBRARY_DEBUG}")
     endif()
 endif()
-
-# MidiFile.cpp is the implementation of xpcog-codec-midi and includes the
-# spessasynth headers directly, so the library must appear on its private link
-# line even though the public MidiFile.hpp exposes none of those types.
-target_link_libraries(xpcog-codec-midi PRIVATE spessasynth::spessasynth)
 
 xpcog_add_codec(
     NAME     midisynth

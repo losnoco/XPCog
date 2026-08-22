@@ -51,9 +51,8 @@ struct MidiStreamEvent {
     /// Which of the file's MIDI ports this belongs to. Almost always 0: a file
     /// only names a second port when it wants more than sixteen channels, which
     /// takes more than one synthesiser to play.
-    std::uint8_t              port = 0;
-    bool                      isSysex = false;
-    std::vector<std::uint8_t> sysex;
+    std::uint8_t port = 0;
+    bool         isSysex = false;
 };
 
 /// One system-exclusive message, whole.
@@ -76,6 +75,10 @@ struct MidiStream {
     static constexpr std::size_t kNoLoop = static_cast<std::size_t>(-1);
 
     std::vector<MidiStreamEvent> events;
+    /// The payloads a `isSysex` event's `message` indexes. Sparse: an entry the
+    /// stream never refers to is left empty rather than renumbered, so the
+    /// indices stay the ones the library issued.
+    std::vector<MidiSysex> sysex;
     /// Indices into `events`. These come from the library rather than being
     /// recomputed from loop() below, so a player rewinding to `loopStart`
     /// resumes on exactly the event the tempo map says it should.
@@ -126,8 +129,8 @@ struct MidiDialect {
 /// states one, and otherwise from midi_processing scanning the sequence for the
 /// bank numbers it actually selects.
 struct MidiEmbeddedBank {
-    std::span<const std::uint8_t> bytes;
-    std::uint16_t                 bankOffset = 0;
+    std::vector<std::uint8_t> bytes;
+    std::uint16_t             bankOffset = 0;
 };
 
 /// The parsed file. Copyable only by moving the implementation; the event

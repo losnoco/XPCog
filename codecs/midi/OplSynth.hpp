@@ -77,7 +77,7 @@ public:
     /// Delivers one short message, packed status/data0/data1 as
     /// MidiStreamEvent::message holds it. Anything the driver does not
     /// recognise is ignored by the driver itself.
-    void write(std::uint32_t port, std::uint32_t message) override;
+    void write(std::uint32_t message) override;
 
     /// Renders `frames` stereo frames. The chip runs at a fixed 49716 Hz and a
     /// sinc resampler inside it produces the requested rate, so this is exact
