@@ -178,7 +178,8 @@ TEST_CASE("an RMID hands back the bank it carries", "[midi]") {
 
     // Verbatim, header included: what comes back has to be loadable as a file
     // in its own right, and an SF2 that has lost its `RIFF` is not one.
-    CHECK(embedded->bytes == bank);
+    CHECK(embedded->bytes.size() == bank.size());
+    CHECK(memcmp(embedded->bytes.data(), bank.data(), bank.size()) == 0);
 
     // And the offset the file stated, not one guessed by scanning. A bank
     // written to sit at MSB 8 plays the wrong instruments at MSB 0, and both

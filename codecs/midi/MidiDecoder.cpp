@@ -370,7 +370,7 @@ public:
             std::map<std::uint8_t, std::uint8_t> controllers;
         };
         std::array<ChannelState, 16> channels;
-        std::vector<std::uint32_t>   sysex;
+        std::vector<std::pair<unsigned int, std::span<const std::uint8_t>>> sysex;
 
         std::size_t index = 0;
         for (; index < stream_.events.size() &&
@@ -381,7 +381,7 @@ public:
                 continue;
             }
             if (event.isSysex) {
-                sysex.push_back(event.message);
+                sysex.push_back({event.port, event.sysex});
                 continue;
             }
             const auto status  = static_cast<std::uint8_t>(event.message & 0xFF);
@@ -410,15 +410,10 @@ public:
         // a GS reset arriving after a controller would undo it, and the
         // collapsed values are the ones that survived to the seek point.
         std::size_t sent = 0;
-        for (const std::uint32_t entry : sysex) {
-            if (entry < stream_.sysex.size()) {
-                const codecs::MidiSysex& message = stream_.sysex[entry];
-                if (message.port == 0 && !message.data.empty()) {
-                    synth_->writeSysex(message.data);
-                    sent += message.data.size();
-                    drainIfFull(sent);
-                }
-            }
+        for (const auto& entry : sysex) {
+            synth_->writeSysex(entry.second);
+            sent += entry.second.size();
+            drainIfFull(sent);
         }
         for (std::size_t channel = 0; channel < channels.size(); ++channel) {
             const ChannelState& state = channels[channel];
@@ -711,12 +706,7 @@ private:
             return;
         }
         // A synthesiser with nowhere to put a SysEx ignores it; the OPL is one.
-        if (event.message < stream_.sysex.size()) {
-            const codecs::MidiSysex& sysex = stream_.sysex[event.message];
-            if (sysex.port == 0 && !sysex.data.empty()) {
-                synth_->writeSysex(sysex.data);
-            }
-        }
+        synth_->writeSysex(event.sysex);
     }
 
     void applyFade(float* frames, std::size_t count) {

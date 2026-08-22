@@ -16,7 +16,7 @@
 add_library(xpcog-codec-midi STATIC MidiFile.cpp)
 target_include_directories(xpcog-codec-midi PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(xpcog-codec-midi
-    PUBLIC xpcog-core vendor-midi-processing
+    PUBLIC xpcog-core
     PRIVATE XPCog::warnings)
 set_target_properties(xpcog-codec-midi PROPERTIES FOLDER codecs)
 

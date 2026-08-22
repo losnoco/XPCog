@@ -1,7 +1,6 @@
 #include "midi/MidiFile.hpp"
 
-#include <midi_container.h>
-#include <midi_processor.h>
+#include <spessasynth/midi/midi.h>
 
 #include <algorithm>
 #include <span>
@@ -10,8 +9,9 @@
 namespace xpcog::codecs {
 
 struct MidiFile::Impl {
-    midi_container container;
-    bool           parsed = false;
+    SS_MIDIFile* container;
+    Impl() : container(nullptr) { }
+    ~Impl() { ss_midi_free(container); }
 };
 
 MidiFile::MidiFile() : impl_(std::make_unique<Impl>()) {}
@@ -22,8 +22,14 @@ MidiFile& MidiFile::operator=(MidiFile&&) noexcept = default;
 bool MidiFile::parse(const std::vector<std::uint8_t>& bytes,
                      std::string_view                 extension) {
     impl_          = std::make_unique<Impl>();
-    impl_->parsed  = false;
     if (bytes.empty()) {
+        return false;
+    }
+
+    SS_File* file = ss_file_open_from_memory(&bytes[0],
+                                             bytes.size(),
+                                             false);
+    if (file == nullptr) {
         return false;
     }
 
@@ -31,103 +37,102 @@ bool MidiFile::parse(const std::vector<std::uint8_t>& bytes,
     // too. It is passed with no leading dot, which is how the library wants it
     // and is also how Url::extension() gives it.
     const std::string ext{extension};
-    if (!midi_processor::process_file(bytes, ext.c_str(), impl_->container)) {
-        return false;
+    SS_MIDIFile* midi = ss_midi_load(file, ext.c_str());
+    ss_file_close(file);
+
+    impl_->container = midi;
+
+    if (midi) {
+        ss_midi_remove_emidi_non_gm(midi);
+        ss_midi_flush(midi);
+        if (!ss_midi_ensure_timeline(midi)) {
+            return false;
+        }
     }
 
-    // Loop points, which several of these formats state rather than imply --
-    // XMI has its own, RPG Maker and Touhou files use markers, and a synth that
-    // ignored them would play an intro once and stop where the composer meant
-    // it to repeat. Scanned here because it is a property of the sequence, not
-    // of whatever renders it.
-    impl_->container.scan_for_loops(true, true, true, true);
-
-    impl_->parsed = impl_->container.get_subsong_count() > 0;
-    return impl_->parsed;
+    return !!impl_->container;
 }
 
-bool MidiFile::valid() const noexcept { return impl_ && impl_->parsed; }
+bool MidiFile::valid() const noexcept { return impl_ && !!impl_->container; }
 
 std::size_t MidiFile::subsongCount() const {
-    return valid() ? static_cast<std::size_t>(impl_->container.get_subsong_count()) : 0;
+    return valid() ? 1 : 0;
 }
 
 double MidiFile::duration(std::size_t subsong) const {
-    if (!valid() || subsong >= subsongCount()) {
-        return 0.0;
-    }
-    const auto index = impl_->container.get_subsong(static_cast<unsigned long>(subsong));
-    return impl_->container.get_timestamp_end(index, /*seconds=*/true);
+    (void)subsong;
+    return valid() ? impl_->container->duration : 0.0;
 }
 
 MidiLoop MidiFile::loop(std::size_t subsong) const {
+    (void)subsong;
     MidiLoop result;
-    if (!valid() || subsong >= subsongCount()) {
+    if (!valid()) {
         return result;
     }
-    const auto index = impl_->container.get_subsong(static_cast<unsigned long>(subsong));
 
-    // The library reports "no loop point" by returning ~0UL, cast to double --
-    // so the test is against that value and not against zero, which is a
-    // perfectly ordinary loop start.
-    constexpr double kUnset = static_cast<double>(~0UL);
-
-    const double start = impl_->container.get_timestamp_loop_start(index, /*seconds=*/true);
-    const double end   = impl_->container.get_timestamp_loop_end(index, /*seconds=*/true);
-    if (start == kUnset && end == kUnset) {
+    size_t start = impl_->container->loop.start;
+    size_t end = impl_->container->loop.end;
+    if (start == end) {
         return result;
     }
 
     // Either endpoint alone is a loop. A stated end with no start means "repeat
     // from the beginning"; a stated start with no end means "repeat to the end".
     result.valid = true;
-    result.start = (start == kUnset) ? 0.0 : start;
-    result.end   = (end == kUnset) ? duration(subsong) : end;
+    result.start = ss_midi_ticks_to_seconds(impl_->container, start);
+    result.end   = ss_midi_ticks_to_seconds(impl_->container, end);
     return result;
 }
 
 MetadataMap MidiFile::metadata(std::size_t subsong) const {
+    (void)subsong;
     MetadataMap tags;
-    if (!valid() || subsong >= subsongCount()) {
+    if (!valid()) {
         return tags;
     }
 
-    const auto     index = impl_->container.get_subsong(static_cast<unsigned long>(subsong));
-    midi_meta_data meta;
-    impl_->container.get_meta_data(index, meta);
-
-    // The library's own names, mapped onto ours where they correspond and kept
-    // verbatim where they do not. A MIDI file has no tag block: what is here is
-    // whatever the sequence happened to state in its text meta events, so most
-    // files produce a track name and nothing else.
-    for (std::size_t i = 0; i < meta.get_count(); ++i) {
-        const midi_meta_data_item& item = meta[i];
-        if (item.m_name.empty() || item.m_value.empty()) {
-            continue;
-        }
-        std::string key = item.m_name;
-        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        // A track name becomes the title, and which track carries it depends on
-        // the subsong: get_meta_data names these `track_name_NN` by *track*
-        // index, and for a format-2 file it emits only the one track that is
-        // this subsong -- so song 1's name is `track_name_01` and nothing is
-        // called `track_name_00` at all. Matching the prefix rather than the
-        // first index is what makes a subsong past the first have a name.
-        //
-        // A format-1 file can name several of its tracks. The first stands as
-        // the title and the rest are kept under their own keys, which is the
-        // same choice Cog makes.
-        if (key == "title" || key.rfind("track_name_", 0) == 0) {
-            if (tags.first("title").empty()) {
-                tags.set("title", item.m_value);
-                continue;
+    const SS_RMIDIInfo& info = impl_->container->rmidi_info;
+    auto tagSet = [&tags](const char* name, uint8_t* value, size_t len) {
+        if (value && len) {
+            const char* valstring = reinterpret_cast<const char*>(value);
+            std::span<const char> valrange(valstring, len);
+            std::stringstream val;
+            for (const auto& ch : valrange) {
+                val << ch;
             }
+            tags.set(name, val.str());
         }
-        tags.add(key, item.m_value);
-    }
+    };
+    tagSet("title", info.name, info.name_len);
+    tagSet("artist", info.artist, info.artist_len);
+    tagSet("album", info.album, info.album_len);
+    tagSet("genre", info.genre, info.genre_len);
+    tagSet("comment", info.comment, info.comment_len);
+    tagSet("copyright", info.copyright, info.copyright_len);
+    tagSet("date", info.creation_date, info.creation_date_len);
+    tagSet("engineer", info.engineer, info.engineer_len);
+    tagSet("software", info.software, info.software_len);
+    tagSet("subject", info.subject, info.subject_len);
+
     return tags;
+}
+
+[[nodiscard]] static double read_tempo_bpm(const uint8_t *d) {
+	uint32_t us = ((uint32_t)d[0] << 16) | ((uint32_t)d[1] << 8) | d[2];
+	if (us == 0) us = 500000;
+	return 60000000.0 / (double)us;
+}
+
+[[nodiscard]] static int effective_port(const SS_MIDIFile& midi,
+                                        const SS_MIDIMessage& e) {
+	if (!midi.is_multi_port || !midi.port_channel_offset_map) return 0;
+	size_t ti = e.track_index;
+	if (ti >= midi.track_count) return 0;
+	int port = midi.tracks[ti].port;
+	if (port < 0) return 0;
+	if ((size_t)port >= midi.port_channel_offset_map_count) return 0;
+	return midi.port_channel_offset_map[port] / 16;
 }
 
 MidiStream MidiFile::stream(std::size_t subsong, double sampleRate) const {
@@ -136,73 +141,79 @@ MidiStream MidiFile::stream(std::size_t subsong, double sampleRate) const {
         return out;
     }
 
-    const auto index = impl_->container.get_subsong(static_cast<unsigned long>(subsong));
+    const SS_MIDIFile& midi = *impl_->container;
 
-    std::vector<midi_stream_event> events;
-    system_exclusive_table         sysex;
-    unsigned long                  loopStart = 0;
-    unsigned long                  loopEnd   = 0;
-    impl_->container.serialize_as_stream(index, events, sysex, loopStart, loopEnd, 0);
+    size_t loopStart = midi.loop.start;
+    size_t loopEnd   = midi.loop.end;
 
-    out.events.reserve(events.size());
-    for (const midi_stream_event& event : events) {
+    size_t loopStartEvent = ~0UL;
+    size_t loopEndEvent   = ~0UL;
+
+    out.events.reserve(midi.timeline_count);
+    std::span<SS_MIDIMessage> in(midi.timeline, midi.timeline_count);
+    size_t lastTicks = 0;
+    double timestamp = 0.0;
+   	double one_tick_sec = (midi.time_division > 0) ? (60.0 / (120.0 *
+        (double)midi.time_division)) : (60.0 / (120.0 * 480.0));
+    for (const SS_MIDIMessage& event : in) {
         MidiStreamEvent converted;
+        size_t deltaTicks = event.ticks - lastTicks;
+        lastTicks = event.ticks;
+
+        timestamp += static_cast<double>(deltaTicks) * one_tick_sec;
+
+        uint8_t sb = event.status_byte;
+        if (sb == SS_META_SET_TEMPO && event.data_length >= 3) {
+            double bpm = read_tempo_bpm(event.data);
+            if (midi.time_division > 0)
+                one_tick_sec = 60.0 / (bpm * (double)midi.time_division);
+            continue;
+        }
+
+        if (loopStartEvent == ~0UL &&
+                event.ticks == loopStart) {
+            loopStartEvent = out.events.size();
+        }
+
         // m_timestamp is seconds, as a double -- serialize_as_stream builds it
         // from the tempo map rather than from ticks, so the conversion to
         // samples belongs here and not in whatever renders it.
         converted.timestampSamples =
-            static_cast<std::uint64_t>(event.m_timestamp * sampleRate);
+            static_cast<std::uint64_t>(timestamp * sampleRate);
         // Bit 31 marks a SysEx, and the rest is then an index into the table
         // the library filled in beside the stream; the payloads are copied out
         // below. Nuked OPL3 ignores them -- the chip has no register to receive
         // one -- but an SC-55 needs them, since a GS reset is a SysEx.
-        converted.isSysex = (event.m_event & 0x80000000U) != 0;
-        if (converted.isSysex) {
-            converted.message = static_cast<std::uint32_t>(event.m_event & 0x7FFFFFFFU);
-        } else {
-            converted.message = static_cast<std::uint32_t>(event.m_event & 0x00FFFFFFU);
-            converted.port =
-                static_cast<std::uint8_t>((event.m_event >> 24) & 0x7FU);
-        }
-        out.events.push_back(converted);
-    }
+        if (sb >= 0x80 && sb < 0xF0) {
+            converted.isSysex = false;
+            std::uint32_t ev = sb;
+            for(size_t i = 0; i < event.data_length && i < 3; i++) {
+                ev |= event.data[i] << (i + 1) * 8;
+            }
+            converted.message = ev;
+        } else if (sb == 0xF0) {
+            converted.isSysex = true;
+            converted.sysex.reserve(event.data_length + 1);
+            converted.sysex.push_back((std::uint8_t)sb);
+            converted.sysex.insert(converted.sysex.end(), event.data,
+                event.data + event.data_length);
+        } else continue;
 
-    // Copy out the SysEx payloads the events refer to. The table has no size
-    // accessor, so the highest index the stream actually uses is what says how
-    // big it is -- which is also the only part of it worth carrying.
-    std::size_t highest = 0;
-    bool        anySysex = false;
-    for (const MidiStreamEvent& event : out.events) {
-        if (event.isSysex) {
-            highest  = std::max<std::size_t>(highest, event.message);
-            anySysex = true;
-        }
-    }
-    if (anySysex) {
-        out.sysex.resize(highest + 1);
-        for (const MidiStreamEvent& event : out.events) {
-            if (!event.isSysex || !out.sysex[event.message].data.empty()) {
-                continue;
-            }
-            const std::uint8_t* data = nullptr;
-            std::size_t         size = 0;
-            std::size_t         port = 0;
-            sysex.get_entry(event.message, data, size, port);
-            if (data != nullptr && size > 0) {
-                MidiSysex& entry = out.sysex[event.message];
-                entry.data.assign(data, data + size);
-                entry.port = static_cast<std::uint8_t>(port);
-            }
+        converted.port = effective_port(midi, event);
+        out.events.push_back(converted);
+
+        if (event.ticks == loopEnd) {
+            loopEndEvent = out.events.size();
         }
     }
 
     // The library signals "no loop" with ~0UL here too, and otherwise gives an
     // index into the stream it just built.
-    if (loopStart != ~0UL && loopStart < out.events.size()) {
-        out.loopStart = static_cast<std::size_t>(loopStart);
+    if (loopStartEvent != ~0UL && loopStartEvent < out.events.size()) {
+        out.loopStart = static_cast<std::size_t>(loopStartEvent);
     }
-    if (loopEnd != ~0UL && loopEnd <= out.events.size()) {
-        out.loopEnd = static_cast<std::size_t>(loopEnd);
+    if (loopEndEvent != ~0UL && loopEndEvent <= out.events.size()) {
+        out.loopEnd = static_cast<std::size_t>(loopEndEvent);
     }
     return out;
 }
@@ -213,61 +224,9 @@ MidiDialect MidiFile::dialect(std::size_t subsong) const {
         return out;
     }
 
-    const auto index = impl_->container.get_subsong(static_cast<unsigned long>(subsong));
+    out.gs = ss_midi_has_gs(impl_->container);
+    out.gm2 = ss_midi_has_gm2(impl_->container);
 
-    std::vector<midi_stream_event> events;
-    system_exclusive_table         sysex;
-    unsigned long                  loopStart = 0;
-    unsigned long                  loopEnd   = 0;
-    impl_->container.serialize_as_stream(index, events, sysex, loopStart, loopEnd, 0);
-
-    for (const midi_stream_event& event : events) {
-        // Bit 31 marks a SysEx, and the rest of the word indexes the table.
-        if ((event.m_event & 0x80000000U) == 0) {
-            continue;
-        }
-        const std::uint8_t* data = nullptr;
-        std::size_t         size = 0;
-        std::size_t         port = 0;
-        // The whole low 31 bits index the table, unlike a short message where
-        // only the low 24 are the message and bits 24-30 are the port.
-        sysex.get_entry(static_cast<unsigned>(event.m_event & 0x7FFFFFFFU), data, size,
-                        port);
-        if (data == nullptr || size == 0) {
-            continue;
-        }
-
-        // SpessaSynth matches against the payload with the leading 0xF0 already
-        // stripped, because it keeps the status byte in its own field
-        // (midi_loader.c:852). midi_processing stores the message whole, so
-        // step over it -- and tolerate either, since which one is being held is
-        // exactly the kind of thing that changes underneath a caller.
-        std::span<const std::uint8_t> body{data, size};
-        if (body.front() == 0xF0) {
-            body = body.subspan(1);
-        }
-
-        // GM2 On: 7E 7F 09 03. Universal non-real-time, all devices.
-        if (!out.gm2 && body.size() >= 4 && body[0] == 0x7E && body[1] == 0x7F &&
-            body[2] == 0x09 && body[3] == 0x03) {
-            out.gm2 = true;
-        }
-
-        // GS reset: a Roland DT1 (0x12) writing 7F to either the mode-set or
-        // the GS-reset address. Ported from ss_midi_has_gs(), including its
-        // not checking the manufacturer byte -- matching it exactly matters
-        // more here than tightening it, since the point is to pick the same
-        // bank Cog would.
-        if (!out.gs && body.size() >= 8 && body[3] == 0x12 && body[2] == 0x42 &&
-            body[5] == 0x00 && body[6] == 0x7F && body[7] == 0x00 &&
-            (body[4] == 0x00 || body[4] == 0x40)) {
-            out.gs = true;
-        }
-
-        if (out.gs && out.gm2) {
-            break;
-        }
-    }
     return out;
 }
 
@@ -276,19 +235,16 @@ std::optional<MidiEmbeddedBank> MidiFile::embeddedBank() const {
         return std::nullopt;
     }
 
-    const std::uint8_t* data   = nullptr;
-    std::size_t         size   = 0;
-    std::uint16_t       offset = 0;
-    // Reports by return value: false means the file carried no bank, which is
-    // the ordinary case and not a failure.
-    if (!impl_->container.get_embedded_bank(&data, &size, &offset) || data == nullptr ||
-        size == 0) {
+    const std::uint8_t* data = impl_->container->embedded_soundbank;
+    size_t size = impl_->container->embedded_soundbank_size;
+
+    if (!data || !size) {
         return std::nullopt;
     }
 
     MidiEmbeddedBank bank;
-    bank.bytes.assign(data, data + size);
-    bank.bankOffset = offset;
+    bank.bytes = std::span<const uint8_t>(data, size);
+    bank.bankOffset = impl_->container->bank_offset;
     return bank;
 }
 
