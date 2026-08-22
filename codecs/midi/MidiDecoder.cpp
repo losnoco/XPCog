@@ -369,7 +369,7 @@ public:
             std::optional<std::uint32_t>         bend;
             std::map<std::uint8_t, std::uint8_t> controllers;
         };
-        std::array<ChannelState, 16> channels;
+        std::array<ChannelState, 64> channels;
         std::vector<std::pair<unsigned int, std::span<const std::uint8_t>>> sysex;
 
         std::size_t index = 0;
@@ -385,7 +385,7 @@ public:
                 continue;
             }
             const auto status  = static_cast<std::uint8_t>(event.message & 0xFF);
-            const auto channel = static_cast<std::size_t>(status & 0x0F);
+            const auto channel = static_cast<std::size_t>((status & 0x0F) + event.port * 16);
             switch (status & 0xF0) {
                 case 0xB0:
                     channels[channel].controllers[static_cast<std::uint8_t>(
@@ -411,28 +411,29 @@ public:
         // collapsed values are the ones that survived to the seek point.
         std::size_t sent = 0;
         for (const auto& entry : sysex) {
-            synth_->writeSysex(entry.second);
+            synth_->writeSysex(entry.first, entry.second);
             sent += entry.second.size();
             drainIfFull(sent);
         }
         for (std::size_t channel = 0; channel < channels.size(); ++channel) {
-            const ChannelState& state = channels[channel];
-            const auto          status = static_cast<std::uint32_t>(channel);
+            const ChannelState& state  = channels[channel];
+            const auto          status = static_cast<std::uint32_t>(channel & 0x0F);
+            const auto          port   = static_cast<std::uint32_t>(channel / 16);
             // Ascending, so bank select (0 and 32) lands before the program
             // change that reads it.
             for (const auto& [controller, value] : state.controllers) {
-                synth_->write(0xB0u | status | (std::uint32_t{controller} << 8) |
+                synth_->write(port, 0xB0u | status | (std::uint32_t{controller} << 8) |
                               (std::uint32_t{value} << 16));
                 sent += 3;
                 drainIfFull(sent);
             }
             if (state.program) {
-                synth_->write(0xC0u | status | (std::uint32_t{*state.program} << 8));
+                synth_->write(port, 0xC0u | status | (std::uint32_t{*state.program} << 8));
                 sent += 2;
                 drainIfFull(sent);
             }
             if (state.bend) {
-                synth_->write(*state.bend);
+                synth_->write(port, *state.bend);
                 sent += 3;
                 drainIfFull(sent);
             }
@@ -696,17 +697,12 @@ private:
     }
 
     void dispatch(const codecs::MidiStreamEvent& event) {
-        // One synthesiser, so one port. A file naming a second wants a second
-        // machine, which is what Cog builds for it and what this does not.
-        if (event.port != 0) {
-            return;
-        }
         if (!event.isSysex) {
-            synth_->write(event.message);
+            synth_->write(event.port, event.message);
             return;
         }
         // A synthesiser with nowhere to put a SysEx ignores it; the OPL is one.
-        synth_->writeSysex(event.sysex);
+        synth_->writeSysex(event.port, event.sysex);
     }
 
     void applyFade(float* frames, std::size_t count) {

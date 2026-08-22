@@ -33,11 +33,12 @@ public:
     [[nodiscard]] virtual double sampleRate() const noexcept = 0;
 
     /// One short message: status in the low byte, then up to two data bytes.
-    virtual void write(std::uint32_t message) = 0;
+    virtual void write(std::uint32_t port, std::uint32_t message) = 0;
 
     /// One system-exclusive message, 0xF0 to 0xF7 inclusive. Ignored by a
     /// synthesiser with nowhere to put it.
-    virtual void writeSysex(std::span<const std::uint8_t> /*bytes*/) {}
+    virtual void writeSysex(std::uint32_t /*port*/,
+        std::span<const std::uint8_t> /*bytes*/) {}
 
     /// Renders `frames` stereo frames.
     ///

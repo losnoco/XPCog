@@ -227,8 +227,8 @@ namespace {
 /// Something for the panel to react to: a program change puts an instrument
 /// name on the display, which is the whole point of watching it.
 void playSomething(codecs::Sc55Synth& synth) {
-    synth.write(0x0000C0u);        // program change, channel 0, piano
-    synth.write(0x64'3C'90u);      // note on, middle C, velocity 100
+    synth.write(0, 0x0000C0u);        // program change, channel 0, piano
+    synth.write(0, 0x64'3C'90u);      // note on, middle C, velocity 100
 }
 
 }  // namespace

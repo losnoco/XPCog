@@ -308,7 +308,7 @@ void SoundFontSynth::submit(const std::uint8_t* data, std::size_t length) {
                                  static_cast<double>(callerFrames_) / sampleRate_);
 }
 
-void SoundFontSynth::write(std::uint32_t message) {
+void SoundFontSynth::write(std::uint32_t port, std::uint32_t message) {
     const auto status = static_cast<std::uint8_t>(message & 0xFFU);
     if (status < 0x80U) {
         return;  // not a status byte: nothing to deliver
@@ -335,6 +335,14 @@ void SoundFontSynth::write(std::uint32_t message) {
         }
     }
 
+    const std::array<std::uint8_t, 4> portbytes{
+        0xF0,
+        0xF5,
+        static_cast<std::uint8_t>((port & 0x0F) + 1),
+        0xF7,
+    };
+    submit(portbytes.data(), 4);
+
     const std::array<std::uint8_t, 3> bytes{
         status,
         static_cast<std::uint8_t>((message >> 8) & 0xFFU),
@@ -343,7 +351,15 @@ void SoundFontSynth::write(std::uint32_t message) {
     submit(bytes.data(), length);
 }
 
-void SoundFontSynth::writeSysex(std::span<const std::uint8_t> bytes) {
+void SoundFontSynth::writeSysex(std::uint32_t port, std::span<const std::uint8_t> bytes) {
+    const std::array<std::uint8_t, 4> portbytes{
+        0xF0,
+        0xF5,
+        static_cast<std::uint8_t>((port & 0x0F) + 1),
+        0xF7,
+    };
+    submit(portbytes.data(), 4);
+
     // Whole, from 0xF0 to 0xF7. ss_processor_sysex() wants the inner bytes
     // instead, but process_message takes the message as it appears in the file
     // and does that itself.

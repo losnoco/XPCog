@@ -137,8 +137,8 @@ bool Sc55Synth::open(const Sc55RomSet& roms) {
     return true;
 }
 
-void Sc55Synth::write(std::uint32_t message) {
-    if (state_ == nullptr) {
+void Sc55Synth::write(std::uint32_t port, std::uint32_t message) {
+    if (state_ == nullptr || port != 0) {
         return;
     }
     const std::uint8_t bytes[3] = {
@@ -153,8 +153,8 @@ void Sc55Synth::write(std::uint32_t message) {
     sc55_write_uart(state_, bytes, static_cast<std::uint32_t>(length));
 }
 
-void Sc55Synth::writeSysex(std::span<const std::uint8_t> bytes) {
-    if (state_ == nullptr || bytes.empty()) {
+void Sc55Synth::writeSysex(std::uint32_t port, std::span<const std::uint8_t> bytes) {
+    if (state_ == nullptr || bytes.empty() || port != 0) {
         return;
     }
     sc55_write_uart(state_, bytes.data(), static_cast<std::uint32_t>(bytes.size()));

@@ -118,8 +118,8 @@ public:
 
     [[nodiscard]] double sampleRate() const noexcept override { return sampleRate_; }
 
-    void write(std::uint32_t message) override;
-    void writeSysex(std::span<const std::uint8_t> bytes) override;
+    void write(std::uint32_t port, std::uint32_t message) override;
+    void writeSysex(std::uint32_t port, std::span<const std::uint8_t> bytes) override;
     void render(float* out, std::size_t frames) override;
 
     /// A GM reset, which the engine applies at once. Nothing is reloaded: the

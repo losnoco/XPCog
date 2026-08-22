@@ -92,10 +92,10 @@ public:
     /// One short message, packed as MidiStreamEvent::message holds it. Unpacked
     /// here into the one, two or three bytes the machine expects on its
     /// serial port.
-    void write(std::uint32_t message) override;
+    void write(std::uint32_t port, std::uint32_t message) override;
 
     /// One system-exclusive message, from its 0xF0 to its 0xF7.
-    void writeSysex(std::span<const std::uint8_t> bytes) override;
+    void writeSysex(std::uint32_t port, std::span<const std::uint8_t> bytes) override;
 
     /// Renders `frames` stereo frames.
     void render(float* out, std::size_t frames) override;
