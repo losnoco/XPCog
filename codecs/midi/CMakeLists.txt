@@ -13,12 +13,6 @@
 #
 # xpcog-archive-reader is here because the SC-55 ROM set is read straight out of
 # the zip it was distributed in.
-add_library(xpcog-codec-midi STATIC MidiFile.cpp)
-target_include_directories(xpcog-codec-midi PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-target_link_libraries(xpcog-codec-midi
-    PUBLIC xpcog-core vendor-midi-processing
-    PRIVATE XPCog::warnings)
-set_target_properties(xpcog-codec-midi PROPERTIES FOLDER codecs)
 
 # SpessaSynth is an overlay port (../../ports/spessasynth-core) that installs a
 # header tree and an archive and no CMake config package, so the imported target
@@ -48,6 +42,13 @@ if(NOT TARGET spessasynth::spessasynth)
             IMPORTED_LOCATION_DEBUG "${SPESSASYNTH_LIBRARY_DEBUG}")
     endif()
 endif()
+
+add_library(xpcog-codec-midi STATIC MidiFile.cpp)
+target_include_directories(xpcog-codec-midi PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_link_libraries(xpcog-codec-midi
+    PUBLIC xpcog-core
+    PRIVATE XPCog::warnings spessasynth::spessasynth)
+set_target_properties(xpcog-codec-midi PROPERTIES FOLDER codecs)
 
 xpcog_add_codec(
     NAME     midisynth

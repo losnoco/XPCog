@@ -78,8 +78,8 @@ void OplSynth::reset() {
     }
 }
 
-void OplSynth::write(std::uint32_t message) {
-    if (synth_ != nullptr) {
+void OplSynth::write(std::uint32_t port, std::uint32_t message) {
+    if (port == 0 && synth_ != nullptr) {
         synth_->midi_write(message);
     }
 }

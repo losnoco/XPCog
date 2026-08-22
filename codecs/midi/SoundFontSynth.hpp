@@ -78,7 +78,7 @@ public:
     SoundFontSynth();
     ~SoundFontSynth() override;
 
-    /// Loads `bank` and prepares to render at `sampleRate`.
+    /// Prepares `bank` for rendering.
     ///
     /// `bank` is a SoundFont (`.sf2`, `.sf3`, `.sf2pack`), a DLS bank, or an
     /// `.sflist`/`.json` naming several with the ranges they cover. Returns
@@ -89,14 +89,17 @@ public:
     /// A 1.3 GB bank is a normal thing to be handed and is not read into
     /// memory: the engine keeps the file open and decodes samples as the music
     /// reaches them.
-    [[nodiscard]] bool open(const std::filesystem::path& bank, double sampleRate,
-                            SoundFontInterpolation interpolation);
+    void addGlobalBank(const std::filesystem::path& bank);
 
-    /// The same for a bank that arrived inside the MIDI file: an RMID can carry
-    /// one, and then that bank is the one the music was written for.
+    /// Prepares `bank` as a per-file bank.
     ///
-    /// `bankOffset` is added to every bank-select the file makes; see
-    /// MidiEmbeddedBank in MidiFile.hpp for why it is not optional.
+    /// `bank` is the same as above, except it takes precedence over the above
+    /// specified `bank` when mapping instruments.
+    void addFileBank(const std::filesystem::path& bank);
+
+    /// Prepares `bank` as a per-file embedded bank.
+    ///
+    /// `bank` takes even further precedence over the above two.
     ///
     /// The bytes are copied and kept. The engine's file primitive can be handed
     /// a buffer it does not own, and then "it is essential to keep that buffer
@@ -104,14 +107,19 @@ public:
     /// it as the music reaches them, exactly as the streaming path does with a
     /// file on disk. An embedded bank is small enough that owning a copy is the
     /// cheaper mistake to avoid.
-    [[nodiscard]] bool openEmbedded(std::span<const std::uint8_t> bank, int bankOffset,
-                                    double                 sampleRate,
-                                    SoundFontInterpolation interpolation);
+    void addEmbeddedBank(std::span<const std::uint8_t> bank, int bankOffset);
+
+    /// Opens the synthesizer for rendering.
+    ///
+    /// If none of the above loaded banks succeed, or a memory allocation error
+    /// occurs, this will return an error.
+    [[nodiscard]] bool open(double                 sampleRate,
+                            SoundFontInterpolation interpolation);
 
     [[nodiscard]] double sampleRate() const noexcept override { return sampleRate_; }
 
-    void write(std::uint32_t message) override;
-    void writeSysex(std::span<const std::uint8_t> bytes) override;
+    void write(std::uint32_t port, std::uint32_t message) override;
+    void writeSysex(std::uint32_t port, std::span<const std::uint8_t> bytes) override;
     void render(float* out, std::size_t frames) override;
 
     /// A GM reset, which the engine applies at once. Nothing is reloaded: the
@@ -139,9 +147,14 @@ private:
 
     std::unique_ptr<Impl> impl_;
 
+    /// Held for the global and per-file banks, if any
+    std::optional<std::filesystem::path> globalBank_;
+    std::optional<std::filesystem::path> fileBank_;
+
     /// Held only for openEmbedded(), whose bank reads out of it for as long as
     /// the synthesiser lives. Empty on the path that opens a file.
     std::vector<std::uint8_t> embeddedBank_;
+    int bankOffset_ = 0;
 
     double      sampleRate_ = 0.0;
     std::string displayName_ = "SpessaSynth";

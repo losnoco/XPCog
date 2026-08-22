@@ -181,7 +181,6 @@ bool SoundFontSynth::start(double sampleRate, SoundFontInterpolation interpolati
     blockFill_    = 0;
     blockTaken_   = 0;
     callerFrames_ = 0;
-    embeddedBank_.clear();
 
     if (!(sampleRate >= kMinSampleRate && sampleRate <= kMaxSampleRate)) {
         return false;
@@ -211,53 +210,30 @@ bool SoundFontSynth::start(double sampleRate, SoundFontInterpolation interpolati
     return true;
 }
 
-bool SoundFontSynth::openEmbedded(std::span<const std::uint8_t> bank, int bankOffset,
-                                  double                 sampleRate,
-                                  SoundFontInterpolation interpolation) {
-    if (!start(sampleRate, interpolation)) {
-        return false;
-    }
-    if (bank.empty()) {
-        return false;
-    }
-
-    embeddedBank_.assign(bank.begin(), bank.end());
-
-    // `owned` false: the copy above is what stays alive, and freeing it is this
-    // object's business rather than the engine's.
-    SS_File* file =
-        ss_file_open_from_memory(embeddedBank_.data(), embeddedBank_.size(), false);
-    if (file == nullptr) {
-        return false;
-    }
-    SS_SoundBank* loaded = ss_soundbank_load(file);
-    ss_file_close(file);
-    if (loaded == nullptr) {
-        return false;
-    }
-    if (!ss_processor_load_soundbank(impl_->processor, loaded, "embedded", bankOffset,
-                                     false)) {
-        ss_soundbank_free(loaded);
-        return false;
-    }
-
-    displayName_ = "SpessaSynth (embedded bank)";
-    return true;
+void SoundFontSynth::addEmbeddedBank(std::span<const std::uint8_t> bank,
+                                     int bankOffset) {
+    if(!bank.empty())
+        embeddedBank_.assign(bank.begin(), bank.end());
+    bankOffset_ = bankOffset;
 }
 
-bool SoundFontSynth::open(const std::filesystem::path& bank, double sampleRate,
-                          SoundFontInterpolation interpolation) {
-    if (!start(sampleRate, interpolation)) {
-        return false;
-    }
-    SS_Processor* processor = impl_->processor;
+void SoundFontSynth::addGlobalBank(const std::filesystem::path& path) {
+    globalBank_ = path;
+}
 
+void SoundFontSynth::addFileBank(const std::filesystem::path& path) {
+    fileBank_ = path;
+}
+
+[[nodiscard]] bool loadABank(SS_Processor* processor,
+                               const std::filesystem::path& bank,
+                               const char* name) {
     if (isBankList(bank)) {
         SS_FilteredBanks* banks = loadBankList(bank);
         if (banks == nullptr) {
             return false;
         }
-        if (!ss_processor_load_filtered_banks(processor, banks, "bank", false)) {
+        if (!ss_processor_load_filtered_banks(processor, banks, name, false)) {
             ss_filtered_banks_free(banks, true);
             return false;
         }
@@ -266,13 +242,61 @@ bool SoundFontSynth::open(const std::filesystem::path& bank, double sampleRate,
         if (loaded == nullptr) {
             return false;
         }
-        if (!ss_processor_load_soundbank(processor, loaded, "bank", 0, false)) {
+        if (!ss_processor_load_soundbank(processor, loaded, name, 0, false)) {
             ss_soundbank_free(loaded);
             return false;
         }
     }
 
-    displayName_ = "SpessaSynth (" + pathToUtf8(bank.filename()) + ")";
+    return true;
+}
+
+bool SoundFontSynth::open(double                 sampleRate,
+                          SoundFontInterpolation interpolation) {
+    if (!start(sampleRate, interpolation)) {
+        return false;
+    }
+
+    SS_Processor* processor = impl_->processor;
+
+    if (fileBank_) {
+        if (!loadABank(processor, *fileBank_, "file")) {
+            return false;
+        }
+
+        displayName_ = "SpessaSynth (" + pathToUtf8(fileBank_->filename()) + ")";
+    }
+
+    if (globalBank_) {
+        if (!loadABank(processor, *globalBank_, "global")) {
+            return false;
+        }
+
+        displayName_ = "SpessaSynth (" + pathToUtf8(globalBank_->filename()) + ")";
+    }
+
+    if (!embeddedBank_.empty()) {
+        // `owned` false: the copy above is what stays alive, and freeing it is this
+        // object's business rather than the engine's.
+        SS_File* file =
+            ss_file_open_from_memory(embeddedBank_.data(), embeddedBank_.size(), false);
+        if (file == nullptr) {
+            return false;
+        }
+        SS_SoundBank* loaded = ss_soundbank_load(file);
+        ss_file_close(file);
+        if (loaded == nullptr) {
+            return false;
+        }
+        if (!ss_processor_load_soundbank(processor, loaded, "embedded", bankOffset_,
+                                         true)) {
+            ss_soundbank_free(loaded);
+            return false;
+        }
+
+        displayName_ = "SpessaSynth (embedded bank)";
+    }
+
     return true;
 }
 
@@ -284,7 +308,7 @@ void SoundFontSynth::submit(const std::uint8_t* data, std::size_t length) {
                                  static_cast<double>(callerFrames_) / sampleRate_);
 }
 
-void SoundFontSynth::write(std::uint32_t message) {
+void SoundFontSynth::write(std::uint32_t port, std::uint32_t message) {
     const auto status = static_cast<std::uint8_t>(message & 0xFFU);
     if (status < 0x80U) {
         return;  // not a status byte: nothing to deliver
@@ -311,6 +335,14 @@ void SoundFontSynth::write(std::uint32_t message) {
         }
     }
 
+    const std::array<std::uint8_t, 4> portbytes{
+        0xF0,
+        0xF5,
+        static_cast<std::uint8_t>((port & 0x0F) + 1),
+        0xF7,
+    };
+    submit(portbytes.data(), 4);
+
     const std::array<std::uint8_t, 3> bytes{
         status,
         static_cast<std::uint8_t>((message >> 8) & 0xFFU),
@@ -319,7 +351,15 @@ void SoundFontSynth::write(std::uint32_t message) {
     submit(bytes.data(), length);
 }
 
-void SoundFontSynth::writeSysex(std::span<const std::uint8_t> bytes) {
+void SoundFontSynth::writeSysex(std::uint32_t port, std::span<const std::uint8_t> bytes) {
+    const std::array<std::uint8_t, 4> portbytes{
+        0xF0,
+        0xF5,
+        static_cast<std::uint8_t>((port & 0x0F) + 1),
+        0xF7,
+    };
+    submit(portbytes.data(), 4);
+
     // Whole, from 0xF0 to 0xF7. ss_processor_sysex() wants the inner bytes
     // instead, but process_message takes the message as it appears in the file
     // and does that itself.
