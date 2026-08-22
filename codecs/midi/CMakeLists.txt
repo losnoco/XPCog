@@ -49,6 +49,11 @@ if(NOT TARGET spessasynth::spessasynth)
     endif()
 endif()
 
+# MidiFile.cpp is the implementation of xpcog-codec-midi and includes the
+# spessasynth headers directly, so the library must appear on its private link
+# line even though the public MidiFile.hpp exposes none of those types.
+target_link_libraries(xpcog-codec-midi PRIVATE spessasynth::spessasynth)
+
 xpcog_add_codec(
     NAME     midisynth
     REGISTER xpcog_register_midi
