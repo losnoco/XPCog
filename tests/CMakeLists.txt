@@ -165,7 +165,10 @@ if(XPCOG_WITH_VORBIS AND XPCOG_WITH_OPUS AND XPCOG_WITH_OGGCHAIN)
 endif()
 
 if(XPCOG_WITH_FFMPEG)
-    find_package(FFMPEG REQUIRED)
+    xpcog_system_dep(ffmpeg _ffmpeg_from_system)
+    if(NOT _ffmpeg_from_system)
+        find_package(FFMPEG REQUIRED)
+    endif()
     target_sources(xpcog-tests PRIVATE codecs/test_ffmpeg_stream_tags.cpp)
     target_include_directories(xpcog-tests SYSTEM PRIVATE ${FFMPEG_INCLUDE_DIRS})
 endif()
@@ -299,11 +302,23 @@ if(XPCOG_WITH_MUSEPACK)
     # feature and it lands in the manifest's own vcpkg_installed tree. Naming it
     # also means the fixture is encoded by exactly the revision the decoder was
     # built from.
+    #
+    # Unless the decoder came from the distribution rather than from the port, in
+    # which case there is no vcpkg tools directory to name and PATH is the only
+    # place left to look -- Debian packages the encoder as `musepack-tools`, and
+    # where a distribution does not, the fixtures skip as they did before. Same
+    # fixture when it is there; what is lost is the guarantee that the encoder and
+    # the decoder came from one revision.
     set(_mpcenc "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/libmpcdec/mpcenc${CMAKE_EXECUTABLE_SUFFIX}")
-    if(EXISTS "${_mpcenc}")
+    if(NOT EXISTS "${_mpcenc}")
+        find_program(XPCOG_MPCENC_PROGRAM NAMES mpcenc)
+        set(_mpcenc "${XPCOG_MPCENC_PROGRAM}")
+    endif()
+    if(_mpcenc AND EXISTS "${_mpcenc}")
         target_compile_definitions(xpcog-tests PRIVATE "XPCOG_MPCENC=\"${_mpcenc}\"")
     else()
-        message(STATUS "mpcenc not found at ${_mpcenc}; Musepack fixtures will skip")
+        message(STATUS "mpcenc not found in vcpkg's tools directory or on PATH; "
+                       "Musepack fixtures will skip")
     endif()
 endif()
 

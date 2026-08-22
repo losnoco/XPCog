@@ -269,6 +269,144 @@ jobs:
           path: .vcpkg-cache
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
+  system-libs:
+    # The other half of the Linux dependency story, and the half nothing else
+    # builds. cmake/XPCogSystemDeps.cmake asks pkg-config what the distribution
+    # has before vcpkg is asked for anything, and drops the ports it can answer
+    # for -- so every call site that library reaches has two ways of being found
+    # and the matrix job above only ever exercises one of them. A CONFIG-mode
+    # find_package that quietly stops having a system branch, a version floor
+    # that stops matching, an imported target named differently on the two paths:
+    # none of that is visible from a build that takes everything from vcpkg.
+    #
+    # ubuntu-24.04 is the right runner for it rather than merely an available
+    # one, because it fails two floors and passes the other twelve. TagLib is
+    # 1.13.1 there and codecs/taglib needs 2.0 for TagLib::Variant; Catch2 is
+    # 3.4.0 and the floor is 3.7.1, below which a skipped test is reported as a
+    # failed one. So this single job runs the system path for twelve
+    # dependencies and the fallback-to-vcpkg path for two -- and the fallback is
+    # the case that goes wrong quietly, since a floor that stopped rejecting
+    # anything would look like a faster build rather than like a bug.
+    #
+    # It also covers two things no other job can reach: libsidplayfp is the one
+    # entry with an *upper* bound (2.6.0 here, inside it; sidplayfp 3.0 changed
+    # play() out from under codecs/sid), and a distribution installs the reSIDfp
+    # builder header as <sidplayfp/builders/residfp.h> where ports/libsidplayfp
+    # installs it flat -- so the __has_include in SidDecoder.cpp is compiled both
+    # ways only if this job exists.
+    name: Linux (distribution libraries)
+    runs-on: ubuntu-24.04
+    # See the matrix job above for why.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Three groups, and they are not interchangeable.
+      #
+      # The first is the toolchain and the toolkit, as in every Linux job here.
+      # The second is the encoders the test fixtures are generated with --
+      # musepack-tools is new to this job, because mpcenc normally comes from
+      # ports/libmpcdec's `tools` feature and that port is not installed here;
+      # tests/CMakeLists.txt falls back to PATH, and without the package the
+      # Musepack fixtures would skip in the one job meant to exercise them.
+      # The third is what this job is about: the -dev packages the substitution
+      # is offered. libtag1-dev is in that list deliberately even though it is
+      # too old to be used -- being installed and rejected is the case under test.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build pkg-config autoconf automake libtool nasm \
+            libwxgtk3.2-dev libglib2.0-dev \
+            flac vorbis-tools opus-tools lame wavpack ffmpeg musepack-tools \
+            libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+            libcurl4-openssl-dev libarchive-dev libsqlite3-dev libsoxr-dev \
+            libopusfile-dev libwavpack-dev libopenmpt-dev libgme-dev \
+            libmpcdec-dev libsidplayfp-dev libadplug-dev libbinio-dev \
+            catch2 libtag1-dev
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          runVcpkgInstall: false
+          # See the matrix job: an overlay port's manifest is also a vcpkg.json.
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
+
+      # A key of its own, because this job wants a different set of archives
+      # from the one linux-debug builds -- fourteen packages rather than
+      # forty-one. Sharing the prefix would work, the cache being per-package,
+      # but it would also mean each job's save step storing the other's misses.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-v3-linux-repo-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          restore-keys: vcpkg-v3-linux-repo-
+
+      # See the matrix job: vcpkg creates this, but not if configure dies first.
+      - name: Prepare the binary cache directory
+        run: mkdir -p .vcpkg-cache
+
+      - name: Configure
+        id: configure
+        run: cmake --preset linux-repo-debug
+
+      # The assertion this job exists for, and it reads vcpkg's own installed
+      # tree rather than the summary XPCogSystemDeps.cmake prints. The summary is
+      # a message; the tree is what was actually built, so a substitution that
+      # silently stopped happening -- a feature moved back under "dependencies",
+      # a floor rewritten, a probe that answers ON and installs the port anyway --
+      # fails here rather than passing as an unexplained slowdown.
+      #
+      # Both directions are checked. A port that must be absent because the
+      # system supplied it, and a port that must be present because the system
+      # did not: taglib and catch2, both below their floors on this runner, and
+      # the five that are never substituted anywhere because the overlay ports
+      # build against them.
+      - name: Check the substitution actually happened
+        run: |
+          set -u
+          installed=build/linux-repo-debug/vcpkg_installed/x64-linux/share
+          status=0
+          for port in ffmpeg openssl curl libarchive sqlite3 soxr opus opusfile \
+                      wavpack libopenmpt libgme libmpcdec libsidplayfp \
+                      adplug libbinio; do
+              if [ -d "$installed/$port" ]; then
+                  echo "::error::vcpkg built $port, which ubuntu-24.04 supplies -- the system path for it is not working"
+                  status=1
+              fi
+          done
+          for port in taglib catch2 libflac libogg libvorbis zlib spessasynth-core; do
+              if [ ! -d "$installed/$port" ]; then
+                  echo "::error::vcpkg did not build $port, which it must: this runner cannot supply it"
+                  status=1
+              fi
+          done
+          echo "vcpkg built $(ls -1 "$installed"/*/vcpkg.spdx.json | wc -l) packages"
+          exit $status
+
+      - name: Build
+        run: cmake --build --preset linux-repo-debug
+
+      - name: Test
+        run: ctest --preset linux-repo-debug
+
+      - name: Smoke-test the CLI
+        run: |
+          build/linux-repo-debug/bin/xpcog-cli --version
+          build/linux-repo-debug/bin/xpcog-cli codecs
+
+      # See the matrix job: gated on configure, not on the job as a whole.
+      - name: Save vcpkg binary cache
+        if: >-
+          always() && steps.configure.outcome == 'success'
+          && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
   headless:
     # The engine, codecs, CLI and tests must build with no UI toolkit present at
     # all -- not merely unused. This is the real guarantee behind the layering

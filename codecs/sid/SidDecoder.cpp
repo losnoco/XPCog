@@ -41,7 +41,22 @@
 #include <sidplayfp/SidTuneInfo.h>
 #include <sidplayfp/SidConfig.h>
 #include <sidplayfp/SidInfo.h>
-#include <sidplayfp/residfp.h>
+// The reSIDfp builder's header sits in two places depending on where
+// libsidplayfp came from. ports/libsidplayfp installs it flat, as
+// <sidplayfp/residfp.h>, which is what Cog's own plugin includes and what
+// upstream's autotools install produced for years; a distribution package keeps
+// the source tree's layout and installs it under builders/. Both are the same
+// header. See cmake/XPCogSystemDeps.cmake for when the system one is used --
+// only for libsidplayfp 2.x, since 3.0 changed play() out from under this file.
+#if defined(__has_include)
+#  if __has_include(<sidplayfp/residfp.h>)
+#    include <sidplayfp/residfp.h>
+#  else
+#    include <sidplayfp/builders/residfp.h>
+#  endif
+#else
+#  include <sidplayfp/residfp.h>
+#endif
 
 #include <algorithm>
 #include <cmath>

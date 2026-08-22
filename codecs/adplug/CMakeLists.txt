@@ -1,40 +1,48 @@
 # adplug ships no CMake config package -- the overlay port installs the archive
 # and the headers and nothing else -- so the target is assembled here, the same
 # way codecs/gme assembles libgme's.
-find_path(ADPLUG_INCLUDE_DIR NAMES adplug/adplug.h REQUIRED)
-find_library(ADPLUG_LIBRARY_RELEASE NAMES adplug REQUIRED)
-find_library(ADPLUG_LIBRARY_DEBUG NAMES adplug
-             PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
-             NO_DEFAULT_PATH)
+# The system branch: adplug.pc, when XPCOG_USE_SYSTEM_LIBS found one. It is not
+# a convenience here, it is the only thing that works -- AdPlug's headers include
+# binio.h unqualified and Debian installs it as /usr/include/libbinio/binio.h, so
+# the search below finds nothing on a machine that has both libraries. adplug.pc
+# names that directory, and requires libbinio, so one query answers for the pair.
+xpcog_system_dep(adplug _adplug_from_system)
+if(NOT _adplug_from_system)
+    find_path(ADPLUG_INCLUDE_DIR NAMES adplug/adplug.h REQUIRED)
+    find_library(ADPLUG_LIBRARY_RELEASE NAMES adplug REQUIRED)
+    find_library(ADPLUG_LIBRARY_DEBUG NAMES adplug
+                 PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
+                 NO_DEFAULT_PATH)
 
-# AdPlug's own headers include binio.h unqualified, so libbinio has to be on the
-# include path of anything that includes them -- which is this codec.
-find_path(BINIO_INCLUDE_DIR NAMES binio.h REQUIRED)
-find_library(BINIO_LIBRARY_RELEASE NAMES binio REQUIRED)
-find_library(BINIO_LIBRARY_DEBUG NAMES binio
-             PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
-             NO_DEFAULT_PATH)
+    # AdPlug's own headers include binio.h unqualified, so libbinio has to be on the
+    # include path of anything that includes them -- which is this codec.
+    find_path(BINIO_INCLUDE_DIR NAMES binio.h REQUIRED)
+    find_library(BINIO_LIBRARY_RELEASE NAMES binio REQUIRED)
+    find_library(BINIO_LIBRARY_DEBUG NAMES binio
+                 PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
+                 NO_DEFAULT_PATH)
 
-if(NOT TARGET AdPlug::binio)
-    add_library(AdPlug::binio UNKNOWN IMPORTED GLOBAL)
-    set_target_properties(AdPlug::binio PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${BINIO_INCLUDE_DIR}"
-        IMPORTED_LOCATION "${BINIO_LIBRARY_RELEASE}")
-    if(BINIO_LIBRARY_DEBUG)
+    if(NOT TARGET AdPlug::binio)
+        add_library(AdPlug::binio UNKNOWN IMPORTED GLOBAL)
         set_target_properties(AdPlug::binio PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${BINIO_LIBRARY_DEBUG}")
+            INTERFACE_INCLUDE_DIRECTORIES "${BINIO_INCLUDE_DIR}"
+            IMPORTED_LOCATION "${BINIO_LIBRARY_RELEASE}")
+        if(BINIO_LIBRARY_DEBUG)
+            set_target_properties(AdPlug::binio PROPERTIES
+                IMPORTED_LOCATION_DEBUG "${BINIO_LIBRARY_DEBUG}")
+        endif()
     endif()
-endif()
 
-if(NOT TARGET AdPlug::adplug)
-    add_library(AdPlug::adplug UNKNOWN IMPORTED GLOBAL)
-    set_target_properties(AdPlug::adplug PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${ADPLUG_INCLUDE_DIR}"
-        INTERFACE_LINK_LIBRARIES AdPlug::binio
-        IMPORTED_LOCATION "${ADPLUG_LIBRARY_RELEASE}")
-    if(ADPLUG_LIBRARY_DEBUG)
+    if(NOT TARGET AdPlug::adplug)
+        add_library(AdPlug::adplug UNKNOWN IMPORTED GLOBAL)
         set_target_properties(AdPlug::adplug PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${ADPLUG_LIBRARY_DEBUG}")
+            INTERFACE_INCLUDE_DIRECTORIES "${ADPLUG_INCLUDE_DIR}"
+            INTERFACE_LINK_LIBRARIES AdPlug::binio
+            IMPORTED_LOCATION "${ADPLUG_LIBRARY_RELEASE}")
+        if(ADPLUG_LIBRARY_DEBUG)
+            set_target_properties(AdPlug::adplug PROPERTIES
+                IMPORTED_LOCATION_DEBUG "${ADPLUG_LIBRARY_DEBUG}")
+        endif()
     endif()
 endif()
 

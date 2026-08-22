@@ -103,6 +103,31 @@
       ]
     },
     {
+      "name": "linux-repo",
+      "hidden": true,
+      "inherits": "linux",
+      "description": "The Linux build, taking every dependency the distribution already has at a version this code can use, and asking vcpkg only for the rest. Same source, same options and the same feature list as `linux` -- the one cache variable below is what makes cmake/XPCogSystemDeps.cmake probe with pkg-config before project() and subtract what it finds from VCPKG_MANIFEST_FEATURES. On a developer machine with the -dev packages installed that is most of the manifest, FFmpeg and OpenSSL included, which is nearly all of a cold build. The plain linux-debug and linux-release presets stay as they were and take everything from vcpkg: that is what CI builds, and what a build has to be to be reproducible on a machine other than the one it was configured on.",
+      "cacheVariables": {
+        "XPCOG_USE_SYSTEM_LIBS": "ON"
+      }
+    },
+    {
+      "name": "linux-repo-debug",
+      "displayName": "Linux, distribution libraries (Debug)",
+      "inherits": [
+        "linux-repo",
+        "debug"
+      ]
+    },
+    {
+      "name": "linux-repo-release",
+      "displayName": "Linux, distribution libraries (RelWithDebInfo)",
+      "inherits": [
+        "linux-repo",
+        "release"
+      ]
+    },
+    {
       "name": "windows-debug",
       "displayName": "Windows x64 (Debug)",
       "inherits": [
@@ -174,6 +199,14 @@
       "configurePreset": "linux-release"
     },
     {
+      "name": "linux-repo-debug",
+      "configurePreset": "linux-repo-debug"
+    },
+    {
+      "name": "linux-repo-release",
+      "configurePreset": "linux-repo-release"
+    },
+    {
       "name": "windows-debug",
       "configurePreset": "windows-debug"
     },
@@ -200,6 +233,13 @@
     {
       "name": "linux-debug",
       "configurePreset": "linux-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-repo-debug",
+      "configurePreset": "linux-repo-debug",
       "output": {
         "outputOnFailure": true
       }

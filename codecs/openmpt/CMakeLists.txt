@@ -1,4 +1,9 @@
-find_package(libopenmpt CONFIG REQUIRED GLOBAL)
+# The system branch, when XPCOG_USE_SYSTEM_LIBS found one: distributions install
+# libopenmpt.pc but no CMake config package, so the target is made from that.
+xpcog_system_dep(openmpt _openmpt_from_system)
+if(NOT _openmpt_from_system)
+    find_package(libopenmpt CONFIG REQUIRED GLOBAL)
+endif()
 
 # The compressed module extensions -- itz, mdz and the rest -- are one module in
 # a zip, and it is the archive codec that unwraps them. Without it this decoder

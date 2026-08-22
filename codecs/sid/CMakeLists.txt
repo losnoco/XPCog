@@ -9,20 +9,28 @@
 # C64Roms.cpp is deliberately *not* part of the port. It is not libsidplayfp's
 # code and libsidplayfp does not ship it: it is the three ROM images this
 # decoder hands to setRoms(), and it belongs with the caller. See C64Roms.hpp.
-find_path(SIDPLAYFP_INCLUDE_DIR NAMES sidplayfp/sidplayfp.h REQUIRED)
-find_library(SIDPLAYFP_LIBRARY_RELEASE NAMES sidplayfp REQUIRED)
-find_library(SIDPLAYFP_LIBRARY_DEBUG NAMES sidplayfp
-             PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
-             NO_DEFAULT_PATH)
+# The system branch: libsidplayfp.pc, when XPCOG_USE_SYSTEM_LIBS found a 2.x --
+# sidplayfp 3.0 changed play() out from under SidDecoder.cpp, so the table entry
+# in cmake/XPCogSystemDeps.cmake has an upper bound as well as a floor. The .pc
+# also carries flags this file's searches cannot know about: Debian's puts
+# -fopenmp in Cflags and Libs.
+xpcog_system_dep(sid _sid_from_system)
+if(NOT _sid_from_system)
+    find_path(SIDPLAYFP_INCLUDE_DIR NAMES sidplayfp/sidplayfp.h REQUIRED)
+    find_library(SIDPLAYFP_LIBRARY_RELEASE NAMES sidplayfp REQUIRED)
+    find_library(SIDPLAYFP_LIBRARY_DEBUG NAMES sidplayfp
+                 PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
+                 NO_DEFAULT_PATH)
 
-if(NOT TARGET sidplayfp::sidplayfp)
-    add_library(sidplayfp::sidplayfp UNKNOWN IMPORTED GLOBAL)
-    set_target_properties(sidplayfp::sidplayfp PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${SIDPLAYFP_INCLUDE_DIR}"
-        IMPORTED_LOCATION "${SIDPLAYFP_LIBRARY_RELEASE}")
-    if(SIDPLAYFP_LIBRARY_DEBUG)
+    if(NOT TARGET sidplayfp::sidplayfp)
+        add_library(sidplayfp::sidplayfp UNKNOWN IMPORTED GLOBAL)
         set_target_properties(sidplayfp::sidplayfp PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${SIDPLAYFP_LIBRARY_DEBUG}")
+            INTERFACE_INCLUDE_DIRECTORIES "${SIDPLAYFP_INCLUDE_DIR}"
+            IMPORTED_LOCATION "${SIDPLAYFP_LIBRARY_RELEASE}")
+        if(SIDPLAYFP_LIBRARY_DEBUG)
+            set_target_properties(sidplayfp::sidplayfp PROPERTIES
+                IMPORTED_LOCATION_DEBUG "${SIDPLAYFP_LIBRARY_DEBUG}")
+        endif()
     endif()
 endif()
 

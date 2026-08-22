@@ -74,7 +74,16 @@ if(unofficial-sqlite3_FOUND)
     set(XPCOG_SQLITE unofficial::sqlite3::sqlite3)
 else()
     find_package(SQLite3 REQUIRED)
-    set(XPCOG_SQLITE SQLite::SQLite3)
+    # FindSQLite3 named its target SQLite::SQLite3 until CMake 3.31 renamed it to
+    # SQLite3::SQLite3 and started warning on the old spelling. Both exist in the
+    # releases that carry the new one, so preferring it keeps a system SQLite --
+    # which is what this branch finds -- from printing the deprecation once per
+    # target that links core.
+    if(TARGET SQLite3::SQLite3)
+        set(XPCOG_SQLITE SQLite3::SQLite3)
+    else()
+        set(XPCOG_SQLITE SQLite::SQLite3)
+    endif()
 endif()
 
 target_link_libraries(xpcog-core

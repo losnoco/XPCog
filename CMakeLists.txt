@@ -1,12 +1,24 @@
 cmake_minimum_required(VERSION 3.24)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
+# Before project(), and it has to be: vcpkg installs the manifest from inside its
+# toolchain file, which project() is what reads. Anything that decides which
+# packages vcpkg installs -- which is exactly what this does on Linux, when
+# XPCOG_USE_SYSTEM_LIBS is on -- is too late one line further down.
+include(XPCogSystemDeps)
+xpcog_probe_system_deps()
+
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
     VERSION 0.1.0
     DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
     LANGUAGES C CXX)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+# After project(), and only after: vcpkg's toolchain sets these same variables as
+# project() reads it. See the function for what a distribution package's single,
+# configuration-less build does to an imported target without them.
+xpcog_system_deps_config_map()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -63,4 +75,5 @@ message(STATUS "  cli ................ ${XPCOG_BUILD_CLI}")
 message(STATUS "  tests .............. ${XPCOG_BUILD_TESTS}")
 get_property(_codecs GLOBAL PROPERTY XPCOG_CODEC_TARGETS)
 message(STATUS "  codecs ............. ${_codecs}")
+xpcog_system_deps_report()
 message(STATUS "")

@@ -78,7 +78,9 @@ at build time. See [`cmake/XPCogCodec.cmake`](cmake/XPCogCodec.cmake).
 Requires **CMake 3.24+**, **Ninja**, a **C++20** compiler, and
 [**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set. Every
 dependency, wxWidgets included, comes from vcpkg — there is nothing to install
-separately and no environment variable to point at a toolkit.
+separately and no environment variable to point at a toolkit. On Linux the
+toolkit is the distribution's, and the `linux-repo-*` presets take as much of the
+rest from it as the machine can supply; both are below.
 
 ```sh
 cmake --preset macos-debug                   # or linux-debug / windows-debug
@@ -115,6 +117,66 @@ needs **wxWidgets 3.2 or newer** — the oldest release carrying `wxTaskBarIcon`
 `wxNotificationMessage` in `core` rather than in the since-merged `adv` library.
 To build the toolkit through vcpkg anyway, add the feature back:
 `cmake --preset linux-debug -D "VCPKG_MANIFEST_FEATURES=gui;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"`.
+
+### Linux: building against the distribution's libraries
+
+wxWidgets is not the only dependency a Linux machine already has. The
+`linux-repo-debug` and `linux-repo-release` presets are the ordinary Linux build
+with one difference — before anything is asked of vcpkg, `pkg-config` is asked
+what is installed, and every library the system has at a version this code can
+use is taken from there:
+
+```sh
+sudo pacman -S ffmpeg curl libarchive taglib sqlite libsoxr opusfile wavpack \
+               libopenmpt libgme catch2 libmpcdec          # Arch; similar elsewhere
+cmake --preset linux-repo-release
+cmake --build --preset linux-repo-release
+```
+
+On a machine with those installed vcpkg goes from 41 packages to 14, and from
+643 MB of `vcpkg_installed` to 65 MB. What is dropped is not the cheap half:
+FFmpeg is the longest build in the manifest, OpenSSL is the second, and
+libarchive brings bzip2, liblzma, lz4, zstd, libxml2 and libiconv with it.
+Nothing else changes — same options, same codecs, same tests.
+
+Every version floor is the oldest release carrying an API this code calls, and
+[`cmake/XPCogSystemDeps.cmake`](cmake/XPCogSystemDeps.cmake) says which for each.
+A library that is missing, or too old, is simply built by vcpkg as before; the
+configure summary lists what was taken from the system and at what version, so
+there is no guessing about which half a build came from. Two of the floors are
+worth knowing about because a current distribution can fail them:
+
+* **TagLib 2.0**, for `TagLib::Variant` — Ubuntu 24.04 ships 1.13.
+* **Catch2 3.7.1**, which is where a binary whose tests all skipped began
+  exiting 4 and `catch_discover_tests` began registering that with ctest. Below
+  it, the many corpus-gated tests here are reported as failures rather than as
+  skips — Ubuntu 24.04's 3.4.0 turns 95 of 600 green tests red.
+* **libsidplayfp 2.x**, and *not* 3.0 or newer: sidplayfp 3.0 replaced the
+  `play(short*, count)` this decoder is written against with a cycle-driven call
+  and a separate mix step. It is the one entry with an upper bound.
+
+CI builds this configuration too, on Ubuntu 24.04, where TagLib and Catch2 fall
+below their floors and the other twelve do not — so one job exercises the system
+path and the fallback path at once, and asserts against vcpkg's installed tree
+which of the two each dependency took.
+
+The plain `linux-debug` and `linux-release` presets are unchanged and still take
+everything from vcpkg. That is what CI builds, and what to use when a build has
+to come out the same on a machine other than the one that configured it — which
+is also why the two sets of presets build into separate directories, and why
+flipping `XPCOG_USE_SYSTEM_LIBS` inside one of them is refused rather than
+obeyed.
+
+Four libraries are never substituted, whatever is installed: `libogg`, `libflac`,
+`libvorbis` and `zlib`. The overlay ports in [`ports/`](ports/README.md) build
+against them — SpessaSynth reads FLAC- and Vorbis-compressed SF3 samples,
+vgmstream reads Ogg Vorbis, libvgm and mGBA read gzip — and those ports have no
+packaged equivalent anywhere, so vcpkg builds the four regardless and linking a
+second copy of any of them would buy nothing. mGBA is a deliberate omission of a
+different kind: a system libmgba exists, and `struct mCore` declares its members
+inside `#ifdef ENABLE_VFS` and friends, so one built with a different set of
+those has different member offsets — which compiles, links, and then calls
+whatever is in the slot.
 
 ### Other prerequisites
 

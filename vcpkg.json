@@ -6,34 +6,97 @@
   "homepage": "https://github.com/losnoco/Cog",
   "license": "GPL-2.0-or-later",
   "builtin-baseline": "17f35ad2418007a895ced8a4cece4ab34068a58d",
+  "$dependency-notes": "The five plain dependencies below are the ones that cannot come from anywhere else. libogg, libflac, libvorbis and zlib are built against by the overlay ports -- spessasynth-core reads FLAC- and Vorbis-compressed SF3 samples and deflated XMF nodes, vgmstream reads Ogg Vorbis, libvgm and mgba read gzip -- so vcpkg builds them whatever the host has installed, and linking a second, system copy of a library a vcpkg port was just compiled against would put two of it in one process for no saving. Everything else that a distribution can supply is a default feature instead, so that a Linux build can drop it; see cmake/XPCogSystemDeps.cmake.",
   "dependencies": [
-    "sqlite3",
-    "soxr",
     "libogg",
     "libflac",
     "libvorbis",
-    "opus",
-    "opusfile",
-    "wavpack",
+    "zlib",
+    "spessasynth-core"
+  ],
+  "default-features": [
+    "sqlite3",
+    "soxr",
     "taglib",
     "libopenmpt",
     "libgme",
-    "zlib",
     "libarchive",
-    "spessasynth-core",
-    {
-      "name": "curl",
-      "default-features": false,
-      "features": [
-        "ssl"
-      ]
-    },
-    {
-      "name": "catch2",
-      "host": false
-    }
+    "curl",
+    "opus",
+    "wavpack",
+    "catch2"
   ],
   "features": {
+    "sqlite3": {
+      "description": "SQLite, behind core's library database. A default feature rather than a plain dependency so that a Linux build with XPCOG_USE_SYSTEM_LIBS can take the system copy instead; see cmake/XPCogSystemDeps.cmake for why substitutability has to be expressed as a feature.",
+      "dependencies": [
+        "sqlite3"
+      ]
+    },
+    "soxr": {
+      "description": "soxr, the sample-rate converter. Substitutable; see the `sqlite3` feature.",
+      "dependencies": [
+        "soxr"
+      ]
+    },
+    "taglib": {
+      "description": "TagLib, the tag reader. Substitutable, at 2.0 or newer -- codecs/taglib uses TagLib::Variant. See the `sqlite3` feature.",
+      "dependencies": [
+        "taglib"
+      ]
+    },
+    "libopenmpt": {
+      "description": "libopenmpt, the tracker-module decoder. Substitutable; see the `sqlite3` feature.",
+      "dependencies": [
+        "libopenmpt"
+      ]
+    },
+    "libgme": {
+      "description": "Game Music Emu, the chiptune decoder. Substitutable; see the `sqlite3` feature.",
+      "dependencies": [
+        "libgme"
+      ]
+    },
+    "libarchive": {
+      "description": "libarchive, behind the archive source and the SC-55 ROM reader. The port drags bzip2, liblzma, lz4, zstd, libxml2 and libiconv with it, which is most of what substituting it saves. See the `sqlite3` feature.",
+      "dependencies": [
+        "libarchive"
+      ]
+    },
+    "curl": {
+      "description": "libcurl, behind the HTTP source. The port builds OpenSSL, which is the second-longest build in the manifest after FFmpeg. See the `sqlite3` feature.",
+      "dependencies": [
+        {
+          "name": "curl",
+          "default-features": false,
+          "features": [
+            "ssl"
+          ]
+        }
+      ]
+    },
+    "opus": {
+      "description": "Opus and opusfile. Substitutable; see the `sqlite3` feature.",
+      "dependencies": [
+        "opus",
+        "opusfile"
+      ]
+    },
+    "wavpack": {
+      "description": "WavPack. Substitutable; see the `sqlite3` feature.",
+      "dependencies": [
+        "wavpack"
+      ]
+    },
+    "catch2": {
+      "description": "Catch2 v3, for the test suite. Substitutable; see the `sqlite3` feature.",
+      "dependencies": [
+        {
+          "name": "catch2",
+          "host": false
+        }
+      ]
+    },
     "gui": {
       "description": "wxWidgets: the application's UI toolkit on Windows and macOS, neither of which packages it. A feature rather than a plain dependency for two reasons. The headless presets build no app and should not drag a toolkit into a target that links none -- and the Linux presets leave it off as well, because this port depends on vcpkg's gtk3 port: requesting it there builds 57 packages from source -- wx, GTK, glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus and seven X11 libraries -- on a machine that already has every one of them. Linux takes wx from the distribution instead (libwxgtk3.2-dev); see cmake/XPCogWx.cmake",
       "dependencies": [
