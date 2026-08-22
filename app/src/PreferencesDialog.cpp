@@ -169,7 +169,7 @@ constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsK
 /// it back, announce it" is four chances for one of them to forget the
 /// announcement. It reports changes through a callback rather than publishing the
 /// dialog's own signal, which is not something a helper should be reaching into.
-class RowBuilder {
+class RowBuilder : public wxClientData {
 public:
     using Announce = std::function<void(const char*)>;
 
@@ -452,10 +452,11 @@ std::function<void(const char*)> PreferencesDialog::changeNotifier() {
 wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
     auto* pane = new wxPanel(parent, wxID_ANY);
     auto* form = makeForm(pane->FromDIP(6));
-    const RowBuilder row{settings_, pane, form, changeNotifier()};
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
 
-    row.toggle("Stop after every track", "alwaysStopAfterCurrent");
-    row.toggle("Read cue sheets when adding folders", "readCueSheetsInFolders");
+    row->toggle("Stop after every track", "alwaysStopAfterCurrent");
+    row->toggle("Read cue sheets when adding folders", "readCueSheetsInFolders");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -466,7 +467,8 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
 wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
     auto* pane = new wxPanel(parent, wxID_ANY);
     auto* form = makeForm(pane->FromDIP(6));
-    const RowBuilder row{settings_, pane, form, changeNotifier()};
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
 
     // The device list is read once, when this pane is built. Enumerating spins up
     // the backend's context, and a picker that re-enumerated on every repaint
@@ -519,31 +521,31 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
                                                  : toUtf8(names[index]));
         settingChanged.publish("outputDeviceId");
     });
-    row.add("Output device", deviceBox);
+    row->add("Output device", deviceBox);
 
-    row.toggle("Take the device exclusively", "exclusiveOutput",
-               "Plays at the file's own rate and format instead of the system "
-               "mixer's, and silences everything else on the machine while it does. "
-               "Falls back to sharing when the device or the platform will not "
-               "allow it.");
+    row->toggle("Take the device exclusively", "exclusiveOutput",
+                "Plays at the file's own rate and format instead of the system "
+                "mixer's, and silences everything else on the machine while it does. "
+                "Falls back to sharing when the device or the platform will not "
+                "allow it.");
 
-    row.choice("Volume scaling", "volumeScaling", kVolumeScalingChoices);
-    row.choice("Resampler quality", "resampling", kResamplingChoices);
+    row->choice("Volume scaling", "volumeScaling", kVolumeScalingChoices);
+    row->choice("Resampler quality", "resampling", kResamplingChoices);
 
-    row.toggle("Decode HDCD", "enableHDCD",
-               "Only affects 16-bit 44.1 kHz stereo lossless material, and is "
-               "bit-transparent on files carrying no HDCD codes.");
-    row.toggle("Halve the volume of DSD", "halveDSDVolume",
-               "DSD is converted with a filter whose gain puts half modulation "
-               "\xE2\x80\x94 as loud as most SACDs go \xE2\x80\x94 at full scale. "
-               "Turn this on if a recording that goes louder is clipping.");
-    row.toggle("FreeSurround stereo-to-surround upmix", "enableFSurround");
-    row.toggle("Fade on seek and stop", "enableFading");
-    row.toggle("Release the audio device while paused", "suspendOutputOnPause");
+    row->toggle("Decode HDCD", "enableHDCD",
+                "Only affects 16-bit 44.1 kHz stereo lossless material, and is "
+                "bit-transparent on files carrying no HDCD codes.");
+    row->toggle("Halve the volume of DSD", "halveDSDVolume",
+                "DSD is converted with a filter whose gain puts half modulation "
+                "\xE2\x80\x94 as loud as most SACDs go \xE2\x80\x94 at full scale. "
+                "Turn this on if a recording that goes louder is clipping.");
+    row->toggle("FreeSurround stereo-to-surround upmix", "enableFSurround");
+    row->toggle("Fade on seek and stop", "enableFading");
+    row->toggle("Release the audio device while paused", "suspendOutputOnPause");
 
-    row.note("Volume scaling and resampler quality take effect on the next track. "
-             "The device and exclusive mode move whatever is playing on to the new "
-             "device, with a short break while it opens.");
+    row->note("Volume scaling and resampler quality take effect on the next track. "
+              "The device and exclusive mode move whatever is playing on to the new "
+              "device, with a short break while it opens.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -554,33 +556,34 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
 wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
     auto* pane = new wxPanel(parent, wxID_ANY);
     auto* form = makeForm(pane->FromDIP(6));
-    const RowBuilder row{settings_, pane, form, changeNotifier()};
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
 
-    row.choice("Synthesiser", "midiPlugin", kMidiSynthChoices);
-    row.file("SoundFont", "soundFontPath",
-             "SoundFont banks|*.sf2;*.sf3;*.sf2pack;*.dls;*.sflist;*.json|All files|*.*");
-    row.path("SC-55 ROMs", "midiRomPath", "Archives|*.zip;*.rar;*.7z|All files|*.*");
+    row->choice("Synthesiser", "midiPlugin", kMidiSynthChoices);
+    row->file("SoundFont", "soundFontPath",
+              "SoundFont banks|*.sf2;*.sf3;*.sf2pack;*.dls;*.sflist;*.json|All files|*.*");
+    row->path("SC-55 ROMs", "midiRomPath", "Archives|*.zip;*.rar;*.7z|All files|*.*");
 
     // Cog's clamps, and its labels. The sample rate is the rate a synthesiser
     // renders at rather than the rate the file plays at -- there is no such thing
     // as the second one for a score.
-    row.number("Sample rate (Hz)", "synthSampleRate", 8000, 192000);
-    row.seconds("Default play time (s)", "synthDefaultSeconds", 3600.0);
-    row.seconds("Default fade time (s)", "synthDefaultFadeSeconds", 60.0);
-    row.number("Default loop count", "synthDefaultLoopCount", 0, 10);
+    row->number("Sample rate (Hz)", "synthSampleRate", 8000, 192000);
+    row->seconds("Default play time (s)", "synthDefaultSeconds", 3600.0);
+    row->seconds("Default fade time (s)", "synthDefaultFadeSeconds", 60.0);
+    row->number("Default loop count", "synthDefaultLoopCount", 0, 10);
 
-    row.note("SpessaSynth plays a SoundFont bank, and has no sound of its own "
-             "without one \xE2\x80\x94 any .sf2, .sf3 or .dls will do. A file that "
-             "has a bank of its own beside it is played with that one instead, "
-             "whatever is chosen here.");
-    row.note("The Roland needs its five ROM files, which are not something this "
-             "player can supply. Name either the folder holding them or the archive "
-             "they came in \xE2\x80\x94 they are recognised by content, so nothing "
-             "has to be renamed. Without them a MIDI file still plays, on the OPL3.");
-    row.note("The sample rate and the defaults below it apply to every synthesised "
-             "format, not only MIDI \xE2\x80\x94 a game music rip has no length of "
-             "its own either. The Roland ignores the sample rate: it renders at the "
-             "rate its hardware ran at and nothing else.");
+    row->note("SpessaSynth plays a SoundFont bank, and has no sound of its own "
+              "without one \xE2\x80\x94 any .sf2, .sf3 or .dls will do. A file that "
+              "has a bank of its own beside it is played with that one instead, "
+              "whatever is chosen here.");
+    row->note("The Roland needs its five ROM files, which are not something this "
+              "player can supply. Name either the folder holding them or the archive "
+              "they came in \xE2\x80\x94 they are recognised by content, so nothing "
+              "has to be renamed. Without them a MIDI file still plays, on the OPL3.");
+    row->note("The sample rate and the defaults below it apply to every synthesised "
+              "format, not only MIDI \xE2\x80\x94 a game music rip has no length of "
+              "its own either. The Roland ignores the sample rate: it renders at the "
+              "rate its hardware ran at and nothing else.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -595,7 +598,8 @@ wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
 wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     auto* pane = new wxPanel(parent, wxID_ANY);
     auto* form = makeForm(pane->FromDIP(6));
-    const RowBuilder row{settings_, pane, form, changeNotifier()};
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
 
     // No style picker. The Qt build offered windows11 / windowsvista / Fusion
     // because Qt draws its own controls and can therefore draw them several ways;
@@ -626,7 +630,7 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
         settings_.setCloseToTray(event.IsChecked());
         settingChanged.publish("closeToTray");
     });
-    row.add("", closeToTray);
+    row->add("", closeToTray);
 
     auto* note = new wxStaticText(
         pane, wxID_ANY,
@@ -648,7 +652,8 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
 wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
     auto* pane = new wxPanel(parent, wxID_ANY);
     auto* form = makeForm(pane->FromDIP(6));
-    const RowBuilder row{settings_, pane, form, changeNotifier()};
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
 
     // Bands. Cog's two analyser modes, stored in its own key: false is the note
     // scale, true the even spacing. A list rather than a checkbox because
@@ -662,7 +667,7 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
         settings_.setSpectrumFreqMode(event.GetSelection() == 1);
         settingChanged.publish("spectrumFreqMode");
     });
-    row.add("Bands", bands);
+    row->add("Bands", bands);
 
     // wxColourPickerCtrl is a real colour button -- what the Qt version built
     // from a QPushButton, a generated swatch pixmap and QColorDialog.
@@ -690,7 +695,7 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
                                         });
                          store(hex);
                      });
-        row.add(label, picker);
+        row->add(label, picker);
     };
 
     colourRow("Bar colour", settings_.SpectrumBarColor(), [this](const std::string& hex) {
@@ -708,7 +713,7 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
         settings_.setSpectrumShowPeaks(event.IsChecked());
         settingChanged.publish("spectrumShowPeaks");
     });
-    row.add("", peaks);
+    row->add("", peaks);
 
     // The floor. Cog fixes this at -80; the range here is wide enough to be useful
     // at both ends and stops short of zero, where there would be nothing to draw.
@@ -719,12 +724,12 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
         settings_.setSpectrumFloorDb(static_cast<double>(event.GetPosition()));
         settingChanged.publish("spectrumFloorDb");
     });
-    row.add("Quietest level shown (dB)", floorDb);
+    row->add("Quietest level shown (dB)", floorDb);
 
-    row.note("Bars sit on semitones from C0, so a spectrum of music lines up with "
-             "the notes being played. Below a few hundred hertz several bars share "
-             "one analysis bin and move together \xE2\x80\x94 that is the resolution "
-             "of the window, not a fault.");
+    row->note("Bars sit on semitones from C0, so a spectrum of music lines up with "
+              "the notes being played. Below a few hundred hertz several bars share "
+              "one analysis bin and move together \xE2\x80\x94 that is the resolution "
+              "of the window, not a fault.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -739,7 +744,8 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
     pane->SetScrollRate(0, pane->FromDIP(8));
 
     auto* form = makeForm(pane->FromDIP(4));
-    const RowBuilder row{settings_, pane, form, changeNotifier()};
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
 
     // Generated from settings.def. A setting added there shows up here without any
     // edit to this file, which is what stops a setting existing in the engine but
@@ -803,7 +809,7 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
             editor->Enable(false);
             editor->SetToolTip("Maintained automatically, and not meant to be edited.");
         }
-        row.add(label.c_str(), editor);
+        row->add(label.c_str(), editor);
     }
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
