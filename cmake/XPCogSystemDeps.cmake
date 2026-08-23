@@ -10,7 +10,8 @@
 # FFmpeg and OpenSSL ports alone are most of a cold build -- so where the system
 # has one at a version this code can actually use, that copy is used and the port
 # is never installed. On the machine this was written on that is 41 packages down
-# to 14, and 643 MB of vcpkg_installed down to 65 MB.
+# to 14 -- 12 with the AUR's vgmstream-git installed as well -- and 643 MB of
+# vcpkg_installed down to 46 MB.
 #
 # This is the same trade cmake/XPCogWx.cmake already makes for wxWidgets, and for
 # the same reason. The difference is that wx is unconditional there (vcpkg's port
@@ -51,24 +52,28 @@
 # ---------------------------------------------------------------------------
 # `libogg`, `libflac`, `libvorbis`, `zlib`
 #       ports/spessasynth-core builds against all four (SF3 banks hold FLAC- and
-#       Vorbis-compressed samples, XMF files hold deflated nodes), ports/vgmstream
-#       against ogg and vorbis, ports/libvgm and ports/mgba against zlib. Those
-#       ports have no system equivalent, so vcpkg builds these four whatever we
-#       do -- and linking the system copy of a library that a vcpkg port was just
-#       compiled against puts two of it in one process for no saving at all.
-#       They stay plain dependencies.
+#       Vorbis-compressed samples, XMF files hold deflated nodes), and
+#       ports/libvgm and ports/mgba against zlib. Those ports have no system
+#       equivalent, so vcpkg builds these four whatever we do -- and linking the
+#       system copy of a library that a vcpkg port was just compiled against puts
+#       two of it in one process for no saving at all. They stay plain
+#       dependencies.
 #
-# `spessasynth-core`, `mgba`, `vgmstream`, `libvgm`
-#       No distribution packages them at the commit this builds against; three of
-#       the four are kode54 forks pinned to what Cog's plugins are written for.
-#       mgba is the pointed case: a system libmgba is *available* on Arch and
-#       Debian, and using it would be a mistake. `struct mCore` declares its
-#       members inside #ifdef ENABLE_VFS / ENABLE_DIRECTORIES / MINIMAL_CORE, so a
-#       library built with a different set has different member offsets -- which
-#       compiles, links, and then calls whatever happens to be in the slot. See
-#       codecs/gsf/CMakeLists.txt for how that was found the first time.
+# `spessasynth-core`, `mgba`, `libvgm`
+#       No distribution packages them at the commit this builds against:
+#       spessasynth_core_c and mgba are kode54 forks, and libvgm is pinned to
+#       what Cog's plugins are written for. mgba is the pointed case: a system
+#       libmgba is *available* on Arch and Debian, and using it would be a
+#       mistake. `struct mCore` declares its members inside #ifdef ENABLE_VFS /
+#       ENABLE_DIRECTORIES / MINIMAL_CORE, so a library built with a different
+#       set has different member offsets -- which compiles, links, and then calls
+#       whatever happens to be in the slot. See codecs/gsf/CMakeLists.txt for how
+#       that was found the first time.
 #
-# `libsidplayfp` is in the table but bounded above: see its entry.
+# `libsidplayfp` and `vgmstream` are in the table but bounded above: see their
+# entries. vgmstream is also the one entry whose system copy no .pc file or
+# config package describes, and whose distribution package tracks upstream
+# master rather than a release.
 
 option(XPCOG_USE_SYSTEM_LIBS
        "Linux: take dependencies from the distribution when a new enough one is installed" OFF)
@@ -90,6 +95,9 @@ get_filename_component(XPCOG_VCPKG_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/../vcpkg.
 #             VCPKG_MANIFEST_FEATURES when the system answers
 #   MODULES   pkg-config specs, all of which must be satisfied
 #   FILES     header + library names, for the libraries that ship no .pc file
+#   MACROS    with FILES: #define names in that header, major/minor/patch, whose
+#             values are the version the FILES probe has no .pc file to ask for
+#   RANGE     with MACROS: the floor, and an exclusive ceiling where there is one
 #   TARGETS   imported targets the resolver creates, for the call sites whose
 #             vcpkg path is a CONFIG-mode find_package that a system install
 #             cannot satisfy. Omitted where the existing call site already finds
@@ -98,12 +106,15 @@ get_filename_component(XPCOG_VCPKG_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/../vcpkg.
 set(XPCOG_SYSTEM_DEP_KEYS "")
 
 macro(_xpcog_system_dep name label)
-    cmake_parse_arguments(_D "" "FEATURE" "MODULES;FILES;TARGETS" ${ARGN})
+    cmake_parse_arguments(_D "" "FEATURE"
+                          "MODULES;FILES;MACROS;RANGE;TARGETS" ${ARGN})
     list(APPEND XPCOG_SYSTEM_DEP_KEYS "${name}")
     set(_xpcog_dep_${name}_LABEL   "${label}")
     set(_xpcog_dep_${name}_FEATURE "${_D_FEATURE}")
     set(_xpcog_dep_${name}_MODULES "${_D_MODULES}")
     set(_xpcog_dep_${name}_FILES   "${_D_FILES}")
+    set(_xpcog_dep_${name}_MACROS  "${_D_MACROS}")
+    set(_xpcog_dep_${name}_RANGE   "${_D_RANGE}")
     set(_xpcog_dep_${name}_TARGETS "${_D_TARGETS}")
 endmacro()
 
@@ -245,6 +256,78 @@ _xpcog_system_dep(musepack "libmpcdec"
     FILES   "mpc/mpcdec.h" "mpcdec"
     TARGETS libmpcdec::mpcdec)
 
+# vgmstream, and unlike every entry above it what a distribution packages is a
+# *rolling* build: Arch's is `vgmstream-git`, and nobody packages a release
+# tarball because upstream tags rNNNN and ships no other artifact. It installs
+# neither a .pc file nor a CMake config package -- /usr/include/vgmstream/ and
+# libvgmstream.so and nothing else -- so this is a FILES entry like libmpcdec's,
+# held to the one version the install does state: LIBVGMSTREAM_API_VERSION_MAJOR
+# and _MINOR, in libvgmstream.h.
+#
+# The floor is 1.0 because that is the whole of what this decoder uses:
+# codecs/vgmstream/VgmStreamDecoder.cpp calls libvgmstream_create, _fill,
+# _render, _seek, _free and _get_extensions and fills in a libstreamfile_t of its
+# own. 1.1 added a libstreamfile_close helper it does not call.
+#
+# The ceiling is the reason the entry reads a version at all. That header calls
+# MAJOR "breaking API/ABI changes", and the package tracking master means a 2.0
+# arrives on whatever day upstream merges it -- with the existence check alone,
+# on that day, the system copy would still be found, still be linked, and be
+# compiled against a header describing different functions. ports/vgmstream is
+# pinned to r2117 and cannot move underneath anyone; this can.
+#
+# What the two builds do not agree on is the optional codec set, and the
+# direction it differs in is the harmless one. ports/vgmstream turns all of them
+# off -- ATRAC9, CELT, Speex, G.719 and G.722.1 are *downloaded* at configure
+# time, and MPEG and Vorbis need a .def-file fix on MSVC; the portfile says why
+# in full -- while a distribution build has them on. So the system library
+# decodes a superset, says so through libvgmstream_get_extensions(), and the
+# registry picks the extensions up from there. Nothing in the API varies with
+# which were compiled in, which is what separates this from mgba above.
+_xpcog_system_dep(vgmstream "vgmstream"
+    FEATURE vgmstream
+    FILES   "vgmstream/libvgmstream.h" "vgmstream"
+    MACROS  LIBVGMSTREAM_API_VERSION_MAJOR LIBVGMSTREAM_API_VERSION_MINOR
+    RANGE   1.0 2.0
+    TARGETS vgmstream::vgmstream)
+
+# Reading a version out of a C header, for the FILES entries that have one to
+# read. The MODULES entries get theirs from pkg-config; a library with no .pc
+# file has to be asked some other way, and for a package that tracks upstream
+# master -- vgmstream's, on every distribution that has one -- "the header is
+# there" is not the same question as "the header is the one this code is written
+# against".
+#
+# file(READ) and a regex, because that is all this can be: before project() there
+# is no compiler to run a try_compile through, which is the usual way to ask a
+# header what it says.
+#
+# Values are decimal or hex -- vgmstream writes 0x01 -- and math(EXPR) reads
+# both, so every component goes through it on the way to a dotted version that
+# VERSION_LESS can compare.
+function(_xpcog_header_version header macros out_var)
+    set(${out_var} "" PARENT_SCOPE)
+    if(NOT EXISTS "${header}")
+        return()
+    endif()
+    file(READ "${header}" _text)
+
+    set(_parts "")
+    foreach(_macro IN LISTS macros)
+        # A macro that is missing means this is not the header the entry was
+        # written against, so there is no version to report and the caller sends
+        # the dependency to vcpkg -- the same answer as a floor not being met.
+        if(NOT "${_text}" MATCHES "#[ \t]*define[ \t]+${_macro}[ \t]+(0[xX][0-9a-fA-F]+|[0-9]+)")
+            return()
+        endif()
+        math(EXPR _value "${CMAKE_MATCH_1}")
+        list(APPEND _parts "${_value}")
+    endforeach()
+
+    list(JOIN _parts "." _version)
+    set(${out_var} "${_version}" PARENT_SCOPE)
+endfunction()
+
 # ---------------------------------------------------------------------------
 # The probe. Called from the top-level CMakeLists.txt *before* project().
 # ---------------------------------------------------------------------------
@@ -343,9 +426,11 @@ function(xpcog_probe_system_deps)
             list(GET _xpcog_dep_${_key}_FILES 0 _header)
             list(GET _xpcog_dep_${_key}_FILES 1 _libname)
             set(_have_header OFF)
+            set(_header_path "")
             foreach(_dir /usr/include /usr/local/include)
                 if(EXISTS "${_dir}/${_header}")
                     set(_have_header ON)
+                    set(_header_path "${_dir}/${_header}")
                 endif()
             endforeach()
             set(_have_lib OFF)
@@ -359,6 +444,25 @@ function(xpcog_probe_system_deps)
             if(_have_header AND _have_lib)
                 set(_found ON)
                 set(_version "installed")
+            endif()
+
+            # A header this probe can read its own version out of, for an entry
+            # that has one to read. file(READ) needs no more of CMake than
+            # EXISTS above did, so this stays answerable before project() where
+            # a try_compile would not be.
+            if(_found AND _xpcog_dep_${_key}_MACROS)
+                _xpcog_header_version("${_header_path}"
+                                      "${_xpcog_dep_${_key}_MACROS}" _version)
+                list(GET _xpcog_dep_${_key}_RANGE 0 _floor)
+                list(LENGTH _xpcog_dep_${_key}_RANGE _range_len)
+                if(NOT _version OR _version VERSION_LESS "${_floor}")
+                    set(_found OFF)
+                elseif(_range_len GREATER 1)
+                    list(GET _xpcog_dep_${_key}_RANGE 1 _ceiling)
+                    if(NOT _version VERSION_LESS "${_ceiling}")
+                        set(_found OFF)
+                    endif()
+                endif()
             endif()
         endif()
 
@@ -424,10 +528,10 @@ function(xpcog_probe_system_deps)
         endif()
     endforeach()
 
-    # The features that are not in this table at all -- gui, psf-cores, vgmstream,
-    # mgba, libvgm -- are untouched: they came from the preset and stay in
-    # _requested. Only default features are re-stated, and only the unsatisfied
-    # ones, which is the whole difference this module makes.
+    # The features that are not in this table at all -- gui, psf-cores, mgba,
+    # libvgm -- are untouched: they came from the preset and stay in _requested.
+    # Only default features are re-stated, and only the unsatisfied ones, which
+    # is the whole difference this module makes.
     set(_features ${_requested} ${_defaults})
     list(REMOVE_DUPLICATES _features)
     list(REMOVE_ITEM _features "")
@@ -455,8 +559,8 @@ endfunction()
 # copy the moment vcpkg's is not installed, so those three are left alone.
 #
 # The rest are here for one of two reasons. CONFIG mode is the first: taglib,
-# libopenmpt, WavPack, opusfile, curl and libmpcdec install no config package on
-# a distribution, or none under the name vcpkg's port uses, so
+# libopenmpt, WavPack, opusfile, curl, libmpcdec and vgmstream install no config
+# package on a distribution, or none under the name vcpkg's port uses, so
 # find_package(... CONFIG) cannot be the system path. The second is layout, and
 # it is why codecs/gme, codecs/sid and codecs/adplug are here despite assembling
 # their targets by hand from find_path() and find_library(): those searches would

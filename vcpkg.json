@@ -6,7 +6,7 @@
   "homepage": "https://github.com/losnoco/Cog",
   "license": "GPL-2.0-or-later",
   "builtin-baseline": "17f35ad2418007a895ced8a4cece4ab34068a58d",
-  "$dependency-notes": "The five plain dependencies below are the ones that cannot come from anywhere else. libogg, libflac, libvorbis and zlib are built against by the overlay ports -- spessasynth-core reads FLAC- and Vorbis-compressed SF3 samples and deflated XMF nodes, vgmstream reads Ogg Vorbis, libvgm and mgba read gzip -- so vcpkg builds them whatever the host has installed, and linking a second, system copy of a library a vcpkg port was just compiled against would put two of it in one process for no saving. Everything else that a distribution can supply is a default feature instead, so that a Linux build can drop it; see cmake/XPCogSystemDeps.cmake.",
+  "$dependency-notes": "The five plain dependencies below are the ones that cannot come from anywhere else. libogg, libflac, libvorbis and zlib are built against by the overlay ports -- spessasynth-core reads FLAC- and Vorbis-compressed SF3 samples and deflated XMF nodes, libvgm and mgba read gzip -- so vcpkg builds them whatever the host has installed, and linking a second, system copy of a library a vcpkg port was just compiled against would put two of it in one process for no saving. Everything else that a distribution can supply is a default feature instead, so that a Linux build can drop it; see cmake/XPCogSystemDeps.cmake.",
   "dependencies": [
     "libogg",
     "libflac",

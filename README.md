@@ -129,12 +129,13 @@ use is taken from there:
 ```sh
 sudo pacman -S ffmpeg curl libarchive taglib sqlite libsoxr opusfile wavpack \
                libopenmpt libgme catch2 libmpcdec          # Arch; similar elsewhere
+paru -S vgmstream-git                                      # AUR, and optional
 cmake --preset linux-repo-release
 cmake --build --preset linux-repo-release
 ```
 
-On a machine with those installed vcpkg goes from 41 packages to 14, and from
-643 MB of `vcpkg_installed` to 65 MB. What is dropped is not the cheap half:
+On a machine with those installed vcpkg goes from 41 packages to 14 — 12 with
+`vgmstream-git` as well — and from 643 MB of `vcpkg_installed` to 46 MB. What is dropped is not the cheap half:
 FFmpeg is the longest build in the manifest, OpenSSL is the second, and
 libarchive brings bzip2, liblzma, lz4, zstd, libxml2 and libiconv with it.
 Nothing else changes — same options, same codecs, same tests.
@@ -153,10 +154,23 @@ worth knowing about because a current distribution can fail them:
   skips — Ubuntu 24.04's 3.4.0 turns 95 of 600 green tests red.
 * **libsidplayfp 2.x**, and *not* 3.0 or newer: sidplayfp 3.0 replaced the
   `play(short*, count)` this decoder is written against with a cycle-driven call
-  and a separate mix step. It is the one entry with an upper bound.
+  and a separate mix step.
+
+**vgmstream** is the odd entry. It ships neither a `.pc` file nor a CMake config
+package, so it is found as a header and a library by name; and what a
+distribution packages is a rolling build of upstream master — Arch's is the AUR's
+`vgmstream-git` — rather than a release. So the version it is held to is the one
+the install states for itself, `LIBVGMSTREAM_API_VERSION_*` in `libvgmstream.h`,
+read straight out of the header: at least 1.0, which is all this decoder calls,
+and below 2.0, which that header defines as the next set of breaking changes. A
+distribution build also has the optional codecs on where `ports/vgmstream` turns
+them all off, so the system copy decodes a superset and says so through
+`libvgmstream_get_extensions()`. Along with libsidplayfp it is one of the two
+entries with an upper bound, and the only one CI cannot exercise — no Debian or
+Ubuntu release packages vgmstream, so the job below asserts the fallback instead.
 
 CI builds this configuration too, on Ubuntu 24.04, where TagLib and Catch2 fall
-below their floors and the other twelve do not — so one job exercises the system
+below their floors, vgmstream is not packaged at all, and the other twelve do not — so one job exercises the system
 path and the fallback path at once, and asserts against vcpkg's installed tree
 which of the two each dependency took.
 
@@ -169,10 +183,10 @@ obeyed.
 
 Four libraries are never substituted, whatever is installed: `libogg`, `libflac`,
 `libvorbis` and `zlib`. The overlay ports in [`ports/`](ports/README.md) build
-against them — SpessaSynth reads FLAC- and Vorbis-compressed SF3 samples,
-vgmstream reads Ogg Vorbis, libvgm and mGBA read gzip — and those ports have no
-packaged equivalent anywhere, so vcpkg builds the four regardless and linking a
-second copy of any of them would buy nothing. mGBA is a deliberate omission of a
+against them — SpessaSynth reads FLAC- and Vorbis-compressed SF3 samples, libvgm
+and mGBA read gzip — and those ports have no packaged equivalent anywhere, so
+vcpkg builds the four regardless and linking a second copy of any of them would
+buy nothing. mGBA is a deliberate omission of a
 different kind: a system libmgba exists, and `struct mCore` declares its members
 inside `#ifdef ENABLE_VFS` and friends, so one built with a different set of
 those has different member offsets — which compiles, links, and then calls
