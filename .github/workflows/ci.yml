@@ -296,13 +296,13 @@ jobs:
     # installs it flat -- so the __has_include in SidDecoder.cpp is compiled both
     # ways only if this job exists.
     #
-    # What it cannot cover is vgmstream's system branch. Nothing in Debian or
-    # Ubuntu packages vgmstream -- Arch has it, as an AUR -git build -- so the
-    # assertion below is that the port is still installed here, and the branch
-    # itself is exercised on a developer machine rather than in CI. That is the
-    # trade the entry is worth anyway: it exists for the machine that has the
-    # package, and a runner that does not have it can still hold the fallback in
-    # place.
+    # What it cannot cover is the system branch for vgmstream or for
+    # spessasynth-core. Nothing in Debian or Ubuntu packages either -- Arch has
+    # both, as AUR -git builds -- so the assertion below is that those two ports
+    # are still installed here, and the branches themselves are exercised on a
+    # developer machine rather than in CI. That is the trade those entries are
+    # worth anyway: they exist for the machine that has the package, and a runner
+    # that does not have it can still hold the fallback in place.
     name: Linux (distribution libraries)
     runs-on: ubuntu-24.04
     # See the matrix job above for why.
@@ -371,9 +371,10 @@ jobs:
       # Both directions are checked. A port that must be absent because the
       # system supplied it, and a port that must be present because the system
       # did not: taglib and catch2, both below their floors on this runner,
-      # vgmstream, which no Debian or Ubuntu release packages at all, and the
-      # five that are never substituted anywhere because the overlay ports build
-      # against them.
+      # vgmstream and spessasynth-core, which no Debian or Ubuntu release
+      # packages at all, and the four that are never substituted anywhere
+      # because codecs/flac, codecs/vorbis and the overlay ports build against
+      # them.
       - name: Check the substitution actually happened
         run: |
           set -u
@@ -387,8 +388,8 @@ jobs:
                   status=1
               fi
           done
-          for port in taglib catch2 vgmstream libflac libogg libvorbis zlib \
-                      spessasynth-core; do
+          for port in taglib catch2 vgmstream spessasynth-core \
+                      libflac libogg libvorbis zlib; do
               if [ ! -d "$installed/$port" ]; then
                   echo "::error::vcpkg did not build $port, which it must: this runner cannot supply it"
                   status=1

@@ -6,15 +6,15 @@
   "homepage": "https://github.com/losnoco/Cog",
   "license": "GPL-2.0-or-later",
   "builtin-baseline": "17f35ad2418007a895ced8a4cece4ab34068a58d",
-  "$dependency-notes": "The five plain dependencies below are the ones that cannot come from anywhere else. libogg, libflac, libvorbis and zlib are built against by the overlay ports -- spessasynth-core reads FLAC- and Vorbis-compressed SF3 samples and deflated XMF nodes, libvgm and mgba read gzip -- so vcpkg builds them whatever the host has installed, and linking a second, system copy of a library a vcpkg port was just compiled against would put two of it in one process for no saving. Everything else that a distribution can supply is a default feature instead, so that a Linux build can drop it; see cmake/XPCogSystemDeps.cmake.",
+  "$dependency-notes": "The four plain dependencies below are the ones that cannot come from anywhere else. codecs/flac and codecs/vorbis link libflac, libvorbis and libogg directly, and the overlay ports build against all four -- spessasynth-core reads FLAC- and Vorbis-compressed SF3 samples and deflated XMF nodes, libvgm and mgba read gzip -- so vcpkg builds them whatever the host has installed, and linking a second, system copy of a library a vcpkg port was just compiled against would put two of it in one process for no saving. Everything else that a distribution can supply is a default feature instead, so that a Linux build can drop it; see cmake/XPCogSystemDeps.cmake.",
   "dependencies": [
     "libogg",
     "libflac",
     "libvorbis",
-    "zlib",
-    "spessasynth-core"
+    "zlib"
   ],
   "default-features": [
+    "spessasynth-core",
     "sqlite3",
     "soxr",
     "taglib",
@@ -27,6 +27,12 @@
     "catch2"
   ],
   "features": {
+    "spessasynth-core": {
+      "description": "SpessaSynth Core, the SoundFont synthesiser behind codecs/midi. A default feature rather than a plain dependency for the same reason as `sqlite3`: a Linux build with XPCOG_USE_SYSTEM_LIBS can take the AUR's libspessasynth instead, from soname 11 up. See cmake/XPCogSystemDeps.cmake for the floor.",
+      "dependencies": [
+        "spessasynth-core"
+      ]
+    },
     "sqlite3": {
       "description": "SQLite, behind core's library database. A default feature rather than a plain dependency so that a Linux build with XPCOG_USE_SYSTEM_LIBS can take the system copy instead; see cmake/XPCogSystemDeps.cmake for why substitutability has to be expressed as a feature.",
       "dependencies": [

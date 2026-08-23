@@ -10,8 +10,8 @@
 # FFmpeg and OpenSSL ports alone are most of a cold build -- so where the system
 # has one at a version this code can actually use, that copy is used and the port
 # is never installed. On the machine this was written on that is 41 packages down
-# to 14 -- 12 with the AUR's vgmstream-git installed as well -- and 643 MB of
-# vcpkg_installed down to 46 MB.
+# to 14 -- 12 with the AUR's vgmstream-git installed as well, 11 with
+# libspessasynth-git too -- and 643 MB of vcpkg_installed down to 46 MB.
 #
 # This is the same trade cmake/XPCogWx.cmake already makes for wxWidgets, and for
 # the same reason. The difference is that wx is unconditional there (vcpkg's port
@@ -51,29 +51,29 @@
 # What is not substitutable, and why
 # ---------------------------------------------------------------------------
 # `libogg`, `libflac`, `libvorbis`, `zlib`
-#       ports/spessasynth-core builds against all four (SF3 banks hold FLAC- and
-#       Vorbis-compressed samples, XMF files hold deflated nodes), and
-#       ports/libvgm and ports/mgba against zlib. Those ports have no system
-#       equivalent, so vcpkg builds these four whatever we do -- and linking the
-#       system copy of a library that a vcpkg port was just compiled against puts
-#       two of it in one process for no saving at all. They stay plain
+#       codecs/flac and codecs/vorbis link three of them directly, and the
+#       overlay ports build against all four: spessasynth-core for FLAC- and
+#       Vorbis-compressed SF3 samples and deflated XMF nodes, libvgm and mgba for
+#       zlib. Whichever way the ports go, vcpkg builds these four -- and linking
+#       the system copy of a library that a vcpkg port was just compiled against
+#       puts two of it in one process for no saving at all. They stay plain
 #       dependencies.
 #
-# `spessasynth-core`, `mgba`, `libvgm`
-#       No distribution packages them at the commit this builds against:
-#       spessasynth_core_c and mgba are kode54 forks, and libvgm is pinned to
-#       what Cog's plugins are written for. mgba is the pointed case: a system
-#       libmgba is *available* on Arch and Debian, and using it would be a
-#       mistake. `struct mCore` declares its members inside #ifdef ENABLE_VFS /
-#       ENABLE_DIRECTORIES / MINIMAL_CORE, so a library built with a different
-#       set has different member offsets -- which compiles, links, and then calls
-#       whatever happens to be in the slot. See codecs/gsf/CMakeLists.txt for how
-#       that was found the first time.
+# `mgba`, `libvgm`
+#       No distribution packages them at the commit this builds against: mgba is
+#       a kode54 fork, and libvgm is pinned to what Cog's plugins are written
+#       for. mgba is the pointed case: a system libmgba is *available* on Arch
+#       and Debian, and using it would be a mistake. `struct mCore` declares its
+#       members inside #ifdef ENABLE_VFS / ENABLE_DIRECTORIES / MINIMAL_CORE, so
+#       a library built with a different set has different member offsets --
+#       which compiles, links, and then calls whatever happens to be in the slot.
+#       See codecs/gsf/CMakeLists.txt for how that was found the first time.
 #
 # `libsidplayfp` and `vgmstream` are in the table but bounded above: see their
-# entries. vgmstream is also the one entry whose system copy no .pc file or
-# config package describes, and whose distribution package tracks upstream
-# master rather than a release.
+# entries. vgmstream and spessasynth-core are the two whose system copy no .pc
+# file or config package describes, and whose distribution package tracks a
+# repository rather than a release -- the first is held to the API version its
+# header states, the second to the soname its library is installed under.
 
 option(XPCOG_USE_SYSTEM_LIBS
        "Linux: take dependencies from the distribution when a new enough one is installed" OFF)
@@ -98,6 +98,8 @@ get_filename_component(XPCOG_VCPKG_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/../vcpkg.
 #   MACROS    with FILES: #define names in that header, major/minor/patch, whose
 #             values are the version the FILES probe has no .pc file to ask for
 #   RANGE     with MACROS: the floor, and an exclusive ceiling where there is one
+#   SOVERSION with FILES: the ABI the library must be installed under, for a
+#             header tree that states no version of its own
 #   TARGETS   imported targets the resolver creates, for the call sites whose
 #             vcpkg path is a CONFIG-mode find_package that a system install
 #             cannot satisfy. Omitted where the existing call site already finds
@@ -106,7 +108,7 @@ get_filename_component(XPCOG_VCPKG_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/../vcpkg.
 set(XPCOG_SYSTEM_DEP_KEYS "")
 
 macro(_xpcog_system_dep name label)
-    cmake_parse_arguments(_D "" "FEATURE"
+    cmake_parse_arguments(_D "" "FEATURE;SOVERSION"
                           "MODULES;FILES;MACROS;RANGE;TARGETS" ${ARGN})
     list(APPEND XPCOG_SYSTEM_DEP_KEYS "${name}")
     set(_xpcog_dep_${name}_LABEL   "${label}")
@@ -114,6 +116,7 @@ macro(_xpcog_system_dep name label)
     set(_xpcog_dep_${name}_MODULES "${_D_MODULES}")
     set(_xpcog_dep_${name}_FILES   "${_D_FILES}")
     set(_xpcog_dep_${name}_MACROS  "${_D_MACROS}")
+    set(_xpcog_dep_${name}_SOVERSION "${_D_SOVERSION}")
     set(_xpcog_dep_${name}_RANGE   "${_D_RANGE}")
     set(_xpcog_dep_${name}_TARGETS "${_D_TARGETS}")
 endmacro()
@@ -291,6 +294,50 @@ _xpcog_system_dep(vgmstream "vgmstream"
     RANGE   1.0 2.0
     TARGETS vgmstream::vgmstream)
 
+# SpessaSynth Core, kode54's C port, behind codecs/midi's SoundFont synthesiser.
+# Arch has it as the AUR's libspessasynth-git, which this repository's author also
+# maintains. Like vgmstream it installs a header tree and a library and nothing
+# else -- no .pc file, no config package -- so it is a FILES entry; unlike
+# vgmstream it has no version macro anywhere in those headers, and unlike
+# libmpcdec what is packaged is a rolling build of a fork that moves.
+#
+# What it does have is a soname, and upstream sets it by hand:
+#
+#     set_target_properties(spessasynth PROPERTIES VERSION 4.3.17 SOVERSION 10)
+#
+# which is the whole floor. Commit 28a362a ("Widen so many variables to double")
+# changed member types float -> double across the *public* headers -- synth.h and
+# the four DSP headers under synthesizer/dsp -- and ports/spessasynth-core is
+# pinned past it. A distribution package still at soname 10 may be either side of
+# that change and nothing in the install says which, since the break happened
+# under an soname that did not move. So the floor is 11, the soname the break is
+# given, and a machine whose package predates the bump keeps building the port.
+#
+# Note that this is a floor and not an equality even though an soname bump is
+# normally an incompatibility: the fork is the one this project follows, and a
+# later ABI is a later ABI of the same API, not a different library. If that
+# stops being true it wants an upper bound here the way libsidplayfp has one.
+#
+# TARGETS, even though codecs/midi assembles spessasynth::spessasynth from
+# find_path() and find_library() by exactly the names a distribution installs and
+# would have landed on the system copy unaided. The reason is the same one
+# codecs/gme has for putting its searches inside the fallback branch: find_path()
+# and find_library() cache, under names this module does not own, and a
+# reconfigure does not re-run them. Installing the package into a tree that was
+# configured before it existed would otherwise leave both pointing into
+# vcpkg_installed at a port that had just been uninstalled. Resolving here
+# instead means the two branches are exclusive, and the cached variables of the
+# branch not taken are never read.
+#
+# There is nothing else for TARGETS to carry, unlike codecs/adplug: no .pc file
+# exists, so there are no flags to miss, and the FLAC, Vorbis and zlib the vcpkg
+# branch has to name by hand are recorded in a shared library's own DT_NEEDED.
+_xpcog_system_dep(spessasynth "SpessaSynth"
+    FEATURE   spessasynth-core
+    FILES     "spessasynth/spessasynth.h" "spessasynth"
+    SOVERSION 11
+    TARGETS   spessasynth::spessasynth)
+
 # Reading a version out of a C header, for the FILES entries that have one to
 # read. The MODULES entries get theirs from pkg-config; a library with no .pc
 # file has to be asked some other way, and for a package that tracks upstream
@@ -434,16 +481,49 @@ function(xpcog_probe_system_deps)
                 endif()
             endforeach()
             set(_have_lib OFF)
+            set(_abi_version "")
+            set(_sover "${_xpcog_dep_${_key}_SOVERSION}")
             foreach(_dir /usr/lib "/usr/lib/${_machine}-linux-gnu" /usr/lib64
                          /usr/local/lib "/usr/local/lib/${_machine}-linux-gnu")
-                file(GLOB _hits "${_dir}/lib${_libname}.so" "${_dir}/lib${_libname}.a")
-                if(_hits)
-                    set(_have_lib ON)
+                if(_sover)
+                    # An entry whose only version marker is the soname, so the
+                    # question is not "is a library called this installed" but
+                    # "is the one find_library() will pick the ABI we asked for".
+                    # Those are different questions on a machine carrying two
+                    # ABIs of the same library, so the link-time symlink and the
+                    # required soname have to resolve to the *same file* rather
+                    # than merely both exist.
+                    set(_link "${_dir}/lib${_libname}.so")
+                    set(_abi  "${_link}.${_sover}")
+                    if(EXISTS "${_link}" AND EXISTS "${_abi}")
+                        get_filename_component(_link_real "${_link}" REALPATH)
+                        get_filename_component(_abi_real  "${_abi}"  REALPATH)
+                        if(_link_real STREQUAL _abi_real)
+                            set(_have_lib ON)
+                            # Both point at the realname, which carries the
+                            # release -- libspessasynth.so.4.3.17 -- and that is
+                            # a more useful thing to print than the ABI alone.
+                            set(_abi_version "soname ${_sover}")
+                            get_filename_component(_real_name "${_abi_real}" NAME)
+                            if(_real_name MATCHES "^lib${_libname}\\.so\\.([0-9][0-9.]*)$")
+                                set(_abi_version "${CMAKE_MATCH_1}, soname ${_sover}")
+                            endif()
+                            break()
+                        endif()
+                    endif()
+                else()
+                    file(GLOB _hits "${_dir}/lib${_libname}.so" "${_dir}/lib${_libname}.a")
+                    if(_hits)
+                        set(_have_lib ON)
+                    endif()
                 endif()
             endforeach()
             if(_have_header AND _have_lib)
                 set(_found ON)
                 set(_version "installed")
+                if(_abi_version)
+                    set(_version "${_abi_version}")
+                endif()
             endif()
 
             # A header this probe can read its own version out of, for an entry
@@ -530,6 +610,10 @@ function(xpcog_probe_system_deps)
 
     # The features that are not in this table at all -- gui, psf-cores, mgba,
     # libvgm -- are untouched: they came from the preset and stay in _requested.
+    # spessasynth-core is in the table *and* a default feature, which is the
+    # combination the restating branch above exists for: nothing asks for it by
+    # name, so once the defaults are off it has to be named again unless the
+    # system answered.
     # Only default features are re-stated, and only the unsatisfied ones, which
     # is the whole difference this module makes.
     set(_features ${_requested} ${_defaults})

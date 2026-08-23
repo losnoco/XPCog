@@ -1,6 +1,6 @@
 {
   "name": "spessasynth-core",
-  "version-string": "4.3.17-kode54-28a362a",
+  "version-string": "4.3.17-kode54-99fc352",
   "description": "SpessaSynth Core, kode54's C port: an SF2/SF3/DLS SoundFont synthesiser. Pinned to the commit Cog's MIDI plugin is built against.",
   "homepage": "https://github.com/kode54/spessasynth_core_c",
   "license": "Apache-2.0",

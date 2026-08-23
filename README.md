@@ -129,16 +129,17 @@ use is taken from there:
 ```sh
 sudo pacman -S ffmpeg curl libarchive taglib sqlite libsoxr opusfile wavpack \
                libopenmpt libgme catch2 libmpcdec          # Arch; similar elsewhere
-paru -S vgmstream-git                                      # AUR, and optional
+paru -S vgmstream-git libspessasynth-git                    # AUR, and optional
 cmake --preset linux-repo-release
 cmake --build --preset linux-repo-release
 ```
 
 On a machine with those installed vcpkg goes from 41 packages to 14 — 12 with
-`vgmstream-git` as well — and from 643 MB of `vcpkg_installed` to 46 MB. What is dropped is not the cheap half:
-FFmpeg is the longest build in the manifest, OpenSSL is the second, and
-libarchive brings bzip2, liblzma, lz4, zstd, libxml2 and libiconv with it.
-Nothing else changes — same options, same codecs, same tests.
+`vgmstream-git` as well, 11 with `libspessasynth-git` too — and from 643 MB of
+`vcpkg_installed` to 46 MB. What is dropped is not the cheap half: FFmpeg is the
+longest build in the manifest, OpenSSL is the second, and libarchive brings
+bzip2, liblzma, lz4, zstd, libxml2 and libiconv with it. Nothing else changes —
+same options, same codecs, same tests.
 
 Every version floor is the oldest release carrying an API this code calls, and
 [`cmake/XPCogSystemDeps.cmake`](cmake/XPCogSystemDeps.cmake) says which for each.
@@ -156,23 +157,37 @@ worth knowing about because a current distribution can fail them:
   `play(short*, count)` this decoder is written against with a cycle-driven call
   and a separate mix step.
 
-**vgmstream** is the odd entry. It ships neither a `.pc` file nor a CMake config
-package, so it is found as a header and a library by name; and what a
-distribution packages is a rolling build of upstream master — Arch's is the AUR's
-`vgmstream-git` — rather than a release. So the version it is held to is the one
-the install states for itself, `LIBVGMSTREAM_API_VERSION_*` in `libvgmstream.h`,
-read straight out of the header: at least 1.0, which is all this decoder calls,
-and below 2.0, which that header defines as the next set of breaking changes. A
-distribution build also has the optional codecs on where `ports/vgmstream` turns
-them all off, so the system copy decodes a superset and says so through
-`libvgmstream_get_extensions()`. Along with libsidplayfp it is one of the two
-entries with an upper bound, and the only one CI cannot exercise — no Debian or
-Ubuntu release packages vgmstream, so the job below asserts the fallback instead.
+**vgmstream** and **SpessaSynth** are the two odd entries. Neither ships a `.pc`
+file or a CMake config package, so both are found as a header and a library by
+name; and what is packaged is not a release but a rolling build of a repository —
+`vgmstream-git` and `libspessasynth-git`, both from the AUR, the second of them
+maintained by this project's author. Neither can be held to a release number,
+and each is held to the one thing its install does state about itself:
+
+* **vgmstream** to `LIBVGMSTREAM_API_VERSION_*` in `libvgmstream.h`, read
+  straight out of the header — at least 1.0, which is all this decoder calls, and
+  below 2.0, which that header defines as the next set of breaking changes. A
+  distribution build also has the optional codecs on where `ports/vgmstream`
+  turns them all off, so the system copy decodes a superset and says so through
+  `libvgmstream_get_extensions()`.
+* **SpessaSynth** to its soname, at least `libspessasynth.so.11`, because its
+  headers carry no version at all. Upstream commit 28a362a widened member types
+  from `float` to `double` across the public headers without moving the soname
+  off 10, so a package still at 10 may be either side of that change with nothing
+  in the install to say which; 11 is the soname the break was finally given, and
+  what `ports/spessasynth-core` is pinned past. A machine whose package predates
+  the bump keeps building the port.
+
+Along with libsidplayfp, vgmstream is one of the two entries with an upper bound.
+These two are also the only ones CI cannot exercise the system half of — no
+Debian or Ubuntu release packages either library — so the job below asserts the
+fallback for them instead.
 
 CI builds this configuration too, on Ubuntu 24.04, where TagLib and Catch2 fall
-below their floors, vgmstream is not packaged at all, and the other twelve do not — so one job exercises the system
-path and the fallback path at once, and asserts against vcpkg's installed tree
-which of the two each dependency took.
+below their floors, vgmstream and SpessaSynth are not packaged at all, and the
+other twelve do not — so one job exercises the system path and the fallback path
+at once, and asserts against vcpkg's installed tree which of the two each
+dependency took.
 
 The plain `linux-debug` and `linux-release` presets are unchanged and still take
 everything from vcpkg. That is what CI builds, and what to use when a build has
@@ -182,11 +197,11 @@ flipping `XPCOG_USE_SYSTEM_LIBS` inside one of them is refused rather than
 obeyed.
 
 Four libraries are never substituted, whatever is installed: `libogg`, `libflac`,
-`libvorbis` and `zlib`. The overlay ports in [`ports/`](ports/README.md) build
-against them — SpessaSynth reads FLAC- and Vorbis-compressed SF3 samples, libvgm
-and mGBA read gzip — and those ports have no packaged equivalent anywhere, so
-vcpkg builds the four regardless and linking a second copy of any of them would
-buy nothing. mGBA is a deliberate omission of a
+`libvorbis` and `zlib`. `codecs/flac` and `codecs/vorbis` link three of them
+directly, and the overlay ports in [`ports/`](ports/README.md) build against all
+four — SpessaSynth reads FLAC- and Vorbis-compressed SF3 samples, libvgm and mGBA
+read gzip — so vcpkg builds the four whichever way the ports go, and linking a
+second copy of any of them would buy nothing. mGBA is a deliberate omission of a
 different kind: a system libmgba exists, and `struct mCore` declares its members
 inside `#ifdef ENABLE_VFS` and friends, so one built with a different set of
 those has different member offsets — which compiles, links, and then calls

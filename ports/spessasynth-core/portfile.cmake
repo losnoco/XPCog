@@ -15,8 +15,8 @@
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO kode54/spessasynth_core_c
-    REF d7ef75a2216072517c8fcc407c911f502b5b5d9f
-    SHA512 0dcc9467fafd3520ebebec8806c324dacf396d41e8e2f15033e87c489efe26705613003cdd9ca1e1cfa78999a8451f92c2d0f7e35636b6635d7f455aa8628df2
+    REF 99fc352d8bb38851cb9b13c36eb8eb7a98903c2b
+    SHA512 0736bed1dbe84e3227a37e3daa6c6823576d03f1360f10ed2ef8811a35d6a0e006b17cda1275c47e2315422b4f99dc54d185f52adfbac89db7b25d955c423c4a
     HEAD_REF main
     PATCHES
         msvc-static-export-header.patch

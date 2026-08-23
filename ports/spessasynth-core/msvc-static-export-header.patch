@@ -1,5 +1,5 @@
---- a/spessasynth_core/CMakeLists.txt	2026-08-14 09:47:24.000000000 -0400
-+++ b/spessasynth_core/CMakeLists.txt	2026-08-19 18:36:55.566789300 -0400
+--- a/spessasynth_core/CMakeLists.txt	2026-08-23 02:40:48.262767324 -0700
++++ b/spessasynth_core/CMakeLists.txt	2026-08-23 02:40:48.269215206 -0700
 @@ -93,6 +93,17 @@
      endif()
  else()
@@ -17,7 +17,7 @@
 +    endif()
  endif()
  
- set_target_properties(spessasynth PROPERTIES VERSION 4.3.17 SOVERSION 10)
+ set_target_properties(spessasynth PROPERTIES VERSION 4.3.17 SOVERSION 11)
 @@ -211,3 +222,7 @@
      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
