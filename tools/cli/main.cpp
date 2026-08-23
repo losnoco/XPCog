@@ -161,6 +161,11 @@ int info(std::string_view path) {
     tagLine("genre", entry.genre);
     tagLine("composer", entry.composer);
     tagLine("date", entry.date);
+    // Promoted to a column like the rest of these, and so removed from the map
+    // below -- so without a line of its own it is the one thing a scan stores
+    // that this never showed. It reads as "no lyrics in the file", which is a
+    // different and wrong answer.
+    tagLine("unsyncedlyrics", entry.unsyncedLyrics);
     if (entry.track != 0) {
         std::printf("  %-20s %d\n", "track", entry.track);
     }
