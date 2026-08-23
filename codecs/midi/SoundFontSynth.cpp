@@ -272,7 +272,9 @@ bool SoundFontSynth::open(double                 sampleRate,
             return false;
         }
 
-        displayName_ = "SpessaSynth (" + pathToUtf8(globalBank_->filename()) + ")";
+        if (!fileBank_) {
+            displayName_ = "SpessaSynth (" + pathToUtf8(globalBank_->filename()) + ")";
+        }
     }
 
     if (!embeddedBank_.empty()) {
