@@ -389,7 +389,7 @@ jobs:
           set -u
           installed=build/linux-repo-debug/vcpkg_installed/x64-linux/share
           status=0
-          for port in ffmpeg openssl curl libarchive sqlite3 soxr opus opusfile \
+          for port in ffmpeg libarchive sqlite3 soxr opus opusfile \
                       wavpack libopenmpt libgme libmpcdec libsidplayfp \
                       adplug libbinio; do
               if [ -d "$installed/$port" ]; then
@@ -397,7 +397,15 @@ jobs:
                   status=1
               fi
           done
-          for port in taglib catch2 vgmstream spessasynth-core \
+          # curl and openssl moved out of that list and into this one when the
+          # crash reporter arrived, and the move is the assertion rather than a
+          # weakening of it. sentry-native's transport depends on libcurl as a
+          # dependency of the *port*, so vcpkg builds curl and OpenSSL whatever
+          # this job decides about ours. Taking the system copy as well would put
+          # two libcurls and two OpenSSLs in one process; XPCogSystemDeps.cmake
+          # therefore vetoes the curl substitution whenever `sentry` is
+          # requested, and what has to be checked is that it actually did.
+          for port in curl openssl taglib catch2 vgmstream spessasynth-core \
                       libflac libogg libvorbis zlib; do
               if [ ! -d "$installed/$port" ]; then
                   echo "::error::vcpkg did not build $port, which it must: this runner cannot supply it"

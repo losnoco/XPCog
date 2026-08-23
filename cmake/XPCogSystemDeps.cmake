@@ -554,6 +554,33 @@ function(xpcog_probe_system_deps)
     endforeach()
 
     # -----------------------------------------------------------------------
+    # One substitution is vetoed rather than probed: libcurl, when the crash
+    # reporter is in the build.
+    #
+    # sentry-native's transport is libcurl everywhere but Windows, and it is a
+    # dependency of the *port*. Subtracting our `curl` feature therefore does not
+    # stop vcpkg building curl -- or OpenSSL under it -- it only stops us using
+    # the copy it built. What that leaves is codecs/httpsource linked against the
+    # system libcurl while sentry-native is linked against vcpkg's: two libcurls,
+    # two OpenSSLs and two sets of TLS state in one process, for no saving at all,
+    # since both were going to be compiled either way.
+    #
+    # So when `sentry` is asked for, curl is taken from vcpkg like the reporter
+    # is. This is the rule vcpkg.json already applies by declaration to libogg,
+    # libflac and libvorbis -- if vcpkg is building it anyway, a second system
+    # copy saves nothing and risks everything -- reached here at configure time
+    # instead, because unlike those it depends on which features were requested.
+    #
+    # Found by CI: the substitution check on the linux-repo job asserts that
+    # ubuntu-24.04's curl and openssl are *not* built by vcpkg, and adding the
+    # reporter made both appear. The check was right and the manifest was wrong.
+    if(XPCOG_SYSTEM_curl AND "sentry" IN_LIST VCPKG_MANIFEST_FEATURES)
+        set(XPCOG_SYSTEM_curl OFF CACHE INTERNAL "system curl" FORCE)
+        list(REMOVE_ITEM _report "${_xpcog_dep_curl_LABEL}\t${XPCOG_SYSTEM_curl_VERSION}")
+        list(APPEND _report "libcurl\tfrom vcpkg, with sentry-native")
+    endif()
+
+    # -----------------------------------------------------------------------
     # From answers to a manifest.
     #
     # Two lists come out of this. VCPKG_MANIFEST_FEATURES is what the preset
