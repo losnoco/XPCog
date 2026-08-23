@@ -2503,15 +2503,35 @@ which promotes `cogimport` to the top: with every format Cog plays now playing
 here, the thing standing between this and a player a Cog user can actually move
 to is their library, not their files.
 
-**1. `cogimport`.** Reading an existing Cog installation — its playlists, its
-SQLite library, its defaults — is the difference between a port and something a
-Cog user can switch to. Core already has the plist reader and writer that Cog's
-XML playlists need, and `codecs/playlists` already parses that format, so the
-missing pieces are the SQLite schema and the defaults mapping. Cog's library
-lives in `~/Library/Application Support/Cog/Default.storedata` (Core Data, so the
-schema is not one a person would have designed) and its preferences in
+**1. `cogimport` — pick this one up on a Mac.** Reading an existing Cog
+installation — its playlists, its SQLite library, its defaults — is the
+difference between a port and something a Cog user can switch to. Core already
+has the plist reader and writer that Cog's XML playlists need, and
+`codecs/playlists` already parses that format, so the missing pieces are the
+SQLite schema and the defaults mapping. Cog's library lives in
+`~/Library/Application Support/Cog/Default.storedata` (Core Data, so the schema
+is not one a person would have designed) and its preferences in
 `~/Library/Preferences/org.cogx.cog.plist`. Note that `silence://10` can appear
 in a Cog playlist and now plays here, which was the point of porting it.
+
+**Why the platform note is part of the item rather than an aside.** The
+deliverable runs everywhere — an import is only worth having on the machine
+someone is *moving to*, which is a PC as often as not — but the *work* is
+archaeology against a real Cog installation, and both artefacts only exist where
+Cog runs. A Core Data store is not a schema anyone wrote down: entity and
+attribute names reach SQLite mangled (`ZPLAYLISTENTRY`, `ZURL`), relationships
+are integer foreign keys into tables named after nothing, and the only reliable
+way to learn which column is which is to change something in Cog and diff the
+file. Copying a `.storedata` to another machine gives you the bytes without the
+program that can still write them, which is the half that answers questions. The
+defaults mapping is the same story in miniature: `org.cogx.cog.plist` holds the
+values, and what a given key *means* is decided by the pane that writes it.
+
+So: gather on macOS — schema notes, a fixture store, a fixture plist, all three
+committed — and the reader itself is ordinary cross-platform code written
+anywhere afterwards. Until that happens this item is blocked on hardware rather
+than on effort, which makes **item 2 the practical next one on a PC**; the
+ranking here is still by what each is worth, not by what is reachable today.
 
 **2. Native output backends, replacing miniaudio.** miniaudio is a stopgap;
 `IAudioOutput` is the seam that makes it a swap rather than a rewrite. A native
