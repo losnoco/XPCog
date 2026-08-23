@@ -79,9 +79,18 @@ jobs:
       # That is also where two entries this list used to carry came from, one CI
       # round apart, both for ports nothing in this project asks for: fontconfig
       # built gperf, which wanted autoconf-archive, and further down libxcrypt
-      # wanted ltdl development files. Both are gone with the tree that needed
-      # them, as are libgl1-mesa-dev and libglu1-mesa-dev, which were there for
+      # wanted ltdl development files. ltdl is gone with the tree that needed it,
+      # as are libgl1-mesa-dev and libglu1-mesa-dev, which were there for
       # vcpkg's opengl port -- a wxWidgets dependency and nothing else's.
+      #
+      # **autoconf-archive is back, for a different port.** sentry-native depends
+      # on libunwind on Linux, and vcpkg's libunwind is an autotools build that
+      # refuses to configure without `autoconf autoconf-archive automake
+      # libtoolize` on the system. Three of those four were already here, which
+      # is why adding the crash reporter took every Linux job down at once with a
+      # message naming a package nobody had asked for: the failure is at vcpkg
+      # install time, before a compiler is even detected, so what it looks like
+      # is CMake unable to find Ninja.
       #
       # libglib2.0-dev stays, and not for the toolkit: platform/ talks to MPRIS
       # over GDBus, so gio-2.0 is a direct dependency of this project on Linux.
@@ -95,7 +104,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config autoconf automake libtool nasm \
+            ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
             libwxgtk3.2-dev libglib2.0-dev \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
 
@@ -325,7 +334,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config autoconf automake libtool nasm \
+            ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
             libwxgtk3.2-dev libglib2.0-dev \
             flac vorbis-tools opus-tools lame wavpack ffmpeg musepack-tools \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
@@ -442,7 +451,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config autoconf automake libtool nasm \
+            ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
 
       - name: Set up vcpkg
@@ -476,41 +485,38 @@ jobs:
         shell: bash
         run: mkdir -p .vcpkg-cache
 
-      # VCPKG_MANIFEST_FEATURES is restated without `gui` rather than subtracted
-      # from, because a vcpkg feature cannot be removed by overriding: the preset
-      # sets the list and this replaces it wholesale. Getting it wrong costs a
-      # GTK build for a configuration that links no toolkit.
+      # One preset, no -D. This step used to be `--preset linux-debug -D
+      # XPCOG_BUILD_APP=OFF`, and that stopped being enough when the crash
+      # reporter arrived: XPCOG_BUILD_APP=OFF means platform/ is never added and
+      # nothing links sentry, but the feature list is what vcpkg installs from,
+      # so the job built crashpad -- and libunwind under it -- for a target that
+      # could not use either. A feature cannot be subtracted by overriding, so
+      # `linux-headless` restates the list without it, exactly as macos-headless
+      # restates without `gui`. The list stays in CMakePresets.json: one list, in
+      # one file.
       #
-      # The quotes around it are load-bearing, and their absence is worth
-      # recording because the failure looked like anything but a shell problem.
-      # The feature list used to be restated here to subtract `gui` from it. The
-      # linux presets no longer carry `gui` in the first place, so the override
-      # said exactly what the preset says and is gone -- one list, in one file.
-      #
-      # Worth keeping the reason it was quoted, because the next person to add a
-      # -D of a CMake list will meet it: a CMake list separator is a semicolon
-      # and so is a shell statement separator, so unquoted this ran `cmake ... -D
-      # VCPKG_MANIFEST_FEATURES=ffmpeg` and then tried to execute `vgmstream`,
-      # `mgba` and the rest as commands. vcpkg dutifully installed the ffmpeg
-      # feature alone, and the configure died much later at
-      # `find_package(libmpcdec)` in codecs/musepack -- a missing port, with
-      # nothing anywhere near it mentioning quoting.
+      # Worth keeping the reason the old override's quotes were load-bearing,
+      # because the next person to add a -D of a CMake list will meet it: a CMake
+      # list separator is a semicolon and so is a shell statement separator, so
+      # unquoted this ran `cmake ... -D VCPKG_MANIFEST_FEATURES=ffmpeg` and then
+      # tried to execute `vgmstream`, `mgba` and the rest as commands. vcpkg
+      # dutifully installed the ffmpeg feature alone, and the configure died much
+      # later at `find_package(libmpcdec)` in codecs/musepack -- a missing port,
+      # with nothing anywhere near it mentioning quoting.
       - name: Configure without a toolkit
         id: configure
-        run: >-
-          cmake --preset linux-debug
-          -D XPCOG_BUILD_APP=OFF
+        run: cmake --preset linux-headless
 
       - name: Build
-        run: cmake --build --preset linux-debug
+        run: cmake --build --preset linux-headless
 
       - name: Test
-        run: ctest --preset linux-debug
+        run: ctest --preset linux-headless
 
       - name: Smoke-test the CLI
         run: |
-          build/linux-debug/bin/xpcog-cli --version
-          build/linux-debug/bin/xpcog-cli codecs
+          build/linux-headless/bin/xpcog-cli --version
+          build/linux-headless/bin/xpcog-cli codecs
 
       # See the matrix job: gated on configure, not on the job as a whole.
       - name: Save vcpkg binary cache

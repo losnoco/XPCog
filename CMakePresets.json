@@ -165,6 +165,20 @@
       }
     },
     {
+      "name": "linux-headless",
+      "displayName": "Linux headless (core + cli + tests, no toolkit)",
+      "inherits": [
+        "linux",
+        "debug"
+      ],
+      "description": "What CI's headless Linux job builds. It used to say `--preset linux-debug -D XPCOG_BUILD_APP=OFF`, which stopped being enough when the crash reporter arrived: XPCOG_BUILD_APP=OFF means platform/ is never added and nothing links sentry, but vcpkg decides what to install from the feature list and installed it anyway -- so the job built crashpad, and libunwind under it, for a target that could not use either. Features cannot be subtracted from an inherited list, so `sentry` is dropped by restating, the same way macos-headless drops `gui`. The list lives here rather than in a -D on the CI step for the reason the comment on that step gives: one list, in one file.",
+      "cacheVariables": {
+        "XPCOG_BUILD_APP": "OFF",
+        "XPCOG_WITH_SENTRY": "OFF",
+        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
+      }
+    },
+    {
       "name": "macos-headless",
       "displayName": "macOS headless (core + cli + tests, no Qt)",
       "inherits": [
@@ -191,6 +205,10 @@
     {
       "name": "macos-headless",
       "configurePreset": "macos-headless"
+    },
+    {
+      "name": "linux-headless",
+      "configurePreset": "linux-headless"
     },
     {
       "name": "linux-debug",
@@ -228,6 +246,13 @@
     {
       "name": "macos-headless",
       "configurePreset": "macos-headless",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-headless",
+      "configurePreset": "linux-headless",
       "output": {
         "outputOnFailure": true
       }
