@@ -103,6 +103,18 @@ private:
     void showPreferences();
     void showAbout();
 
+    /// Asks, once ever, whether XPCog may send crash reports.
+    ///
+    /// Cog's prompt and Cog's promise (Window/MainWindow.m:19-38): shown as the
+    /// window appears on the first launch that has one, and never again --
+    /// whatever the answer was, including no answer at all. Preferences is where
+    /// it is changed afterwards, which is what the prompt says.
+    ///
+    /// Here rather than in XPCogApp because it is modal and needs a window to be
+    /// modal to. Silently does nothing in a build with no reporter: consent to
+    /// something that cannot happen is not worth interrupting anyone for.
+    void askCrashReportingConsent();
+
     /// A setting changed and something has to be told. Shared by the
     /// preferences dialog and the equaliser panel, which both publish the same
     /// keys -- and the equaliser's is the case that must not be forgotten,

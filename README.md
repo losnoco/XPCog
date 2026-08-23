@@ -98,7 +98,10 @@ ctest --preset windows-debug
 There is no deploy step. On Windows, vcpkg's applocal pass copies every dependent
 DLL beside `XPCog.exe` as part of the build — the same pass that has always placed
 FFmpeg's and TagLib's — so a freshly built binary starts from Explorer. On macOS the
-triplet is static and there is nothing to copy. What remains is signing, and
+triplet is static and there is nothing to copy. The one thing the build stages
+itself is `crashpad_handler`, which is a second executable rather than a library
+and so is not something applocal knows about; it lands beside the binary as a
+post-build step. What remains is signing, and
 `cmake --build build/macos-debug --target sign` does that when
 `XPCOG_CODESIGN_IDENTITY` names a Developer ID identity.
 
@@ -116,7 +119,7 @@ without. The Linux presets therefore leave `gui` out, and
 needs **wxWidgets 3.2 or newer** — the oldest release carrying `wxTaskBarIcon` and
 `wxNotificationMessage` in `core` rather than in the since-merged `adv` library.
 To build the toolkit through vcpkg anyway, add the feature back:
-`cmake --preset linux-debug -D "VCPKG_MANIFEST_FEATURES=gui;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"`.
+`cmake --preset linux-debug -D "VCPKG_MANIFEST_FEATURES=gui;sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"`.
 
 ### Linux: building against the distribution's libraries
 
@@ -390,6 +393,33 @@ This is deliberately stricter than Cog, whose callback
 `@autoreleasepool` on the real-time thread. `xpcog-cli play` reports underruns
 separately for playback and for the post-stream drain, so a genuine dropout is
 never confused with the expected tail.
+
+### Crash reporting
+
+**Off unless you turn it on.** XPCog carries the same arrangement Cog does: on
+the first launch it asks, once, whether it may send crash reports and usage data
+to <https://cog-analytics.losno.co>, and it never asks again whatever the answer
+was. Preferences → General is where it is changed afterwards, and the switch takes
+effect immediately in both directions — unticking it shuts the reporter down for
+the running session rather than at the next launch.
+
+Until it is ticked, no reporter is initialised, no report database is created and
+nothing leaves the machine. That is deliberately stronger than the SDK's own
+opt-in mode, which starts a client and then holds events back: here there is no
+client. [What is collected, and what happens to
+it](https://www.iubenda.com/privacy-policy/59859310).
+
+It is [sentry-native](https://github.com/getsentry/sentry-native) underneath,
+where Cog uses the Sentry Cocoa SDK, and the keys are Cog's own —
+`sentryConsented` and `sentryAskedConsent` — so an answer given in Cog on macOS
+carries over rather than being asked for again. The reporter lives in
+`platform/`, behind a four-function header that never exposes the SDK; see
+[`platform/include/xpcog/platform/CrashReporter.hpp`](platform/include/xpcog/platform/CrashReporter.hpp).
+
+The presets build it. `-D XPCOG_WITH_SENTRY=OFF` leaves it out entirely, which is
+the default for a plain `cmake` with no preset: the port builds crashpad, and that
+is a lot to hand someone who only wants a player. Such a build still shows the
+switch, greyed out, saying why.
 
 ## Roadmap
 

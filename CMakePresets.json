@@ -9,13 +9,13 @@
     {
       "name": "base",
       "hidden": true,
-      "description": "FFmpeg is on here rather than left to the option default, which is OFF. Without it a fresh clone silently builds no AAC, ALAC, WMA, AC3, DTS or TAK, and CI never compiles that decoder at all. The option stays OFF by default for anyone configuring by hand who does not want the dependency.",
+      "description": "FFmpeg is on here rather than left to the option default, which is OFF. Without it a fresh clone silently builds no AAC, ALAC, WMA, AC3, DTS or TAK, and CI never compiles that decoder at all. The option stays OFF by default for anyone configuring by hand who does not want the dependency. Crash reporting is on for the same reason and with the same caveat: the reporter is built, and stays inert until the listener consents to it.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_MANIFEST_FEATURES": "gui;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm",
+        "VCPKG_MANIFEST_FEATURES": "gui;sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm",
         "XPCOG_WITH_FFMPEG": "ON",
         "XPCOG_WITH_VGMSTREAM": "ON",
         "XPCOG_WITH_PSF": "ON",
@@ -23,7 +23,8 @@
         "XPCOG_WITH_MUSEPACK": "ON",
         "XPCOG_WITH_MIDI": "ON",
         "XPCOG_WITH_ADPLUG": "ON",
-        "XPCOG_WITH_LIBVGM": "ON"
+        "XPCOG_WITH_LIBVGM": "ON",
+        "XPCOG_WITH_SENTRY": "ON"
       },
       "environment": {
         "VCPKG_BINARY_SOURCES": "clear;files,${sourceDir}/.vcpkg-cache,readwrite"
@@ -76,14 +77,14 @@
       "name": "linux",
       "hidden": true,
       "inherits": "base",
-      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui`, which is how the toolkit is left to the distribution here. vcpkg's wxwidgets port depends on its gtk3 port, so asking vcpkg for wx on Linux builds GTK and about thirty packages under it -- glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus, seven X11 libraries -- from source, on a machine that already has every one of them. Install libwxgtk3.2-dev instead; cmake/XPCogWx.cmake finds it. A feature cannot be subtracted from an inherited list, hence the restatement rather than an override, the same way macos-headless does it.",
+      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui`, which is how the toolkit is left to the distribution here. vcpkg's wxwidgets port depends on its gtk3 port, so asking vcpkg for wx on Linux builds GTK and about thirty packages under it -- glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus, seven X11 libraries -- from source, on a machine that already has every one of them. Install libwxgtk3.2-dev instead; cmake/XPCogWx.cmake finds it. A feature cannot be subtracted from an inherited list, hence the restatement rather than an override, the same way macos-headless does it. `sentry` stays: it is the toolkit that comes from the distribution here, not the crash reporter.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
       },
       "cacheVariables": {
-        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
+        "VCPKG_MANIFEST_FEATURES": "sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
       }
     },
     {
@@ -170,9 +171,10 @@
         "macos",
         "debug"
       ],
-      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui` because it inherits the list and a feature cannot be subtracted. Building wx here would cost a GTK build for a target that links no toolkit.",
+      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui` because it inherits the list and a feature cannot be subtracted. Building wx here would cost a GTK build for a target that links no toolkit. `sentry` goes too, and for the matching reason: XPCOG_BUILD_APP is off, so the platform layer that holds the crash reporter is never added, and building crashpad for it would be a helper executable with nothing to sit beside.",
       "cacheVariables": {
         "XPCOG_BUILD_APP": "OFF",
+        "XPCOG_WITH_SENTRY": "OFF",
         "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
       }
     }

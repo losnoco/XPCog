@@ -19,6 +19,7 @@
 #include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/library/PlaylistCommands.hpp"
 #include "xpcog/core/library/PlaylistFile.hpp"
+#include "xpcog/platform/CrashReporter.hpp"
 #include "xpcog/platform/SettingsStore.hpp"
 
 #include <wx/bmpbuttn.h>
@@ -28,6 +29,7 @@
 #include <wx/filedlg.h>
 #include <wx/dirdlg.h>
 #include <wx/gauge.h>
+#include <wx/hyperlink.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
@@ -102,6 +104,59 @@ private:
     std::function<void(std::vector<Url>)> onDrop_;
 };
 
+/// Cog's consent alert, plus a route to what is being consented to.
+///
+/// The text is Cog's, from its own Localizable.xcstrings -- "Would you like to
+/// allow Sentry to submit crash reports? You may turn this off again in
+/// Preferences. We won't ask you again." -- with one sentence added naming the
+/// privacy policy, because Cog's alert has nowhere to put a link and this does.
+///
+/// Not a wxMessageDialog for exactly that reason: a message box holds text and
+/// buttons and nothing else, and a consent prompt that cannot show you the
+/// policy is asking you to agree to something you have no way to read. Twenty
+/// lines of sizer buys a real wxHyperlinkCtrl.
+///
+/// Returns true only for a deliberate yes. Closing the window is a no, which is
+/// the right default for the direction this decision runs in.
+[[nodiscard]] bool askConsent(wxWindow* parent) {
+    wxDialog dialog(parent, wxID_ANY, "Crash reporting");
+
+    auto* text = new wxStaticText(
+        &dialog, wxID_ANY,
+        "Would you like to allow Sentry to submit crash reports?\n\n"
+        "You may turn this off again in Preferences. We won't ask you again.");
+    text->Wrap(dialog.FromDIP(400));
+
+    auto* policy = new wxHyperlinkCtrl(
+        &dialog, wxID_ANY, "What is collected, and what happens to it",
+        wxString::FromUTF8(std::string{platform::kPrivacyPolicyUrl}));
+
+    auto* layout = new wxBoxSizer(wxVERTICAL);
+    layout->Add(text, 0, wxEXPAND | wxALL, dialog.FromDIP(12));
+    layout->Add(policy, 0, wxLEFT | wxRIGHT | wxBOTTOM, dialog.FromDIP(12));
+    if (wxSizer* buttons = dialog.CreateStdDialogButtonSizer(wxYES | wxNO);
+        buttons != nullptr) {
+        layout->Add(buttons, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,
+                    dialog.FromDIP(12));
+    }
+    dialog.SetSizerAndFit(layout);
+    dialog.CenterOnParent();
+
+    // No is the one that needs saying. wxDialogBase::OnButton ends the dialog for
+    // the *affirmative* id, which CreateStdDialogButtonSizer sets to wxID_YES for
+    // this flag pair, and for the escape id, which it sets to nothing at all --
+    // so Yes works by itself and No takes the click and sits there
+    // (wxWidgets/src/common/dlgcmn.cpp). Yes is bound too rather than left to the
+    // default, so that both answers leave by the same route and neither depends
+    // on which button the sizer happened to consider affirmative.
+    dialog.Bind(wxEVT_BUTTON, [&dialog](wxCommandEvent&) { dialog.EndModal(wxID_YES); },
+                wxID_YES);
+    dialog.Bind(wxEVT_BUTTON, [&dialog](wxCommandEvent&) { dialog.EndModal(wxID_NO); },
+                wxID_NO);
+
+    return dialog.ShowModal() == wxID_YES;
+}
+
 }  // namespace
 
 // --- construction -------------------------------------------------------
@@ -125,6 +180,11 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
         // just will not remember the playlist. Saying so once beats failing to
         // launch.
         setStatusText("Library unavailable: " + library_->lastError());
+        // And reported, when there is consent to report it. This is the shape
+        // Cog's captureMessage calls have -- a thing that should have worked and
+        // did not, on a path that then carries on regardless, which is exactly
+        // the kind nobody files a bug about because nothing appears to be wrong.
+        platform::reportProblem("Library would not open: " + library_->lastError());
         library_.reset();
     }
 
@@ -153,6 +213,13 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
     // Restoring the saved playlist is not an edit the user made, so it must not
     // be the first thing Undo offers to take back.
     undo_.clear();
+
+    // Cog asks as the window appears (Window/MainWindow.m:57). Queued rather
+    // than called here for the one difference between the two: this constructor
+    // runs before XPCogApp shows the frame, and a modal dialog whose parent is
+    // not on screen yet is a dialog floating over nothing. CallAfter lands on
+    // the first turn of the event loop, by which time the window is up.
+    CallAfter([this] { askCrashReportingConsent(); });
 }
 
 MainFrame::~MainFrame() {
@@ -660,6 +727,22 @@ void MainFrame::onSettingChanged(const std::string& key) {
 
     if (key.starts_with("spectrum")) {
         spectrum_->applySettings(settings_);
+        return;
+    }
+
+    // Immediately, in both directions, which is the half of Cog's arrangement
+    // that is easy to leave out: its observer on `sentryConsented` calls
+    // `[SentrySDK close]` the moment the box is unticked
+    // (AppController.m:417-420), rather than waiting for a relaunch. Anything
+    // else means unticking the box and still being reported on for the rest of
+    // the session.
+    if (key == "sentryConsented") {
+        if (settings_.SentryConsented()) {
+            platform::startCrashReporting();
+        } else {
+            platform::stopCrashReporting();
+        }
+        settings_.sync();
     }
 }
 
@@ -753,6 +836,41 @@ void MainFrame::showPreferences() {
 void MainFrame::showAbout() {
     AboutDialog dialog(this, registry_);
     dialog.ShowModal();
+}
+
+void MainFrame::askCrashReportingConsent() {
+    if (!platform::crashReportingAvailable() || settings_.SentryAskedConsent()) {
+        return;
+    }
+
+    // Recorded *before* the answer, which is what Cog does and is not an
+    // oversight in either place (Window/MainWindow.m:36 writes the flag outside
+    // the completion handler). The promise is "we won't ask you again", and it
+    // has to hold for the person who closed the dialog without answering just as
+    // much as for the one who pressed No -- otherwise declining to decide is the
+    // one response that gets asked again every launch.
+    settings_.setSentryAskedConsent(true);
+
+    // Whichever window is actually on screen. Cog has two prompts for this, one
+    // per window class; here there is one, and it asks which mode it is in.
+    wxWindow* parent = (mini_ != nullptr && mini_->IsShown())
+                           ? static_cast<wxWindow*>(mini_)
+                           : static_cast<wxWindow*>(this);
+
+    if (!askConsent(parent)) {
+        // No is already the stored default; writing it anyway so that the answer
+        // is a value someone can see rather than an absence they have to infer.
+        settings_.setSentryConsented(false);
+        settings_.sync();
+        return;
+    }
+
+    settings_.setSentryConsented(true);
+    // Flushed here rather than at quit: this is the one setting whose whole
+    // point is to be read on the *next* launch, including the launch after a
+    // crash, and a crash is precisely the exit that never reaches Settings::sync.
+    settings_.sync();
+    platform::startCrashReporting();
 }
 
 void MainFrame::refreshTransportIcons() {

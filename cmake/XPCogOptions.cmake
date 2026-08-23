@@ -43,5 +43,12 @@ option(XPCOG_WITH_VGMSTREAM "Video-game streamed audio (vgmstream)" OFF)
 option(XPCOG_WITH_PSF       "PSF container (HighlyComplete; cores land separately)" OFF)
 option(XPCOG_WITH_SID       "Commodore 64 tunes (libsidplayfp)" OFF)
 
+# Crash reporting, which is opt-in twice over: this decides whether the reporter
+# is *built*, and `sentryConsented` decides whether it ever runs. OFF here for
+# the same reason XPCOG_WITH_FFMPEG is -- sentry-native builds crashpad and, on
+# Linux, libunwind, which is a lot to hand someone who typed plain `cmake`. The
+# presets turn it on. See platform/include/xpcog/platform/CrashReporter.hpp.
+option(XPCOG_WITH_SENTRY "Opt-in crash reporting (sentry-native)" OFF)
+
 # Sanitizers are opt-in; the RT-safety work in M1a wants them available early.
 set(XPCOG_SANITIZE "" CACHE STRING "Sanitizers, e.g. address;undefined")

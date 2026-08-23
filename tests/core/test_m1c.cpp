@@ -106,6 +106,30 @@ TEST_CASE("settings return their defaults when unset", "[settings]") {
     CHECK_FALSE(settings.TrayHideAnnounced());
 }
 
+TEST_CASE("crash reporting is off until it is consented to", "[settings]") {
+    // The one default in this file that is a promise to the listener rather than
+    // a preference, so it is pinned on its own. A true here -- from a typo, or
+    // from someone assuming the prompt is what gates it -- means an untouched
+    // installation starts reporting on its first launch, before anyone has been
+    // asked anything, and nothing about that is visible from the interface.
+    auto     store = makeMemorySettingsStore();
+    Settings settings(*store);
+
+    CHECK_FALSE(settings.SentryConsented());
+
+    // And "not asked yet" must be distinguishable from "asked and declined",
+    // because the prompt is shown exactly once and this is what decides whether
+    // it has been.
+    CHECK_FALSE(settings.SentryAskedConsent());
+
+    // Cog's keys, unchanged, so a preferences file that has come from Cog on
+    // macOS carries the answer over rather than asking again -- and, in the
+    // direction that matters more, so that someone who declined in Cog is not
+    // asked afresh here.
+    CHECK(Settings::defaultValue("sentryConsented") == "false");
+    CHECK(Settings::defaultValue("sentryAskedConsent") == "false");
+}
+
 TEST_CASE("settings round-trip through the store", "[settings]") {
     auto     store = makeMemorySettingsStore();
     Settings settings(*store);

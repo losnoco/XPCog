@@ -22,11 +22,31 @@
 #   TaskbarIntegration ITaskbarList3 done; NSDockTile outstanding
 #   FileAssociations   Windows only, by design
 #   Foreground     AllowSetForegroundWindow, Windows only
+#   CrashReporter  sentry-native, and only once the listener has said yes
 
 add_library(xpcog-platform STATIC
     src/common/FileSettingsStore.cpp
     src/common/FileSettingsStore.hpp
 )
+
+# Crash reporting. One implementation or the other is always compiled, so the
+# application calls the same four functions either way and needs no #ifdef of its
+# own -- the same shape as the Null* integrations below.
+#
+# The dependency is the reason for the switch. sentry-native builds crashpad, and
+# with it a helper executable and, on Linux, libunwind; that is not something to
+# impose on someone configuring by hand who only wants a player. The presets turn
+# it on, exactly as they do for FFmpeg, so CI and every ordinary build have it.
+if(XPCOG_WITH_SENTRY)
+    find_package(sentry CONFIG REQUIRED)
+    target_sources(xpcog-platform PRIVATE src/common/SentryCrashReporter.cpp)
+    # PRIVATE: sentry.h appears in no header of ours. CrashReporter.hpp speaks
+    # bool and string_view precisely so that the application never sees the SDK,
+    # which is what lets the whole thing be swapped or removed.
+    target_link_libraries(xpcog-platform PRIVATE sentry::sentry)
+else()
+    target_sources(xpcog-platform PRIVATE src/common/NullCrashReporter.cpp)
+endif()
 
 # Exactly one implementation of each seam is compiled, chosen here rather than by
 # #ifdef inside one file. Adding a platform is a new file and a new branch, with

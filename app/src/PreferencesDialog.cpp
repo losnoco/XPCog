@@ -3,6 +3,7 @@
 #include "Text.hpp"
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
+#include "xpcog/platform/CrashReporter.hpp"
 
 #include <wx/checkbox.h>
 #include <wx/choice.h>
@@ -10,6 +11,7 @@
 #include <wx/dirdlg.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
+#include <wx/hyperlink.h>
 #include <wx/listbox.h>
 #include <wx/panel.h>
 #include <wx/scrolwin.h>
@@ -128,6 +130,8 @@ constexpr std::array kCuratedKeys = {
     // Spectrum
     "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode", "spectrumFloorDb",
     "spectrumShowPeaks",
+    // General
+    "sentryConsented",
 };
 
 /// Not settings at all, but internal state that happens to live in the same
@@ -136,8 +140,12 @@ constexpr std::array kCuratedKeys = {
 /// Settings::applyMigrations(), so typing into it makes migrations re-run or be
 /// skipped, and nothing about a spin box suggests that. UserDefaultURLsKey is the
 /// Open URL history -- a newline-separated list the dialog maintains, where a
-/// hand edit can only produce entries that will not parse.
-constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsKey"};
+/// hand edit can only produce entries that will not parse. sentryAskedConsent
+/// records that the prompt has been shown; it is the answer next to it on General
+/// that decides anything, and a checkbox here that re-armed a one-time dialog
+/// would read as a second consent switch.
+constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsKey",
+                                      "sentryAskedConsent"};
 
 [[nodiscard]] bool contains(std::span<const char* const> keys, std::string_view key) {
     return std::any_of(keys.begin(), keys.end(),
@@ -218,7 +226,10 @@ public:
         add(label, box);
     }
 
-    void toggle(const char* label, const char* key, const char* hint = nullptr) const {
+    /// Returns the box, for the one caller that has to grey it out. Not
+    /// [[nodiscard]]: every other caller wants the row, not the control.
+    wxCheckBox* toggle(const char* label, const char* key,
+                       const char* hint = nullptr) const {
         auto* box = new wxCheckBox(pane_, wxID_ANY, wxString::FromUTF8(label));
         box->SetValue(isTrue(settings_->rawValue(key)));
         if (hint != nullptr) {
@@ -230,6 +241,20 @@ public:
                       announce(key);
                   });
         add("", box);
+        return box;
+    }
+
+    /// A link out of the application, laid out where a note() would be.
+    ///
+    /// Exists for one row -- the privacy policy beside the crash-reporting
+    /// switch -- and it is worth a method rather than a hand-built control there
+    /// because "here is what you are agreeing to" is not something to leave as
+    /// text somebody has to retype into a browser.
+    void link(const char* label, std::string_view url) const {
+        auto* control = new wxHyperlinkCtrl(pane_, wxID_ANY, wxString::FromUTF8(label),
+                                            wxString::FromUTF8(std::string{url}));
+        form_->AddSpacer(0);
+        form_->Add(control, 0, wxTOP, pane_->FromDIP(2));
     }
 
     void number(const char* label, const char* key, int minimum, int maximum) const {
@@ -407,8 +432,11 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings)
     };
 
     // Cog's order, with its unported panes taken out rather than reshuffled.
+    // General sits after Output because that is where Cog has it -- fourth, after
+    // Playlist, Hot Keys and Output -- rather than first, where the name suggests.
     page(buildPlaylistPane(book), "Playlist");
     page(buildOutputPane(book), "Output");
+    page(buildGeneralPane(book), "General");
     // Absent on macOS. Its only control is the close-to-tray checkbox, which is
     // already Windows and Linux only -- macOS closes to the Dock unconditionally,
     // by platform convention rather than by preference -- so what remains there is
@@ -457,6 +485,42 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
 
     row->toggle("Stop after every track", "alwaysStopAfterCurrent");
     row->toggle("Read cue sheets when adding folders", "readCueSheetsInFolders");
+
+    auto* layout = new wxBoxSizer(wxVERTICAL);
+    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
+    pane->SetSizer(layout);
+    return pane;
+}
+
+wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
+    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* form = makeForm(pane->FromDIP(6));
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
+
+    // Cog's label, word for word (Preferences/Panes/GeneralPaneView.swift:133).
+    // "Usage data" is not padding: session tracking is on, so a launch and a
+    // clean exit are reported as well as a crash, and a label saying only "crash
+    // reports" would be describing less than what is sent.
+    wxCheckBox* box = row->toggle("Send crash reports and usage data", "sentryConsented");
+
+    if (platform::crashReportingAvailable()) {
+        row->note("Off unless you turn it on. Nothing is collected, written or "
+                  "sent while this is unticked -- the reporter is not started at "
+                  "all rather than started and silenced.");
+        row->link("What is collected, and what happens to it",
+                  platform::kPrivacyPolicyUrl);
+    } else {
+        // Shown rather than hidden, and greyed rather than lying. A build
+        // configured without XPCOG_WITH_SENTRY has no reporter to start, and a
+        // checkbox that ticks and does nothing is worse than one that explains
+        // itself -- particularly this checkbox, where what it appears to promise
+        // runs in the direction of sending more.
+        box->Enable(false);
+        box->SetValue(false);
+        row->note("This build was compiled without crash reporting, so there is "
+                  "nothing to turn on.");
+    }
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));

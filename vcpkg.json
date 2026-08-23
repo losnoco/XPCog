@@ -175,6 +175,12 @@
       "dependencies": [
         "libvgm"
       ]
+    },
+    "sentry": {
+      "description": "sentry-native, behind the opt-in crash reporting in platform/. Not a default feature and not substitutable: the port builds crashpad with it, which is a helper executable the build has to stage beside XPCog, and a distribution copy would be a different crashpad from the one the staged handler came from. A feature rather than a plain dependency so that a headless preset -- which builds no app, and so no platform layer either -- does not build a crash reporter for a target that has nowhere to put one.",
+      "dependencies": [
+        "sentry-native"
+      ]
     }
   }
 }

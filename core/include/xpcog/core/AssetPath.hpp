@@ -27,6 +27,18 @@
 
 namespace xpcog {
 
+/// The directory the running executable itself is in.
+///
+/// Not the same answer as assetDirectory() and deliberately so: inside a macOS
+/// bundle this is Contents/MacOS, where a *program* shipped beside XPCog lives,
+/// while its data lives one level over in Contents/Resources. The one thing
+/// that needs this rather than the other is the crash handler -- crashpad ships
+/// a helper executable, and a helper in Resources is in the wrong place for
+/// both the loader and the code signature.
+///
+/// Empty when the platform will not say where the executable is.
+[[nodiscard]] std::filesystem::path executableDirectory();
+
 /// The directory this executable's shipped assets are in. Empty when the
 /// platform will not say where the executable is, which is not expected but is
 /// not worth aborting over either -- every caller has something to do without

@@ -5,6 +5,7 @@
 #include "StatusPresence.hpp"
 #include "Text.hpp"
 
+#include "xpcog/platform/CrashReporter.hpp"
 #include "xpcog/platform/FileAssociations.hpp"
 #include "xpcog/platform/SettingsStore.hpp"
 
@@ -107,6 +108,21 @@ bool XPCogApp::OnInit() {
     settings_ = std::make_unique<Settings>(*store_);
     settings_->applyMigrations();
 
+    // Crash reporting, if and only if the listener has already said yes.
+    //
+    // Here rather than after the window, so that a crash while the codecs are
+    // registered or the library is opened is still reported -- those are among
+    // the more interesting places to crash, and they all happen below. Cog starts
+    // it from -awakeFromNib, which is the same moment relative to its own setup
+    // (Application/AppController.m:384).
+    //
+    // Not asked for here: the *prompt* is MainFrame's, because it needs a window
+    // to be modal to. This launch reports nothing if nobody has consented yet,
+    // and the next one will if they say yes.
+    if (settings_->SentryConsented()) {
+        platform::startCrashReporting();
+    }
+
     // Settings before codecs are built from it: a decoder is handed these on
     // construction, so the registry has to be holding them by the time anything
     // asks it to open a file.
@@ -161,6 +177,11 @@ int XPCogApp::OnExit() {
     // The subscription goes with it, before the signal it is attached to.
     launchSubscription_.reset();
     instance_.reset();
+
+    // Then the reporter, which is a flush as much as a shutdown: anything
+    // captured in the last moments is still queued, and a process that exits
+    // without this loses it. Safe when it was never started.
+    platform::stopCrashReporting();
 
     // Then, in this order: the registry holds a pointer to the settings, and the
     // settings hold a reference to the store.

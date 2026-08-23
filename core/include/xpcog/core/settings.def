@@ -347,6 +347,32 @@ XPCOG_SETTING(HttpStreamingBufferSize, int, "httpStreamingBufferSize", 0x40000)
 /// percent-encoded -- so nothing has to be escaped on the way in or out.
 XPCOG_SETTING(UrlHistory, std::string, "UserDefaultURLsKey", "")
 
+// --- crash reporting ------------------------------------------------------
+
+/// Whether the listener has agreed to send crash reports and usage data.
+///
+/// Cog's `sentryConsented`, same key and same default, and the default is the
+/// whole point: **off**. Nothing is initialised, nothing is written to disk and
+/// no request is made until this is true. Cog starts the SDK from the observer
+/// on this key and calls `[SentrySDK close]` when it goes back to false
+/// (Application/AppController.m:384-425); XPCog does the same through
+/// platform::startCrashReporting() and stopCrashReporting().
+///
+/// A false stored here and a missing value mean the same thing on purpose. An
+/// upgrade that added the key must not read "not asked yet" as "yes".
+XPCOG_SETTING(SentryConsented, bool, "sentryConsented", false)
+
+/// Whether the consent prompt has already been shown.
+///
+/// Cog's `sentryAskedConsent` (Window/MainWindow.m:19-38), and Cog's promise
+/// with it: asked exactly once, ever, and the flag is written whether the answer
+/// was yes, no, or the window being closed. Recorded rather than kept for the
+/// session for the same reason TrayHideAnnounced is -- per-session would
+/// mean "on every launch", which for a consent prompt is nagging.
+///
+/// Set it back to false to see the prompt again.
+XPCOG_SETTING(SentryAskedConsent, bool, "sentryAskedConsent", false)
+
 // --- bookkeeping ----------------------------------------------------------
 
 /// Bumped by SettingsMigration; see Settings::applyMigrations().

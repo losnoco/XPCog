@@ -119,6 +119,55 @@ add_executable(xpcog-app src/main.cpp)
 target_link_libraries(xpcog-app PRIVATE xpcog-appcore XPCog::warnings)
 
 # ---------------------------------------------------------------------------
+# The crash handler.
+#
+# crashpad is out-of-process by design -- that is the whole reason it can report
+# a crash that has already taken the player's own address space with it -- so it
+# ships as a second executable that has to sit somewhere the first one can find.
+# sentry-native sets *no* default for its path, and the failure without it is the
+# quiet kind: sentry_init() succeeds, messages are still sent, and actual crashes
+# simply never appear.
+#
+# So it is staged next to XPCog, which is where SentryCrashReporter.cpp looks --
+# beside the *executable*, not with the assets, because inside a macOS bundle
+# those are two different directories and a helper program in Resources is wrong
+# for both the loader and the signature.
+#
+# vcpkg_copy_tools() puts it under tools/<port>/, which is the same place
+# tests/CMakeLists.txt finds mpcenc. Named rather than found on PATH: what has to
+# run is the handler from the same sentry-native this linked against.
+if(XPCOG_WITH_SENTRY)
+    set(_handler
+        "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/sentry-native/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX}")
+
+    if(EXISTS "${_handler}")
+        if(APPLE)
+            # Contents/MacOS, beside the binary, which is where a bundled helper
+            # belongs and where --deep signing will find it.
+            set(_handler_dir "$<TARGET_BUNDLE_CONTENT_DIR:xpcog-app>/MacOS")
+        else()
+            set(_handler_dir "$<TARGET_FILE_DIR:xpcog-app>")
+        endif()
+        add_custom_command(TARGET xpcog-app POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${_handler}" "${_handler_dir}"
+            COMMENT "Staging crashpad_handler"
+            VERBATIM)
+        if(UNIX AND NOT APPLE)
+            install(PROGRAMS "${_handler}" DESTINATION bin)
+        endif()
+    else()
+        # A message rather than a fatal error: a build with no handler is a
+        # player that still plays and still reports the problems it notices
+        # itself. Said out loud because the alternative is finding out from an
+        # empty Sentry project months later.
+        message(STATUS
+            "XPCog: crashpad_handler not found at ${_handler} -- this build will "
+            "report messages but not crashes.")
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # The icon.
 #
 # Everything in this section is toolkit-independent and survived the move from Qt

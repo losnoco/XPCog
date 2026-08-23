@@ -3005,12 +3005,23 @@ All of these are also documented at the call site.
 **Not ported**
 
 Mac App Store sandbox, AudioUnit MIDI instrument hosting, AppleScript, Spotlight,
-the MCP server, Sparkle, Sentry. AudioUnit hosting is one of Cog’s four MIDI
+the MCP server, Sparkle. AudioUnit hosting is one of Cog’s four MIDI
 backends and not MIDI itself — the other three are portable and are staged in
 [MIDI.md](MIDI.md). Cog also does **not** write tags —
 `PluginController -putMetadataInURL:` is stubbed `return 0`, the facade has no
 callers and `TagEditorController` is fully commented out. Tag writing is therefore a
 new feature, not port work, and is deferred.
+
+**Sentry, since ported.** It was on the not-ported list and has come off it. Cog's
+arrangement is a consent flag and an SDK started only when it is set, and both
+halves travel: `sentryConsented` and `sentryAskedConsent` keep Cog's key names, the
+prompt keeps Cog's wording and Cog's promise to ask only once
+(`Window/MainWindow.m:19-38`), and the switch closes the SDK the moment it is
+unticked rather than at the next launch (`AppController.m:384-425`). The SDK is
+sentry-native rather than the Cocoa one; what does not travel with it is the
+tracing Cog instruments in `PlaylistLoader.m`, because nothing here starts a
+transaction, and the user-feedback window Cog shows after a crash. See
+`platform/include/xpcog/platform/CrashReporter.hpp`.
 
 ---
 

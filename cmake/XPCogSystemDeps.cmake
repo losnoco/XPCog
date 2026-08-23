@@ -608,8 +608,14 @@ function(xpcog_probe_system_deps)
         endif()
     endforeach()
 
-    # The features that are not in this table at all -- gui, psf-cores, mgba,
-    # libvgm -- are untouched: they came from the preset and stay in _requested.
+    # The features that are not in this table at all -- gui, sentry, psf-cores,
+    # mgba, libvgm -- are untouched: they came from the preset and stay in
+    # _requested. `sentry` is the one of those with a system package worth naming
+    # and still not substitutable: what has to be staged beside the binary is the
+    # crashpad handler from the same sentry-native this links against, and a
+    # distribution's is a different build of a different crashpad. It also drags
+    # vcpkg's curl in for its transport whatever this module decided about ours,
+    # which is a real cost on a repo build and not one there is a way around.
     # spessasynth-core is in the table *and* a default feature, which is the
     # combination the restating branch above exists for: nothing asks for it by
     # name, so once the defaults are off it has to be named again unless the

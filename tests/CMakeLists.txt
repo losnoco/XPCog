@@ -399,10 +399,19 @@ catch_discover_tests(xpcog-tests)
 # ---------------------------------------------------------------------------
 if(XPCOG_BUILD_APP)
     add_executable(xpcog-app-tests
+        app/test_crashreporter.cpp
         app/test_embedded_icons.cpp
         app/test_helpers.cpp
         app/test_infopanel.cpp
     )
+
+    # So the availability case can assert rather than accept either answer. The
+    # test cannot ask the build system at run time, and a case that passes both
+    # ways is one that would not notice the reporter quietly dropping out of the
+    # build.
+    if(XPCOG_WITH_SENTRY)
+        target_compile_definitions(xpcog-app-tests PRIVATE XPCOG_TESTS_EXPECT_SENTRY=1)
+    endif()
 
     # The panel photograph only exists in a MIDI build, and so does the test
     # that checks it is still there.

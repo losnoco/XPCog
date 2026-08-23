@@ -1,6 +1,7 @@
 #include "PlaybackController.hpp"
 
 #include "xpcog/core/audio/PanelFeed.hpp"
+#include "xpcog/platform/CrashReporter.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -157,6 +158,16 @@ void PlaybackController::playTrack(TrackId id) {
 void PlaybackController::requestStart(TrackId id) {
     const PlaylistEntry* entry = playlist_.find(id);
     if (entry == nullptr) {
+        // Cog's "Invalid playlist entry reached" (PlaybackController.m:863), and
+        // reported for Cog's reason: something asked to play a track the playlist
+        // does not have, which is a bug here rather than anything the listener
+        // did. The transport then does nothing, which is safe and says nothing.
+        //
+        // A file that no decoder opens is deliberately *not* reported alongside
+        // it. That is a user dropping a .txt on the window, and Cog's own note --
+        // "captureMessage is too spammy to use for anything but actual errors"
+        // (PlaybackController.m:24) -- is about exactly that distinction.
+        platform::reportProblem("Invalid playlist entry reached");
         return;
     }
 

@@ -91,6 +91,11 @@ namespace {
 
 }  // namespace
 
+std::filesystem::path executableDirectory() {
+    const std::filesystem::path exe = executablePath();
+    return exe.empty() ? std::filesystem::path{} : exe.parent_path();
+}
+
 std::filesystem::path assetDirectory() {
     const auto paths = candidates();
     if (paths.empty()) {
