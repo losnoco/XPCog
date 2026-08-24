@@ -100,6 +100,17 @@ foreach(_xpcog_rb_dep sleefdft sleef samplerate fftw3f fftw3)
     endif()
 endforeach()
 
+# vcpkg's SLEEF builds its DFT with OpenMP, so the static archive needs the
+# runtime as well. The *libraries* only, never OpenMP::OpenMP_CXX: that target
+# carries -fopenmp as a compile option, and core is not OpenMP code -- it
+# merely links a library that is.
+if(RUBBERBAND_SLEEFDFT_LIBRARY)
+    find_package(OpenMP QUIET)
+    if(OpenMP_CXX_FOUND AND OpenMP_CXX_LIBRARIES)
+        target_link_libraries(rubberband::rubberband INTERFACE ${OpenMP_CXX_LIBRARIES})
+    endif()
+endif()
+
 # SQLite replaces Core Data. Core talks to the C API directly rather than to
 # QtSql, so the scanner, the CLI and the tests reach the library without needing
 # a QCoreApplication -- and Cog sets the precedent with SQLiteStore.m.
