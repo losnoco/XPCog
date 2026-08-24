@@ -413,6 +413,104 @@ TEST_CASE("the converter resamples again after a drain", "[converter]") {
     }
 }
 
+namespace {
+
+/// The tone toneChunk() would have produced had it been generated at `rate`
+/// directly, which is what a correct resampling of it should look like.
+[[nodiscard]] double idealTone(std::size_t frame, double rate, double freq = 440.0) {
+    return 0.5 * std::sin(xpcog::test::kTwoPi * freq * (static_cast<double>(frame) / rate));
+}
+
+/// Worst deviation from that tone over a window of the left channel.
+[[nodiscard]] double worstError(const std::vector<float>& out, std::size_t from,
+                                std::size_t to, double rate, std::size_t offset = 0) {
+    double worst = 0.0;
+    for (std::size_t f = from; f < to; ++f) {
+        const double error =
+            std::abs(static_cast<double>(out[f * 2]) - idealTone(f - offset, rate));
+        worst = std::max(worst, error);
+    }
+    return worst;
+}
+
+}  // namespace
+
+TEST_CASE("the resampler's edges are as clean as its middle", "[converter]") {
+    // What the LPC extrapolation buys. The resampler's filter is centred on the
+    // sample it is producing and reaches some way either side, so at the first
+    // and last block it convolves real signal against the implicit silence
+    // outside the data -- a step, which is a click, and which is audible at
+    // every track start and every seam. Predicting a continuation gives it
+    // something to reach into instead.
+    //
+    // Measured against the tone the chunk would have been had it been generated
+    // at 48 kHz in the first place: the edges must be as accurate as the steady
+    // state, not merely close to it. Before the extrapolation the edge error was
+    // 8.7e-04 against a steady state of 2.4e-07 -- three orders of magnitude,
+    // which is the click.
+    AudioConverter converter;
+    REQUIRE(converter.setOutputFormat(48000.0, 2));
+
+    std::vector<float> out;
+    REQUIRE(converter.process(toneChunk(44100.0, 2, 44100, 440.0), out));
+    converter.drain(out);
+
+    const std::size_t frames = out.size() / 2;
+    REQUIRE(frames > 40000);
+
+    const double middle = worstError(out, 20000, 20400, 48000.0);
+    const double head   = worstError(out, 0, 400, 48000.0);
+    const double tail   = worstError(out, frames - 400, frames, 48000.0);
+
+    // Generous against the steady state -- the point is the order of magnitude,
+    // and a different soxr build may place its filter slightly differently.
+    CHECK(head < middle * 8.0);
+    CHECK(tail < middle * 8.0);
+    CHECK(head < 1.0e-5);
+    CHECK(tail < 1.0e-5);
+}
+
+TEST_CASE("the padding does not change how many frames come out", "[converter]") {
+    // The extrapolation feeds the resampler 2205 frames it never asked for at
+    // each end, and takes 2400 output frames back off for each. Those two
+    // numbers are the input:output ratio reduced by its GCD, so the trim is
+    // exact rather than rounded -- one second in still means one second out, to
+    // the frame. Round the pair independently and the leftover fraction is what
+    // stops a seam landing where it should.
+    AudioConverter converter;
+    REQUIRE(converter.setOutputFormat(48000.0, 2));
+
+    std::vector<float> out;
+    REQUIRE(converter.process(toneChunk(44100.0, 2, 44100), out));
+    converter.drain(out);
+
+    CHECK(out.size() / 2 == 48000);
+}
+
+TEST_CASE("a second track's edges are extrapolated too", "[converter]") {
+    // The seam. drain() disposes of the resampler, so the incoming track gets a
+    // fresh one with no history -- which means it needs its run-up predicted
+    // again, and the trim that takes the run-up back off re-armed with it.
+    // Getting that wrong is silent: the audio is all there, one click per track.
+    AudioConverter converter;
+    REQUIRE(converter.setOutputFormat(48000.0, 2));
+
+    std::vector<float> first;
+    REQUIRE(converter.process(toneChunk(44100.0, 2, 44100, 440.0), first));
+    converter.drain(first);
+
+    std::vector<float> second;
+    REQUIRE(converter.process(toneChunk(44100.0, 2, 44100, 440.0), second));
+    converter.drain(second);
+
+    REQUIRE(second.size() == first.size());
+    const std::size_t frames = second.size() / 2;
+
+    const double middle = worstError(second, 20000, 20400, 48000.0);
+    CHECK(worstError(second, 0, 400, 48000.0) < middle * 8.0);
+    CHECK(worstError(second, frames - 400, frames, 48000.0) < middle * 8.0);
+}
+
 TEST_CASE("gain is applied on the way through", "[converter]") {
     AudioConverter converter;
     REQUIRE(converter.setOutputFormat(44100.0, 2));

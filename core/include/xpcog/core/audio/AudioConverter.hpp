@@ -99,6 +99,38 @@ private:
     /// next process() builds a fresh one.
     void closeResampler() noexcept;
 
+    /// Prepends a predicted run-up to the block about to be resampled, in
+    /// `padded_`, and arms the trim that takes it back off the output.
+    ///
+    /// The resampler's filter is centred on the sample it is producing and
+    /// reaches some way either side of it, so at the very first block it
+    /// convolves the leading samples against an implicit run of zeros -- a step
+    /// from silence into the music, which is a click. LPC gives it a plausible
+    /// continuation to reach into instead. Cog's ConverterNode does the same,
+    /// once per stream.
+    void extrapolateLeadIn(std::size_t frames);
+
+    /// The mirror at the far end: predicts past the last real sample from
+    /// `history_`, feeds that to the resampler, and returns how many output
+    /// frames the prediction is worth so drain() can take them back off.
+    /// Zero when there is nothing to predict from.
+    std::size_t pushLeadOut(std::vector<float>& out);
+
+    /// Feeds `frames` through soxr, appending every output frame to `out`.
+    /// Loops until the input is consumed, whatever the output buffer holds.
+    bool resampleInto(const float* input, std::size_t frames, std::vector<float>& out);
+
+    /// Keeps the last `primeLen_` frames of what was fed, for pushLeadOut().
+    void rememberTail(const float* input, std::size_t frames);
+
+    /// Drops the front trim armed by extrapolateLeadIn() off `buffer`, carrying
+    /// what is left over into the next call when the buffer is shorter.
+    void eatLeadIn(std::vector<float>& buffer);
+
+    /// Gain, then out -- through the upmixer if one is running. The tail of
+    /// both process() and drain().
+    void emitFrames(const float* samples, std::size_t frames, std::vector<float>& out);
+
     /// Turns one chunk of DSD into float in `decoded_`. False if the filters
     /// could not be built.
     bool decimateDsd(const AudioChunk& in, std::size_t frames);
@@ -153,9 +185,37 @@ private:
     std::size_t fsSkip_ = 0;
     std::vector<int>      hdcdSamples_;
 
-    /// Rolling tail of the previous block, used to extrapolate backwards into the
-    /// next one so the resampler never sees a discontinuity at a block edge.
+    /// LPC scratch, reallocated in place by the extrapolator. Opaque so
+    /// <lpc.h> stays out of this header.
+    struct LpcScratch;
+    std::unique_ptr<LpcScratch> lpc_;
+
+    /// How many input frames the extrapolator predicts at each edge, and what
+    /// that is worth in output frames.
+    ///
+    /// The pair is exact rather than rounded: it is the input:output rate ratio
+    /// reduced by its GCD and scaled back up, so `padOut_` really is what
+    /// `padIn_` frames become, with no fraction left over to accumulate into a
+    /// drift. Cog's samples_len, and the reason it exists.
+    std::size_t padIn_  = 0;
+    std::size_t padOut_ = 0;
+    /// How many real frames the prediction is derived from -- about a twentieth
+    /// of a second, bounded either way.
+    std::size_t primeLen_ = 0;
+    /// Whether the run-up has been prepended yet. Once per resampler, which is
+    /// once per track now that drain() disposes of the instance.
+    bool        leadInDone_ = false;
+    /// Output frames still owed to the front trim. Usually cleared by the first
+    /// block; a track shorter than the padding spreads it over several.
+    std::size_t latencyEaten_ = 0;
+
+    /// Rolling tail of the input, as long as `primeLen_`. What the far edge is
+    /// predicted from, since by the time the stream ends the blocks it was
+    /// carried in are long gone.
     std::vector<float> history_;
+    /// The block plus its predicted edge, which is what the resampler is
+    /// actually fed at a stream boundary.
+    std::vector<float> padded_;
 
     std::vector<float> decoded_;   ///< input as float32
     std::vector<float> remapped_;  ///< after channel fitting

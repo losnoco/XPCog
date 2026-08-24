@@ -92,6 +92,7 @@ target_link_libraries(xpcog-core
     PUBLIC  vendor-miniaudio
     PRIVATE vendor-hdcd
     PRIVATE vendor-dsd2pcm
+    PRIVATE vendor-lpc
     # PUBLIC, not PRIVATE: FreeSurround.hpp is a public core header and names
     # channel_setup and channel_id, which are the vendored enums. Anything that
     # can construct a decoder has to be able to name its channel layout.

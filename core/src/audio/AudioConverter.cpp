@@ -7,10 +7,12 @@
 
 #include <dsd2pcm.h>
 #include <hdcd_decode2.h>
+#include <lpc.h>
 #include <soxr.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
 
 namespace xpcog {
@@ -82,6 +84,79 @@ void fitChannels(const float* in, std::size_t frames, std::uint32_t inChannels,
     }
 }
 
+/// Euclid, on the sample rates.
+[[nodiscard]] unsigned greatestCommonDivisor(unsigned a, unsigned b) {
+    if (a == 0 || b == 0) {
+        return 0;
+    }
+    unsigned c = a % b;
+    while (c != 0) {
+        a = b;
+        b = c;
+        c = a % b;
+    }
+    return b;
+}
+
+/// How many input frames to predict at each edge of a resampler run, and how
+/// many output frames that comes back as. Cog's samples_len (lvqcl), which is
+/// the whole reason the trim can be exact.
+///
+/// Taking the rates as a fraction and reducing it gives the smallest pair of
+/// whole numbers in the same proportion -- 44100:48000 is 147:160, a 300th of a
+/// second. Any whole multiple of that pair is still exact, so the multiple is
+/// chosen for duration: about a twentieth of a second, which is what the
+/// prediction is worth acoustically, then capped so neither side exceeds 8192
+/// frames. The point of all of it is that `out` is precisely what `in` becomes.
+/// Round the two independently instead and the error is a fraction of a frame
+/// per track, which is exactly the kind of thing that stops a seam being
+/// sample-accurate.
+struct Padding {
+    std::size_t in  = 0;
+    std::size_t out = 0;
+};
+
+[[nodiscard]] Padding paddingFor(double inRate, double outRate) {
+    if (inRate <= 0.0 || outRate <= 0.0) {
+        return {};
+    }
+
+    constexpr unsigned kPerSecond = 20;    // a twentieth of a second
+    constexpr unsigned kMaxFrames = 8192;  // and no more than this either side
+
+    auto r1 = static_cast<unsigned>(inRate);
+    auto r2 = static_cast<unsigned>(outRate);
+
+    const unsigned divisor = greatestCommonDivisor(r1, r2);
+    if (divisor == 0) {
+        return {};
+    }
+    r1 /= divisor;
+    r2 /= divisor;
+
+    unsigned       multiple = (divisor + kPerSecond - 1) / kPerSecond;
+    const unsigned longer   = std::max(r1, r2);
+    if (longer * multiple > kMaxFrames) {
+        multiple = kMaxFrames / longer;
+    }
+    if (multiple < 1) {
+        multiple = 1;
+    }
+
+    return {static_cast<std::size_t>(r1) * multiple,
+            static_cast<std::size_t>(r2) * multiple};
+}
+
+/// How much real signal the prediction is fitted to: a twentieth of a second,
+/// floored at 1024 frames and capped at 16384, and never shorter than the
+/// filter it has to estimate. Cog's PRIME_LEN_.
+[[nodiscard]] std::size_t primeLengthFor(double inRate) {
+    auto prime = static_cast<std::size_t>(inRate / 20.0);
+    prime      = std::max<std::size_t>(prime, 1024);
+    prime      = std::min<std::size_t>(prime, 16384);
+    return std::max<std::size_t>(prime, (2 * LPC_ORDER) + 1);
+}
+
 }  // namespace
 
 /// Cog's block size, and not a tuning knob: FreeSurround decodes positions at a
@@ -134,6 +209,15 @@ struct AudioConverter::Hdcd {
     bool                started = false;
 };
 
+struct AudioConverter::LpcScratch {
+    /// Grown in place by lpc_extrapolate2 through realloc, so it is malloc'd
+    /// memory and not a vector.
+    void*       buffer = nullptr;
+    std::size_t size   = 0;
+
+    ~LpcScratch() { std::free(buffer); }
+};
+
 struct AudioConverter::Soxr {
     soxr_t handle = nullptr;
     ~Soxr() {
@@ -144,7 +228,8 @@ struct AudioConverter::Soxr {
 };
 
 AudioConverter::AudioConverter()
-    : soxr_(std::make_unique<Soxr>()), hdcd_(std::make_unique<Hdcd>()) {}
+    : soxr_(std::make_unique<Soxr>()), hdcd_(std::make_unique<Hdcd>()),
+      lpc_(std::make_unique<LpcScratch>()) {}
 AudioConverter::~AudioConverter() = default;
 
 bool AudioConverter::setOutputFormat(double sampleRate, std::uint32_t channels,
@@ -200,6 +285,16 @@ void AudioConverter::closeResampler() noexcept {
     // would have it keep an instance that is no longer there.
     inRate_     = 0.0;
     inChannels_ = 0;
+
+    // The edges belong to the instance. A fresh resampler starts with no
+    // history again, so it needs its run-up predicted again, and the trim that
+    // takes the run-up back off has to be re-armed with it.
+    padIn_        = 0;
+    padOut_       = 0;
+    primeLen_     = 0;
+    leadInDone_   = false;
+    latencyEaten_ = 0;
+    history_.clear();
 }
 
 void AudioConverter::reset() {
@@ -207,7 +302,6 @@ void AudioConverter::reset() {
 
     hdcd_->started = false;
     hdcdDetected_  = false;
-    history_.clear();
 
     // The filters keep 64 taps of the old position, and a seek makes those the
     // wrong 64 taps. Reset rather than freed: rebuilding means recomputing the
@@ -254,7 +348,15 @@ bool AudioConverter::configureFor(const AudioFormat& input) {
     // channels to resample here rather than six.
     soxr_->handle = soxr_create(input.sampleRate, outRate_, chainChannels(), &error,
                                 &io, &quality, nullptr);
-    return error == nullptr && soxr_->handle != nullptr;
+    if (error != nullptr || soxr_->handle == nullptr) {
+        return false;
+    }
+
+    const Padding padding = paddingFor(input.sampleRate, outRate_);
+    padIn_                = padding.in;
+    padOut_               = padding.out;
+    primeLen_             = primeLengthFor(input.sampleRate);
+    return true;
 }
 
 bool AudioConverter::decimateDsd(const AudioChunk& in, std::size_t frames) {
@@ -377,43 +479,55 @@ bool AudioConverter::process(const AudioChunk& in, std::vector<float>& out) {
     }
 
     // 3. resample, or pass straight through when the rates already agree
-    const float*      samples     = remapped_.data();
-    std::size_t       frameCount  = frames;
+    const float* samples    = remapped_.data();
+    std::size_t  frameCount = frames;
 
     if (soxr_->handle != nullptr) {
-        // Ratio plus a margin: soxr can emit slightly more than the nominal
-        // count on any given call.
-        const double      ratio    = outRate_ / inFormat.sampleRate;
-        const std::size_t capacity = static_cast<std::size_t>(
-                                         std::ceil(static_cast<double>(frames) * ratio)) +
-                                     64;
-        resampled_.resize(capacity * chainChannels());
+        const float* feed       = remapped_.data();
+        std::size_t  feedFrames = frames;
 
-        std::size_t consumed = 0;
-        std::size_t produced = 0;
-        const soxr_error_t error =
-            soxr_process(soxr_->handle, remapped_.data(), frames, &consumed,
-                         resampled_.data(), capacity, &produced);
-        if (error != nullptr) {
+        // The first block of the run reaches the filter with nothing in front
+        // of it. Give it something.
+        if (!leadInDone_ && padIn_ > 0) {
+            extrapolateLeadIn(frames);
+            feed       = padded_.data();
+            feedFrames = padIn_ + frames;
+        }
+
+        resampled_.clear();
+        if (!resampleInto(feed, feedFrames, resampled_)) {
             return false;
         }
+
+        // The real input only, not the prediction: what the far edge gets
+        // extrapolated from has to be signal that was actually in the file.
+        rememberTail(remapped_.data(), frames);
+
+        // And take the run-up back off, now that it has done its work in the
+        // filter. What comes out is aligned with what went in.
+        eatLeadIn(resampled_);
+
         samples    = resampled_.data();
-        frameCount = produced;
+        frameCount = resampled_.size() / chainChannels();
     }
 
-    // 4. gain, then out -- through the upmixer if one is running.
-    //
+    emitFrames(samples, frameCount, out);
+    return true;
+}
+
+void AudioConverter::emitFrames(const float* samples, std::size_t frames,
+                                std::vector<float>& out) {
     // Gain first, which is Cog's order: ReplayGain is applied in ConverterNode
     // and the surround decoder is a DSP node downstream of it. It matters, because
     // the decoder's steering is not scale-invariant -- the epsilon test that
     // decides whether a bin has a decodable position at all compares against an
     // absolute amplitude.
     if (fsurround_ == nullptr) {
-        appendWithGain(samples, frameCount, out);
-        return true;
+        appendWithGain(samples, frames, out);
+        return;
     }
 
-    fsGained_.resize(frameCount * 2);
+    fsGained_.resize(frames * 2);
     if (gain_ == 1.0F) {
         std::copy_n(samples, fsGained_.size(), fsGained_.begin());
     } else {
@@ -421,8 +535,113 @@ bool AudioConverter::process(const AudioChunk& in, std::vector<float>& out) {
             fsGained_[i] = samples[i] * gain_;
         }
     }
-    pushFreeSurround(fsGained_.data(), frameCount, out);
+    pushFreeSurround(fsGained_.data(), frames, out);
+}
+
+bool AudioConverter::resampleInto(const float* input, std::size_t frames,
+                                  std::vector<float>& out) {
+    const std::size_t channels = chainChannels();
+    const double      ratio    = outRate_ / inRate_;
+
+    std::size_t offset = 0;
+    while (offset < frames) {
+        const std::size_t remaining = frames - offset;
+        // The nominal count, plus what is sitting in the delay line, plus a
+        // margin: soxr can emit slightly more than the ratio suggests on any
+        // given call, and a short buffer would leave input unconsumed.
+        const std::size_t capacity =
+            static_cast<std::size_t>(std::ceil(static_cast<double>(remaining) * ratio)) +
+            static_cast<std::size_t>(std::ceil(soxr_delay(soxr_->handle))) + 64;
+
+        const std::size_t base = out.size();
+        out.resize(base + (capacity * channels));
+
+        std::size_t        consumed = 0;
+        std::size_t        produced = 0;
+        const soxr_error_t error =
+            soxr_process(soxr_->handle, input + (offset * channels), remaining,
+                         &consumed, out.data() + base, capacity, &produced);
+        out.resize(base + (produced * channels));
+        if (error != nullptr) {
+            return false;
+        }
+        // No progress and no error means nothing more is coming; looping again
+        // would spin rather than finish.
+        if (consumed == 0 && produced == 0) {
+            break;
+        }
+        offset += consumed;
+    }
     return true;
+}
+
+void AudioConverter::extrapolateLeadIn(std::size_t frames) {
+    const std::size_t channels = chainChannels();
+
+    padded_.assign((padIn_ + frames) * channels, 0.0F);
+    std::copy_n(remapped_.data(), frames * channels,
+                padded_.begin() + static_cast<std::ptrdiff_t>(padIn_ * channels));
+
+    // Writes backwards into the headroom left in front of it, which is why the
+    // pointer handed over is the start of the real data rather than the buffer.
+    lpc_extrapolate_bkwd(padded_.data() + (padIn_ * channels), frames,
+                         std::min(frames, primeLen_), static_cast<int>(channels),
+                         static_cast<int>(LPC_ORDER), padIn_, &lpc_->buffer,
+                         &lpc_->size);
+
+    latencyEaten_ = padOut_;
+    leadInDone_   = true;
+}
+
+std::size_t AudioConverter::pushLeadOut(std::vector<float>& out) {
+    const std::size_t channels = chainChannels();
+    if (padIn_ == 0 || history_.empty()) {
+        return 0;
+    }
+
+    const std::size_t primed = history_.size() / channels;
+    padded_.assign((primed + padIn_) * channels, 0.0F);
+    std::copy_n(history_.data(), primed * channels, padded_.begin());
+
+    lpc_extrapolate_fwd(padded_.data(), primed, std::min(primed, primeLen_),
+                        static_cast<int>(channels), static_cast<int>(LPC_ORDER),
+                        padIn_, &lpc_->buffer, &lpc_->size);
+
+    // Only the predicted part goes in -- the history it was fitted to is
+    // already through the resampler and would be heard twice.
+    if (!resampleInto(padded_.data() + (primed * channels), padIn_, out)) {
+        return 0;
+    }
+    return padOut_;
+}
+
+void AudioConverter::rememberTail(const float* input, std::size_t frames) {
+    if (primeLen_ == 0) {
+        return;
+    }
+    const std::size_t channels = chainChannels();
+    history_.insert(history_.end(), input, input + (frames * channels));
+
+    const std::size_t held = history_.size() / channels;
+    if (held > primeLen_) {
+        history_.erase(history_.begin(),
+                       history_.begin() +
+                           static_cast<std::ptrdiff_t>((held - primeLen_) * channels));
+    }
+}
+
+void AudioConverter::eatLeadIn(std::vector<float>& buffer) {
+    if (latencyEaten_ == 0) {
+        return;
+    }
+    const std::size_t channels = chainChannels();
+    // A block shorter than the trim leaves the rest owed. Rare -- the trim is a
+    // twentieth of a second -- but a very short track is exactly the case that
+    // would otherwise emit the prediction as audio.
+    const std::size_t drop = std::min(latencyEaten_, buffer.size() / channels);
+    buffer.erase(buffer.begin(),
+                 buffer.begin() + static_cast<std::ptrdiff_t>(drop * channels));
+    latencyEaten_ -= drop;
 }
 
 void AudioConverter::appendWithGain(const float* samples, std::size_t frames,
@@ -502,35 +721,44 @@ void AudioConverter::flushFreeSurround(std::vector<float>& out) {
 
 void AudioConverter::drain(std::vector<float>& out) {
     if (soxr_->handle != nullptr) {
+        const std::size_t channels = chainChannels();
+        resampled_.clear();
+
+        // Before the flush, not after: the resampler is still open, and what it
+        // wants at the closing edge is the same thing it wanted at the opening
+        // one -- signal beyond the boundary to convolve against, rather than the
+        // drop to silence that is all the end of a file otherwise offers.
+        const std::size_t eatPost = pushLeadOut(resampled_);
+
         // Flushing means feeding null until soxr stops producing; otherwise the
         // tail held in its filter delay line is simply lost.
         for (;;) {
             constexpr std::size_t kChunk = 4096;
-            resampled_.resize(kChunk * chainChannels());
+
+            const std::size_t base = resampled_.size();
+            resampled_.resize(base + (kChunk * channels));
 
             std::size_t        produced = 0;
             const soxr_error_t error =
-                soxr_process(soxr_->handle, nullptr, 0, nullptr, resampled_.data(),
-                             kChunk, &produced);
+                soxr_process(soxr_->handle, nullptr, 0, nullptr,
+                             resampled_.data() + base, kChunk, &produced);
+            resampled_.resize(base + (produced * channels));
             if (error != nullptr || produced == 0) {
                 break;
             }
-
-            if (fsurround_ == nullptr) {
-                appendWithGain(resampled_.data(), produced, out);
-                continue;
-            }
-
-            fsGained_.resize(produced * 2);
-            if (gain_ == 1.0F) {
-                std::copy_n(resampled_.data(), fsGained_.size(), fsGained_.begin());
-            } else {
-                for (std::size_t i = 0; i < fsGained_.size(); ++i) {
-                    fsGained_[i] = resampled_[i] * gain_;
-                }
-            }
-            pushFreeSurround(fsGained_.data(), produced, out);
         }
+
+        // A track shorter than the front trim never finished paying it, and the
+        // flush is the last chance to.
+        eatLeadIn(resampled_);
+
+        // Then the far edge. eatPost is what the prediction became on the way
+        // through -- exactly, because the pair it was sized from is exact -- so
+        // taking that many frames off the end leaves the last real sample last.
+        const std::size_t drained = resampled_.size() / channels;
+        resampled_.resize((drained - std::min(eatPost, drained)) * channels);
+
+        emitFrames(resampled_.data(), resampled_.size() / channels, out);
     }
 
     // Flushing is terminal for a soxr instance: once it has been fed the null

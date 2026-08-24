@@ -6,12 +6,14 @@
 # when they land in M6.
 #
 # Planned occupants:
-#   lpc/      <- Cog Audio/ThirdParty/lvqcl        -- vendored, NOT built yet.
-#             Cog uses LPC extrapolation to hide resampler edge artifacts at
-#             every block. That is not needed here: soxr keeps its delay line
-#             across calls, so chunk edges are already continuous. It earns its
-#             place at the first block after a seek or track start, where the
-#             resampler genuinely has no history -- wired up with the DSP nodes.
+#   lpc/      <- Cog Audio/ThirdParty/lvqcl        -- done. Predicts the samples
+#             just outside a resampler run so its filter has real signal to
+#             convolve at the edges rather than an implicit step to silence.
+#             Not needed per block, which is what an earlier note here expected:
+#             soxr keeps its delay line across calls, so chunk edges inside a
+#             run are already continuous. The edges that are real are the first
+#             block of a run and the last, which is to say every track start and
+#             every track seam.
 #   hdcd/     <- Cog Audio/ThirdParty/hdcd         (M1c) -- done
 #   miniaudio/  vendored                           (M1a) -- done
 #   pffft/    <- Cog Audio/ThirdParty/deadbeef     (M5)
@@ -34,6 +36,7 @@
 add_subdirectory(dsd2pcm)
 add_subdirectory(fsurround)
 add_subdirectory(hdcd)
+add_subdirectory(lpc)
 if(XPCOG_WITH_HIVELY)
     add_subdirectory(hively)
 endif()

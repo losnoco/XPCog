@@ -1,6 +1,18 @@
 #ifndef MY_LPC_H
 #define MY_LPC_H
 
+/* Local changes from Cog Audio/ThirdParty/lvqcl/lpc.h:
+ *   - <stddef.h>, for the size_t this header names. Cog's copy is only ever
+ *     included after something else has pulled it in.
+ *   - extern "C", because the caller here is C++ and the definitions are not.
+ */
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*    data        - beginning of the data
  *    data_len    - length of data (in samples) that are base for extrapolation
  *    nch            - number of (interleaved) channels
@@ -36,5 +48,9 @@ static inline void lpc_extrapolate_fwd(float * const data, const size_t data_len
 {
     lpc_extrapolate2(data + (data_len - prime_len)*nch, prime_len, nch, lpc_order, 0, extra_fwd, extrapolate_buffer, extrapolate_buffer_size);
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

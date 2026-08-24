@@ -14,7 +14,16 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/* Local changes from Cog Audio/ThirdParty/lvqcl/lpc.c, both so MSVC will build
+ * it -- Cog is macOS-only and compiles this with clang:
+ *   - the scratch pointers are carved out of an unsigned char* rather than by
+ *     arithmetic on void*, which is a GNU extension MSVC does not have.
+ *   - ptrdiff_t for the one signed length, in place of the POSIX ssize_t.
+ * Neither changes what the code computes.
+ */
+
 #include <memory.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include "lpc.h"
@@ -156,13 +165,15 @@ void lpc_extrapolate2(float *const data, const size_t data_len, const int nch, c
 		if(!*extrapolate_buffer) return;
 	}
 
-	double *aut = (double *)(*extrapolate_buffer);
-	double *lpc = (double *)(*extrapolate_buffer + aut_size);
+	unsigned char *scratch = (unsigned char *)(*extrapolate_buffer);
 
-	float *tdata = (float *)(*extrapolate_buffer + aut_size + lpc_size); // for 1 channel only
+	double *aut = (double *)scratch;
+	double *lpc = (double *)(scratch + aut_size);
 
-	float *lpci = (float *)(*extrapolate_buffer + aut_size + lpc_size + tdata_size);
-	float *work = (float *)(*extrapolate_buffer + aut_size + lpc_size + tdata_size + lpci_size);
+	float *tdata = (float *)(scratch + aut_size + lpc_size); // for 1 channel only
+
+	float *lpci = (float *)(scratch + aut_size + lpc_size + tdata_size);
+	float *work = (float *)(scratch + aut_size + lpc_size + tdata_size + lpci_size);
 
 	for(int c = 0; c < nch; c++) {
 		if(extra_bkwd) {
@@ -172,7 +183,7 @@ void lpc_extrapolate2(float *const data, const size_t data_len, const int nch, c
 				for(int i = (int)data_len; i < (int)min_data_len; i++)
 					tdata[min_data_len - 1 - i] = 0.0f;
 		} else {
-			const ssize_t len_diff = min_data_len - data_len;
+			const ptrdiff_t len_diff = min_data_len - data_len;
 			if(len_diff <= 0) {
 				for(int i = 0; i < (int)data_len; i++)
 					tdata[i] = data[i * nch + c];
@@ -195,7 +206,7 @@ void lpc_extrapolate2(float *const data, const size_t data_len, const int nch, c
 				for(int i = (int)data_len; i < (int)min_data_len; i++)
 					tdata[min_data_len - 1 - i] = 0.0f;
 		} else {
-			const ssize_t len_diff = min_data_len - data_len;
+			const ptrdiff_t len_diff = min_data_len - data_len;
 			if(len_diff <= 0) {
 				for(int i = 0; i < (int)data_len; i++)
 					tdata[i] = data[i * nch + c];
