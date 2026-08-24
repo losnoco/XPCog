@@ -235,6 +235,11 @@ private:
     void enqueueSelected();
     void activateRow(unsigned int row);
 
+    /// Points the header arrow at whatever PlaylistView is actually sorted by,
+    /// and takes it away when that is nothing. The control has its own idea,
+    /// which is two-state and therefore cannot express the third click.
+    void showSortIndicator();
+
     [[nodiscard]] std::vector<TrackId> selectedTracks() const;
 
     /// Tells the OS what is playing. Reads the artwork from the library, which

@@ -639,6 +639,14 @@ void MainFrame::wireUp() {
         } else {
             view_.setSort(PlaylistView::kNoSort, true);
         }
+
+        // After the event, not in it. macOS sends this from
+        // -outlineView:didClickTableColumn: and only *then* decides what the
+        // click did to the sort descriptors -- a fresh column gets an ascending
+        // one, an already-sorted column is toggled by the table view itself --
+        // so an arrow set here is overwritten a moment later. CallAfter puts it
+        // back once the click has finished being handled.
+        CallAfter([this] { showSortIndicator(); });
     });
 
     filter_->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
@@ -1777,6 +1785,31 @@ std::vector<TrackId> MainFrame::selectedTracks() const {
         }
     }
     return ids;
+}
+
+void MainFrame::showSortIndicator() {
+    // The control's own arrow cycles ascending, descending, ascending. The view's
+    // sort cycles ascending, descending, none -- so from the third click on the
+    // two disagree, and the arrow ends up claiming a sort that is not applied and
+    // then pointing the wrong way for good. This makes it a readout of the view
+    // rather than a state of its own.
+    //
+    // Both calls go through the port's own wxDataViewColumn, so what is drawn is
+    // the native indicator on each platform and not something painted here.
+    //
+    // The loop index is the display position and the model column is what the
+    // view sorts by. They part company the moment a column is dragged, which is
+    // why the comparison is against GetModelColumn() and not against `i`.
+    for (unsigned int i = 0; i < list_->GetColumnCount(); ++i) {
+        wxDataViewColumn* column = list_->GetColumn(i);
+        if (static_cast<Column>(column->GetModelColumn()) == view_.sortColumn()) {
+            column->SetSortOrder(view_.sortAscending());
+        } else {
+            // kNoSort is Column::Count, which no column carries, so the
+            // no-sort state falls out of this as every column being unset.
+            column->UnsetAsSortKey();
+        }
+    }
 }
 
 void MainFrame::removeSelected() {
