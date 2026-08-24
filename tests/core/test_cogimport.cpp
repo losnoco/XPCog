@@ -302,17 +302,17 @@ TEST_CASE("Cog's settings arrive under their own names", "[cogimport]") {
 TEST_CASE("a key XPCog has never heard of is ignored, not guessed at",
           "[cogimport]") {
     // Most of a real defaults file by count is AppKit's own window and toolbar
-    // state, and the rest of what is left is Cog-only -- pitch and tempo are
-    // Rubber Band, which is not ported. None of it should reach the settings,
-    // and none of it is an error either.
+    // state, and the rest of what is left is Cog-only. None of it should reach
+    // the settings, and none of it is an error either. (pitch and tempo used
+    // to sit in this list; they left it when the stretchers were ported, and
+    // the case below pins that they now cross over instead.)
     auto     store = makeMemorySettingsStore();
     Settings settings{*store};
 
     const std::string xml = R"(<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-  <key>pitch</key><real>1.0</real>
-  <key>tempo</key><real>1.0</real>
   <key>miniPlusMode</key><false/>
+  <key>toolbarStyleFull</key><true/>
   <key>metadataMigrated</key><true/>
   <key>NSWindow Frame Cog</key><string>0 0 1200 800 0 0 1920 1080</string>
   <key>volumeScaling</key><string>trackGain</string>
@@ -322,8 +322,34 @@ TEST_CASE("a key XPCog has never heard of is ignored, not guessed at",
     importCogSettings(xml, settings, &report);
 
     CHECK(report.applied == 1);
-    CHECK(report.ignored == 5);
+    CHECK(report.ignored == 4);
     CHECK(settings.VolumeScaling() == "trackGain");
+}
+
+TEST_CASE("Cog's speed setup crosses over with the stretchers ported",
+          "[cogimport]") {
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    const std::string xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>pitch</key><real>1.25</real>
+  <key>tempo</key><real>0.8</real>
+  <key>speedLock</key><false/>
+  <key>rubberbandEngine</key><string>finer</string>
+  <key>rubberbandFormant</key><string>preserved</string>
+</dict></plist>)";
+
+    CogSettingsReport report;
+    importCogSettings(xml, settings, &report);
+
+    CHECK(report.applied == 5);
+    CHECK(report.ignored == 0);
+    CHECK(settings.Pitch() == Approx(1.25));
+    CHECK(settings.Tempo() == Approx(0.8));
+    CHECK_FALSE(settings.SpeedLock());
+    CHECK(settings.RubberbandEngine() == "finer");
+    CHECK(settings.RubberbandFormant() == "preserved");
 }
 
 // --- turning a store into a playlist --------------------------------------

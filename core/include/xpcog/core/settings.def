@@ -178,6 +178,44 @@ XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", false)
 /// the audit was looking for.
 XPCOG_SETTING(ReadPlaylistsInFolders, bool, "readPlaylistsInFolders", false)
 
+// --- pitch and tempo --------------------------------------------------------
+//
+// Cog's Rubber Band pane and its two main-window sliders. Keys are Cog's, so an
+// imported plist carries a user's speed setup across; `varispeed` as an engine
+// value is ours alone -- Cog has no resampling speed control, and a Cog plist
+// can never hold it, so importing stays one-way safe.
+
+/// Playback pitch as a frequency ratio, 0.2 to 5.0. 1.0 is unshifted.
+XPCOG_SETTING(Pitch, double, "pitch", 1.0)
+
+/// Playback tempo as a speed ratio, 0.2 to 5.0. 1.0 is unstretched.
+XPCOG_SETTING(Tempo, double, "tempo", 1.0)
+
+/// Move pitch and tempo together, which is what a turntable's speed control
+/// does. Cog's `speedLock`, and on by default as it is there. Enforced by the
+/// UI writing both keys rather than by the engine, again as in Cog.
+XPCOG_SETTING(SpeedLock, bool, "speedLock", true)
+
+/// Which time-stretch engine runs: disabled, varispeed, signalsmith, faster,
+/// finer. Cog's key and Cog's default of disabled; `faster` and `finer` are
+/// Rubber Band's R2 and R3 engines, `signalsmith` is Signalsmith Stretch, and
+/// `varispeed` resamples -- pitch and tempo locked together by physics, in
+/// trade for costing almost nothing.
+XPCOG_SETTING(RubberbandEngine, std::string, "rubberbandEngine", "disabled")
+
+// The Rubber Band option rows, vocabulary and defaults verbatim from Cog
+// (Application/PlaybackController.m initDefaults). Each maps onto one
+// RubberBandOption group in TimeStretch.cpp; the R3 engine reads only window,
+// formant and transients, which is Cog's behaviour and Rubber Band's contract.
+XPCOG_SETTING(RubberbandTransients, std::string, "rubberbandTransients", "crisp")
+XPCOG_SETTING(RubberbandDetector, std::string, "rubberbandDetector", "compound")
+XPCOG_SETTING(RubberbandPhase, std::string, "rubberbandPhase", "laminar")
+XPCOG_SETTING(RubberbandWindow, std::string, "rubberbandWindow", "standard")
+XPCOG_SETTING(RubberbandSmoothing, std::string, "rubberbandSmoothing", "off")
+XPCOG_SETTING(RubberbandFormant, std::string, "rubberbandFormant", "shifted")
+XPCOG_SETTING(RubberbandPitch, std::string, "rubberbandPitch", "highspeed")
+XPCOG_SETTING(RubberbandChannels, std::string, "rubberbandChannels", "apart")
+
 // --- equaliser ------------------------------------------------------------
 
 /// Whether the equaliser runs at all -- Cog's `GraphicEQenable`, and its

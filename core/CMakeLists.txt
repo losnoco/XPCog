@@ -21,6 +21,7 @@ add_library(xpcog-core STATIC
     src/audio/RingBuffer.cpp
     src/audio/SampleConvert.cpp
     src/audio/SpectrumAnalyzer.cpp
+    src/audio/TimeStretch.cpp
     src/AssetPath.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp
@@ -72,6 +73,17 @@ if(NOT soxr_FOUND)
         IMPORTED_LOCATION "${SOXR_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${SOXR_INCLUDE_DIR}")
 endif()
+
+# Rubber Band does the time-stretching, as it does in Cog. Meson upstream, so
+# no CMake config package exists to find anywhere -- vcpkg and every
+# distribution alike install a library and a header, and this is the same shape
+# the soxr fallback above takes.
+find_library(RUBBERBAND_LIBRARY NAMES rubberband REQUIRED)
+find_path(RUBBERBAND_INCLUDE_DIR NAMES rubberband/rubberband-c.h REQUIRED)
+add_library(rubberband::rubberband UNKNOWN IMPORTED)
+set_target_properties(rubberband::rubberband PROPERTIES
+    IMPORTED_LOCATION "${RUBBERBAND_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${RUBBERBAND_INCLUDE_DIR}")
 
 # SQLite replaces Core Data. Core talks to the C API directly rather than to
 # QtSql, so the scanner, the CLI and the tests reach the library without needing
@@ -133,6 +145,8 @@ target_link_libraries(xpcog-core
     PUBLIC  vendor-fsurround
     PRIVATE ${XPCOG_SQLITE}
     PRIVATE soxr::soxr
+    PRIVATE rubberband::rubberband
+    PRIVATE vendor-signalsmith
     PRIVATE nlohmann_json::nlohmann_json
     PRIVATE XPCog::warnings)
 

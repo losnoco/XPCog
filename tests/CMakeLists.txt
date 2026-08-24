@@ -35,6 +35,7 @@ add_executable(xpcog-tests
     core/test_undostack.cpp
     core/test_spectrum.cpp
     core/test_stream_metadata.cpp
+    core/test_timestretch.cpp
     core/test_transportgain.cpp
     core/test_version.cpp
     codecs/test_codec_settings.cpp

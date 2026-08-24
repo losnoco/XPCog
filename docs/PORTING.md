@@ -392,16 +392,42 @@ Two Cog bugs fixed rather than reproduced along the way:
   own comment always claimed, with a test pinning it, because the upmix branches
   on exactly that.
 
-**The time-stretchers are dropped, by decision rather than deferral.** Cog uses
-rubberband and signalsmith for its tempo and pitch controls. Neither can be a
-`DSPNode` as the contract stands: `process()` is in place with a fixed frame
-count, and a time-stretcher returns a different number of frames than it was
-given. So adding one was never "write a node" — it was "widen the interface every
-other stage depends on", to gain a control a music player is not primarily for.
-Skipping avoids that change rather than postponing it. `Rate`, `MinimumRate` and
-`MaximumRate` are reported as a fixed 1 over MPRIS, which is how that protocol
-says "not adjustable", and the `dsp` vcpkg feature that pulled in rubberband is
-gone.
+**The time-stretchers are ported after all — as a third stage shape, not a
+widened `DSPNode`.** This paragraph used to record the opposite decision, and
+the reasoning it gave still holds: a time-stretcher returns a different number
+of frames than it was given, so it can never be a `DSPNode`, and widening that
+contract was rightly refused. What changed is where the stage went instead.
+`TimeStretch` sits between the deep ring and the chain — where Cog's two
+stretch nodes sit, and for Cog's reason: behind the deep ring a tempo slider
+acts three seconds late, and it cannot join FreeSurround in the converter for
+the same reason. It is called only by `dspLoop()`, with the converter's
+append-to-a-vector semantics, so the chain contract, the feeder's read/write
+sizes and the in-place assumption are all untouched.
+
+Three engines behind one seam: Rubber Band R2 and R3 with Cog's full option
+vocabulary (`DSPRubberbandNode.m`, ported option for option including the
+mustRestart mask and the count-in trim), Signalsmith Stretch
+(`DSPSignalsmithStretchNode.mm`, including the output-seek priming), and a
+varispeed engine Cog does not have — a soxr variable-rate resampler, pitch and
+tempo one knob, for when the turntable behaviour is all that is wanted at a
+fraction of the cost. Rubber Band arrives as a substitutable vcpkg default
+feature (floor 3.3, for `rubberband_get_process_size_limit`); Signalsmith is
+vendored from Cog's tree, header-only, in `vendor/signalsmith`.
+
+The part Cog solves with chunk metadata is solved here with one structure:
+every chunk in Cog carries a `streamTimestamp` and `streamTimeRatio`, and there
+is no chunk downstream of this engine's converter. So `AudioEngine` keeps a
+piecewise-linear **stretch map** from device output frames to source frames,
+appended by the DSP thread as it stretches and read wherever played frames meet
+recorded ones — seam publication, the position clock, a device switch's resume
+point. Empty map means identity, which is the whole life of a player that never
+touches the sliders. End of stream needs one more handshake
+(`stretchDrainRequested_`): the last fraction of a second lives inside the
+stretcher, which only the DSP thread may flush, and the feeder's played-out
+wait counts it as a fourth holder of audio.
+
+MPRIS still reports a fixed `Rate` of 1: the stretch is a DSP setting here, not
+a transport rate, which is also how Cog treats it.
 
 **FreeSurround is still outstanding, and both of its blocks are now cleared.** It
 is not a time-stretcher — it is a matrix surround decoder, stereo to 5.1 — so the
@@ -2801,9 +2827,9 @@ mode" is the question a datasheet answers unreliably, and plenty of dongles
 advertise 384 kHz while enumerating only the 48 kHz family at the top.
 
 **6. The feature tail.** Ranked, because what is left is not equally worth
-having. Two of the four are now struck off — scrobbling is done, global hotkeys
-are not coming — which leaves Rubber Band as the only unported item on the page
-that is neither blocked on hardware nor declined:
+having. Three of the four are now struck off — scrobbling is done, Rubber Band
+is done, global hotkeys are not coming — which leaves HRTF as the one deferral
+still standing:
 
 - ~~**Last.fm scrobbling**~~ — **done**, on 2026-08-24, and the entry that stood
   here got one thing wrong. It called the work "self-contained, no toolkit
@@ -2823,11 +2849,13 @@ that is neither blocked on hardware nor declined:
 
   What it costs to defer is one item on the M6 feature list, which is why
   scrobbling moves up to the top of the tail rather than sitting behind it.
-- **Rubber Band** — unported, and the reason its Preferences pane does not
-  exist (see the comment at the top of `app/src/PreferencesDialog.hpp`, which
-  names it as the one pane with nothing to hold). Time-stretch and pitch are a
-  real feature with a narrower audience than the two above, which is the whole
-  of why it is last.
+- ~~**Rubber Band**~~ — **done**, on 2026-08-24, and then some: the pane it
+  had nothing to hold exists as "Pitch & Tempo" with the engine picker, Cog's
+  option rows shown per engine, and the two speed sliders that Cog keeps in
+  its main window — the transport bar here is full, and a slider that does
+  nothing until an engine is chosen belongs beside that choice. Beyond Cog:
+  the varispeed engine. See the DSP section above for how the stage fits an
+  engine whose chain cannot hold it.
 - ~~**Global hotkeys**~~ — **not coming**, by decision rather than omission.
   Cog's Hot Keys pane binds seven shortcuts and all seven are media keys, which
   SMTC, MPRIS and MediaPlayer.framework already deliver through `platform/`. A

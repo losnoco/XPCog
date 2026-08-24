@@ -240,6 +240,9 @@ bool AudioEngine::play(const Url& url) {
         node->prepare(format_);
         node->reset();
     }
+    // Not in the chain -- it changes the frame count, which the chain's
+    // contract cannot express -- but sized and reset on the same occasions.
+    stretch_.prepare(format_);
     applyDspSettings();
     dspDirty_.store(false, std::memory_order_relaxed);
 
@@ -253,6 +256,7 @@ bool AudioEngine::play(const Url& url) {
     deviceLost_.store(false, std::memory_order_relaxed);
     dspReconfigure_.store(false, std::memory_order_relaxed);
     dspParked_.store(false, std::memory_order_relaxed);
+    stretchDrainRequested_.store(false, std::memory_order_relaxed);
     {
         std::lock_guard lock(seamMutex_);
         pendingSeams_.clear();
@@ -262,6 +266,9 @@ bool AudioEngine::play(const Url& url) {
         audibleTrackStart_ = 0;
         // A fresh device, counting from zero, and no earlier one behind it.
         deviceFramesBase_ = 0;
+        stretchMap_.clear();
+        stretchOutBase_ = 0;
+        stretchSrcBase_ = 0;
     }
     {
         std::lock_guard lock(finishedMutex_);
@@ -336,6 +343,22 @@ void AudioEngine::applyDspSettings() {
     equalizer_.setEnabled(settings_.GraphicEqEnable());
     equalizer_.setPreamp(settings_.EqPreamp());
 
+    // The whole read is one assignment on purpose: setOptions() diffs it
+    // against the last one to decide what a running engine can absorb live.
+    StretchOptions stretch;
+    stretch.engine     = StretchOptions::engineFromString(settings_.RubberbandEngine());
+    stretch.tempo      = settings_.Tempo();
+    stretch.pitch      = settings_.Pitch();
+    stretch.transients = settings_.RubberbandTransients();
+    stretch.detector   = settings_.RubberbandDetector();
+    stretch.phase      = settings_.RubberbandPhase();
+    stretch.window     = settings_.RubberbandWindow();
+    stretch.smoothing  = settings_.RubberbandSmoothing();
+    stretch.formant    = settings_.RubberbandFormant();
+    stretch.pitchMode  = settings_.RubberbandPitch();
+    stretch.channels   = settings_.RubberbandChannels();
+    stretch_.setOptions(stretch);
+
     const auto keys = Equalizer::bandSettingsKeys();
     std::array<double, Equalizer::kBands> gains{};
     for (std::size_t band = 0; band < keys.size(); ++band) {
@@ -352,6 +375,21 @@ void AudioEngine::dspLoop() {
     std::vector<float> block(kDspBlockSamples);
     auto               channels  = static_cast<std::size_t>(format_.channels);
     std::uint64_t      seenEpoch = flushEpoch_.load(std::memory_order_acquire);
+
+    // The stretcher's output, reused across passes for its capacity. Separate
+    // from `block` because a slow tempo legitimately produces more frames than
+    // went in.
+    std::vector<float> stretched;
+    // Input and output frames this thread has moved since the last flush,
+    // which are the two axes of the stretch map measured from its anchor. Both
+    // are counted whether the stretcher runs or not, so a stretch enabled
+    // mid-stream starts from totals that already cover the 1:1 region behind
+    // it. stretchSeen is what keeps the common case -- nobody touches the
+    // tempo slider, ever -- from taking seamMutex_ once per block for a map
+    // nobody reads.
+    std::uint64_t srcSinceEpoch = 0;
+    std::uint64_t outSinceEpoch = 0;
+    bool          stretchSeen   = false;
 
     while (running_.load(std::memory_order_acquire)) {
         // Parked while the feeder re-points the chain at another device format.
@@ -389,6 +427,15 @@ void AudioEngine::dspLoop() {
             for (DSPNode* node : chain_) {
                 node->reset();
             }
+            // The stretcher holds more than filter state -- up to a block of
+            // actual pre-seek audio in its latency -- and the map built over it
+            // describes positions that no longer exist. The feeder clears the
+            // map and re-anchors it under seamMutex_ once the flush is
+            // acknowledged; these counters restart with it.
+            stretch_.reset();
+            srcSinceEpoch = 0;
+            outSinceEpoch = 0;
+            stretchSeen   = false;
             seenEpoch = epoch;
         }
 
@@ -424,6 +471,41 @@ void AudioEngine::dspLoop() {
         const std::size_t available = preRing_.availableToRead();
         const std::size_t wanted    = std::min(available, block.size()) / channels * channels;
         if (wanted == 0) {
+            // Nothing upstream. If the feeder has declared the stream over,
+            // what remains of it is inside the stretcher, and this thread is
+            // the only one that may flush it. The tail goes through the chain
+            // and into the ring exactly as a block would.
+            if (stretchDrainRequested_.load(std::memory_order_acquire)) {
+                stretched.clear();
+                stretch_.drain(stretched);
+                const std::size_t tailFrames = stretched.size() / channels;
+                outSinceEpoch += tailFrames;
+                if (stretchSeen) {
+                    std::lock_guard lock(seamMutex_);
+                    appendStretchSpanLocked(stretchOutBase_ + outSinceEpoch,
+                                            stretchSrcBase_ + srcSinceEpoch);
+                }
+                if (tailFrames > 0) {
+                    for (DSPNode* node : chain_) {
+                        if (node->active()) {
+                            node->process(stretched.data(), tailFrames);
+                        }
+                    }
+                    const std::size_t tail    = tailFrames * channels;
+                    std::size_t       written = 0;
+                    while (written < tail && running_.load(std::memory_order_acquire)) {
+                        written += ring_.write(stretched.data() + written, tail - written);
+                        if (written < tail) {
+                            std::this_thread::sleep_for(kFeederBackoff);
+                        }
+                    }
+                }
+                // After the write, so the feeder's "is everything played out"
+                // check cannot see the flag drop while the tail is in flight.
+                stretchDrainRequested_.store(false, std::memory_order_release);
+                dspBusy_.store(false, std::memory_order_release);
+                continue;
+            }
             dspBusy_.store(false, std::memory_order_release);
             std::this_thread::sleep_for(kFeederBackoff);
             continue;
@@ -435,18 +517,43 @@ void AudioEngine::dspLoop() {
             continue;  // a flush landed between the check and the read
         }
 
-        const std::size_t frames = got / channels;
-        for (DSPNode* node : chain_) {
-            if (node->active()) {
-                node->process(block.data(), frames);
-            }
+        float*      data   = block.data();
+        std::size_t frames = got / channels;
+        srcSinceEpoch += frames;
+
+        if (stretch_.active()) {
+            stretchSeen = true;
+            stretched.clear();
+            stretch_.process(data, frames, stretched);
+            data   = stretched.data();
+            frames = stretched.size() / channels;
+        }
+        outSinceEpoch += frames;
+
+        if (stretchSeen) {
+            // Every block from the first stretched one on, including 1:1
+            // blocks after the engine is disabled again: the map has to stay
+            // continuous for as long as anything behind its last vertex might
+            // still be queried.
+            std::lock_guard lock(seamMutex_);
+            appendStretchSpanLocked(stretchOutBase_ + outSinceEpoch,
+                                    stretchSrcBase_ + srcSinceEpoch);
         }
 
-        std::size_t written = 0;
-        while (written < got && running_.load(std::memory_order_acquire)) {
-            written += ring_.write(block.data() + written, got - written);
-            if (written < got) {
-                std::this_thread::sleep_for(kFeederBackoff);
+        if (frames > 0) {
+            for (DSPNode* node : chain_) {
+                if (node->active()) {
+                    node->process(data, frames);
+                }
+            }
+
+            const std::size_t count   = frames * channels;
+            std::size_t       written = 0;
+            while (written < count && running_.load(std::memory_order_acquire)) {
+                written += ring_.write(data + written, count - written);
+                if (written < count) {
+                    std::this_thread::sleep_for(kFeederBackoff);
+                }
             }
         }
 
@@ -525,6 +632,12 @@ void AudioEngine::feederLoop() {
 bool AudioEngine::pumpTrack() {
     AudioChunk chunk;
 
+    // Decoding is on again -- either a fresh call or the return after a device
+    // switch rewound the decoder -- so any drain request from the last end of
+    // stream is stale: the stretcher must keep running across whatever this
+    // pass writes.
+    stretchDrainRequested_.store(false, std::memory_order_release);
+
     while (running_.load(std::memory_order_acquire)) {
         publishSeams();
 
@@ -578,6 +691,15 @@ bool AudioEngine::pumpTrack() {
             seekTrackBase_   = pendingSeekTrack_;
             framesWritten_   = seekPlayedBase_;
             seekBasePending_ = false;
+            // The stretch map described audio that was just discarded, and the
+            // DSP thread has already zeroed the counters it appends from (its
+            // epoch reset happened before the flush it acknowledged). Both
+            // domains restart here, anchored at the same number -- which is
+            // what lets the line above assign a played count to a source
+            // count: at the anchor they are defined to be equal.
+            stretchMap_.clear();
+            stretchOutBase_ = seekPlayedBase_;
+            stretchSrcBase_ = seekPlayedBase_;
         }
 
         if (!track_ || !track_->decoder->readAudio(chunk)) {
@@ -679,6 +801,11 @@ bool AudioEngine::pumpTrack() {
         if (!converted_.empty()) {
             writeSamples(converted_.data(), converted_.size());
         }
+        // After the converter's tail is in the deep ring, not before: the DSP
+        // thread honours this the moment that ring runs dry, and honouring it
+        // between the last block and the tail would flush the stretcher with
+        // real audio still on its way in.
+        stretchDrainRequested_.store(true, std::memory_order_release);
     }
 
     // Let the device play out what is still buffered before declaring the end.
@@ -696,7 +823,11 @@ bool AudioEngine::pumpTrack() {
            !deviceLost_.load(std::memory_order_acquire) &&
            (preRing_.availableToRead() > 0 ||
             dspBusy_.load(std::memory_order_acquire) ||
-            ring_.availableToRead() > 0)) {
+            ring_.availableToRead() > 0 ||
+            // A fourth holder of audio: the stretcher's latency, which the DSP
+            // thread flushes when it consumes this flag. Until then the last
+            // fraction of a second exists nowhere a ring can count.
+            stretchDrainRequested_.load(std::memory_order_acquire))) {
         // Here as well as above, and this is not belt and braces. Decoding runs
         // hundreds of times faster than playback, so a track shorter than the
         // deep ring is fully decoded within moments of starting and the feeder
@@ -876,6 +1007,11 @@ void AudioEngine::adoptDeviceFormat(const AudioFormat& negotiated) {
         node->prepare(format_);
         node->reset();
     }
+    // The stretcher too: its engine was built for the old rate and channel
+    // count. Safe for the same parked-pump reason, and the seek that follows a
+    // reformat re-anchors the stretch map, so the counters this zeroes are
+    // about to be re-based anyway.
+    stretch_.prepare(format_);
     // prepare() takes the format; the gains come from the settings, and the pump
     // reads them itself on its way out of the park.
     dspDirty_.store(true, std::memory_order_relaxed);
@@ -996,7 +1132,8 @@ bool AudioEngine::performDeviceSwitch() {
             // which are not the device's for DSD, and are for everything else.
             const double trackRate = trackRate_.load(std::memory_order_acquire);
             resumeFrame            = static_cast<std::int64_t>(
-                static_cast<double>(trackFramesLocked(delivered)) / oldRate * trackRate);
+                static_cast<double>(trackFramesLocked(srcFramesLocked(delivered))) /
+                oldRate * trackRate);
 
             adoptDeviceFormat(negotiated);
 
@@ -1014,6 +1151,16 @@ bool AudioEngine::performDeviceSwitch() {
             seekPlayedBase_    = rescale(seekPlayedBase_);
             seekTrackBase_     = rescale(seekTrackBase_);
             framesWritten_     = rescale(framesWritten_);
+            // Both axes of the stretch map are frame counts too. The rewind
+            // below clears it through dropQueuedAudio() moments from now, but
+            // a position poll can land in between, and a map at the wrong
+            // scale would answer it with a jump.
+            stretchOutBase_ = rescale(stretchOutBase_);
+            stretchSrcBase_ = rescale(stretchSrcBase_);
+            for (StretchSpan& span : stretchMap_) {
+                span.out = rescale(span.out);
+                span.src = rescale(span.src);
+            }
             // pendingSeams_ needs no rescaling: canFollowFormatChange() only
             // says yes when it is empty.
             reformatted = true;
@@ -1069,6 +1216,65 @@ std::uint64_t AudioEngine::trackFramesLocked(std::uint64_t played) const {
         return seekTrackBase_ + (played - seekPlayedBase_);
     }
     return (played > audibleTrackStart_) ? played - audibleTrackStart_ : 0;
+}
+
+std::uint64_t AudioEngine::srcFramesLocked(std::uint64_t out) const {
+    if (stretchMap_.empty()) {
+        // Either nothing was ever stretched -- both bases zero, and this is
+        // plain identity -- or pruning consumed every vertex, in which case
+        // the region past the anchor is 1:1 but the anchor itself carries the
+        // offset the stretching left behind. One formula covers both.
+        return stretchSrcBase_ + (out > stretchOutBase_ ? out - stretchOutBase_ : 0);
+    }
+
+    std::uint64_t prevOut = stretchOutBase_;
+    std::uint64_t prevSrc = stretchSrcBase_;
+    for (const StretchSpan& span : stretchMap_) {
+        if (out <= span.out) {
+            if (out <= prevOut || span.out == prevOut) {
+                // At or behind the segment's start, or a vertex that moved the
+                // source without moving the output -- a block swallowed whole
+                // into the stretcher's latency. Neither has audibly played, so
+                // the clock holds rather than leaping the swallowed width.
+                return prevSrc;
+            }
+            const auto ratio = static_cast<double>(span.src - prevSrc) /
+                               static_cast<double>(span.out - prevOut);
+            return prevSrc + static_cast<std::uint64_t>(
+                                 static_cast<double>(out - prevOut) * ratio);
+        }
+        prevOut = span.out;
+        prevSrc = span.src;
+    }
+
+    // Past the newest vertex. The region beyond what the DSP thread has
+    // produced does not exist yet, and by the time it does a vertex will cover
+    // it; extending 1:1 is exact for the disabled-again case and a bounded
+    // guess for the moment between a drain and the stop that follows it.
+    return prevSrc + (out - prevOut);
+}
+
+void AudioEngine::appendStretchSpanLocked(std::uint64_t out, std::uint64_t src) {
+    // A block the stretcher swallowed whole advances the source without
+    // advancing the output; folding it into the previous vertex keeps every
+    // recorded segment's output width non-zero, which srcFramesLocked() leans
+    // on.
+    if (!stretchMap_.empty() && stretchMap_.back().out == out) {
+        stretchMap_.back().src = src;
+    } else {
+        stretchMap_.push_back(StretchSpan{out, src});
+    }
+
+    // Vertices the device has already played past can never be asked about
+    // again: each becomes the anchor in turn, so the deque holds only the
+    // window between the loudspeaker and this thread -- a few seconds however
+    // long the album is.
+    const std::uint64_t played = totalFramesPlayedLocked();
+    while (!stretchMap_.empty() && stretchMap_.front().out <= played) {
+        stretchOutBase_ = stretchMap_.front().out;
+        stretchSrcBase_ = stretchMap_.front().src;
+        stretchMap_.pop_front();
+    }
 }
 
 bool AudioEngine::performSeek(std::int64_t frame) {
@@ -1159,7 +1365,10 @@ void AudioEngine::publishSeams() {
             // consistent. Read outside it, a switch landing in between could put
             // a seam's position behind the clock and announce the next track
             // while the current one was still playing.
-            const std::uint64_t played = totalFramesPlayedLocked();
+            // Seam positions are recorded in source frames -- what the feeder
+            // wrote -- and the device counts stretched ones, so the clock is
+            // read through the map before the comparison.
+            const std::uint64_t played = srcFramesLocked(totalFramesPlayedLocked());
             if (pendingSeams_.empty() || pendingSeams_.front().framePosition > played) {
                 return;
             }
@@ -1303,7 +1512,12 @@ double AudioEngine::trackPositionSeconds() const {
     if (rate <= 0.0) {
         return 0.0;
     }
-    return static_cast<double>(trackFramesLocked(totalFramesPlayedLocked())) / rate;
+    // Through the stretch map first: at half tempo the device plays two frames
+    // for every source frame, and the scrubber has to move at the track's own
+    // pace, not the loudspeaker's.
+    return static_cast<double>(
+               trackFramesLocked(srcFramesLocked(totalFramesPlayedLocked()))) /
+           rate;
 }
 
 }  // namespace xpcog

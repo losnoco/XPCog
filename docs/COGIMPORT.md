@@ -149,9 +149,11 @@ That is the whole shape of the settings import:
   spellings for exactly this.
 - **A key that is absent**: do nothing. It means "Cog's default", and XPCog's
   default for the same key is the same value.
-- **A key XPCog does not have** (`pitch`, `tempo`, `miniPlusMode`,
-  `toolbarStyleFull`, `metadataMigrated`): ignore. Two of those are Rubber Band,
-  which is not ported.
+- **A key XPCog does not have** (`miniPlusMode`, `toolbarStyleFull`,
+  `metadataMigrated`): ignore. `pitch` and `tempo` used to head this list as
+  "Rubber Band, which is not ported"; the stretchers are ported now, so those
+  two and the ten `speedLock`/`rubberband*` keys moved to the first bullet and
+  a Cog user's whole speed setup crosses over.
 - **AppKit's own keys** (`NSWindow Frame …`, `NSToolbar Configuration …`,
   `NSSplitView Subview Frames …`, `TB Display Mode`): ignore. They describe a
   window layout that does not exist here.

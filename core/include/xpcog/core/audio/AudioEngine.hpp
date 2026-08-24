@@ -14,7 +14,7 @@
 //
 // Buffering is two-stage, and the reason is the DSP chain:
 //
-//   decoder -> converter -> preRing (deep) -> DSP chain -> ring (shallow) -> device
+//   decoder -> converter -> preRing (deep) -> stretcher -> DSP chain -> ring (shallow) -> device
 //
 // The deep buffer is what absorbs a scheduling hiccup on the feeder thread
 // without the device running dry, and it is ~3 seconds. Put the chain *behind*
@@ -45,6 +45,7 @@
 #include "xpcog/core/audio/Fader.hpp"
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
+#include "xpcog/core/audio/TimeStretch.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -395,6 +396,54 @@ private:
     Fader                 fader_;
     std::vector<DSPNode*> chain_;
     std::atomic<bool>     dspDirty_{true};
+
+    /// The pitch/tempo stage, ahead of the chain and behind the deep ring --
+    /// where Cog's stretch nodes sit, and for Cog's reason: behind the deep
+    /// ring the tempo slider would act three seconds late, and inside the
+    /// chain it cannot go because it changes the frame count. Owned by the DSP
+    /// thread: only dspLoop() processes, resets or reconfigures it, apart from
+    /// prepare() calls made while that thread is parked or does not exist.
+    TimeStretch stretch_;
+
+    /// Raised by the feeder when the last decoder is done and everything is in
+    /// the rings, consumed by the DSP thread once the deep ring runs dry: the
+    /// stretcher is holding the final fraction of a second, and only the
+    /// thread that owns it may flush it. Cleared by the feeder when a device
+    /// switch rewinds the decoder and decoding resumes.
+    std::atomic<bool> stretchDrainRequested_{false};
+
+    /// One vertex of the map from device output frames to source frames.
+    /// `out` and `src` are cumulative totals in the same absolute frame count
+    /// everything else here uses -- deviceFramesBase_ + framesPlayed() on one
+    /// axis, framesWritten_ on the other.
+    struct StretchSpan {
+        std::uint64_t out = 0;
+        std::uint64_t src = 0;
+    };
+
+    /// The map itself, plus the anchor the first segment starts from. With
+    /// tempo not 1.0 a device frame is no longer a source frame, and every
+    /// comparison of framesPlayed() against a recorded position -- seam
+    /// publication, the position clock, the resume point of a device switch --
+    /// has to cross that conversion. Cog threads a timestamp and a time ratio
+    /// through every chunk instead; there is no chunk downstream of this
+    /// engine's converter, so the mapping lives here as one piecewise-linear
+    /// function, appended by the DSP thread as it stretches and read wherever
+    /// played frames are compared with written ones. Empty means identity,
+    /// which is the whole life of a player that never touches the tempo
+    /// slider. All under seamMutex_, like every other position count.
+    std::deque<StretchSpan> stretchMap_;
+    std::uint64_t           stretchOutBase_ = 0;
+    std::uint64_t           stretchSrcBase_ = 0;
+
+    /// Converts an absolute played-frame count into the source frames the
+    /// clock and the seams are recorded in. Identity when the map is empty.
+    /// seamMutex_ held.
+    [[nodiscard]] std::uint64_t srcFramesLocked(std::uint64_t out) const;
+
+    /// Appends one vertex and prunes what the device has already played past.
+    /// DSP thread, seamMutex_ held.
+    void appendStretchSpanLocked(std::uint64_t out, std::uint64_t src);
 
     /// Set when pause() has started a fade out and the device still has to be
     /// stopped once it finishes. The feeder does that, because the fade has to be
