@@ -1,12 +1,17 @@
 #include "xpcog/core/audio/TimeStretch.hpp"
 
 #include <rubberband/rubberband-c.h>
+
+// Before the Signalsmith header, out of the sorted order the includes below
+// keep: its fft.h calls std::memcpy without including <cstring>, which MSVC's
+// standard headers happen to leak and libstdc++'s do not -- so alphabetical
+// order here compiled on Windows and broke every Linux build in CI.
+#include <cstring>
 #include <signalsmith-stretch/signalsmith-stretch.h>
 #include <soxr.h>
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 
 namespace xpcog {
 namespace {
