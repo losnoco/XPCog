@@ -440,8 +440,28 @@ with an explanation. To build with scrobbling live, apply for a key at
 configure with:
 
 ```
-cmake --preset windows-debug     -D XPCOG_LASTFM_API_KEY=... -D XPCOG_LASTFM_API_SECRET=...
+cmake --preset windows-debug -D XPCOG_LASTFM_API_KEY=... -D XPCOG_LASTFM_API_SECRET=...
 ```
+
+Both are also read from the environment when the cache variables are unset,
+which keeps the secret out of your shell history and out of `CMakeCache.txt`.
+That matters when it comes from a password manager, because `-D` copies it
+straight back into plaintext beside the build:
+
+```
+op run --env-file=lastfm.env -- cmake --preset windows-debug
+```
+
+Configure prints `Last.fm: API key configured`, or says the feature will report
+itself unavailable. To check a key works before wiring anything up:
+
+```
+XPCOG_LASTFM_API_KEY=... XPCOG_LASTFM_API_SECRET=... xpcog-tests "[.lastfmlive]"
+```
+
+That asks the real service for a request token, which exercises the whole
+signing path and touches no account. It is hidden, so an ordinary test run
+never makes a network request.
 
 The switch itself is `enableAudioScrobbler`, which is Cog's key — but it is the
 one setting a Cog import deliberately does **not** carry across, because the

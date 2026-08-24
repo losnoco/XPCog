@@ -65,6 +65,37 @@ set(XPCOG_LASTFM_API_SECRET "" CACHE STRING
     "Last.fm shared secret that goes with XPCOG_LASTFM_API_KEY")
 mark_as_advanced(XPCOG_LASTFM_API_SECRET)
 
+# Falling back to the environment lets the secret stay off the command line.
+#
+# `-D XPCOG_LASTFM_API_SECRET=...` puts it in the shell's history and, more
+# durably, in CMakeCache.txt -- so a value fetched out of a password manager is
+# copied straight back into plaintext next to the build. Reading the environment
+# instead means this works, with nothing quotable left behind:
+#
+#     op run --env-file=lastfm.env -- cmake --preset windows-debug
+#
+# or, without an env file:
+#
+#     $env:XPCOG_LASTFM_API_KEY = op item get "Last.fm XPCog" --fields username --reveal
+#
+# The cache variable still wins when it is set, so nothing that worked before
+# changes. Note the value is compiled into the binary either way -- that is what
+# a client API key is, and Cog does the same -- so this is about not leaving a
+# second copy lying around, not about hiding it.
+foreach(_lastfm_var XPCOG_LASTFM_API_KEY XPCOG_LASTFM_API_SECRET)
+    if(NOT ${_lastfm_var} AND DEFINED ENV{${_lastfm_var}})
+        set(${_lastfm_var} "$ENV{${_lastfm_var}}")
+        # Deliberately not written back to the cache: a cached copy would
+        # outlive the environment that supplied it and defeat the point.
+    endif()
+endforeach()
+
+if(XPCOG_LASTFM_API_KEY AND XPCOG_LASTFM_API_SECRET)
+    message(STATUS "Last.fm: API key configured")
+else()
+    message(STATUS "Last.fm: no API key; scrobbling will report itself unavailable")
+endif()
+
 configure_file(src/LastFmSecrets.hpp.in
                "${CMAKE_CURRENT_BINARY_DIR}/generated/LastFmSecrets.hpp" @ONLY)
 

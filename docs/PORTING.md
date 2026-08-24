@@ -3046,11 +3046,12 @@ That is a fuzzing target and not the place to save a download.
 **No API key ships**, exactly as Cog ships none — `Secrets.template.xcconfig` is
 blank there and `XPCOG_LASTFM_API_KEY` is blank here. A build without one
 compiles every line of this and reports the feature as unavailable, which is the
-same shape as `XPCOG_WITH_SENTRY`. So the code is complete and **the feature has
-never been exercised against the real service**; everything below the network is
-covered by 46 tests against a fake transport, and what is not covered is whether
-Last.fm agrees with our reading of its own specification. The first real
-connection is a thing to do, not a thing to assume.
+same shape as `XPCOG_WITH_SENTRY`. So the code is complete and a clean
+checkout reports the feature unavailable; everything below the network is covered
+by 46 tests against a fake transport, and the signing path is additionally
+confirmed against the real service by the hidden `[.lastfmlive]` case. What
+remains unexercised is everything behind the browser grant. See the entry under
+"Known gaps".
 
 #### The decoder list, and what it left behind
 
@@ -3706,16 +3707,37 @@ asserted a property Qt provides rather than the one the code was responsible for
   settle — a catalogue that has to be re-scanned after every wording change is
   upkeep bought before there is a translator to spend it on.
   [`../app/i18n/README.md`](../app/i18n/README.md) says what to put back.
-- **Scrobbling has never been run against the real Last.fm.** No API key ships,
-  so a build from a clean checkout compiles the whole feature and reports it
-  unavailable — which means the 46 tests behind it all speak to a fake transport.
-  What they establish is real and is the part most likely to be wrong (the
-  signature, the batching, which errors are retryable, what the queue keeps); what
-  they cannot establish is whether Last.fm agrees with our reading of its
-  specification. The first connection with a real key is a thing to do rather than
-  a thing to assume, and the two most likely places for it to go wrong are the
-  signature — where the server's only complaint is error 13, naming no parameter
-  — and the browser step, which is the one part of the flow no test can drive.
+- **Scrobbling is verified against the real Last.fm as far as it can be without
+  a person, and no further.** Updated 2026-08-24.
+
+  **What is settled.** `tests/core/test_lastfm_live.cpp` is a hidden case —
+  `xpcog-tests "[.lastfmlive]"`, credentials from the environment rather than
+  from the build, so it runs against a checkout configured with no key — that
+  calls `auth.getToken` against the real service. It passes. That is the whole
+  signing path confirmed by the only witness that counts: the parameter set, the
+  sorted concatenation, the exclusion of `format`, the MD5, the percent-encoding,
+  the transport and the parse of a real reply. It was the item most likely to be
+  wrong and the one with no other way to check it, because the server's entire
+  complaint about a bad signature is error 13, which names no parameter.
+
+  `auth.getToken` specifically, because it is the only call in the flow that is
+  fully signed, reaches the service and needs no human — a request token is
+  issued to anyone who asks correctly and is inert until somebody grants it. So
+  nothing is scrobbled and no account is touched.
+
+  **What is still not settled**, and cannot be by a test: `auth.getSession` after
+  a real grant, and therefore `track.updateNowPlaying` and `track.scrobble`,
+  which need a session key. All three are behind a browser step somebody has to
+  press Allow in.
+
+  **One thing the live run corrected**, which is why it was worth doing beyond
+  the signature. The test first asserted that a request token is 32 lowercase hex
+  characters, reasoning from the API key and secret, which are. It is not: it is
+  32 characters of base64url, mixed case with `-` and `_`. Last.fm documents no
+  format for it, so the assertion had been invented and only the real service
+  could say so. It now checks the property the code depends on — that the token
+  survives a URL unescaped — rather than a shape that merely happened to be
+  guessed.
 
 - The macOS Now Playing integration is verified by hand, not by test. So are the
   pause and stop fades against a real device: the offline output shows the ramp in
