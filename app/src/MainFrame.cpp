@@ -765,6 +765,29 @@ void MainFrame::onSettingChanged(const std::string& key) {
         return;
     }
 
+    // The playlist's own three, which it holds as state rather than reading when
+    // it needs them. The constructor seeds all three and, until this branch,
+    // nothing ever seeded them again -- so "Stop after every track" in
+    // Preferences did nothing at all until the next launch, and silently:
+    // the box stays ticked, the setting is stored, and playback simply carries
+    // on to the next track.
+    //
+    // Repeat and Shuffle escaped notice because the Order menu sets them on the
+    // playlist directly as well as storing them. Their rows in Advanced had
+    // exactly the same defect.
+    if (key == "alwaysStopAfterCurrent") {
+        playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
+        return;
+    }
+    if (key == "repeat") {
+        playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
+        return;
+    }
+    if (key == "shuffle") {
+        playlist_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
+        return;
+    }
+
     // Immediately, in both directions, which is the half of Cog's arrangement
     // that is easy to leave out: its observer on `sentryConsented` calls
     // `[SentrySDK close]` the moment the box is unticked
@@ -844,9 +867,27 @@ void MainFrame::refreshLyrics() {
 }
 
 void MainFrame::notifyTrack(const PlaylistEntry* entry) {
-    if (entry == nullptr || entry->error || !settings_.NotificationsEnable()) {
+    if (entry == nullptr) {
+        // Stopped, or the track failed. Forgetting what was announced is what
+        // lets the same track announce itself again when it is played again.
+        lastNotified_ = kInvalidTrackId;
         return;
     }
+    if (entry->error || !settings_.NotificationsEnable()) {
+        return;
+    }
+
+    // Once per track, not once per call, and the difference is not defensive.
+    // onCurrentTrackChanged is a redraw-everything handler and is *meant* to run
+    // more than once for one track: PlaybackController publishes when the decoder
+    // opens the track (PlaybackController.cpp:213) and again when the gapless
+    // seam reaches the speaker (:392), and trackMetadataChanged calls it a third
+    // time whenever a stream renames itself. Redrawing a title bar twice costs
+    // nothing. Announcing a track twice is two notifications.
+    if (entry->id == lastNotified_) {
+        return;
+    }
+    lastNotified_ = entry->id;
 
     // Cog's text, from PlaybackEventController.m:172-186. "Now Playing" is the
     // title; the body is the track title, then artist and album on the line

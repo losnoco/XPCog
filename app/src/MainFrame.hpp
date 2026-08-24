@@ -152,6 +152,11 @@ private:
     /// notifications look unreliable.
     void notifyTrack(const PlaylistEntry* entry);
 
+    /// The track the last notification was about, so one track produces one.
+    /// kInvalidTrackId while nothing is playing, which is what lets the same
+    /// track announce itself again the next time it is started.
+    TrackId lastNotified_ = kInvalidTrackId;
+
     /// Redraws the lyrics pane, on the same rule and with the same guard.
     ///
     /// Separate from refreshInfo() rather than folded into it because the two
