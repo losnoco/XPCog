@@ -59,7 +59,12 @@ public:
     bool process(const AudioChunk& in, std::vector<float>& out);
 
     /// Flushes whatever the resampler is still holding. Call at end of stream, or
-    /// the tail of the last track is lost.
+    /// at a track seam, or the tail of the outgoing track is lost.
+    ///
+    /// The soxr instance does not survive being flushed -- it is a one-shot end
+    /// of stream, and feeding a drained instance again is undefined. So this
+    /// disposes of it, and the next process() builds a fresh one for whatever
+    /// format the incoming track turns out to be.
     void drain(std::vector<float>& out);
 
     /// Discards resampler, HDCD and extrapolation state. Call after a seek so
@@ -89,6 +94,10 @@ public:
 private:
     /// Rebuilds the resampler when the input format changes mid-stream.
     bool configureFor(const AudioFormat& input);
+
+    /// Deletes the soxr instance and forgets the format it was built for, so the
+    /// next process() builds a fresh one.
+    void closeResampler() noexcept;
 
     /// Turns one chunk of DSD into float in `decoded_`. False if the filters
     /// could not be built.

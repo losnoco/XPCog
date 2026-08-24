@@ -383,6 +383,36 @@ TEST_CASE("resampling preserves the tone", "[converter]") {
     CHECK(freq == Catch::Approx(440.0).margin(5.0));
 }
 
+TEST_CASE("the converter resamples again after a drain", "[converter]") {
+    // The track seam: the engine drains at the handoff so the outgoing track's
+    // tail is not left in the delay line, and then feeds the incoming track
+    // through the same converter. A drained soxr instance cannot be fed again,
+    // so this crashed whenever both tracks shared a rate -- the case where
+    // configureFor() sees nothing to rebuild.
+    AudioConverter converter;
+    REQUIRE(converter.setOutputFormat(48000.0, 2));
+
+    const AudioChunk chunk = toneChunk(44100.0, 2, 44100, 440.0);
+
+    std::vector<float> first;
+    REQUIRE(converter.process(chunk, first));
+    converter.drain(first);
+    REQUIRE(first.size() > 48000);
+
+    // Same rate and channel count as the outgoing track, which is what makes
+    // this the regression rather than an ordinary reconfiguration.
+    std::vector<float> second;
+    REQUIRE(converter.process(chunk, second));
+    converter.drain(second);
+
+    CHECK(second.size() == first.size());
+    // Not just the same length: a fresh instance starts from the same primed
+    // state, so the second pass is the first one over again.
+    for (std::size_t i = 0; i < second.size(); ++i) {
+        REQUIRE(second[i] == first[i]);
+    }
+}
+
 TEST_CASE("gain is applied on the way through", "[converter]") {
     AudioConverter converter;
     REQUIRE(converter.setOutputFormat(44100.0, 2));

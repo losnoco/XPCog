@@ -190,13 +190,20 @@ std::uint32_t AudioConverter::chainChannels() const noexcept {
     return fsurround_ != nullptr ? 2U : outChannels_;
 }
 
-void AudioConverter::reset() {
+void AudioConverter::closeResampler() noexcept {
     if (soxr_->handle != nullptr) {
         soxr_delete(soxr_->handle);
         soxr_->handle = nullptr;
     }
+    // Forgotten, not merely deleted: configureFor() decides whether it can keep
+    // the existing instance by comparing against these, so leaving them set
+    // would have it keep an instance that is no longer there.
     inRate_     = 0.0;
     inChannels_ = 0;
+}
+
+void AudioConverter::reset() {
+    closeResampler();
 
     hdcd_->started = false;
     hdcdDetected_  = false;
@@ -228,10 +235,7 @@ bool AudioConverter::configureFor(const AudioFormat& input) {
         return true;
     }
 
-    if (soxr_->handle != nullptr) {
-        soxr_delete(soxr_->handle);
-        soxr_->handle = nullptr;
-    }
+    closeResampler();
 
     inRate_     = input.sampleRate;
     inChannels_ = input.channels;
@@ -528,6 +532,15 @@ void AudioConverter::drain(std::vector<float>& out) {
             pushFreeSurround(fsGained_.data(), produced, out);
         }
     }
+
+    // Flushing is terminal for a soxr instance: once it has been fed the null
+    // input that signals end of stream, handing it more audio is undefined, and
+    // in practice it crashes. That is the whole reason this is here rather than
+    // left to configureFor() -- a track seam drains, and if the incoming track
+    // happens to share the outgoing one's rate and channel count then
+    // configureFor() sees nothing to rebuild and reuses the drained instance.
+    // Same rate across a seam is the common case, not the exotic one.
+    closeResampler();
 
     // After the resampler, and unconditionally: the upmixer holds half a block
     // whether or not anything was being resampled, and the early return this
