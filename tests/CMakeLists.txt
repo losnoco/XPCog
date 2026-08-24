@@ -406,6 +406,7 @@ catch_discover_tests(xpcog-tests)
 # ---------------------------------------------------------------------------
 if(XPCOG_BUILD_APP)
     add_executable(xpcog-app-tests
+        app/test_cogplist.cpp
         app/test_crashreporter.cpp
         app/test_embedded_icons.cpp
         app/test_helpers.cpp
@@ -431,6 +432,11 @@ if(XPCOG_BUILD_APP)
         xpcog-appcore
         Catch2::Catch2WithMain
         XPCog::warnings)
+
+    # The Cog fixtures, as the core suite has them: the binary defaults file is
+    # the one thing in the import that needs an OS framework to read.
+    target_compile_definitions(xpcog-app-tests
+        PRIVATE "XPCOG_COG_FIXTURE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cog\"")
 
     set_target_properties(xpcog-app-tests PROPERTIES FOLDER tests)
 

@@ -33,6 +33,8 @@
 
 namespace xpcog {
 
+class Settings;
+
 /// One playlist entry, already pruned and in playlist order.
 struct CogEntry {
     Url url;
@@ -170,6 +172,50 @@ struct CogLibrary {
 
 /// True for a serialised macOS file reference URL. Syntactic; touches nothing.
 [[nodiscard]] bool isCogFileReferenceUrl(std::string_view urlString);
+
+/// What a settings import did, reported rather than assumed.
+struct CogSettingsReport {
+    /// Keys XPCog knows, copied across.
+    std::size_t applied = 0;
+
+    /// Keys that were in the file and mean nothing here. Cog-only settings
+    /// (`pitch`, `tempo`, `miniPlusMode`), and AppKit's own window and toolbar
+    /// state, which is most of a real file by count.
+    std::size_t ignored = 0;
+
+    /// Present, known, and of a shape that would not convert -- an array where
+    /// a number was declared. Counted separately from `ignored` because it means
+    /// the two programs disagree about a key they share, which is worth knowing
+    /// and is not the same as a key one of them has never heard of.
+    std::size_t mismatched = 0;
+
+    /// The keys that were applied, for a caller that wants to say what changed.
+    std::vector<std::string> appliedKeys;
+};
+
+/// Copies a Cog defaults plist into `settings`.
+///
+/// `plistXml` is the file as XML text. Getting it there is
+/// `platform::propertyListToXml()`, because a real one is `bplist00` and core's
+/// plist reader is XML-only -- see that header for why the conversion lives
+/// where it does.
+///
+/// **The filter is free, and that is the whole trick.** A key is imported when
+/// `Settings::all()` has one by the same name, and ignored otherwise. There is
+/// no table of translations here and there should never be one: `settings.def`
+/// kept Cog's spellings deliberately, so the two programs already agree about
+/// what `eq1kHz` and `volumeScaling` are called and what range they hold. A
+/// hand-written mapping would be a second copy of that agreement, free to drift
+/// from it.
+///
+/// **A key that is absent is not touched.** `NSUserDefaults` persists only what
+/// differs from what the app registered at launch, so a real file holds a
+/// handful of keys and the absence of `eq1kHz` means "Cog's default", which is
+/// XPCog's default too. Writing defaults over the settings for keys the file
+/// never mentioned would overwrite the user's XPCog configuration with Cog's,
+/// which is the opposite of an import.
+void importCogSettings(std::string_view plistXml, Settings& settings,
+                       CogSettingsReport* report = nullptr);
 
 /// Reads a Cog Core Data store.
 ///

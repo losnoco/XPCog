@@ -11,6 +11,7 @@
 // playlist Cog itself would not show.
 
 #include "xpcog/core/FilePath.hpp"
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/library/CogImport.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -266,6 +267,137 @@ TEST_CASE("a play count keeps the fragment in its filename", "[cogimport]") {
     CHECK(track->url.fileName() == "Album.cue");
     CHECK(track->url.fileName() + "#" + std::string{track->url.fragment()} ==
           "Album.cue#01");
+}
+
+TEST_CASE("Cog's settings arrive under their own names", "[cogimport]") {
+    // No translation table, and there must never be one. settings.def kept Cog's
+    // spellings on purpose, so the filter is "does Settings::all() have a key by
+    // this name" and the two programs cannot drift apart over what eq1kHz is
+    // called -- a hand-written mapping would be a second copy of an agreement
+    // that already exists.
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    const std::string xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>volumeScaling</key><string>albumGainWithPeak</string>
+  <key>eq1kHz</key><real>-2.5</real>
+  <key>GraphicEQtrackgenre</key><true/>
+  <key>synthSampleRate</key><integer>48000</integer>
+</dict></plist>)";
+
+    CogSettingsReport report;
+    importCogSettings(xml, settings, &report);
+
+    CHECK(report.applied == 4);
+    CHECK(report.ignored == 0);
+    CHECK(report.mismatched == 0);
+
+    CHECK(settings.VolumeScaling() == "albumGainWithPeak");
+    CHECK(settings.Eq1kHz() == Approx(-2.5));
+    CHECK(settings.GraphicEqTrackGenre());
+    CHECK(settings.SynthSampleRate() == 48000);
+}
+
+TEST_CASE("a key XPCog has never heard of is ignored, not guessed at",
+          "[cogimport]") {
+    // Most of a real defaults file by count is AppKit's own window and toolbar
+    // state, and the rest of what is left is Cog-only -- pitch and tempo are
+    // Rubber Band, which is not ported. None of it should reach the settings,
+    // and none of it is an error either.
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    const std::string xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>pitch</key><real>1.0</real>
+  <key>tempo</key><real>1.0</real>
+  <key>miniPlusMode</key><false/>
+  <key>metadataMigrated</key><true/>
+  <key>NSWindow Frame Cog</key><string>0 0 1200 800 0 0 1920 1080</string>
+  <key>volumeScaling</key><string>trackGain</string>
+</dict></plist>)";
+
+    CogSettingsReport report;
+    importCogSettings(xml, settings, &report);
+
+    CHECK(report.applied == 1);
+    CHECK(report.ignored == 5);
+    CHECK(settings.VolumeScaling() == "trackGain");
+}
+
+TEST_CASE("an absent key leaves the setting alone", "[cogimport]") {
+    // The half that makes this an import rather than a reset. NSUserDefaults
+    // persists only what differs from what was registered, so a real file holds
+    // a handful of keys -- and the absence of eq1kHz means "Cog's default",
+    // which is XPCog's default too. Writing defaults for everything the file did
+    // not mention would replace the user's XPCog configuration with Cog's.
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    settings.setEq1kHz(7.5);
+    settings.setVolumeScaling("albumGain");
+
+    const std::string xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>eq20Hz</key><real>3.0</real>
+</dict></plist>)";
+
+    importCogSettings(xml, settings, nullptr);
+
+    CHECK(settings.Eq20Hz() == Approx(3.0));
+    // Untouched, both of them.
+    CHECK(settings.Eq1kHz() == Approx(7.5));
+    CHECK(settings.VolumeScaling() == "albumGain");
+}
+
+TEST_CASE("numbers convert across their spellings, shapes do not",
+          "[cogimport]") {
+    // A plist writes 1 as an integer and 1.0 as a real depending on how the
+    // value was set, so refusing <real>1</real> for an integer setting would
+    // drop a value over its spelling. What is refused is a different kind of
+    // disagreement: an array where a number was declared means the two programs
+    // do not agree about what the key is, and that is worth counting rather than
+    // coercing.
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    const std::string xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>synthSampleRate</key><real>44100.4</real>
+  <key>eq20Hz</key><integer>4</integer>
+  <key>GraphicEQtrackgenre</key><integer>1</integer>
+  <key>volumeScaling</key><array><string>nonsense</string></array>
+</dict></plist>)";
+
+    CogSettingsReport report;
+    importCogSettings(xml, settings, &report);
+
+    CHECK(report.applied == 3);
+    CHECK(report.mismatched == 1);
+
+    // Rounded, not truncated: a value that made this trip repeatedly would
+    // otherwise drift downward each time.
+    CHECK(settings.SynthSampleRate() == 44100);
+    CHECK(settings.Eq20Hz() == Approx(4.0));
+    CHECK(settings.GraphicEqTrackGenre());
+}
+
+TEST_CASE("a defaults file that is not one changes nothing", "[cogimport]") {
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setEq1kHz(1.5);
+
+    CogSettingsReport report;
+    importCogSettings("not a plist at all", settings, &report);
+    CHECK(report.applied == 0);
+
+    // An array at the root parses, and is still not a defaults file.
+    importCogSettings(R"(<?xml version="1.0"?><plist version="1.0"><array/></plist>)",
+                      settings, &report);
+    CHECK(report.applied == 0);
+
+    CHECK(settings.Eq1kHz() == Approx(1.5));
 }
 
 TEST_CASE("a file that is not a Cog store is refused", "[cogimport]") {

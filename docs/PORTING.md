@@ -3498,14 +3498,39 @@ asserted a property Qt provides rather than the one the code was responsible for
   Two of the six come from RareWares, which is not a versioned host in the way a
   GitHub release is.
 
-  **That has now happened once**, so it is an observation rather than a prediction:
-  the Windows job failed with a connection timeout during the download step, on a
-  commit whose code was fine and which passed on the other three platforms. The step
-  behaved correctly — it failed loudly rather than degrading to silent skips — and a
-  re-run succeeded. But a build that goes red because a third-party web server was
-  briefly unreachable trains people to re-run reflexively, which is precisely the
-  habit that later dismisses a real failure. Vendoring those two binaries is the fix;
-  making the step tolerant is not.
+  **That has now happened twice**, so it is a pattern rather than an observation.
+  The first time the Windows job failed with a connection timeout during the
+  download step, on a commit whose code was fine and which passed on the other
+  three platforms. The step behaved correctly — it failed loudly rather than
+  degrading to silent skips — and a re-run succeeded. But a build that goes red
+  because a third-party web server was briefly unreachable trains people to
+  re-run reflexively, which is precisely the habit that later dismisses a real
+  failure. Vendoring those two binaries is the fix; making the step tolerant is
+  not.
+
+  The second time was 2026-08-24, and it named which host: four attempts at
+  `rarewares.org/files/mp3/lame3.100.1-x64.zip`, all failed, on a commit that was
+  a one-line test fix. Both occurrences have been RareWares rather than a GitHub
+  release, which is the half of the prediction that has now come true twice and
+  the half that says what to vendor first. It also cost something the first
+  occurrence did not: the failing step is before `Test`, so **the run proves
+  nothing about the commit** — every later step is skipped, and a Windows-only
+  bug on that commit would look exactly like this.
+
+  **And the retry failed too, which rules out "briefly unreachable".** Eight
+  attempts across two runs, all refused. Meanwhile the same URL served a
+  developer machine in 1.6 seconds, HTTP 200, all 1.2 MB of it — so the host is
+  up and the file is there. What is failing is reaching it *from an Azure-hosted
+  runner*, which is a different problem with a different fix: retrying harder
+  cannot help, and neither can waiting, because nothing is going to change on
+  its own. Mirroring is the answer — a GitHub release on this repository, which
+  is a host the runners demonstrably reach, since the other four downloads come
+  from one.
+
+  Until that happens **Windows CI cannot go green**, for any commit, regardless
+  of its code. That is worth stating in those words rather than as a caveat:
+  four jobs still prove what they prove, and the Windows column is currently
+  measuring the network rather than the tree.
 - The Windows SMTC card is captioned **"Unknown app"** above otherwise correct
   track metadata. This is app identity, not metadata: an unpackaged executable
   has none, and Windows derives the name either from an AppUserModelID backed by

@@ -57,6 +57,7 @@ if(WIN32)
         src/windows/Foreground.cpp
         src/windows/FileAssociations.cpp
         src/windows/WindowsSettings.cpp
+        src/common/CommonPropertyList.cpp
         src/windows/WindowsTaskbarIntegration.cpp
         src/windows/WindowsMediaIntegration.cpp)
 
@@ -79,6 +80,7 @@ elseif(APPLE)
         src/common/FileAssociations.cpp
         src/common/NullTaskbarIntegration.cpp
         src/mac/MacSettings.cpp
+        src/mac/MacPropertyList.cpp
         src/mac/MacMediaIntegration.mm)
     # ARC, so the Objective-C objects there need no manual retain or release.
     set_source_files_properties(src/mac/MacMediaIntegration.mm PROPERTIES
@@ -95,6 +97,7 @@ elseif(UNIX)
         src/common/FileAssociations.cpp
         src/common/NullTaskbarIntegration.cpp
         src/common/CommonSettings.cpp
+        src/common/CommonPropertyList.cpp
         src/linux/GDbusMediaIntegration.cpp)
 
     # MPRIS is D-Bus, and GDBus is the binding. REQUIRED rather than optional: a

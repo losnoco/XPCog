@@ -234,11 +234,28 @@ ones carried out of the store.
 
 ## What is not established yet
 
-- **The settings half is not written.** `PropertyList.cpp` is an XML plist
-  reader and says so -- "no binary format" -- and `org.cogx.cog.plist` is
-  binary. That needs either a binary plist reader in core or a macOS-only path
-  through `CFPropertyList` in `platform/`. The mapping itself is already known
-  and is small; it is the parsing that is missing.
+- ~~**The settings half is not written.**~~ Done.
+  `platform::propertyListToXml()` converts the file, using `CFPropertyList` on
+  macOS and passing an already-XML file through everywhere else, so the
+  macOS-only part is a format change of about thirty lines and the mapping stays
+  in core where it can be tested on every platform.
+
+  The mapping turned out to need no table at all: a key is imported when
+  `Settings::all()` holds one by the same name. `settings.def` kept Cog's
+  spellings deliberately, so the agreement already exists and writing it out
+  again would only give it somewhere to drift from. Absent keys are left alone,
+  since `NSUserDefaults` persists only what differs from what was registered and
+  "absent" means "Cog's default", which is XPCog's default too.
+
+  Run against a real `org.cogx.cog.plist`: 4 applied, 19 ignored, **0
+  mismatched** -- the last being the number that matters, since a mismatch would
+  mean the two programs disagreeing about the type of a key they share.
+
+  One thing the count surfaced: **`GraphicEQenable` has nowhere to land.** Cog's
+  equaliser has an on/off switch and XPCog's has none -- `active()` skips a flat
+  chain, so 0 dB is free, but there is no way to bypass a curve without
+  flattening it, which is exactly what A/B-ing an equaliser needs. It is the one
+  Cog setting in the fixture that is dropped rather than ignored-as-irrelevant.
 - **Nothing calls the reader yet.** It produces a `CogLibrary`; turning one into
   an XPCog playlist, and finding a Cog installation to read in the first place,
   are the macOS-only half.
