@@ -3727,6 +3727,13 @@ asserted a property Qt provides rather than the one the code was responsible for
   on there being an installer rather than the app writing to the Start menu
   itself.
 
+  **The installer now exists** — `packaging/windows/`, NSIS, `--target installer`
+  — and it writes that Start menu shortcut. What it deliberately does *not* write
+  is `System.AppUserModel.ID` on it, for the reason set out at the end of this
+  entry: the shortcut is one half of a contract whose other half is in the
+  application. So the caption is unchanged, and the thing that was blocking it no
+  longer is.
+
   **Measured twice, and neither works.** A version resource's `FileDescription`
   does not change it, and neither does the `FriendlyAppName` that `--register` now
   writes — even though that is the key `AssocQueryString(ASSOCSTR_FRIENDLYAPPNAME)`
@@ -3752,15 +3759,27 @@ asserted a property Qt provides rather than the one the code was responsible for
   `SetCurrentProcessExplicitAppUserModelID`. It is otherwise good practice — the
   Win32 AppUserModelID documentation strongly recommends an explicit ID — but that
   same page requires the same ID to be assigned to every window, shortcut and file
-  association the application owns, and XPCog installs no shortcut. Setting one
-  half of that contract can leave taskbar pinning worse off than the heuristic ID
-  Windows assigns on its own, and it would not touch this caption regardless. It
-  belongs with the shortcut, in the installer, where the requirement can actually
-  be met.
+  association the application owns. Setting one half of that contract can leave
+  taskbar pinning worse off than the heuristic ID Windows assigns on its own, and
+  it would not touch this caption regardless.
+
+  With the installer written, the halves are now: an AUMID on the Start menu
+  shortcut (`packaging/windows/XPCog.nsi.in`, `SecStartMenu`, where the comment
+  says where it goes), and `SetCurrentProcessExplicitAppUserModelID` plus the same
+  ID on every window in the application. Both, or neither — and neither of them
+  fixes the caption on their own, because that needs package identity. Still
+  neither, therefore, and now for a reason that is one commit's work rather than
+  a missing installer.
 - **File associations exist but only on request.** `XPCog --register` adds XPCog to
   each supported extension's `OpenWithProgids` under `HKCU`; `--unregister` removes
   it. Never done at startup: an application that claims file types the first time
   it runs has taken them from whatever held them before without asking.
+
+  The installer runs it, as a component on the components page — ticked, visible,
+  and untickable, which is a question asked rather than a default taken. `/NOASSOC`
+  is how a silent install answers no, because `/S` is precisely the mode in which
+  nobody sees the page. Until then this was a feature reachable only by someone
+  who had read the source.
 
   It cannot make itself the *default*, and that is a fact about Windows rather than
   a gap — since Windows 8 the effective default lives in a hash-protected

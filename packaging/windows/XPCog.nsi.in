@@ -1,0 +1,382 @@
+; XPCog's Windows installer.
+;
+; Configured by packaging/windows/CMakeLists.txt -- the @VARIABLES@ below are
+; filled in by CMake, and the file list this ships comes from Harvest.cmake,
+; which reads the staged build output. Nothing here enumerates DLLs by hand.
+;
+; Build it with:
+;
+;     cmake --build build/windows-release --target installer
+;
+; --- What this exists to do beyond copying files ---------------------------
+;
+; Three things the build tree cannot do for itself:
+;
+;   * A Start menu shortcut. docs/PORTING.md records why this waits on an
+;     installer rather than the app writing to the Start menu at first run.
+;   * File associations. `XPCog --register` has always been able to add XPCog to
+;     each extension's "Open with" list, and nothing ever ran it -- a feature
+;     reachable only by someone who read the source. It is a component here.
+;   * An uninstaller, and an Add/Remove Programs entry, so a folder of 45 DLLs
+;     can be removed by the means Windows users actually reach for.
+;
+; --- Command line ----------------------------------------------------------
+;
+;   /S                  silent; no windows, no questions
+;   /AllUsers           install for everyone (Program Files; needs elevation)
+;   /CurrentUser        install for the running user only (no elevation)
+;   /NOASSOC            do not touch file associations
+;   /D=<dir>            installation directory; must be last, and unquoted
+;
+; The uninstaller takes /S and the same two scope switches; the scope it was
+; installed with is baked into the UninstallString, so Add/Remove Programs
+; passes the right one without anyone having to remember.
+
+Unicode true
+ManifestDPIAware true
+SetCompressor /SOLID lzma
+CRCCheck on
+
+!define XPCOG_NAME      "XPCog"
+!define XPCOG_VERSION   "@XPCOG_VERSION@"
+!define XPCOG_PUBLISHER "LoSnoCo"
+!define XPCOG_URL       "https://github.com/losnoco/XPCog"
+
+; Where Add/Remove Programs looks, and -- because MULTIUSER_INSTALLMODE_*
+; below point at it -- also how a second run of this installer discovers where
+; the first one put things and which scope it used.
+!define XPCOG_UNINST_KEY \
+    "Software\Microsoft\Windows\CurrentVersion\Uninstall\${XPCOG_NAME}"
+
+Name "${XPCOG_NAME} ${XPCOG_VERSION}"
+OutFile "@XPCOG_INSTALLER_OUTPUT_NATIVE@"
+BrandingText "${XPCOG_NAME} ${XPCOG_VERSION}"
+
+; So Task Manager, the UAC prompt and the file's own property sheet name this
+; program rather than showing a generic "Setup". The UAC dialog reads
+; FileDescription, which is the one users are asked to trust something by.
+VIProductVersion "@XPCOG_VERSION_4@"
+VIAddVersionKey "ProductName"     "${XPCOG_NAME}"
+VIAddVersionKey "ProductVersion"  "${XPCOG_VERSION}"
+VIAddVersionKey "FileVersion"     "${XPCOG_VERSION}"
+VIAddVersionKey "FileDescription" "${XPCOG_NAME} ${XPCOG_VERSION} Setup"
+VIAddVersionKey "CompanyName"     "${XPCOG_PUBLISHER}"
+VIAddVersionKey "LegalCopyright"  "GNU General Public License, version 2"
+
+; ---------------------------------------------------------------------------
+; Interface.
+;
+; MUI's settings have to be defined before MUI2.nsh is included, and MultiUser.nsh
+; includes it for us the moment MULTIUSER_MUI is defined -- so everything the
+; interface needs comes first, and the two !includes are the last lines of this
+; block rather than the first.
+; ---------------------------------------------------------------------------
+!define MUI_ICON   "@XPCOG_ICON@"
+!define MUI_UNICON "@XPCOG_ICON@"
+!define MUI_ABORTWARNING
+
+; MUI's own default, restated because the alternative is silent: without it the
+; components page lists sections with no description pane at all.
+!define MUI_COMPONENTSPAGE_SMALLDESC
+
+!define MUI_FINISHPAGE_LINK      "XPCog on GitHub"
+!define MUI_FINISHPAGE_LINK_LOCATION "${XPCOG_URL}"
+
+; The "run it now" checkbox, routed through Explorer rather than started
+; directly. A per-machine install runs elevated, and a process this one starts
+; inherits that token: an elevated media player cannot accept a file dragged onto
+; it from Explorer (UIPI blocks the drop), and every file it then writes is owned
+; by an administrator. Handing the path to the already-running, *un*elevated
+; Explorer makes it the parent instead, which drops the token. The usual
+; alternative is the StdUtils plugin's ShellExecAsUser; this needs no plugin.
+!define MUI_FINISHPAGE_RUN ""
+!define MUI_FINISHPAGE_RUN_TEXT "Run ${XPCOG_NAME}"
+!define MUI_FINISHPAGE_RUN_FUNCTION XPCogLaunch
+
+; MULTIUSER_EXECUTIONLEVEL Highest asks for elevation only when the user can
+; actually have it: an administrator gets the UAC prompt and both scopes, anyone
+; else runs unelevated and is given the per-user install without being asked a
+; question they cannot answer. MULTIUSER_PAGE_INSTALLMODE hides itself in that
+; second case rather than offering a disabled choice.
+!define MULTIUSER_EXECUTIONLEVEL Highest
+!define MULTIUSER_MUI
+!define MULTIUSER_INSTALLMODE_COMMANDLINE
+; Program Files, not Program Files (x86). XPCog is x64-only -- see the check in
+; .onInit -- and without this an x64 build installs itself into the 32-bit tree.
+!define MULTIUSER_USE_PROGRAMFILES64
+!define MULTIUSER_INSTALLMODE_INSTDIR "${XPCOG_NAME}"
+!define MULTIUSER_INSTALLMODE_INSTDIR_REGISTRY_KEY "${XPCOG_UNINST_KEY}"
+!define MULTIUSER_INSTALLMODE_INSTDIR_REGISTRY_VALUENAME "InstallLocation"
+!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_KEY "${XPCOG_UNINST_KEY}"
+!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_VALUENAME "InstallLocation"
+
+!include MultiUser.nsh
+!include LogicLib.nsh
+!include Sections.nsh
+!include x64.nsh
+!include FileFunc.nsh
+
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "@XPCOG_LICENSE_FILE@"
+!insertmacro MULTIUSER_PAGE_INSTALLMODE
+!insertmacro MUI_PAGE_COMPONENTS
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+; After the pages, which is not stylistic: the page macros above unlock the
+; strings this loads, and a language inserted first ships an installer whose
+; install-mode page is captioned with raw identifiers.
+!insertmacro MUI_LANGUAGE "English"
+
+; ---------------------------------------------------------------------------
+; Refusing to overwrite a running copy.
+;
+; A running executable is locked against writing but not against reading, so
+; opening it for append is an exact test of the thing that is about to be
+; attempted -- and a more honest one than looking for a window or a mutex, which
+; answer "is *this user's* XPCog running" rather than "can this file be
+; replaced". Without it, NSIS discovers the lock file by file, halfway through,
+; and asks about each one.
+;
+; The label carries ${UNIQUE} because this is inserted into two different
+; functions and NSIS labels are function-scoped only within one.
+; ---------------------------------------------------------------------------
+!macro XPCogAbortIfRunning UNIQUE
+    xpcog_running_${UNIQUE}:
+    ${If} ${FileExists} "$INSTDIR\XPCog.exe"
+        ClearErrors
+        FileOpen $0 "$INSTDIR\XPCog.exe" a
+        ${If} ${Errors}
+            ; Silent runs have nobody to ask; failing loudly is the only choice
+            ; that does not half-install over a live process.
+            ${If} ${Silent}
+                SetErrorLevel 2
+                Abort
+            ${EndIf}
+            MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION \
+                "${XPCOG_NAME} is running from $INSTDIR.$\n$\nClose it and \
+                 choose Retry." \
+                IDRETRY xpcog_running_${UNIQUE}
+            Abort
+        ${Else}
+            FileClose $0
+        ${EndIf}
+    ${EndIf}
+!macroend
+
+; ---------------------------------------------------------------------------
+; Sections.
+; ---------------------------------------------------------------------------
+Section "${XPCOG_NAME}" SecCore
+    SectionIn RO
+
+    !insertmacro XPCogAbortIfRunning install
+
+    ; An older install in the same place is uninstalled first rather than
+    ; written over. Overwriting leaves every file the previous version shipped
+    ; and this one does not -- a decoder DLL dropped from vcpkg.json stays on
+    ; disk forever, and the uninstaller that could have removed it has by then
+    ; been replaced by one that has never heard of it.
+    ReadRegStr $R0 SHCTX "${XPCOG_UNINST_KEY}" "UninstallString"
+    ${If} $R0 != ""
+    ${AndIf} ${FileExists} "$INSTDIR\Uninstall.exe"
+        DetailPrint "Removing the previous installation..."
+        ; _?= keeps the uninstaller in place instead of copying itself to %TEMP%
+        ; and returning immediately, which is what makes ExecWait actually wait.
+        ; The price is that it cannot delete itself, so this does.
+        ExecWait '"$INSTDIR\Uninstall.exe" /S _?=$INSTDIR'
+        Delete "$INSTDIR\Uninstall.exe"
+    ${EndIf}
+
+    ; Every File line, generated from what the build staged.
+    !include "@XPCOG_GENERATED_DIR_NATIVE@\payload-install.nsh"
+
+    SetOutPath "$INSTDIR"
+    WriteUninstaller "$INSTDIR\Uninstall.exe"
+
+    ; Add/Remove Programs. SHCTX is HKLM or HKCU depending on the scope chosen
+    ; on the install-mode page; MultiUser.nsh set it.
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "DisplayName"     "${XPCOG_NAME}"
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "DisplayVersion"  "${XPCOG_VERSION}"
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "DisplayIcon"     "$INSTDIR\XPCog.exe,0"
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "Publisher"       "${XPCOG_PUBLISHER}"
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "URLInfoAbout"    "${XPCOG_URL}"
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "InstallLocation" "$INSTDIR"
+    ; The scope is passed back explicitly. Without it the uninstaller has to
+    ; guess which hive it was registered in, and a per-user install on a machine
+    ; that also has a per-machine one guesses wrong.
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "UninstallString" \
+        '"$INSTDIR\Uninstall.exe" /$MultiUser.InstallMode'
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "QuietUninstallString" \
+        '"$INSTDIR\Uninstall.exe" /S /$MultiUser.InstallMode'
+    WriteRegDWORD SHCTX "${XPCOG_UNINST_KEY}" "NoModify" 1
+    WriteRegDWORD SHCTX "${XPCOG_UNINST_KEY}" "NoRepair" 1
+    ; Harvest.cmake measured this; an absent EstimatedSize shows as a blank
+    ; column rather than as an estimate.
+    WriteRegDWORD SHCTX "${XPCOG_UNINST_KEY}" "EstimatedSize" ${XPCOG_PAYLOAD_KIB}
+SectionEnd
+
+Section "Start menu shortcut" SecStartMenu
+    ; SetOutPath first: it is what the shortcut's working directory is taken
+    ; from, and XPCog finds its SoundFonts and equaliser presets relative to the
+    ; executable rather than to the working directory -- so this is belt and
+    ; braces rather than load-bearing, and cheap enough to keep that way.
+    SetOutPath "$INSTDIR"
+    CreateShortcut "$SMPROGRAMS\${XPCOG_NAME}.lnk" "$INSTDIR\XPCog.exe"
+
+    ; Deliberately *not* carrying System.AppUserModel.ID. docs/PORTING.md works
+    ; through why the SMTC card says "Unknown app": that needs package identity,
+    ; and an AUMID on the shortcut is only half of a contract whose other half --
+    ; SetCurrentProcessExplicitAppUserModelID, on every window the app owns --
+    ; lives in the application. Setting one half here can leave taskbar pinning
+    ; worse than the ID Windows derives on its own. When the app takes its half,
+    ; this is where the other half goes.
+SectionEnd
+
+Section /o "Desktop shortcut" SecDesktop
+    SetOutPath "$INSTDIR"
+    CreateShortcut "$DESKTOP\${XPCOG_NAME}.lnk" "$INSTDIR\XPCog.exe"
+SectionEnd
+
+Section "Offer XPCog in the $\"Open with$\" lists" SecAssoc
+    ; The application's own --register, rather than this script writing the
+    ; registry. platform/src/windows/FileAssociations.cpp builds the extension
+    ; list from PluginRegistry::allExtensions(), so it cannot fall behind the
+    ; codecs the way a list pasted into an installer would -- and it writes the
+    ; ProgID, the Applications key and the OpenWithProgids entries as one
+    ; consistent set that --unregister knows how to undo.
+    ;
+    ; Note this is per-user even when the install is per-machine: those keys are
+    ; HKCU by design, so the account that ran the installer is the one offered
+    ; XPCog. Another user on the same machine runs `XPCog --register` once.
+    DetailPrint "Registering file types..."
+    ExecWait '"$INSTDIR\XPCog.exe" --register' $0
+    ${If} $0 != 0
+        DetailPrint "  --register exited with $0; file types were not registered."
+    ${EndIf}
+SectionEnd
+
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} \
+        "${XPCOG_NAME} and everything it needs to run. Required."
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecStartMenu} \
+        "A ${XPCOG_NAME} entry in the Start menu."
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} \
+        "A ${XPCOG_NAME} shortcut on the desktop."
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecAssoc} \
+        "Add ${XPCOG_NAME} to the $\"Open with$\" list for the audio formats this \
+         build understands. It does not take any file type away from the program \
+         that currently opens it."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+
+; ---------------------------------------------------------------------------
+; Uninstall.
+; ---------------------------------------------------------------------------
+Section "Uninstall"
+    !insertmacro XPCogAbortIfRunning uninstall
+
+    ; Before the executable is deleted, because it is what knows which
+    ; extensions were claimed -- it reads them back out of its own SupportedTypes
+    ; key. Unconditional: the associations may have been registered by hand after
+    ; an install that skipped that component, and --unregister on a machine that
+    ; has none is a no-op.
+    ${If} ${FileExists} "$INSTDIR\XPCog.exe"
+        DetailPrint "Removing file type registrations..."
+        ExecWait '"$INSTDIR\XPCog.exe" --unregister'
+    ${EndIf}
+
+    ; Every Delete line, generated alongside the File lines it undoes.
+    !include "@XPCOG_GENERATED_DIR_NATIVE@\payload-uninstall.nsh"
+
+    Delete "$SMPROGRAMS\${XPCOG_NAME}.lnk"
+    Delete "$DESKTOP\${XPCOG_NAME}.lnk"
+
+    Delete "$INSTDIR\Uninstall.exe"
+    ; Not RMDir /r. This removes the installation directory only if it is empty,
+    ; so a crash dump, a log, or anything else the user put beside the program
+    ; stops the delete instead of going with it.
+    RMDir "$INSTDIR"
+
+    DeleteRegKey SHCTX "${XPCOG_UNINST_KEY}"
+
+    ; Left alone, deliberately: HKCU\Software\LoSnoCo\XPCog (the settings wxConfig
+    ; writes) and the library database under %APPDATA%. Those are the user's
+    ; data, not the program, and an uninstall that takes a curated library with
+    ; it is not recoverable from.
+SectionEnd
+
+; ---------------------------------------------------------------------------
+; Entry points.
+; ---------------------------------------------------------------------------
+Function .onInit
+    ; x64 only, and said plainly here rather than discovered as "the application
+    ; was unable to start correctly (0xc000007b)" after a successful install.
+    ; The triplet is x64-windows; there is no 32-bit build to fall back to.
+    ${IfNot} ${RunningX64}
+        MessageBox MB_OK|MB_ICONSTOP \
+            "${XPCOG_NAME} requires 64-bit Windows."
+        Abort
+    ${EndIf}
+
+    ; /D= survives MULTIUSER_INIT only because of these four lines.
+    ;
+    ; NSIS's loader applies /D= to $INSTDIR before .onInit runs, and
+    ; MULTIUSER_INIT then assigns $INSTDIR the default for the chosen scope --
+    ; and again from the registry, if a previous install recorded one --
+    ; overwriting it. The failure is quiet in exactly the way that matters:
+    ; the install succeeds, reports success, and puts the files somewhere the
+    ; caller did not ask for, so an unattended deployment to a chosen directory
+    ; silently lands in %LOCALAPPDATA% instead. Measured, not theorised: the
+    ; first silent test of this script installed to the default and exited 0.
+    ;
+    ; This script has no InstallDir directive, so $INSTDIR is empty on entry
+    ; unless /D= filled it -- which makes "non-empty" an exact test for "the
+    ; caller asked for a directory", and puts it back after MultiUser has had
+    ; its say.
+    StrCpy $R9 $INSTDIR
+
+    !insertmacro MULTIUSER_INIT
+
+    ${If} $R9 != ""
+        StrCpy $INSTDIR $R9
+    ${EndIf}
+
+    ; /NOASSOC, for silent installs.
+    ;
+    ; A component page is a question, and /S is the mode with nobody there to
+    ; answer it -- so an unattended install would otherwise rearrange the "Open
+    ; with" lists on every machine it is pushed to, silently, because a default
+    ; chosen for someone clicking through a wizard was applied to someone who
+    ; never saw it. The interactive tick stays on; this is how a deployment says
+    ; no. Ignored outside /S only in the sense that the checkbox can also say it.
+    ${GetParameters} $R0
+    ClearErrors
+    ${GetOptions} $R0 "/NOASSOC" $R1
+    ${IfNot} ${Errors}
+        !insertmacro UnselectSection ${SecAssoc}
+    ${EndIf}
+FunctionEnd
+
+Function un.onInit
+    ; The same clobber, and here the correct value is never in doubt: an
+    ; uninstaller's $INSTDIR is the directory it is running from, or the one
+    ; passed as _?= by the upgrade path in SecCore. MULTIUSER_UNINIT replaces it
+    ; with whatever InstallLocation the registry holds, which is the same path
+    ; right up until it is not -- a half-removed install, or a registry entry
+    ; left by a different copy -- and then this deletes a directory chosen by
+    ; a stale registry value rather than the one it was pointed at.
+    StrCpy $R9 $INSTDIR
+
+    !insertmacro MULTIUSER_UNINIT
+
+    StrCpy $INSTDIR $R9
+FunctionEnd
+
+Function XPCogLaunch
+    ; See MUI_FINISHPAGE_RUN above for why this goes through Explorer.
+    Exec '"$WINDIR\explorer.exe" "$INSTDIR\XPCog.exe"'
+FunctionEnd

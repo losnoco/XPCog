@@ -59,6 +59,12 @@ endif()
 if(XPCOG_BUILD_APP)
     add_subdirectory(platform)
     add_subdirectory(app)
+
+    # Packaging, after the thing being packaged. Adds one target, `installer`,
+    # which is never built by ALL -- see packaging/windows/CMakeLists.txt.
+    if(WIN32)
+        add_subdirectory(packaging/windows)
+    endif()
 endif()
 
 if(XPCOG_BUILD_TESTS)

@@ -103,7 +103,8 @@ itself is `crashpad_handler`, which is a second executable rather than a library
 and so is not something applocal knows about; it lands beside the binary as a
 post-build step. What remains is signing, and
 `cmake --build build/macos-debug --target sign` does that when
-`XPCOG_CODESIGN_IDENTITY` names a Developer ID identity.
+`XPCOG_CODESIGN_IDENTITY` names a Developer ID identity. Packaging that folder
+into something a Windows user can double-click is a separate target, below.
 
 wxWidgets is declared under a `gui` feature rather than as a plain dependency, so
 a headless configuration (`-D XPCOG_BUILD_APP=OFF`) builds no toolkit at all.
@@ -120,6 +121,43 @@ needs **wxWidgets 3.2 or newer** — the oldest release carrying `wxTaskBarIcon`
 `wxNotificationMessage` in `core` rather than in the since-merged `adv` library.
 To build the toolkit through vcpkg anyway, add the feature back:
 `cmake --preset linux-debug -D "VCPKG_MANIFEST_FEATURES=gui;sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"`.
+
+### Windows: the installer
+
+[**NSIS**](https://nsis.sourceforge.io) 3.x builds one. It is found automatically
+if it is installed; without it the target simply does not exist, because NSIS is
+needed to package XPCog and not to build or run it.
+
+```bat
+cmake --build build\windows-release --target installer
+:: -> build\windows-release\XPCog-0.1.0-x64-setup.exe
+```
+
+Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
+neither of which may be redistributed, and the resulting installer fails on any
+machine without Visual Studio — as a missing-DLL dialog, long after the point
+where it could have been explained. Configuring says so.
+
+What it ships is whatever the build staged: `packaging/windows/Harvest.cmake`
+reads the output directory and takes `XPCog.exe`, `crashpad_handler.exe`, every
+DLL applocal put there, and the SoundFont and equaliser assets. Nothing lists
+DLLs by hand, so the installer cannot fall behind `vcpkg.json`. The CLI, the test
+binaries and the `.pdb`s are left out, and the build log names what it skipped.
+
+The installer offers **per-machine or per-user**, writes a Start menu shortcut and
+an Add/Remove Programs entry, and — as a component the user can untick — runs
+XPCog's own `--register` to add it to the *Open with* lists for every format this
+build understands. The uninstaller reverses all of it and leaves settings and the
+library database alone. For unattended use:
+
+```bat
+XPCog-0.1.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+```
+
+`/NOASSOC` exists because a component page is a question and `/S` is the mode
+with nobody there to answer it; without it, pushing XPCog to a fleet would
+rearrange every machine's file associations on a default chosen for someone
+clicking through a wizard.
 
 ### Linux: building against the distribution's libraries
 
