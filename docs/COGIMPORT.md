@@ -232,6 +232,49 @@ Matching happens *after* a rescan, and that is forced by the first decision: the
 title and artist to match on are the ones the scanner read from the file, not
 ones carried out of the store.
 
+## The import
+
+**File > Import from Cog...** takes a path to a `DataModel.sqlite`, reads it,
+and adds what it holds to the current playlist. Three core functions do the
+work, all portable and all tested on every platform:
+
+| | |
+|---|---|
+| `cogLibraryToPlaylist()` | a `CogLibrary` becomes `PlaylistEntry` values, in Cog's order |
+| `mergeCogStoreData()` | puts the store's knowledge back after the scan |
+| `applyCogPlayCounts()` | matches the counts onto scanned entries |
+
+The order is forced rather than chosen. Entries come out of the first with **no
+tags at all** -- `metadataLoaded` is false, because the metadata blob is
+deliberately never read -- so they have to be scanned before either of the other
+two can do anything: the merge needs to know what the scan found, and the play
+counts are keyed on a title and artist that only the scanner supplies.
+
+**The merge is per-field, and the direction is the whole difficulty.** The scan
+wins on everything it established, because it opened the file and the store is a
+cache of unknown age. The store supplies what a file cannot say about itself --
+the queue position, the shuffle order, where the last session had got to -- and
+fills gaps where a scan found nothing, which is what keeps a row on an unplugged
+drive from going blank and what saves recomputing a ReplayGain analysis that is
+the expensive half of a scan.
+
+Getting that backwards is not a visible failure. A stale duration is a plausible
+duration and Cog's ReplayGain is a plausible ReplayGain; nothing complains,
+including the listener. That is the reason the rule lives in core with tests on
+it rather than inline in the interface, where it was first written.
+
+**Everything is matched by URL, never by position.** A scan drops what it cannot
+open and expands what turns out to be a container, so the two sequences are
+different lengths -- and an index would pair one track with another track's
+gain.
+
+**What the listener is told.** The status bar reports how many tracks were
+imported, how many carried play counts, and how many were file reference URLs
+that cannot be resolved off a Mac. Cog's own prunes are named separately, as
+"rows Cog would not have shown either", because "900 tracks and this imported
+847" is a question somebody will ask and the honest answer is the shape of the
+difference.
+
 ## What is not established yet
 
 - ~~**The settings half is not written.**~~ Done.
@@ -257,9 +300,16 @@ ones carried out of the store.
   without flattening it, which is exactly what A/B-ing one needs. XPCog now has
   the same setting under the same name, so the fixture reads 11 applied and 5
   ignored rather than 10 and 6.
-- **Nothing calls the reader yet.** It produces a `CogLibrary`; turning one into
-  an XPCog playlist, and finding a Cog installation to read in the first place,
-  are the macOS-only half.
+- ~~**Nothing calls the reader yet.**~~ **The portable half is done**, on
+  2026-08-24. `cogLibraryToPlaylist()` turns a `CogLibrary` into playlist
+  entries, `mergeCogStoreData()` puts the store's knowledge back after a scan,
+  `applyCogPlayCounts()` matches the counts, and **File > Import from Cog...**
+  drives all three. See "The import" below.
+
+  What is left is the macOS-only convenience: finding the installation without
+  being pointed at it, and resolving the file reference URLs that only Foundation
+  can. Neither is needed to import a store that was copied to a PC, which is the
+  case the whole feature exists for.
 - **`ZSHUFFLEINDEX` and the queue** were all-zero on the one store examined, so
   their behaviour under a real shuffle has been read in Cog's source but not
   observed.

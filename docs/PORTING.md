@@ -2578,7 +2578,46 @@ locked a real device is a guess with a test around it. Everything else on this
 list — items 3, 6, 8 and 9 — is reachable from a clean checkout on any of the
 three platforms. If you have neither machine, start at item 6.
 
-**1. `cogimport` — the archaeology is done; the reader is next.**
+**1. `cogimport` — done, apart from the macOS convenience.**
+
+**Updated 2026-08-24 (again).** The reader landed, and so did everything that
+turns what it reads into a playlist: `cogLibraryToPlaylist()`,
+`mergeCogStoreData()`, `applyCogPlayCounts()`, and a **File > Import from Cog...**
+item that drives them. 34 tests, on every platform, against the fixture store.
+
+Three things are worth carrying forward from doing it.
+
+**The picker is the primary path, not the fallback.** The entry below argued
+that finding a Cog installation automatically was the real feature and a file
+picker was what you did without a Mac. That is backwards, and the entry's own
+platform note says why without noticing: an import is only worth having on the
+machine somebody is moving *to*, which is a PC as often as not, and there the
+store arrived by being copied. Auto-discovery is a convenience for the one
+platform Cog runs on, and it belongs on top of the picker rather than instead of
+it.
+
+**The merge direction is the part that needed tests.** A scan and a store
+disagree, and which wins is per-field: the scan wins on everything it
+established, because it read the file, while the store supplies what a file
+cannot say about itself -- the queue, the shuffle order, where the session had
+got to -- and fills the gaps where a scan found nothing. Getting it backwards
+replaces a correct duration with a stale one, or a file's own ReplayGain with
+Cog's copy of it. Neither is visible: the wrong number is still a plausible
+number. That is why `mergeCogStoreData()` is in core with six tests on it rather
+than inline in `MainFrame`, where it started.
+
+**Matching is by URL, never by index.** A scan does not answer one-for-one --
+it drops what it cannot open and expands what turns out to be a container -- so
+the two sequences are different lengths and an index pairs a row with somebody
+else's ReplayGain.
+
+**The macOS half that remains**, and it is genuinely small: finding
+`~/Library/Application Support/Cog/DataModel.sqlite` without being pointed at it,
+and resolving `file:///.file/id=` URLs through Foundation. Those entries are
+imported and marked as errors today rather than dropped, so a playlist imported
+off a Mac is never quietly shorter than the one it came from.
+
+**Original entry, kept for the archaeology it records:**
 
 **Updated 2026-08-24.** The gathering half, which was the part blocked on
 hardware, is finished and written up in [`COGIMPORT.md`](COGIMPORT.md): the
@@ -3725,10 +3764,11 @@ asserted a property Qt provides rather than the one the code was responsible for
   issued to anyone who asks correctly and is inert until somebody grants it. So
   nothing is scrobbled and no account is touched.
 
-  **What is still not settled**, and cannot be by a test: `auth.getSession` after
-  a real grant, and therefore `track.updateNowPlaying` and `track.scrobble`,
-  which need a session key. All three are behind a browser step somebody has to
-  press Allow in.
+  **The rest was exercised by hand on 2026-08-24** -- the browser grant,
+  `auth.getSession`, and scrobbles reaching a real account -- which is the only
+  way that half can be checked, since it is behind a step somebody has to press
+  Allow in. So the feature is verified end to end; what has no automated witness
+  is everything past `auth.getToken`, and it stays that way.
 
   **One thing the live run corrected**, which is why it was worth doing beyond
   the signature. The test first asserted that a request token is 32 lowercase hex

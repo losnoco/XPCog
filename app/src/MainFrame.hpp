@@ -33,6 +33,7 @@
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/UndoStack.hpp"
 #include "xpcog/core/PlayMonitor.hpp"
+#include "xpcog/core/library/CogImport.hpp"
 #include "xpcog/core/library/Library.hpp"
 #include "xpcog/core/scrobble/Scrobbler.hpp"
 #include "xpcog/core/library/Playlist.hpp"
@@ -218,6 +219,10 @@ private:
 
     /// Starts the next queued scan, if any and if none is running.
     void pumpScanQueue();
+
+    /// Reads a Cog library and adds it to this playlist. The picker, the scan
+    /// and the summary; the reading and the conversion are core's.
+    void importFromCog();
     void addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled);
 
     void onPositionChanged(double seconds, double duration);
@@ -375,9 +380,24 @@ private:
     struct ScanRequest {
         std::vector<Url> inputs;
         int              atRow = -1;
+
+        /// Applied to the scan's results just before they are inserted.
+        ///
+        /// Exists for the Cog import, which has to put back what the store knew
+        /// and the files do not -- ReplayGain, the queue, where the last session
+        /// had got to -- and then match play counts, all of which can only
+        /// happen once the scanner has read the tags. Empty for every other
+        /// scan, which wants the results exactly as they came.
+        std::function<void(std::vector<PlaylistEntry>&)> decorate;
     };
     std::unique_ptr<ScanTask> scan_;
     std::vector<ScanRequest>  pendingScans_;
+
+    /// What the last Cog import matched, filled by the scan's decorator and read
+    /// by addScannedEntries so the summary can say it. Held here rather than
+    /// captured, because the two run at different times on the same thread.
+    std::optional<CogPlayCountReport> cogImportSummary_;
+    std::size_t                       cogImportFileReferences_ = 0;
 
     /// The duration of the audible track, remembered so the clock can show the
     /// scrubbed time against it without asking the controller mid-drag.

@@ -24,6 +24,10 @@ const std::vector<MenuItem>& layout() {
         {"&File", FileOpen, "&Open Files...", "Ctrl+O"},
         {nullptr, FileOpenFolder, "Open &Folder...", "Ctrl+Shift+O"},
         {nullptr, FileOpenUrl, "Open &URL...", "Ctrl+L"},
+        // No accelerator, deliberately: this is a thing somebody does once, when
+        // they move over from Cog, and a shortcut for it would be occupying a
+        // key for the rest of the installation's life.
+        {nullptr, FileImportCog, "&Import from Cog...", "", ItemKind::Normal, true},
         {nullptr, FileSavePlaylist, "&Save Playlist...", "Ctrl+S", ItemKind::Normal, true},
         {nullptr, FilePreferences, "&Preferences...", "Ctrl+,", ItemKind::Normal, true},
         {nullptr, FileQuit, "&Quit", "Ctrl+Q", ItemKind::Normal, true},

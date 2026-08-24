@@ -326,6 +326,318 @@ TEST_CASE("a key XPCog has never heard of is ignored, not guessed at",
     CHECK(settings.VolumeScaling() == "trackGain");
 }
 
+// --- turning a store into a playlist --------------------------------------
+
+TEST_CASE("a Cog library becomes playlist entries in Cog's order",
+          "[cogimport]") {
+    const auto library = readCogLibrary(fixtureStore());
+    REQUIRE(library);
+
+    const CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+
+    // One entry per surviving row, in the same order. The prunes have already
+    // happened by this point -- this converts what the reader handed over and
+    // does not second-guess it.
+    REQUIRE(imported.entries.size() == library->entries.size());
+    for (std::size_t i = 0; i < imported.entries.size(); ++i) {
+        CHECK(imported.entries[i].url.toString() == library->entries[i].url.toString());
+    }
+}
+
+TEST_CASE("an imported entry is not pretending to have been scanned",
+          "[cogimport]") {
+    const auto library = readCogLibrary(fixtureStore());
+    REQUIRE(library);
+    const CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+    REQUIRE(!imported.entries.empty());
+
+    // The whole reason the metadata blob is left unread: what comes out here has
+    // no tags, and the caller is expected to scan. An entry claiming
+    // metadataLoaded would stop the scanner ever looking at the file, which is
+    // how an import would quietly produce a playlist of file names.
+    for (const PlaylistEntry& entry : imported.entries) {
+        CHECK(entry.metadataLoaded == false);
+        CHECK(entry.artist.str().empty());
+        CHECK(entry.album.str().empty());
+        CHECK(entry.rawTitle.empty());
+    }
+}
+
+TEST_CASE("cached stream properties come across", "[cogimport]") {
+    const auto library = readCogLibrary(fixtureStore());
+    REQUIRE(library);
+    const CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+
+    // Carried because a rescan may not reach the file -- a drive that is not
+    // plugged in, a share that is not mounted -- and a row that can still say
+    // "FLAC, 44.1 kHz" beats one that says nothing.
+    CHECK(imported.withCachedProperties > 0);
+
+    const PlaylistEntry& first = imported.entries.front();
+    CHECK(first.properties.format.sampleRate == Approx(44100.0));
+    CHECK(first.properties.format.channels == 2);
+    CHECK(first.properties.totalFrames == 4410000);
+    CHECK(std::string{first.properties.codec.str()} == "FLAC");
+}
+
+TEST_CASE("ReplayGain is taken from the store, and a bare zero is not",
+          "[cogimport]") {
+    const auto library = readCogLibrary(fixtureStore());
+    REQUIRE(library);
+    const CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+
+    // Exactly one fixture row carries a real analysis.
+    CHECK(imported.withReplayGain == 1);
+
+    const auto it = std::find_if(
+        imported.entries.begin(), imported.entries.end(),
+        [](const PlaylistEntry& e) { return !e.properties.replayGain.empty(); });
+    REQUIRE(it != imported.entries.end());
+
+    REQUIRE(it->properties.replayGain.trackGain);
+    CHECK(*it->properties.replayGain.trackGain == Approx(-6.5F));
+    REQUIRE(it->properties.replayGain.trackPeak);
+    CHECK(*it->properties.replayGain.trackPeak == Approx(0.98F));
+    REQUIRE(it->properties.replayGain.albumGain);
+    CHECK(*it->properties.replayGain.albumGain == Approx(-5.25F));
+
+    // Every other row has none, rather than a 0 dB gain with no peak. The store
+    // cannot tell "no analysis" from "0.0" in the gain alone, so the peak is
+    // what decides -- a real scan always produces one above zero. Getting this
+    // wrong would give every unanalysed track a ReplayGain of 0 dB: inaudible,
+    // but it makes replayGain.empty() false everywhere and puts the "no
+    // information" path permanently out of reach.
+    const auto analysed = std::count_if(
+        imported.entries.begin(), imported.entries.end(),
+        [](const PlaylistEntry& e) { return !e.properties.replayGain.empty(); });
+    CHECK(analysed == 1);
+}
+
+TEST_CASE("the session's own state comes across", "[cogimport]") {
+    const auto library = readCogLibrary(fixtureStore());
+    REQUIRE(library);
+    const CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+
+    // Where Cog had got to. This is the half a file cannot say for itself, and
+    // is most of the reason to read the store at all.
+    REQUIRE(imported.currentIndex);
+    CHECK(imported.entries[*imported.currentIndex].currentPosition == Approx(42.5));
+
+    // The queue. Cog's -1 sentinel is PlaylistEntry's too, so it copies rather
+    // than translates -- and a row that was not queued must stay at -1 rather
+    // than becoming position 0, which would put every track in the queue.
+    const auto queued = std::count_if(imported.entries.begin(), imported.entries.end(),
+                                      [](const PlaylistEntry& e) { return e.queued(); });
+    CHECK(queued == 1);
+
+    const auto it = std::find_if(imported.entries.begin(), imported.entries.end(),
+                                 [](const PlaylistEntry& e) { return e.queued(); });
+    REQUIRE(it != imported.entries.end());
+    CHECK(it->queuePosition == 0);
+}
+
+TEST_CASE("play counts land on a scanned entry", "[cogimport]") {
+    const auto library = readCogLibrary(fixtureStore());
+    REQUIRE(library);
+    CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+
+    // Stand in for the scanner, filling only the four fields Cog keys on.
+    for (PlaylistEntry& entry : imported.entries) {
+        if (entry.filename() == "01 First.flac") {
+            entry.rawTitle       = "First";
+            entry.artist         = SharedString{"Artist"};
+            entry.album          = SharedString{"Album"};
+            entry.metadataLoaded = true;
+        }
+    }
+
+    const CogPlayCountReport report =
+        applyCogPlayCounts(library->playCounts, imported.entries);
+
+    const auto it = std::find_if(
+        imported.entries.begin(), imported.entries.end(),
+        [](const PlaylistEntry& e) { return e.filename() == "01 First.flac"; });
+    REQUIRE(it != imported.entries.end());
+    CHECK(it->playCount == 7);
+
+    CHECK(report.matched >= 1);
+    // Per entry, not per store row, so the two sum to what was passed in.
+    CHECK(report.matched + report.unmatched == imported.entries.size());
+}
+
+TEST_CASE("a play count needs every field Cog recorded to agree", "[cogimport]") {
+    const auto library = readCogLibrary(fixtureStore());
+    REQUIRE(library);
+    CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+
+    // The same row, scanned with a different artist than the one Cog stored.
+    // A field Cog *did* record must match exactly -- it is only the fields it
+    // left empty that do not constrain the match.
+    for (PlaylistEntry& entry : imported.entries) {
+        if (entry.filename() == "01 First.flac") {
+            entry.rawTitle       = "First";
+            entry.artist         = SharedString{"Somebody Else"};
+            entry.album          = SharedString{"Album"};
+            entry.metadataLoaded = true;
+        }
+    }
+
+    static_cast<void>(applyCogPlayCounts(library->playCounts, imported.entries));
+
+    const auto it = std::find_if(
+        imported.entries.begin(), imported.entries.end(),
+        [](const PlaylistEntry& e) { return e.filename() == "01 First.flac"; });
+    REQUIRE(it != imported.entries.end());
+    CHECK(it->playCount == 0);
+}
+
+// --- merging the store back onto a scan ------------------------------------
+
+namespace {
+
+/// A scanned entry: what the scanner would have returned for `url`.
+[[nodiscard]] PlaylistEntry scannedEntry(std::string_view url) {
+    PlaylistEntry entry;
+    entry.url            = *Url::parse(url);
+    entry.metadataLoaded = true;
+    entry.rawTitle       = "Scanned Title";
+    entry.artist         = SharedString{"Scanned Artist"};
+    entry.properties.totalFrames       = 1000;
+    entry.properties.format.sampleRate = 48000.0;
+    entry.properties.format.channels   = 2;
+    return entry;
+}
+
+/// A store entry carrying the things a file cannot say for itself.
+[[nodiscard]] PlaylistEntry storedEntry(std::string_view url) {
+    PlaylistEntry entry;
+    entry.url             = *Url::parse(url);
+    entry.queuePosition   = 3;
+    entry.shuffleIndex    = 9;
+    entry.currentPosition = 42.5;
+    entry.properties.totalFrames       = 999999;
+    entry.properties.format.sampleRate = 44100.0;
+    entry.properties.replayGain.trackGain = -6.5F;
+    entry.properties.replayGain.trackPeak = 0.98F;
+    return entry;
+}
+
+}  // namespace
+
+TEST_CASE("the scan wins on what it established", "[cogimport]") {
+    const std::vector<PlaylistEntry> store{storedEntry("file:///music/a.flac")};
+    std::vector<PlaylistEntry>       scanned{scannedEntry("file:///music/a.flac")};
+
+    CHECK(mergeCogStoreData(store, scanned) == 1);
+
+    // The scanner opened the file. Its numbers are current; the store's are a
+    // cache of unknown age, and letting them win would mean an import quietly
+    // replacing correct durations with stale ones.
+    CHECK(scanned[0].properties.totalFrames == 1000);
+    CHECK(scanned[0].properties.format.sampleRate == Approx(48000.0));
+    CHECK(scanned[0].rawTitle == "Scanned Title");
+}
+
+TEST_CASE("the store fills what the scan could not find", "[cogimport]") {
+    const std::vector<PlaylistEntry> store{storedEntry("file:///music/a.flac")};
+    std::vector<PlaylistEntry>       scanned{scannedEntry("file:///music/a.flac")};
+
+    // None of these is a property of the audio, so a scan can never have found
+    // them and they are copied unconditionally.
+    CHECK(mergeCogStoreData(store, scanned) == 1);
+    CHECK(scanned[0].queuePosition == 3);
+    CHECK(scanned[0].shuffleIndex == 9);
+    CHECK(scanned[0].currentPosition == Approx(42.5));
+
+    // The file carried no ReplayGain tags, so Cog's analysis is used rather than
+    // nothing -- computing it again is the expensive half of a scan.
+    REQUIRE(scanned[0].properties.replayGain.trackGain);
+    CHECK(*scanned[0].properties.replayGain.trackGain == Approx(-6.5F));
+}
+
+TEST_CASE("a file's own ReplayGain is not overwritten by the store's",
+          "[cogimport]") {
+    const std::vector<PlaylistEntry> store{storedEntry("file:///music/a.flac")};
+    std::vector<PlaylistEntry>       scanned{scannedEntry("file:///music/a.flac")};
+    scanned[0].properties.replayGain.trackGain = -3.0F;
+
+    CHECK(mergeCogStoreData(store, scanned) == 1);
+
+    // The direction that matters. A file carrying its own tags is more current
+    // than Cog's copy of them, and this is the assertion that fails if somebody
+    // simplifies the merge into an unconditional copy.
+    REQUIRE(scanned[0].properties.replayGain.trackGain);
+    CHECK(*scanned[0].properties.replayGain.trackGain == Approx(-3.0F));
+}
+
+TEST_CASE("an unreachable file keeps the store's cached properties",
+          "[cogimport]") {
+    const std::vector<PlaylistEntry> store{storedEntry("file:///music/a.flac")};
+
+    // What a scan returns for a file on a drive that is not plugged in: the URL
+    // and nothing else.
+    std::vector<PlaylistEntry> scanned;
+    PlaylistEntry              missing;
+    missing.url = *Url::parse("file:///music/a.flac");
+    scanned.push_back(missing);
+
+    CHECK(mergeCogStoreData(store, scanned) == 1);
+
+    // A row that can still say "44.1 kHz, and this long" beats one that says
+    // nothing at all, which is the entire reason these are carried.
+    CHECK(scanned[0].properties.totalFrames == 999999);
+    CHECK(scanned[0].properties.format.sampleRate == Approx(44100.0));
+}
+
+TEST_CASE("the merge is by URL, not by position", "[cogimport]") {
+    // The scan dropped the first entry -- unreadable -- so the sequences are no
+    // longer aligned. Merging by index would give b.flac the gain that belongs
+    // to a.flac, and nothing anywhere would complain: a wrong ReplayGain is
+    // still a plausible ReplayGain.
+    std::vector<PlaylistEntry> store;
+    store.push_back(storedEntry("file:///music/a.flac"));
+    PlaylistEntry second = storedEntry("file:///music/b.flac");
+    second.properties.replayGain.trackGain = -1.25F;
+    second.queuePosition                   = 7;
+    store.push_back(second);
+
+    std::vector<PlaylistEntry> scanned{scannedEntry("file:///music/b.flac")};
+
+    CHECK(mergeCogStoreData(store, scanned) == 1);
+    REQUIRE(scanned[0].properties.replayGain.trackGain);
+    CHECK(*scanned[0].properties.replayGain.trackGain == Approx(-1.25F));
+    CHECK(scanned[0].queuePosition == 7);
+}
+
+TEST_CASE("an entry the store never held is left alone", "[cogimport]") {
+    // The scan expanded a container into tracks the store has no row for. They
+    // are not errors and must not be touched.
+    const std::vector<PlaylistEntry> store{storedEntry("file:///music/a.flac")};
+    std::vector<PlaylistEntry>       scanned{scannedEntry("file:///music/other.flac")};
+
+    CHECK(mergeCogStoreData(store, scanned) == 0);
+    CHECK(scanned[0].queuePosition == -1);
+    CHECK(scanned[0].currentPosition == Approx(0.0));
+    CHECK(scanned[0].properties.replayGain.empty());
+}
+
+TEST_CASE("a file reference is kept and marked rather than dropped",
+          "[cogimport]") {
+    const auto library = readCogLibrary(fixtureStore());
+    REQUIRE(library);
+    const CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+
+    // The fixture may hold none -- a current Cog normalises them away on load --
+    // so this asserts the relationship rather than a number. What must never
+    // happen is a silently shorter playlist: every reference that came in is
+    // still a row, and every one of those rows says why it will not play.
+    CHECK(imported.fileReferences == library->fileReferences);
+
+    const auto marked = std::count_if(imported.entries.begin(), imported.entries.end(),
+                                      [](const PlaylistEntry& e) { return e.error; });
+    CHECK(static_cast<std::size_t>(marked) == imported.fileReferences);
+}
+
 TEST_CASE("the scrobbling switch is refused even though the key matches",
           "[cogimport]") {
     // The one key that exists on both sides under the same name and is still

@@ -51,6 +51,7 @@
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <optional>
 #include <utility>
@@ -1215,6 +1216,7 @@ void MainFrame::bindCommands() {
     on(FileOpen, [this] { openFiles(); });
     on(FileOpenFolder, [this] { openFolder(); });
     on(FileOpenUrl, [this] { openUrl(); });
+    on(FileImportCog, [this] { importFromCog(); });
     on(FileSavePlaylist, [this] { savePlaylistAs(); });
     on(FilePreferences, [this] { showPreferences(); });
     on(HelpAbout, [this] { showAbout(); });
@@ -1521,6 +1523,109 @@ void MainFrame::addUrls(const std::vector<Url>& urls, int atRow) {
     pumpScanQueue();
 }
 
+// --- importing a Cog library ----------------------------------------------
+
+void MainFrame::importFromCog() {
+    // A picker rather than looking in ~/Library/Application Support/Cog, and that
+    // is the primary path rather than a fallback. An import is only worth having
+    // on the machine somebody is moving *to*, which is a PC as often as not, and
+    // there the store arrived by being copied across. Finding it automatically is
+    // a convenience for the one platform Cog runs on, and belongs on top of this
+    // rather than in place of it.
+    wxFileDialog picker(this, "Open a Cog library", wxEmptyString, "DataModel.sqlite",
+                        "Cog library (DataModel.sqlite)|DataModel.sqlite|"
+                        "SQLite databases (*.sqlite)|*.sqlite|"
+                        "All files (*.*)|*.*",
+                        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+    if (picker.ShowModal() != wxID_OK) {
+        return;
+    }
+
+    const std::filesystem::path store = pathFromUtf8(picker.GetPath().utf8_string());
+
+    const std::optional<CogLibrary> library = readCogLibrary(store);
+    if (!library) {
+        wxMessageBox("That file could not be read as a Cog library.\n\n"
+                     "Cog's is DataModel.sqlite, under Application Support/Cog. "
+                     "If Cog is running, copy it along with its -wal and -shm "
+                     "files, or the most recent tracks will be missing.",
+                     "Import from Cog", wxOK | wxICON_WARNING, this);
+        return;
+    }
+
+    if (library->entries.empty()) {
+        // A valid answer, and a different one from the file not opening.
+        wxMessageBox("That Cog library has no playlist entries in it.",
+                     "Import from Cog", wxOK | wxICON_INFORMATION, this);
+        return;
+    }
+
+    CogPlaylistImport imported = cogLibraryToPlaylist(*library);
+
+    std::vector<Url> urls;
+    urls.reserve(imported.entries.size());
+    for (const PlaylistEntry& entry : imported.entries) {
+        urls.push_back(entry.url);
+    }
+
+    // Kept alive for the decorator, which runs when the scan finishes. Both are
+    // shared rather than captured by reference: this function has returned long
+    // before the lambda is called.
+    auto fromStore = std::make_shared<std::vector<PlaylistEntry>>(
+        std::move(imported.entries));
+    auto counts = std::make_shared<CogPlayCounts>(library->playCounts);
+
+    ScanRequest request;
+    request.inputs = std::move(urls);
+    request.atRow  = -1;
+    request.decorate = [this, fromStore, counts](std::vector<PlaylistEntry>& entries) {
+        // The merge rule itself is core's, with tests on it. It is the part of
+        // this most likely to be subtly wrong -- the failure mode of merging in
+        // the wrong direction is a plausible ReplayGain on the wrong track,
+        // which nothing complains about.
+        static_cast<void>(mergeCogStoreData(*fromStore, entries));
+
+        // After the scan, which is not a preference: the title and artist a play
+        // count is matched on are the ones the scanner read from the file, since
+        // this import deliberately never opened Cog's metadata blob.
+        const CogPlayCountReport matched = applyCogPlayCounts(*counts, entries);
+
+        // Written to the library as well as to the rows, or the counts would
+        // last only as long as this playlist.
+        if (library_) {
+            for (const PlaylistEntry& entry : entries) {
+                if (entry.playCount > 0) {
+                    static_cast<void>(library_->saveEntry(entry));
+                }
+            }
+        }
+
+        cogImportSummary_ = matched;
+    };
+
+    // Said before the scan starts, because the scan is the slow part and a
+    // window that does nothing for a minute has not told anybody it is working.
+    std::string opening = "Importing " + std::to_string(imported.entries.size()) +
+                          " track" + (imported.entries.size() == 1 ? "" : "s") +
+                          " from Cog...";
+    if (library->prunedDeleted > 0 || library->prunedEmptyUrl > 0 ||
+        library->prunedUnparseable > 0) {
+        // Cog's own prunes, reported rather than hidden: "900 tracks and this
+        // imported 847" is a question somebody will ask.
+        const std::size_t dropped = library->prunedDeleted + library->prunedEmptyUrl +
+                                    library->prunedUnparseable;
+        opening += " (" + std::to_string(dropped) + " row" +
+                   (dropped == 1 ? "" : "s") + " Cog would not have shown either)";
+    }
+    setStatusText(opening);
+
+    cogImportSummary_.reset();
+    cogImportFileReferences_ = imported.fileReferences;
+
+    pendingScans_.push_back(std::move(request));
+    pumpScanQueue();
+}
+
 void MainFrame::pumpScanQueue() {
     if (scan_ || pendingScans_.empty()) {
         return;
@@ -1562,8 +1667,10 @@ void MainFrame::pumpScanQueue() {
     }));
 
     const int atRow = request.atRow;
+    auto      decorate = std::move(request.decorate);
     subscriptions_.push_back(scan_->finished.connect(
-        [this, atRow](const std::vector<PlaylistEntry>& entries, bool cancelled) {
+        [this, atRow, decorate](const std::vector<PlaylistEntry>& entries,
+                                bool cancelled) {
             // The task owns the thread it is still returning from, so it cannot
             // be destroyed from inside its own callback. Handing it to the event
             // loop to drop is what deleteLater() was doing.
@@ -1574,7 +1681,13 @@ void MainFrame::pumpScanQueue() {
             scanCancel_->Hide();
             taskbar_->clearProgress();
 
-            addScannedEntries(entries, atRow, cancelled);
+            // Copied so the decorator can write to it. The signal hands out
+            // a const reference because every other subscriber only reads.
+            std::vector<PlaylistEntry> decorated = entries;
+            if (decorate) {
+                decorate(decorated);
+            }
+            addScannedEntries(std::move(decorated), atRow, cancelled);
             pumpScanQueue();
         }));
 
@@ -1617,6 +1730,26 @@ void MainFrame::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow,
     undo_.push(std::make_unique<InsertTracksCommand>(
         playlist_, where, std::move(entries),
         "Add " + std::to_string(count) + (count == 1 ? " Track" : " Tracks")));
+
+    if (cogImportSummary_) {
+        // Said instead of the ordinary summary, because after an import the
+        // interesting number is not how long the playlist is now.
+        std::string text = "Imported " + std::to_string(count) + " track" +
+                           (count == 1 ? "" : "s") + " from Cog";
+        if (cogImportSummary_->matched > 0) {
+            text += ", " + std::to_string(cogImportSummary_->matched) +
+                    " with play counts";
+        }
+        if (cogImportFileReferences_ > 0) {
+            text += "; " + std::to_string(cogImportFileReferences_) +
+                    " could not be resolved off a Mac";
+        }
+        text += ".";
+        setStatusText(text);
+        cogImportSummary_.reset();
+        cogImportFileReferences_ = 0;
+        return;
+    }
 
     setStatusText(statusSummary());
 }

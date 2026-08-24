@@ -61,6 +61,7 @@ enum CommandId : int {
 
     FileOpenFolder = wxID_HIGHEST + 1,
     FileOpenUrl,
+    FileImportCog,
 
     EditRemove,
     EditRandomize,

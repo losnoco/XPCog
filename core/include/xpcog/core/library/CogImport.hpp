@@ -21,6 +21,7 @@
 #pragma once
 
 #include "xpcog/core/Url.hpp"
+#include "xpcog/core/library/PlaylistEntry.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -216,6 +217,107 @@ struct CogSettingsReport {
 /// which is the opposite of an import.
 void importCogSettings(std::string_view plistXml, Settings& settings,
                        CogSettingsReport* report = nullptr);
+
+/// What turning a `CogLibrary` into playlist entries produced.
+///
+/// The counts are here for the same reason `CogLibrary`'s prunes are: "your
+/// Cog playlist had 900 tracks and this imported 847" is a question somebody
+/// will ask, and the useful answer is the shape of the difference rather than
+/// an apology.
+struct CogPlaylistImport {
+    /// In Cog's order.
+    std::vector<PlaylistEntry> entries;
+
+    /// How many carry stream properties taken from the store. A scan that
+    /// reaches the file overwrites them; this counts what would still say
+    /// something if it does not.
+    std::size_t withCachedProperties = 0;
+
+    /// How many carry ReplayGain from the store. Worth taking rather than
+    /// rescanning -- it is exactly what a rescan would find again, and computing
+    /// it is the expensive half.
+    std::size_t withReplayGain = 0;
+
+    /// Entries whose URL is a macOS file reference (`file:///.file/id=`).
+    /// Included rather than dropped, and marked as errors, because a silently
+    /// shorter playlist is worse than a visible row that says it cannot be
+    /// found. Always 0 on a store written by a current Cog, which normalises
+    /// them on load.
+    std::size_t fileReferences = 0;
+
+    /// Where Cog's playback had got to, as an index into `entries`. The entry
+    /// also carries `currentPosition`.
+    std::optional<std::size_t> currentIndex;
+};
+
+/// Turns a library read by `readCogLibrary()` into playlist entries.
+///
+/// **Tags are deliberately absent.** Nothing here fills in artist, album or
+/// title, because the store's copy of those is a cache of unknown age and this
+/// reader does not touch the metadata blob at all -- see the note at the top of
+/// this header. The entries come out with `metadataLoaded` false, which is the
+/// caller's cue to scan them; a scan reads the files, which is both more current
+/// and work that has to happen anyway.
+///
+/// What *is* carried is everything the files cannot say for themselves: the
+/// order, the queue, the shuffle order, where the last session had got to, and
+/// ReplayGain.
+[[nodiscard]] CogPlaylistImport cogLibraryToPlaylist(const CogLibrary& library);
+
+/// Puts back what the store knew and a scan cannot find out.
+///
+/// `fromStore` is what `cogLibraryToPlaylist()` produced; `scanned` is what the
+/// scanner returned for the same URLs. Returns how many entries were matched.
+///
+/// **Matched by URL rather than by position.** A scan does not answer
+/// one-for-one: it drops what it cannot open and expands what turns out to be a
+/// container, so the two sequences are not the same length and an index would
+/// pair a row with somebody else's ReplayGain -- a fault that is silent, since
+/// the wrong gain is still a plausible gain.
+///
+/// **The scan wins wherever it established anything**, because it read the file
+/// and the store is a cache of unknown age. What is put back is only what a file
+/// cannot say about itself:
+///
+///   * The queue position, the shuffle order, and where the last session had got
+///     to. None of these is a property of the audio.
+///   * ReplayGain, **only where the scan found none**. A file carrying its own
+///     tags is more current than Cog's copy; a file carrying none gets Cog's
+///     analysis rather than nothing, which is the whole reason it is worth
+///     taking from the store -- recomputing it is the expensive half of a scan.
+///   * The cached stream properties, likewise only to fill a gap, so a row still
+///     says something about a file on a drive that is not plugged in.
+std::size_t mergeCogStoreData(std::span<const PlaylistEntry> fromStore,
+                              std::span<PlaylistEntry>       scanned);
+
+/// What matching Cog's play counts onto scanned entries produced.
+struct CogPlayCountReport {
+    /// Entries that received a count.
+    std::size_t matched = 0;
+
+    /// Entries that did not. Counted per *entry* rather than per store row, so
+    /// this and `matched` sum to the number of entries passed in. How many of
+    /// Cog's rows went unused is the other question, and the caller can ask it
+    /// by comparing `matched` against `CogPlayCounts::size()` -- a store row
+    /// that matches nothing usually means the file was renamed or is not in
+    /// this playlist, neither of which is an error.
+    std::size_t unmatched = 0;
+};
+
+/// Copies Cog's play counts onto entries that have already been scanned.
+///
+/// **After a scan, not before, and that order is forced** rather than chosen:
+/// the title and artist a row is matched on are the ones the scanner read from
+/// the file, because this import does not carry Cog's cached copies. Calling
+/// this on unscanned entries matches on empty strings and is worse than not
+/// calling it -- an empty field does not constrain the match, so every row would
+/// collide with every other.
+///
+/// Cog's own key is (filename, title, artist, album), where the filename keeps
+/// its fragment so cue sheet tracks stay apart -- which is exactly what
+/// `PlaylistEntry::filename()` returns.
+CogPlayCountReport applyCogPlayCounts(const CogPlayCounts&     counts,
+                                      std::span<PlaylistEntry> entries);
 
 /// Reads a Cog Core Data store.
 ///

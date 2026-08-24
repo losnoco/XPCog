@@ -6,6 +6,7 @@
 #include "xpcog/core/Settings.hpp"
 
 #include <algorithm>
+#include <unordered_map>
 #include <utility>
 
 namespace xpcog {
@@ -343,6 +344,186 @@ std::optional<CogLibrary> readCogLibrary(const std::filesystem::path& store) {
     }
 
     return library;
+}
+
+// --- turning a store into a playlist ---------------------------------------
+
+namespace {
+
+/// Whether a ReplayGain pair from the store says anything.
+///
+/// The store gives back doubles that default to 0.0, and a real 0.0 dB gain is
+/// indistinguishable from an absent one in that representation. The *peak* is
+/// what breaks the tie: a ReplayGain scan always produces a peak above zero, so
+/// a peak of exactly 0.0 means the field was never written. Where the peak is
+/// absent but the gain is not, the gain is still taken -- an analysis that
+/// recorded one and not the other is unusual but is not our business to discard.
+[[nodiscard]] bool gainSaysSomething(double gain, double peak) {
+    return peak > 0.0 || gain != 0.0;
+}
+
+void applyGain(std::optional<float>& gainOut, std::optional<float>& peakOut,
+               double gain, double peak) {
+    if (!gainSaysSomething(gain, peak)) {
+        return;
+    }
+    gainOut = static_cast<float>(gain);
+    if (peak > 0.0) {
+        peakOut = static_cast<float>(peak);
+    }
+}
+
+}  // namespace
+
+CogPlaylistImport cogLibraryToPlaylist(const CogLibrary& library) {
+    CogPlaylistImport result;
+    result.entries.reserve(library.entries.size());
+
+    for (const CogEntry& source : library.entries) {
+        PlaylistEntry entry;
+        entry.url = source.url;
+
+        // Left false on purpose. The caller scans; see the header.
+        entry.metadataLoaded = false;
+
+        // Cached stream properties, so a row still says something about a file
+        // on a drive that is not plugged in. A scan that reaches the file
+        // overwrites all of this.
+        bool cached = false;
+        if (source.totalFrames > 0) {
+            entry.properties.totalFrames = source.totalFrames;
+            cached                       = true;
+        }
+        if (source.sampleRate > 0.0) {
+            entry.properties.format.sampleRate = source.sampleRate;
+            cached                             = true;
+        }
+        if (source.channels > 0) {
+            entry.properties.format.channels =
+                static_cast<std::uint32_t>(source.channels);
+            cached = true;
+        }
+        if (source.bitrate > 0) {
+            entry.properties.bitrateKbps = static_cast<std::int32_t>(source.bitrate);
+            cached                       = true;
+        }
+        if (!source.codec.empty()) {
+            entry.properties.codec = SharedString{source.codec};
+            cached                 = true;
+        }
+        if (cached) {
+            result.withCachedProperties += 1;
+        }
+
+        const std::size_t before = result.withReplayGain;
+        applyGain(entry.properties.replayGain.trackGain,
+                  entry.properties.replayGain.trackPeak,
+                  source.replayGainTrackGain, source.replayGainTrackPeak);
+        applyGain(entry.properties.replayGain.albumGain,
+                  entry.properties.replayGain.albumPeak,
+                  source.replayGainAlbumGain, source.replayGainAlbumPeak);
+        if (!entry.properties.replayGain.empty()) {
+            result.withReplayGain = before + 1;
+        }
+
+        // The session's own state. currentPosition is only meaningful on the
+        // entry Cog marked current, which is at most one.
+        if (source.current) {
+            entry.currentPosition = source.currentPosition;
+            result.currentIndex   = result.entries.size();
+        }
+
+        // Cog's sentinel is -1 for "not queued", which is PlaylistEntry's too,
+        // so this copies rather than translates.
+        entry.queuePosition = static_cast<std::int32_t>(
+            source.queued ? source.queuePosition : -1);
+        entry.shuffleIndex = source.shuffleIndex;
+
+        if (source.fileReference) {
+            // Kept and marked rather than dropped: a playlist that is quietly
+            // shorter than the one it was imported from is the worst of the
+            // available answers. Only macOS can resolve one of these, and only
+            // through Foundation, so everywhere else it is a row that says why
+            // it cannot be played.
+            entry.error        = true;
+            entry.errorMessage = "macOS file reference; resolve on the Mac it came from";
+            result.fileReferences += 1;
+        }
+
+        result.entries.push_back(std::move(entry));
+    }
+
+    return result;
+}
+
+CogPlayCountReport applyCogPlayCounts(const CogPlayCounts&     counts,
+                                      std::span<PlaylistEntry> entries) {
+    CogPlayCountReport report;
+    if (counts.empty()) {
+        return report;
+    }
+
+    for (PlaylistEntry& entry : entries) {
+        // filename() is the last path component with the fragment still on it,
+        // which is exactly the key Cog stored -- "Album.cue#01" keeps the tracks
+        // of one cue sheet apart.
+        const CogPlayCount* match = counts.find(entry.filename(), entry.title(),
+                                                entry.artist.str(), entry.album.str());
+        if (match == nullptr) {
+            report.unmatched += 1;
+            continue;
+        }
+        entry.playCount = match->count;
+        report.matched += 1;
+    }
+    return report;
+}
+
+std::size_t mergeCogStoreData(std::span<const PlaylistEntry> fromStore,
+                              std::span<PlaylistEntry>       scanned) {
+    if (fromStore.empty() || scanned.empty()) {
+        return 0;
+    }
+
+    std::unordered_map<std::string, const PlaylistEntry*> byUrl;
+    byUrl.reserve(fromStore.size());
+    for (const PlaylistEntry& entry : fromStore) {
+        byUrl.emplace(entry.url.toString(), &entry);
+    }
+
+    std::size_t merged = 0;
+    for (PlaylistEntry& entry : scanned) {
+        const auto found = byUrl.find(entry.url.toString());
+        if (found == byUrl.end()) {
+            continue;
+        }
+        const PlaylistEntry& stored = *found->second;
+        merged += 1;
+
+        // Not properties of the audio, so a scan can never have an opinion.
+        entry.queuePosition   = stored.queuePosition;
+        entry.shuffleIndex    = stored.shuffleIndex;
+        entry.currentPosition = stored.currentPosition;
+
+        // Gap-filling only, in both cases. See the header for why the direction
+        // matters.
+        if (entry.properties.replayGain.empty()) {
+            entry.properties.replayGain = stored.properties.replayGain;
+        }
+        if (entry.properties.totalFrames == 0) {
+            entry.properties.totalFrames = stored.properties.totalFrames;
+        }
+        if (entry.properties.format.sampleRate <= 0.0) {
+            entry.properties.format = stored.properties.format;
+        }
+        if (entry.properties.bitrateKbps == 0) {
+            entry.properties.bitrateKbps = stored.properties.bitrateKbps;
+        }
+        if (entry.properties.codec.str().empty()) {
+            entry.properties.codec = stored.properties.codec;
+        }
+    }
+    return merged;
 }
 
 }  // namespace xpcog
