@@ -487,7 +487,12 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
     pane->SetClientObject(row);
 
     row->toggle("Stop after every track", "alwaysStopAfterCurrent");
-    row->toggle("Read cue sheets when adding folders", "readCueSheetsInFolders");
+    // Labelled rather than left to imply something. Nothing consults this yet:
+    // the cue sheet container works and is tested, but the scanner never asks
+    // before deciding what a folder holds. A checkbox that has never done
+    // anything is worse than one that admits it.
+    row->toggle("Read cue sheets when adding folders (not yet honoured)",
+                "readCueSheetsInFolders");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -628,7 +633,10 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
                 "Turn this on if a recording that goes louder is clipping.");
     row->toggle("FreeSurround stereo-to-surround upmix", "enableFSurround");
     row->toggle("Fade on seek and stop", "enableFading");
-    row->toggle("Release the audio device while paused", "suspendOutputOnPause");
+    // Likewise unread. Honouring it means stopping the device on pause and
+    // reopening on resume, which is a transport change rather than a wiring fix.
+    row->toggle("Release the audio device while paused (not yet honoured)",
+                "suspendOutputOnPause");
 
     row->note("Volume scaling and resampler quality take effect on the next track. "
               "The device and exclusive mode move whatever is playing on to the new "

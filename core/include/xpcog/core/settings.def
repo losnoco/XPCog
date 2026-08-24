@@ -78,6 +78,13 @@ XPCOG_SETTING(EnableFSurround, bool, "enableFSurround", false)
 XPCOG_SETTING(OutputDSDAsDoP, bool, "outputDSDAsDoP", false)
 
 /// Release the audio device while paused, so other applications can use it.
+///
+/// **Nothing reads this yet, and Preferences offers it a checkbox.** Found by
+/// the audit on 2026-08-23; the Output pane has had a row for it since the pane
+/// existed, and ticking or unticking it has never done anything. Honouring it
+/// means stopping the device in PlaybackController::playPause() and reopening on
+/// resume, which is a real change to the transport rather than a wiring fix --
+/// so it is written down here rather than quietly implemented.
 XPCOG_SETTING(SuspendOutputOnPause, bool, "suspendOutputOnPause", true)
 
 // --- output ---------------------------------------------------------------
@@ -96,8 +103,27 @@ XPCOG_SETTING(Volume, double, "volume", 1.0)
 XPCOG_SETTING(RepeatMode, int, "repeat", 3)
 XPCOG_SETTING(ShuffleMode, int, "shuffle", 0)
 XPCOG_SETTING(AlwaysStopAfterCurrent, bool, "alwaysStopAfterCurrent", false)
+/// Move the playlist selection to each track as it starts.
+///
+/// **Nothing reads this yet.** Cog's key, and a different question from
+/// PanelFollowMode below it: this moves the *selection*, which is what the panes
+/// then follow by default. With both, "panels follow selection" would track
+/// playback on its own until the listener clicked something else.
 XPCOG_SETTING(SelectionFollowsPlayback, bool, "selectionFollowsPlayback", false)
+
+/// Start playing whatever was playing when the player last closed.
+///
+/// **Nothing reads this yet**, and nothing records a resume position either, so
+/// honouring it is a feature rather than a wiring fix. No Preferences row, so at
+/// least it is not promising anything.
 XPCOG_SETTING(ResumePlaybackOnStartup, bool, "resumePlaybackOnStartup", false)
+
+/// Expand cue sheets found beside the audio when a folder is added.
+///
+/// **Nothing reads this yet, and Preferences offers it a checkbox** -- the
+/// Playlist pane's second row, which has never done anything. The cue sheet
+/// container itself works and is tested; what is missing is the scanner
+/// consulting this before it decides what a folder contains.
 XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", true)
 
 // --- equaliser ------------------------------------------------------------
@@ -258,6 +284,11 @@ XPCOG_SETTING(PanelFollowMode, int, "panelFollowMode", 0)
 /// Whether the mini player is showing instead of the main window. A mode, not a
 /// second window: Cog's -setMiniMode: closes one and opens the other, and restores
 /// it at launch from this key.
+///
+/// **Nothing reads or writes this yet.** The mode works -- View -> Mini Player
+/// switches both ways -- but it is not recorded on exit and not restored on
+/// launch, so someone who quits in the mini player comes back to the full window.
+/// That is the half Cog's comment above describes and this does not do.
 XPCOG_SETTING(MiniMode, bool, "miniMode", false)
 
 /// Keep the mini player above other windows.

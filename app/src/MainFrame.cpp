@@ -788,6 +788,19 @@ void MainFrame::onSettingChanged(const std::string& key) {
         return;
     }
 
+    // The same shape once more, with a slider instead of a menu in front of it.
+    // Volume is seeded into the engine by PlaybackController's constructor and
+    // into the slider by buildUi(), and both keep it from then on -- so the row
+    // in Advanced moved a number nothing read again. The slider has to be moved
+    // too, or the interface disagrees with what is coming out of the speakers.
+    if (key == "volume") {
+        const double gain = settings_.Volume();
+        volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
+        playback_->setVolume(gain);
+        media_->setVolume(static_cast<float>(gain));
+        return;
+    }
+
     // Immediately, in both directions, which is the half of Cog's arrangement
     // that is easy to leave out: its observer on `sentryConsented` calls
     // `[SentrySDK close]` the moment the box is unticked
