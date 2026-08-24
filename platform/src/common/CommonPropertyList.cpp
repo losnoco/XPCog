@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace xpcog::platform {
@@ -25,10 +26,26 @@ std::optional<std::string> propertyListToXml(const std::filesystem::path& path) 
     if (text.starts_with("bplist00")) {
         return std::nullopt;
     }
-    if (text.empty()) {
+
+    // Everything else has to look like XML before it is handed back. "Not
+    // bplist00" is not the same as "a property list": Cog's application support
+    // directory sits next to a SQLite database, and returning its bytes as XML
+    // would push the mistake down to a parser that can only answer the same
+    // nullopt one step later, after the caller has been told there was something
+    // to parse.
+    std::string_view start{text};
+    if (start.starts_with("\xEF\xBB\xBF")) {  // A BOM, if some editor left one.
+        start.remove_prefix(3);
+    }
+    while (!start.empty() && (start.front() == ' ' || start.front() == '\t' ||
+                              start.front() == '\r' || start.front() == '\n')) {
+        start.remove_prefix(1);
+    }
+    if (!start.starts_with('<')) {
         return std::nullopt;
     }
-    // Already XML, or at least not binary. The caller parses it and finds out.
+    // XML of some sort. Whether it is a *property* list the caller parses and
+    // finds out; that much is the same judgement on every platform.
     return text;
 }
 
