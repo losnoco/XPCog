@@ -50,24 +50,42 @@
 // the first attempt here set only the second symbol and shipped an unaware
 // process that looked exactly like the bug it was meant to fix.
 //
-// Ahead of the icon deliberately. wx.rc defines its resources by name
-// (wxICON_AAA and friends) rather than by number, so it cannot take id 1 from the
-// icon below -- but the include has to precede anything that depends on the
-// manifest being present.
+// Ahead of the icon deliberately: the include has to precede anything that
+// depends on the manifest being present. It also brings nine icons of its own,
+// which is what the name below is about.
 #define wxUSE_RC_MANIFEST 1
 #define wxUSE_DPI_AWARE_MANIFEST 2
 #include "wx/msw/wx.rc"
 
-// The application icon. Resource id 1 by convention: Explorer, the taskbar and
-// Alt-Tab all take the *numerically lowest* icon resource in the executable, so
-// this being 1 is what makes it the one they show rather than a coin toss
-// between whatever resources happen to be linked in.
+// The application icon, and the name is load-bearing.
+//
+// Explorer, the taskbar, Alt-Tab and the `,0` icon index that `--register`
+// writes into DefaultIcon all take the *first* icon group in the executable's
+// resource directory. A PE resource directory orders **named entries before
+// numbered ones**, names sorted alphabetically -- so "first" is not "lowest id",
+// and an icon numbered 1 loses to any icon with a name at all.
+//
+// wx.rc above defines nine, starting with wxICON_AAA, and its own comment says
+// what that name is for: "First wx icon in alphabetical order. Notice that it
+// also may be used by Explorer as the application icon if the main program
+// doesn't define any icons preceding this one in alphabetical order."
+//
+// This was `1 ICON` until it was looked at, on the reasoning that wx names its
+// resources and therefore could not take id 1 -- true, and beside the point,
+// because it never needed id 1 to win. The result was a player whose executable
+// and whose registered audio files both showed the wxWidgets default icon, on
+// every build since the toolkit changed. Nothing warns; the artwork is present
+// in the binary and simply never chosen.
+//
+// So: a name that sorts ahead of wxICON_AAA. Leading A's rather than something
+// descriptive because alphabetical order is the entire mechanism, and a name
+// that reads well but sorts late is the bug coming back.
 //
 // This is the free-form artwork, not the rounded tile the macOS bundle uses.
 // Windows draws an app icon on its own background -- the taskbar, a dark title
 // bar, a Start tile -- so a light tile of our own would read as a pale box
 // pasted onto whatever is behind it.
-1 ICON "@XPCOG_RC_ICON@"
+AAAA_XPCOG ICON "@XPCOG_RC_ICON@"
 
 VS_VERSION_INFO VERSIONINFO
     FILEVERSION    @XPCOG_RC_VERSION@
