@@ -54,10 +54,11 @@ PlaylistDataModel::PlaylistDataModel(PlaylistView& view) : view_(view) {
 void PlaylistDataModel::appendColumnsTo(wxDataViewCtrl* control) const {
     for (const ColumnLayout& layout : kColumns) {
         const wxString heading = toWx(PlaylistView::heading(layout.column));
-        // Sortable for the header affordance only -- the arrow and the click
-        // target. The sorting itself is PlaylistView's, and the frame drives it
-        // from the header-click event; letting the control sort a virtual model
-        // is not something every platform's native implementation supports.
+        // Sortable for the header affordance -- the arrow and the click target.
+        // The sorting itself is PlaylistView's, and the frame drives it from the
+        // header-click event. The flag does not merely decorate, though: it also
+        // licenses the control to reorder the rows on its own, which is what
+        // Compare() below is there to make a no-op.
         control->AppendTextColumn(heading, static_cast<unsigned int>(layout.column),
                                   wxDATAVIEW_CELL_INERT,
                                   control->FromDIP(layout.width), layout.alignment,
@@ -82,6 +83,41 @@ bool PlaylistDataModel::SetValueByRow(const wxVariant& value, unsigned int row,
     (void)row;
     (void)column;
     return false;
+}
+
+int PlaylistDataModel::Compare(const wxDataViewItem& item1, const wxDataViewItem& item2,
+                               unsigned int column, bool ascending) const {
+    // A sortable column does not only draw an arrow: the control sorts the rows
+    // itself when the header is clicked, and it asks the model how. The default
+    // answer, wxDataViewModel::Compare, fetches both cells and compares the
+    // *formatted text* with wxString::Cmp -- so the track column came out 1, 10,
+    // 100, 1000, 2, and the length column put 10:00 before 4:07. That sort ran on
+    // top of the numeric one PlaylistView had already done, and won, because it
+    // ran last.
+    //
+    // It is not the comparison that is wrong here, it is doing one at all. Row
+    // order is the answer: PlaylistView has already ordered the mapping -- digit
+    // runs as numbers for text columns, the stored value for numeric ones -- and
+    // sorting by row index is the no-op that leaves that order standing. Every
+    // platform's control resorts on Reset() too, so this has to hold for the
+    // reload after a scan, not just for the click.
+    //
+    // `column` and `ascending` are both deliberately ignored. Descending is
+    // already in the mapping, because the header click told the view about it;
+    // honouring the flag here would reverse it a second time and hand back the
+    // ascending order. That is what the non-Mac wxDataViewVirtualListModel::Compare
+    // does, which is why this override is not a macOS special case.
+    (void)column;
+    (void)ascending;
+
+    // Ids are row+1 and stay that way: the model only ever calls Reset(), never
+    // RowDeleted/RowInserted, so GetRow() is arithmetic rather than a search.
+    const unsigned int left  = GetRow(item1);
+    const unsigned int right = GetRow(item2);
+    if (left == right) {
+        return 0;
+    }
+    return left < right ? -1 : 1;
 }
 
 bool PlaylistDataModel::GetAttrByRow(unsigned int row, unsigned int column,

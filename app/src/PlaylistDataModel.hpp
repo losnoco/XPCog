@@ -61,6 +61,13 @@ public:
     bool GetAttrByRow(unsigned int row, unsigned int column,
                       wxDataViewItemAttr& attr) const override;
 
+    /// Row order, whatever the column and whichever way the header arrow points.
+    /// The control asks this when it sorts itself, and the answer has to be "you
+    /// do not": the order is already PlaylistView's. See the .cpp -- this is the
+    /// difference between track 10 following track 9 and following track 1.
+    int Compare(const wxDataViewItem& item1, const wxDataViewItem& item2,
+                unsigned int column, bool ascending) const override;
+
 private:
     PlaylistView& view_;
 
