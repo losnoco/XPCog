@@ -33,11 +33,13 @@
 #pragma once
 
 #include "xpcog/core/Settings.hpp"
+#include "xpcog/core/scrobble/Scrobbler.hpp"
 #include "xpcog/core/Signal.hpp"
 
 #include <wx/dialog.h>
 
 #include <functional>
+#include <memory>
 #include <string>
 
 class wxListbook;
@@ -45,9 +47,19 @@ class wxWindow;
 
 namespace xpcog::app {
 
+class LastFmAccount;
+
 class PreferencesDialog : public wxDialog {
 public:
-    PreferencesDialog(wxWindow* parent, Settings& settings);
+    /// `account` and `scrobbler` may be null, and are on the paths that do not
+    /// have them -- there is no reason for a dialog to refuse to open because
+    /// scrobbling is not wired up. The Last.fm pane is then not built at all,
+    /// which is the same treatment Appearance gets on macOS.
+    PreferencesDialog(wxWindow* parent, Settings& settings,
+                      LastFmAccount* account = nullptr,
+                      Scrobbler*     scrobbler = nullptr);
+
+    ~PreferencesDialog() override;
 
     /// A setting changed. The engine reads most settings live, but the ones that
     /// only take effect on the next track are worth saying so about.
@@ -77,11 +89,24 @@ private:
     [[nodiscard]] wxWindow* buildSpectrumPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildAdvancedPane(wxWindow* parent);
 
+    /// Cog has this as its own pane too (Preferences/Panes/LastFMPaneView.swift),
+    /// and this is the one pane whose *contents* differ from Cog's on purpose:
+    /// Cog draws a username field and a password field, and there is no password
+    /// field anywhere in this program. See LastFmAccount.hpp.
+    [[nodiscard]] wxWindow* buildLastFmPane(wxWindow* parent);
+
     /// What the curated rows call when a value changes. Handed to them rather
     /// than reached for, so nothing outside this class publishes its signal.
     [[nodiscard]] std::function<void(const char*)> changeNotifier();
 
-    Settings& settings_;
+    Settings&      settings_;
+    LastFmAccount* account_   = nullptr;
+    Scrobbler*     scrobbler_ = nullptr;
+
+    /// Proof, for a reply arriving from the Last.fm connect worker, that this
+    /// dialog is still on screen. Held here so it expires with the dialog; the
+    /// handlers hold a weak_ptr and skip the parts that touch widgets.
+    std::shared_ptr<int> paneAlive_;
 };
 
 }  // namespace xpcog::app

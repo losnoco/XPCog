@@ -91,6 +91,13 @@ double PlaybackController::position() const {
     return engine_ ? engine_->trackPositionSeconds() : 0.0;
 }
 
+double PlaybackController::playedSeconds() const {
+    if (starting_.load()) {
+        return 0.0;
+    }
+    return engine_ ? engine_->playedSeconds() : 0.0;
+}
+
 double PlaybackController::duration() const {
     const PlaylistEntry* entry = playlist_.find(audible_);
     return (entry != nullptr) ? entry->duration() : 0.0;

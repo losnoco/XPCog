@@ -201,6 +201,17 @@ _xpcog_system_dep(catch2 "Catch2"
     FEATURE catch2
     MODULES "catch2-with-main >= 3.7.1")
 
+# core/src/scrobble: nlohmann/json, parsing Last.fm replies. Header-only, so the
+# vcpkg port costs a download rather than a build and this substitution saves
+# very little -- it is here for consistency rather than for wall clock, so that
+# a distribution build takes every library from one place.
+#
+# 3.9 is where nlohmann::json::parse() grew the non-throwing overload this uses;
+# Ubuntu 20.04 already carries 3.7, and 22.04 carries 3.10.
+_xpcog_system_dep(nlohmann-json "nlohmann/json"
+    FEATURE nlohmann-json
+    MODULES "nlohmann_json >= 3.9")
+
 # codecs/ffmpeg/FFmpegDecoder.cpp uses AVChannelLayout (codec_ctx_->ch_layout)
 # and swr_alloc_set_opts2(), both new in FFmpeg 5.1. The library versions below
 # are 5.1's. This is the entry that pays for the whole module: the vcpkg port is

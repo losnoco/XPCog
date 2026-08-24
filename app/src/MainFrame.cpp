@@ -6,6 +6,7 @@
 #include "EqualizerPanel.hpp"
 #include "FileTree.hpp"
 #include "InfoPanel.hpp"
+#include "LastFmAccount.hpp"
 #include "LyricsPanel.hpp"
 #include "MiniFrame.hpp"
 #include "OpenUrlDialog.hpp"
@@ -194,6 +195,8 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
 
     playback_ =
         std::make_unique<PlaybackController>(registry_, playlist_, settings_, dispatch_);
+
+    wireScrobbling();
 
     SetMenuBar(buildMenuBar());
     buildUi();
@@ -749,6 +752,13 @@ void MainFrame::wireUp() {
 }
 
 void MainFrame::onSettingChanged(const std::string& key) {
+    if (key == "enableAudioScrobbler") {
+        if (scrobbler_) {
+            scrobbler_->setEnabled(settings_.EnableScrobbling());
+        }
+        return;
+    }
+
     // The equaliser and the DSP chain are read by the engine when it is asked to,
     // so a band that moves has to say so or the slider does nothing until the
     // next track.
@@ -1119,7 +1129,7 @@ void MainFrame::openUrl() {
 }
 
 void MainFrame::showPreferences() {
-    PreferencesDialog dialog(this, settings_);
+    PreferencesDialog dialog(this, settings_, lastFm_.get(), scrobbler_.get());
     const Subscription subscription = dialog.settingChanged.connect(
         [this](const std::string& key) { onSettingChanged(key); });
     dialog.ShowModal();
@@ -1654,6 +1664,13 @@ void MainFrame::enqueueSelected() {
 }
 
 void MainFrame::onPositionChanged(double seconds, double duration) {
+    // The engine's own clock, not `seconds`. This tick is what advances the
+    // played-time accumulator, and the two numbers are deliberately different:
+    // `seconds` is the playhead, which a seek moves, while playedSeconds() is
+    // audio actually delivered to the device, which a seek does not. Feeding the
+    // playhead in here would let seeking to the end of a track scrobble it.
+    monitor_.advance(playback_->playedSeconds());
+
     duration_ = duration;
     seekBar_->setDuration(duration);
     seekBar_->setPosition(seconds);
@@ -1674,9 +1691,104 @@ void MainFrame::onPositionChanged(double seconds, double duration) {
     }
 }
 
+// --- scrobbling -----------------------------------------------------------
+
+void MainFrame::wireScrobbling() {
+    lastFm_ = std::make_unique<LastFmAccount>();
+
+    // Beside the library rather than beside the settings: it is a queue of
+    // pending work, not a preference, and it can be deleted without losing
+    // anything the listener chose.
+    // pathFromUtf8, not the std::filesystem::path constructor: that one reads a
+    // std::string through the active code page on Windows, so a listener whose
+    // profile is under a name CP-1252 cannot spell would get a queue beside a
+    // directory that does not exist. See core/include/xpcog/core/FilePath.hpp,
+    // which exists because this went wrong once already.
+    const std::filesystem::path queue =
+        pathFromUtf8(platform::libraryDatabasePath()).parent_path() /
+        "scrobble-queue.json";
+
+    scrobbler_ = std::make_unique<Scrobbler>(lastFm_->client(), queue);
+    scrobbler_->setSession(lastFm_->load());
+    scrobbler_->setEnabled(settings_.EnableScrobbling());
+
+    // Last.fm rejected the stored key. Forget it here as well as in the
+    // scrobbler, or the next launch would load the same dead key and fail again
+    // -- and say so, because the listener has to re-authorise and nothing else
+    // in the interface would ever mention it.
+    scrobbler_->onSessionInvalidated([this] {
+        dispatch_([this] {
+            lastFm_->forget();
+            setStatusText("Last.fm access was withdrawn. Reconnect in Preferences.");
+        });
+    });
+
+    // Sixty seconds, which is Cog's interval for this
+    // (OutputNode.m:135-138). Counted for every listener, whether or not they
+    // scrobble: this is XPCog's own library, and Library::recordPlay has been
+    // written and tested since the library landed with nothing calling it.
+    monitor_.onPlayCountReached([this] {
+        if (!library_ || currentTrack_ == kInvalidTrackId) {
+            return;
+        }
+        const PlaylistEntry* entry = playlist_.find(currentTrack_);
+        if (entry == nullptr) {
+            return;
+        }
+        const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+        static_cast<void>(library_->recordPlay(*entry, now));
+    });
+
+    // Half the track or four minutes, whichever came first. The captured
+    // pendingScrobble_ is submitted rather than the current entry, for the reason
+    // given where it is declared.
+    monitor_.onScrobbleReached([this] {
+        if (scrobbler_ && !pendingScrobble_.artist.empty()) {
+            scrobbler_->submit(pendingScrobble_);
+        }
+    });
+}
+
+void MainFrame::beginScrobbleTrack(TrackId id) {
+    const PlaylistEntry* entry = (id == kInvalidTrackId) ? nullptr : playlist_.find(id);
+    if (entry == nullptr) {
+        monitor_.clear();
+        pendingScrobble_ = ScrobbleTrack{};
+        return;
+    }
+
+    pendingScrobble_             = ScrobbleTrack{};
+    pendingScrobble_.title       = entry->title();
+    pendingScrobble_.artist      = entry->artist.str();
+    pendingScrobble_.albumArtist = entry->albumArtist.str();
+    pendingScrobble_.album       = entry->album.str();
+    pendingScrobble_.trackNumber = entry->track;
+    pendingScrobble_.duration    = entry->duration();
+    // When it *started*, not when the threshold is reached: Last.fm builds the
+    // listening history from this, so a scrobble queued through an outage and
+    // sent an hour later still lands in the right place.
+    pendingScrobble_.startedAt =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count();
+
+    monitor_.beginTrack(playback_->playedSeconds(), entry->duration());
+
+    if (scrobbler_) {
+        scrobbler_->nowPlaying(pendingScrobble_);
+    }
+}
+
 void MainFrame::onCurrentTrackChanged(TrackId id) {
     currentTrack_ = id;
     view_.setCurrentTrack(id);
+
+    // Before anything that can fail below it: this is the point the seam reached
+    // the speaker, and it is the only moment at which "a new track started" is
+    // true exactly once.
+    beginScrobbleTrack(id);
 
     // Cog moves the selection as each next entry is *chosen*, inside
     // -getNextEntry: (PlaylistController.m:1448-1522, six call sites). Done here

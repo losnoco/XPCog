@@ -24,7 +24,8 @@
     "curl",
     "opus",
     "wavpack",
-    "catch2"
+    "catch2",
+    "nlohmann-json"
   ],
   "features": {
     "spessasynth-core": {
@@ -103,12 +104,21 @@
         }
       ]
     },
+    "nlohmann-json": {
+      "description": "nlohmann/json, for parsing the Last.fm API's replies. Header-only, so this costs a download and no build time. A library rather than a hand-written parser because this one reads bytes off a network: the hand-written plist reader next to it parses files this program wrote, and MD5 is pinned by RFC vectors, but a JSON parser facing a remote server is a fuzzing target and not somewhere to save a dependency. Substitutable; see the `sqlite3` feature.",
+      "dependencies": [
+        "nlohmann-json"
+      ]
+    },
     "gui": {
-      "description": "wxWidgets: the application's UI toolkit on Windows and macOS, neither of which packages it. A feature rather than a plain dependency for two reasons. The headless presets build no app and should not drag a toolkit into a target that links none -- and the Linux presets leave it off as well, because this port depends on vcpkg's gtk3 port: requesting it there builds 57 packages from source -- wx, GTK, glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus and seven X11 libraries -- on a machine that already has every one of them. Linux takes wx from the distribution instead (libwxgtk3.2-dev); see cmake/XPCogWx.cmake",
+      "description": "wxWidgets: the application's UI toolkit on Windows and macOS, neither of which packages it. A feature rather than a plain dependency for two reasons. The headless presets build no app and should not drag a toolkit into a target that links none -- and the Linux presets leave it off as well, because this port depends on vcpkg's gtk3 port: requesting it there builds 57 packages from source -- wx, GTK, glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus and seven X11 libraries -- on a machine that already has every one of them. Linux takes wx from the distribution instead (libwxgtk3.2-dev); see cmake/XPCogWx.cmake. The `secretstore` feature is asked for because the Last.fm session key is kept in wxSecretStore rather than in settings: it is off by default in the port, and on Windows and macOS it costs nothing -- the libsecret dependency it carries is declared for neither. On Linux the distribution package already builds with it",
       "dependencies": [
         {
           "name": "wxwidgets",
-          "default-features": false
+          "default-features": false,
+          "features": [
+            "secretstore"
+          ]
         }
       ]
     },

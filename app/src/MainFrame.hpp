@@ -32,7 +32,9 @@
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/UndoStack.hpp"
+#include "xpcog/core/PlayMonitor.hpp"
 #include "xpcog/core/library/Library.hpp"
+#include "xpcog/core/scrobble/Scrobbler.hpp"
 #include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/library/PlaylistView.hpp"
 #include "xpcog/core/library/PluginCache.hpp"
@@ -58,6 +60,8 @@ class wxSplitterWindow;
 class wxStaticText;
 
 namespace xpcog::app {
+
+class LastFmAccount;
 
 class EqualizerPanel;
 class FileTree;
@@ -259,6 +263,32 @@ private:
     UndoStack                undo_;
 
     std::unique_ptr<PlaybackController> playback_;
+
+    // --- scrobbling -----------------------------------------------------
+    // Owned here, beside the library and the playback controller, because it
+    // needs both: what was played comes from one and where to record it from the
+    // other. Cog puts the equivalent in a singleton reached from anywhere; this
+    // is the same objects with the ownership visible.
+
+    /// How much of the audible track has actually been heard. Drives two
+    /// thresholds, exactly as Cog's OutputNode does: the play count at sixty
+    /// seconds and the scrobble at half the track or four minutes.
+    PlayMonitor monitor_;
+
+    /// The play to submit when the threshold is crossed, captured when the track
+    /// became audible rather than read back at submission time -- by then the
+    /// entry may have been edited, or removed from the playlist entirely, and
+    /// the play still happened.
+    ScrobbleTrack pendingScrobble_;
+
+    std::unique_ptr<LastFmAccount> lastFm_;
+    std::unique_ptr<Scrobbler>     scrobbler_;
+
+    /// Wires the monitor's two thresholds to the library and the scrobbler.
+    void wireScrobbling();
+
+    /// Starts the monitor for `id`, and announces it as now playing.
+    void beginScrobbleTrack(TrackId id);
 
     /// The docking manager. Declared before the panes it manages so it is
     /// destroyed after them -- though UnInit() in the destructor is what

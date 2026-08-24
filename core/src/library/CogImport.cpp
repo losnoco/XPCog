@@ -161,6 +161,39 @@ namespace {
 
 }  // namespace
 
+namespace {
+
+/// Keys that exist on both sides and are still **never** copied across.
+///
+/// The import's whole design is that there is no translation table: a key is
+/// taken when `Settings::all()` holds one by the same name, because
+/// `settings.def` deliberately kept Cog's spellings. That property is worth
+/// keeping, so the exception to it is a list of names rather than a renamed key
+/// -- renaming `enableAudioScrobbler` to dodge the import would break the
+/// agreement everywhere else in order to fix it in one place.
+///
+/// **`enableAudioScrobbler`.** Scrobbling needs a credential, and the credential
+/// cannot come with it: Cog keeps its Last.fm session key in the macOS Keychain,
+/// which is not a thing a plist carries and not a thing another machine can
+/// read. So importing the switch alone imports the half that does nothing.
+///
+/// Worse than nothing, in fact, and this is the reason it is refused rather than
+/// merely useless. Cog registers this key as `@YES` and gates every call on
+/// `lastFM.isAuthenticated` besides (AudioScrobbler.swift:52-60), so "on" in a
+/// Cog plist does not mean the listener ever connected an account -- it is
+/// mostly just Cog's default. Copying it here, where the switch is off by
+/// default precisely so that it means something, would turn an unmade decision
+/// into an apparent one and show scrobbling as enabled to someone who has never
+/// heard of it.
+///
+/// Counted as ignored rather than mismatched: nothing disagrees, this is a key
+/// we decline.
+[[nodiscard]] bool neverImported(std::string_view key) {
+    return key == "enableAudioScrobbler";
+}
+
+}  // namespace
+
 void importCogSettings(std::string_view plistXml, Settings& settings,
                        CogSettingsReport* report) {
     CogSettingsReport local;
@@ -174,6 +207,10 @@ void importCogSettings(std::string_view plistXml, Settings& settings,
     }
 
     for (const auto& [key, value] : root->dict) {
+        if (neverImported(key)) {
+            local.ignored += 1;
+            continue;
+        }
         const std::string_view type = declaredType(key);
         if (type.empty()) {
             local.ignored += 1;

@@ -542,6 +542,32 @@ XPCOG_SETTING(HttpStreamingBufferSize, int, "httpStreamingBufferSize", 0x40000)
 /// percent-encoded -- so nothing has to be escaped on the way in or out.
 XPCOG_SETTING(UrlHistory, std::string, "UserDefaultURLsKey", "")
 
+// --- scrobbling -----------------------------------------------------------
+
+/// Whether plays are reported to Last.fm.
+///
+/// Cog's `enableAudioScrobbler`, same key -- but **deliberately not imported**
+/// from a Cog plist, which is the one place `settings.def` sharing Cog's
+/// spellings does not mean the value comes across. See `neverImported()` in
+/// core/src/library/CogImport.cpp for the reasoning; the short version is that
+/// the credential cannot follow the switch, so importing the switch alone would
+/// show scrobbling as enabled with nothing behind it.
+///
+/// **Off by default, and Cog's own default is the interesting part.** Cog
+/// registers this as `@YES` (PlaybackEventController.m:39) and then gates every
+/// call on `lastFM.isAuthenticated` besides, so a fresh Cog is "enabled" and
+/// silent. That arrangement makes the checkbox mean something different before
+/// and after connecting, which is exactly the sort of thing this port has been
+/// taking back out -- and it is also why importing it would carry no
+/// information: "on" in a Cog plist mostly just means nobody turned it off.
+/// Off here, turned on by connecting, and the pane says which of the two is
+/// missing when neither is true.
+///
+/// The session key itself is deliberately **not** a setting. It is a credential,
+/// it belongs in the platform's secret store, and settings here are world-
+/// readable text in a registry key or a plist. See app/src/LastFmAccount.hpp.
+XPCOG_SETTING(EnableScrobbling, bool, "enableAudioScrobbler", false)
+
 // --- crash reporting ------------------------------------------------------
 
 /// Whether the listener has agreed to send crash reports and usage data.

@@ -421,6 +421,33 @@ the default for a plain `cmake` with no preset: the port builds crashpad, and th
 is a lot to hand someone who only wants a player. Such a build still shows the
 switch, greyed out, saying why.
 
+## Last.fm
+
+Scrobbling, with the **desktop** authentication flow rather than the mobile one
+Cog uses: connecting opens last.fm in a browser and XPCog never sees the
+password. The session key that comes back is kept in the platform's own secret
+store — Credential Manager, the Keychain, the Secret Service — through
+`wxSecretStore`, not in the settings.
+
+Plays go on a durable queue before they are sent, so an evening spent offline
+arrives the next time the machine has a network. Cog has no queue; a failed
+submission there is simply gone.
+
+**No API key ships with the source**, exactly as Cog ships none. Every line of
+the feature is compiled either way, and a build without one shows the pane greyed
+with an explanation. To build with scrobbling live, apply for a key at
+[last.fm/api/account/create](https://www.last.fm/api/account/create) and
+configure with:
+
+```
+cmake --preset windows-debug     -D XPCOG_LASTFM_API_KEY=... -D XPCOG_LASTFM_API_SECRET=...
+```
+
+The switch itself is `enableAudioScrobbler`, which is Cog's key — but it is the
+one setting a Cog import deliberately does **not** carry across, because the
+credential cannot come with it and the switch alone would claim a connection that
+does not exist.
+
 ## Roadmap
 
 | | Milestone | Scope |
@@ -433,7 +460,7 @@ switch, greyed out, saying why.
 | ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
 | ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
 | ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
-| 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores, SID, Musepack, APL, DSD, `.dsf`/`.dff`, output device selection and exclusive mode, the 31-band equaliser with Cog's preset library, and MIDI on OPL3, SpessaSynth and an emulated SC-55 with its front panel all done, and the decoder list closed; `cogimport` and scrobbling to come. DoP output waits on a DAC to verify against; HRTF is deferred; global hotkeys are not coming, because the media keys they bind are already delivered by SMTC, MPRIS and MediaPlayer.framework |
+| 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores, SID, Musepack, APL, DSD, `.dsf`/`.dff`, output device selection and exclusive mode, the 31-band equaliser with Cog's preset library, and MIDI on OPL3, SpessaSynth and an emulated SC-55 with its front panel all done, and the decoder list closed, and Last.fm scrobbling done with an offline queue Cog does not have; `cogimport` reads a Cog library and its settings, and what is left there is calling it. DoP output waits on a DAC to verify against; HRTF is deferred; global hotkeys are not coming, because the media keys they bind are already delivered by SMTC, MPRIS and MediaPlayer.framework |
 | ✅ | **M7** | The interface moved from Qt 6 to wxWidgets. `core/` and `codecs/` unchanged; `platform/` de-Qt'd and now links no toolkit either. Qt was the last dependency outside vcpkg, and the deploy step went with it. See [`docs/WXPORT.md`](docs/WXPORT.md) |
 
 Picking this up on another machine? [`docs/PORTING.md`](docs/PORTING.md) ends with

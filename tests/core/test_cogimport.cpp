@@ -326,6 +326,47 @@ TEST_CASE("a key XPCog has never heard of is ignored, not guessed at",
     CHECK(settings.VolumeScaling() == "trackGain");
 }
 
+TEST_CASE("the scrobbling switch is refused even though the key matches",
+          "[cogimport]") {
+    // The one key that exists on both sides under the same name and is still
+    // not copied. Everything else in this file establishes that a shared
+    // spelling means a shared value; this establishes the exception, because an
+    // exception nobody tested would be removed by the next person who noticed
+    // the import has no translation table.
+    //
+    // The credential cannot follow the switch -- Cog's session key is in the
+    // macOS Keychain -- so importing "on" would show scrobbling as enabled with
+    // nothing behind it. And Cog registers this as @YES by default, so "on" in a
+    // real plist mostly means nobody turned it off.
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    constexpr std::string_view xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+    <key>enableAudioScrobbler</key><true/>
+    <key>lastFmUsername</key><string>somebody</string>
+    <key>volumeScaling</key><string>trackGain</string>
+</dict></plist>)";
+
+    CogSettingsReport report;
+    importCogSettings(xml, settings, &report);
+
+    // Left at XPCog's own default, which is off.
+    CHECK(settings.EnableScrobbling() == false);
+
+    // Counted as ignored rather than mismatched: nothing disagrees about the
+    // type, this is a key we decline. `lastFmUsername` is ignored too, but for
+    // the ordinary reason -- XPCog has no such setting, because the username
+    // lives with the session key in the platform's secret store.
+    CHECK(report.ignored == 2);
+    CHECK(report.mismatched == 0);
+    CHECK(report.applied == 1);
+
+    // And the rest of the file still imports, so refusing one key does not
+    // abandon the import.
+    CHECK(settings.VolumeScaling() == "trackGain");
+}
+
 TEST_CASE("an absent key leaves the setting alone", "[cogimport]") {
     // The half that makes this an import rather than a reset. NSUserDefaults
     // persists only what differs from what was registered, so a real file holds

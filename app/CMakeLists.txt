@@ -18,6 +18,8 @@ set(XPCOG_APP_SOURCES
     src/FileTree.hpp
     src/InfoPanel.cpp
     src/InfoPanel.hpp
+    src/LastFmAccount.cpp
+    src/LastFmAccount.hpp
     src/LucideIcon.cpp
     src/LucideIcon.hpp
     src/LyricsPanel.cpp
@@ -47,9 +49,30 @@ set(XPCOG_APP_SOURCES
     src/XPCogApp.hpp
 )
 
+# The Last.fm API credentials, blank unless configured with them.
+#
+# Cog ships exactly this way -- `Xcode-config/Secrets.template.xcconfig` carries
+# two empty values and a script turns them into a Swift file -- and for the same
+# two reasons: a key committed to a public repository is a key that gets revoked,
+# and the key identifies the *application*, so a fork submitting under XPCog's
+# identity would be misattributing somebody's listening history.
+#
+# A build without them compiles all of the scrobbling code and reports the
+# feature as unavailable, which is the same shape as XPCOG_WITH_SENTRY.
+set(XPCOG_LASTFM_API_KEY "" CACHE STRING
+    "Last.fm API key. Apply at https://www.last.fm/api/account/create")
+set(XPCOG_LASTFM_API_SECRET "" CACHE STRING
+    "Last.fm shared secret that goes with XPCOG_LASTFM_API_KEY")
+mark_as_advanced(XPCOG_LASTFM_API_SECRET)
+
+configure_file(src/LastFmSecrets.hpp.in
+               "${CMAKE_CURRENT_BINARY_DIR}/generated/LastFmSecrets.hpp" @ONLY)
+
 add_library(xpcog-appcore STATIC ${XPCOG_APP_SOURCES})
 
-target_include_directories(xpcog-appcore PUBLIC src)
+target_include_directories(xpcog-appcore
+    PUBLIC  src
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 target_link_libraries(xpcog-appcore PUBLIC
     xpcog-core

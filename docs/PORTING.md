@@ -2761,13 +2761,15 @@ format probe — "does this DAC actually expose 176,400 Hz at 24-bit in exclusiv
 mode" is the question a datasheet answers unreliably, and plenty of dongles
 advertise 384 kHz while enumerating only the 48 kHz family at the top.
 
-**6. The feature tail.** Ranked, because the three left are not equally worth
-having and one of them has been struck off:
+**6. The feature tail.** Ranked, because what is left is not equally worth
+having. Two of the four are now struck off — scrobbling is done, global hotkeys
+are not coming — which leaves Rubber Band as the only unported item on the page
+that is neither blocked on hardware nor declined:
 
-- **Last.fm scrobbling** — the top of this list and the most reachable thing on
-  the page. Self-contained, no toolkit involvement, and the most visible gap
-  against Cog for an actual listener: it is the one absence a switcher notices
-  on their first evening rather than on some particular file.
+- ~~**Last.fm scrobbling**~~ — **done**, on 2026-08-24, and the entry that stood
+  here got one thing wrong. It called the work "self-contained, no toolkit
+  involvement". The protocol half is; the credential half is not, and that is
+  where the design decision was. See "Scrobbling" below.
 - ~~**HRTF**~~ — **deferred**, by decision rather than omission, on
   2026-08-23. Cog's is an impulse-response convolver in the DSP chain, and the
   DSP section above notes where it would sit; the chain already has the shape
@@ -2940,6 +2942,115 @@ nothing keeps what it was given. Plus a hidden `[.ratedevice]` case in
 `test_audio.cpp` that asks the *real* backend the same questions, because a
 double can only prove what the engine does with an answer, never that the
 answer is true.
+
+#### Scrobbling
+
+Done on 2026-08-24. Cog's `Scrobbler/` is about 380 lines across three files and
+this is a faithful port of the protocol, with two deliberate departures and one
+addition. All three are worth naming because each is a place where copying Cog
+exactly would have been the easier choice.
+
+**The authentication flow is the desktop one, not Cog's.** Cog calls
+`auth.getMobileSession`, which takes the listener's Last.fm username and password
+and posts them (`LastFMAPI.swift:47`, and a `SecureField` on its preferences
+pane). It works, and Last.fm documents it — for *mobile* clients that cannot open
+a browser. XPCog can, so it uses the flow Last.fm documents for desktop
+applications: `auth.getToken`, the listener grants access on a last.fm page, then
+`auth.getSession` exchanges the granted token for a session key.
+
+What that buys is not theoretical. No password reaches this process at any point;
+there is no password field anywhere in the program. The grant happens on a page
+whose address bar says last.fm, so a listener can see what they are authorising,
+and they revoke it from their own account page rather than by trusting us to
+forget. The session key that comes back is not a password: it authorises
+scrobbling and nothing else.
+
+What it costs is that step two is not ours to complete, which is a real
+interface problem rather than a detail. `session()` answers error 14, "this token
+has not been authorized", until the listener finishes in the browser — so that
+error is its own `LastFmError::Kind` rather than a failure, and the pane polls
+through it every three seconds for three minutes with a Cancel button. A flow
+that cannot distinguish "not yet" from "no" would either give up immediately or
+hang forever.
+
+**The session key is in the platform's secret store, through `wxSecretStore`.**
+Credential Manager on Windows, the Keychain on macOS, the Secret Service on
+Linux. Cog writes its own `KeychainHelper` for the one platform it runs on; wx
+already wraps all three, so the alternative here was writing that helper three
+times and taking a libsecret dependency by hand.
+
+Two things fall out of it that are better than the obvious arrangement. The
+username and the key are stored **together**, because wxSecretStore's unit is a
+(service, username, secret) triple — which is exactly the shape of what Last.fm
+returns, and which Cog splits across the Keychain and NSUserDefaults where the
+two can disagree. And the key never touches `settings.def`, which is a registry
+key or a plist: readable text, backed up and synced. The settings hold the on/off
+switch and nothing else.
+
+One thing to know before building: vcpkg's wxwidgets port has `wxUSE_SECRETSTORE`
+**off** by default. It is a port feature, requested by name in `vcpkg.json`, and
+on Windows and macOS it costs nothing — the libsecret dependency it carries is
+declared for neither. On Linux wx comes from the distribution, which already
+builds with it. `LastFmAccount::storeAvailable()` reports the case where it is
+missing anyway, since a Linux session with no Secret Service running is a real
+thing and the pane should grey itself rather than lose a session silently.
+
+**The offline queue is the addition, and it is the half Cog does not have.**
+`AudioScrobbler.scrobbleTrack` fires a request and discards the result, under a
+comment that says a cache queue is still to be written. So a listener on a train
+loses the journey and is never told. Here submissions go on a durable queue
+written to disk as they are added and drained by a worker: a failure that could
+succeed later keeps the entry, one that could not drops it, and the queue
+survives a restart — which is the case that motivates it, because the laptop was
+closed rather than briefly offline.
+
+The retryable/permanent split is what makes that safe rather than merely
+persistent. Retrying a rejected scrobble forever would leave one poisoned entry
+blocking every later one, so a bad signature or a suspended key drops its batch,
+while a timeout or a rate limit backs off and tries again. Entries older than
+fourteen days are dropped before they are sent at all, since Last.fm refuses
+timestamps that far back and one at the head of the queue would wedge it.
+
+**What the accumulator turned out to be.** Cog fires the play count and the
+scrobble from one place — `-incrementAmountPlayed:` in `OutputNode.m` — and
+`PlayMonitor` is that, ported. The interesting part is that the port is *simpler*
+than the original. Cog accumulates deltas of the playhead and discards any that
+is negative or over five seconds, on the theory that anything else is a seek;
+XPCog feeds it `AudioEngine::playedSeconds()`, which counts frames delivered to
+the device, so it is monotonic by construction, does not move while paused, and
+is not moved by a seek at all. There is nothing for the heuristic to clean up and
+the five-second window has no counterpart here.
+
+That also closed something that had been sitting open: `Library::recordPlay()`
+was written and tested when the library landed and **nothing had ever called
+it**, so play counts were displayed in the info panel and never incremented. They
+are the same plumbing as scrobbling, they are Cog's own sixty-second threshold,
+and wiring one without the other would have meant building the accumulator and
+deliberately leaving half its output dangling.
+
+**The Cog settings import refuses `enableAudioScrobbler`.** This is the one key
+that exists on both sides under the same name and is still not copied, and it is
+the only exception to the import having no translation table — see
+`neverImported()` in `core/src/library/CogImport.cpp`. The credential cannot
+follow the switch, so importing "on" would show scrobbling as enabled with
+nothing behind it. And Cog registers the key as `@YES` and gates every call on
+`isAuthenticated` besides, so "on" in a real plist mostly means nobody turned it
+off — there is no decision there to carry across.
+
+**One dependency was added: nlohmann/json**, header-only, private to core's own
+translation units. The tree hand-writes a plist reader and two hash functions, so
+this needed a reason not to be a third: those parse files this program wrote and
+buffers whose length it knows, while this parses whatever a remote server sends.
+That is a fuzzing target and not the place to save a download.
+
+**No API key ships**, exactly as Cog ships none — `Secrets.template.xcconfig` is
+blank there and `XPCOG_LASTFM_API_KEY` is blank here. A build without one
+compiles every line of this and reports the feature as unavailable, which is the
+same shape as `XPCOG_WITH_SENTRY`. So the code is complete and **the feature has
+never been exercised against the real service**; everything below the network is
+covered by 46 tests against a fake transport, and what is not covered is whether
+Last.fm agrees with our reading of its own specification. The first real
+connection is a thing to do, not a thing to assume.
 
 #### The decoder list, and what it left behind
 
@@ -3595,6 +3706,17 @@ asserted a property Qt provides rather than the one the code was responsible for
   settle — a catalogue that has to be re-scanned after every wording change is
   upkeep bought before there is a translator to spend it on.
   [`../app/i18n/README.md`](../app/i18n/README.md) says what to put back.
+- **Scrobbling has never been run against the real Last.fm.** No API key ships,
+  so a build from a clean checkout compiles the whole feature and reports it
+  unavailable — which means the 46 tests behind it all speak to a fake transport.
+  What they establish is real and is the part most likely to be wrong (the
+  signature, the batching, which errors are retryable, what the queue keeps); what
+  they cannot establish is whether Last.fm agrees with our reading of its
+  specification. The first connection with a real key is a thing to do rather than
+  a thing to assume, and the two most likely places for it to go wrong are the
+  signature — where the server's only complaint is error 13, naming no parameter
+  — and the browser step, which is the one part of the flow no test can drive.
+
 - The macOS Now Playing integration is verified by hand, not by test. So are the
   pause and stop fades against a real device: the offline output shows the ramp in
   the capture, but that it sounds like a fade rather than a duck is a listening

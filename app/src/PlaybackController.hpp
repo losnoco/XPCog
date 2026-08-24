@@ -77,6 +77,15 @@ public:
     [[nodiscard]] double position() const;
     [[nodiscard]] double duration() const;
 
+    /// Seconds of audio actually delivered to the device since playback began,
+    /// across every track. Monotonic, does not move while paused, and unmoved by
+    /// a seek -- which is what makes it the right clock for "how much of this
+    /// has been listened to" as opposed to "where is the playhead".
+    ///
+    /// Forwarded from the engine rather than tracked here. PlayMonitor consumes
+    /// it; see MainFrame.
+    [[nodiscard]] double playedSeconds() const;
+
     [[nodiscard]] TrackId currentTrack() const;
 
     /// The rate the device negotiated, or zero when nothing is open. The spectrum

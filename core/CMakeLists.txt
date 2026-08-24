@@ -37,6 +37,11 @@ add_library(xpcog-core STATIC
     src/library/ScanTask.cpp
     src/library/Sqlite.cpp
     src/MetadataMap.cpp
+    src/Md5.cpp
+    src/net/HttpEncoding.cpp
+    src/PlayMonitor.cpp
+    src/scrobble/LastFmClient.cpp
+    src/scrobble/Scrobbler.cpp
     src/NaturalOrder.cpp
     src/Sha256.cpp
     src/LoopPolicy.cpp
@@ -88,6 +93,35 @@ else()
     endif()
 endif()
 
+# nlohmann/json parses the Last.fm API's replies. Header-only, and PRIVATE
+# because no public header of ours names it -- LastFmClient.hpp speaks
+# std::string and std::optional precisely so the parser stays swappable and the
+# dependency stops at core's own translation units.
+#
+# A library rather than a hand-written parser, which is a decision worth naming
+# because the tree does hand-write a plist reader and two hash functions next
+# door. The difference is what the input is: those parse files this program
+# wrote and buffers whose length it knows, while this one parses whatever a
+# remote server sends. That is a fuzzing target, and it is not the place to save
+# a dependency that costs a download and no build time.
+find_package(nlohmann_json CONFIG REQUIRED)
+
+# libcurl, for the same API calls. Behind XPCOG_WITH_HTTP because that is the
+# switch that already decides whether this build can reach the network at all --
+# a player built without it has no internet radio either, and scrobbling has
+# nowhere to send anything. Exactly one of the two translation units below is
+# compiled, so no caller needs an #ifdef; see core/src/net/NullHttpClient.cpp.
+if(XPCOG_WITH_HTTP)
+    xpcog_system_dep(curl _xpcog_core_curl_from_system)
+    if(NOT _xpcog_core_curl_from_system)
+        find_package(CURL CONFIG REQUIRED GLOBAL)
+    endif()
+    target_sources(xpcog-core PRIVATE src/net/CurlHttpClient.cpp)
+    target_link_libraries(xpcog-core PRIVATE CURL::libcurl)
+else()
+    target_sources(xpcog-core PRIVATE src/net/NullHttpClient.cpp)
+endif()
+
 target_link_libraries(xpcog-core
     PUBLIC  vendor-miniaudio
     PRIVATE vendor-hdcd
@@ -98,7 +132,9 @@ target_link_libraries(xpcog-core
     # can construct a decoder has to be able to name its channel layout.
     PUBLIC  vendor-fsurround
     PRIVATE ${XPCOG_SQLITE}
-    PRIVATE soxr::soxr XPCog::warnings)
+    PRIVATE soxr::soxr
+    PRIVATE nlohmann_json::nlohmann_json
+    PRIVATE XPCog::warnings)
 
 set_target_properties(xpcog-core PROPERTIES FOLDER core)
 

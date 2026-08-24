@@ -1,10 +1,14 @@
 #include "PreferencesDialog.hpp"
 
+#include "LastFmAccount.hpp"
+
 #include "Text.hpp"
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/platform/CrashReporter.hpp"
 
+#include <wx/app.h>
+#include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
 #include <wx/clrpicker.h>
@@ -428,10 +432,13 @@ private:
 
 }  // namespace
 
-PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings)
+PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
+                                     LastFmAccount* account, Scrobbler* scrobbler)
     : wxDialog(parent, wxID_ANY, "Preferences", wxDefaultPosition, wxDefaultSize,
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
-      settings_(settings) {
+      settings_(settings),
+      account_(account),
+      scrobbler_(scrobbler) {
     SetSize(FromDIP(wxSize(660, 480)));
 
     // A list beside a stack of pages, which is exactly what the Qt version built
@@ -461,6 +468,13 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings)
     page(buildOutputPane(book), "Output");
     page(buildGeneralPane(book), "General");
     page(buildNotificationsPane(book), "Notifications");
+    // Cog has a Last.fm pane of its own and puts it last, after Appearance and
+    // MIDI. It goes beside Notifications here because that is what it is: the
+    // other place this program reports what it is playing to something outside
+    // itself. Skipped entirely when the application did not pass one in.
+    if (account_ != nullptr && scrobbler_ != nullptr) {
+        page(buildLastFmPane(book), "Last.fm");
+    }
     // Absent on macOS. Its only control is the close-to-tray checkbox, which is
     // already Windows and Linux only -- macOS closes to the Dock unconditionally,
     // by platform convention rather than by preference -- so what remains there is
@@ -495,6 +509,16 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings)
     SetSizer(layout);
 
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { EndModal(wxID_CLOSE); }, wxID_CLOSE);
+}
+
+PreferencesDialog::~PreferencesDialog() {
+    // An attempt still waiting on a browser has nothing left to report to, and
+    // leaving it running would keep polling Last.fm for three minutes after the
+    // window closed. The credential half of a reply already in flight still
+    // lands; see paneAlive_.
+    if (account_ != nullptr) {
+        account_->cancelConnect();
+    }
 }
 
 std::function<void(const char*)> PreferencesDialog::changeNotifier() {
@@ -937,6 +961,166 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
     pane->SetSizer(layout);
     pane->FitInside();
+    return pane;
+}
+
+// --- Last.fm --------------------------------------------------------------
+
+wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
+    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* form = makeForm(pane->FromDIP(6));
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
+
+    wxCheckBox* enable = row->toggle("Scrobble to Last.fm", "enableAudioScrobbler");
+
+    // The status line and the buttons are rebuilt rather than recreated, so the
+    // pane has one place that decides what state it is in. Everything below is a
+    // closure over these three.
+    auto* status  = new wxStaticText(pane, wxID_ANY, wxEmptyString);
+    auto* connect = new wxButton(pane, wxID_ANY, "Connect...");
+    auto* cancel  = new wxButton(pane, wxID_ANY, "Cancel");
+    auto* forget  = new wxButton(pane, wxID_ANY, "Disconnect");
+    status->Wrap(pane->FromDIP(440));
+
+    auto* buttons = new wxBoxSizer(wxHORIZONTAL);
+    buttons->Add(connect, 0, wxRIGHT, pane->FromDIP(6));
+    buttons->Add(cancel, 0, wxRIGHT, pane->FromDIP(6));
+    buttons->Add(forget, 0);
+
+    form->AddSpacer(0);
+    form->Add(status, 1, wxEXPAND | wxTOP | wxBOTTOM, pane->FromDIP(6));
+    form->AddSpacer(0);
+    form->Add(buttons, 0, wxBOTTOM, pane->FromDIP(6));
+
+    // A token proving this pane is still on screen.
+    //
+    // The connect flow answers on a worker and is marshalled back through
+    // wxTheApp -- deliberately, because the *credential* half of the reply has to
+    // land even if this dialog has been closed in the meantime: a listener who
+    // authorises and then closes Preferences has still authorised. But that same
+    // choice means the reply is not cancelled when the dialog dies, so anything
+    // touching a widget has to check first. `wxEvtHandler::CallAfter` on the
+    // dialog itself would drop the event and take the credential with it, which
+    // is the worse of the two failures.
+    // Held by this dialog, so it expires exactly when the dialog does.
+    paneAlive_               = std::make_shared<int>(0);
+    const std::weak_ptr<int> token = paneAlive_;
+
+    // Captured by the handlers below. `refresh` is the only thing that decides
+    // what is shown, so there is no way for two paths to disagree about it.
+    const auto refresh = [this, token, status, connect, cancel, forget, enable] {
+        if (token.expired()) {
+            return;
+        }
+        const bool built = account_->usable();
+        wxString   storeProblem;
+        const bool store   = LastFmAccount::storeAvailable(&storeProblem);
+        const bool working = account_->connecting();
+        const auto session = scrobbler_->session();
+
+        enable->Enable(built && store);
+        connect->Show(!session.connected() && !working);
+        cancel->Show(working);
+        forget->Show(session.connected() && !working);
+        connect->Enable(built && store);
+
+        if (!built) {
+            // Greyed and explained rather than hidden, which is how the
+            // crash-reporting checkbox handles a build without Sentry. A control
+            // that does nothing is worse than one that says why.
+            enable->SetValue(false);
+            status->SetLabel(account_->unavailableReason());
+        } else if (!store) {
+            status->SetLabel(storeProblem.empty()
+                                 ? wxString("The system password store is not available, "
+                                            "so a Last.fm session cannot be kept.")
+                                 : storeProblem);
+        } else if (working) {
+            status->SetLabel("Waiting for you to allow access in your browser...");
+        } else if (session.connected()) {
+            status->SetLabel(
+                wxString::Format("Connected as %s.",
+                                 wxString::FromUTF8(session.username)));
+        } else {
+            status->SetLabel("Not connected. Connecting opens Last.fm in your "
+                             "browser; XPCog never sees your password.");
+        }
+
+        const std::size_t waiting = scrobbler_->pending();
+        if (waiting > 0) {
+            // Worth saying, because the alternative is a listener concluding
+            // that the plays were lost. They were not; they are on disk.
+            status->SetLabel(status->GetLabel() +
+                             wxString::Format("\n%zu play%s waiting to be sent.",
+                                              waiting, waiting == 1 ? "" : "s"));
+        }
+
+        status->Wrap(FromDIP(440));
+        Layout();
+    };
+
+    connect->Bind(wxEVT_BUTTON, [this, refresh, token, status](wxCommandEvent&) {
+        // Captured as plain pointers rather than through `this`: both outlive
+        // this dialog -- MainFrame owns them -- so a reply that arrives after
+        // Preferences closes still applies the session it was granted.
+        Scrobbler* const scrobbler = scrobbler_;
+        Settings* const  settings  = &settings_;
+
+        LastFmAccount::ConnectHandlers handlers;
+        handlers.awaitingAuthorization = [refresh](const wxString&) { refresh(); };
+        handlers.connected = [refresh, scrobbler, settings](
+                                 const Scrobbler::Session& session) {
+            scrobbler->setSession(session);
+            // Connecting is the act that makes the switch mean something, so it
+            // turns it on -- rather than leaving a listener who just authorised
+            // an account wondering why nothing is being scrobbled.
+            settings->setEnableScrobbling(true);
+            refresh();
+        };
+        handlers.failed = [refresh, token, status](const wxString& message) {
+            refresh();
+            if (!token.expired()) {
+                status->SetLabel(message);
+            }
+        };
+
+        // CallAfter is documented as safe to call from a worker thread. Through
+        // wxTheApp rather than through this dialog, for the reason given at
+        // `paneAlive_` above: the reply must outlive the window.
+        account_->connect(
+            [](std::function<void()> action) { wxTheApp->CallAfter(std::move(action)); },
+            std::move(handlers));
+        refresh();
+    });
+
+    cancel->Bind(wxEVT_BUTTON, [this, refresh](wxCommandEvent&) {
+        account_->cancelConnect();
+        refresh();
+    });
+
+    forget->Bind(wxEVT_BUTTON, [this, refresh](wxCommandEvent&) {
+        account_->forget();
+        scrobbler_->setSession({});
+        // Deliberately *not* switching the preference off. Disconnecting is
+        // about the account, and a listener who reconnects should not also have
+        // to remember to tick the box again. The queue is kept for the same
+        // reason -- those plays really happened.
+        refresh();
+    });
+
+    row->note("Plays are sent once you have heard half a track, or four minutes "
+              "of it, whichever comes first. Tracks under 30 seconds are never "
+              "scrobbled.");
+    row->link("Your Last.fm applications", "https://www.last.fm/settings/applications");
+    row->note("Revoking access there stops scrobbling immediately, whatever this "
+              "pane says.");
+
+    refresh();
+
+    auto* layout = new wxBoxSizer(wxVERTICAL);
+    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
+    pane->SetSizer(layout);
     return pane;
 }
 
