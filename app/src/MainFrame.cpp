@@ -1487,7 +1487,16 @@ void MainFrame::savePlaylistAs() {
         format = PlaylistFormat::Xspf;
     }
 
-    // The queue is translated from ids to positions, and that is a real
+    // What is saved is what is on screen: the sort the listener applied, and
+    // only the rows the filter leaves. The order has to be read back from the
+    // view because this is the one place the two disagree -- sorting here is
+    // display-only and never reaches Playlist, so playlist_.entries() is still
+    // in the order the tracks were added. A listener who sorts by album and
+    // saves wants the file in album order; before this, they got the file in
+    // the order they had happened to drop folders onto the window.
+    const std::vector<PlaylistEntry> entries = view_.visibleEntries();
+
+    // The queue is translated from ids to row numbers, and that is a real
     // conversion rather than a cast to satisfy a signature. Playlist::queue()
     // holds TrackIds, which are opaque and permanent; writePlaylist wants
     // indices into the entries it is being handed, because that is what Cog's
@@ -1500,11 +1509,16 @@ void MainFrame::savePlaylistAs() {
     // the same type. On macOS and Linux size_t is unsigned long -- same width,
     // different type -- and the first compiler that was not MSVC rejected it
     // immediately. An overload that took either would have hidden this for good.
+    //
+    // Rows rather than playlist indices, now that the entries being written are
+    // the visible ones: the file's queue points into the list the file itself
+    // holds. A queued track the filter has hidden is not in that list, so it is
+    // dropped rather than left naming some other row.
     std::vector<std::size_t> queuePositions;
     queuePositions.reserve(playlist_.queue().size());
     for (const TrackId id : playlist_.queue()) {
-        if (const std::optional<std::size_t> index = playlist_.indexOf(id); index) {
-            queuePositions.push_back(*index);
+        if (const std::optional<std::size_t> row = view_.rowForTrack(id); row) {
+            queuePositions.push_back(*row);
         }
     }
 
@@ -1512,8 +1526,8 @@ void MainFrame::savePlaylistAs() {
     // keeps it testable without a filesystem. The destination goes in because
     // relative paths are written against it -- which is what makes a playlist
     // survive moving a music folder wholesale.
-    const std::string text = writePlaylist(format, playlist_.entries(), queuePositions,
-                                           Url::fromLocalPath(path));
+    const std::string text =
+        writePlaylist(format, entries, queuePositions, Url::fromLocalPath(path));
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out || !out.write(text.data(), static_cast<std::streamsize>(text.size()))) {
@@ -1521,7 +1535,17 @@ void MainFrame::savePlaylistAs() {
                      this);
         return;
     }
-    setStatusText("Playlist saved.");
+    // Saying so when the filter left tracks out. Writing what is shown is the
+    // point of the ordering above, but a filtered save is also the one way this
+    // command can quietly write fewer tracks than the listener thinks it has --
+    // and a status line is cheaper than a dialog they would learn to dismiss.
+    const std::size_t total = playlist_.size();
+    if (entries.size() < total) {
+        setStatusText("Playlist saved: " + std::to_string(entries.size()) + " of " +
+                      std::to_string(total) + " tracks, the rest hidden by the filter.");
+    } else {
+        setStatusText("Playlist saved.");
+    }
 }
 
 void MainFrame::addUrls(const std::vector<Url>& urls, int atRow) {

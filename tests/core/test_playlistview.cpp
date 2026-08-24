@@ -281,6 +281,34 @@ TEST_CASE("an update that changes whether a row passes the filter rebuilds",
     CHECK(view.text(0, Column::Title) == "Track 4 (Remastered)");
 }
 
+TEST_CASE("the visible entries are the sorted, filtered ones, in order",
+          "[core][playlist]") {
+    Playlist     playlist = makeAlbum();
+    PlaylistView view{playlist};
+
+    view.setSort(Column::Title, false);
+
+    std::vector<std::string> titles;
+    for (const PlaylistEntry& entry : view.visibleEntries()) {
+        titles.push_back(entry.rawTitle);
+    }
+    std::vector<std::string> descending = albumOrder();
+    std::reverse(descending.begin(), descending.end());
+    CHECK(titles == descending);
+
+    // The playlist is still in playlist order, which is exactly why saving reads
+    // the entries back from the view rather than from Playlist.
+    CHECK(playlist.at(0).rawTitle == "Track 1");
+
+    // Filtered rows are not written, and the ones that are keep their identity:
+    // these are the playlist's own entries, not rebuilt ones.
+    view.setFilter("track 10");
+    const std::vector<PlaylistEntry> filtered = view.visibleEntries();
+    REQUIRE(filtered.size() == 1);
+    CHECK(filtered.front().rawTitle == "Track 10");
+    CHECK(filtered.front().id == playlist.at(9).id);
+}
+
 TEST_CASE("sort order never reaches the playlist", "[core][playlist]") {
     Playlist     playlist = makeAlbum();
     PlaylistView view{playlist};

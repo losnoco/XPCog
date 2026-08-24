@@ -77,6 +77,17 @@ public:
     /// Every visible row's track, top to bottom. What a "select all" acts on.
     [[nodiscard]] std::vector<TrackId> visibleTracks() const;
 
+    /// Every visible row's entry, top to bottom. What saving a playlist file
+    /// writes: the sort the listener applied and the rows the filter leaves,
+    /// which is the order they are looking at.
+    ///
+    /// Copies, where the rest of this class hands out references. The rows it
+    /// names are scattered through the playlist, so there is no contiguous range
+    /// to point at, and writePlaylist wants a vector of entries. Saving happens
+    /// once per keystroke on Ctrl+S rather than once per redraw, so the copy is
+    /// the cheap side of the trade.
+    [[nodiscard]] std::vector<PlaylistEntry> visibleEntries() const;
+
     /// The cell's text, already formatted -- a duration as `4:07`, a missing
     /// value as empty. The one piece of presentation core owns, because the
     /// alternative is every front end formatting a duration slightly differently.

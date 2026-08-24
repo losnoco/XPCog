@@ -256,6 +256,15 @@ std::vector<TrackId> PlaylistView::visibleTracks() const {
     return tracks;
 }
 
+std::vector<PlaylistEntry> PlaylistView::visibleEntries() const {
+    std::vector<PlaylistEntry> entries;
+    entries.reserve(visible_.size());
+    for (const std::size_t index : visible_) {
+        entries.push_back(playlist_.at(index));
+    }
+    return entries;
+}
+
 std::string PlaylistView::text(std::size_t row, Column column) const {
     const PlaylistEntry* entry = entryAt(row);
     if (entry == nullptr) {
