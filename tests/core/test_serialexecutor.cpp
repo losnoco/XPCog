@@ -104,34 +104,58 @@ TEST_CASE("only one task runs at a time", "[core][executor]") {
 }
 
 TEST_CASE("destruction does not wait for the queue to drain", "[core][executor]") {
-    std::atomic<int>        ran{0};
-    std::mutex              mutex;
-    std::condition_variable released;
-    bool                    go = false;
+    // Each queued task is slow enough that draining all of them would take about
+    // a second, and destruction has to return in a small fraction of that. The
+    // margin is the point: the difference between "dropped the queue" and "ran
+    // the queue" is three orders of magnitude here rather than a scheduling
+    // accident.
+    //
+    // **This used to assert the outcome of a race**, and is worth keeping the
+    // history of. It queued a hundred `++ran` calls behind a blocking one,
+    // released the blocker, and checked that fewer than all of them had run --
+    // which held only if the destructor set `stopping_` before the worker, newly
+    // woken from a condition variable, could get through a hundred trivial
+    // tasks. The main thread usually won that race, so it usually passed. macOS
+    // on arm64 was fast enough to lose it, and the resulting red build was a
+    // property of the runner rather than of the code.
+    //
+    // The claim being made is the one in the test's name, so time is what it
+    // ought to measure.
+    constexpr int  kQueued  = 100;
+    constexpr auto kPerTask = std::chrono::milliseconds(10);
 
+    std::atomic<int>  ran{0};
+    std::atomic<bool> started{false};
+
+    const auto begin = std::chrono::steady_clock::now();
     {
         SerialExecutor executor;
 
-        // The first task blocks until released, so everything behind it is still
-        // queued when the executor goes away.
+        // Signals that the worker is genuinely running, so the scope below is
+        // left with the queue occupied rather than possibly not yet picked up.
         executor.post([&] {
-            std::unique_lock<std::mutex> lock(mutex);
-            released.wait(lock, [&] { return go; });
             ++ran;
+            started.store(true);
         });
-        for (int i = 0; i < 100; ++i) {
-            executor.post([&] { ++ran; });
+        for (int i = 0; i < kQueued; ++i) {
+            executor.post([&] {
+                std::this_thread::sleep_for(kPerTask);
+                ++ran;
+            });
         }
 
-        {
-            const std::lock_guard<std::mutex> lock(mutex);
-            go = true;
-        }
-        released.notify_all();
-        // Leaving the scope here joins. The task already running finishes; the
-        // hundred behind it are dropped rather than run, which is what stops a
-        // window closing from taking as long as whatever was queued.
+        REQUIRE(waitFor([&] { return started.load(); }));
+        // Leaving the scope drops what is still queued and joins, waiting only
+        // for the one task in flight -- which is what stops a window closing
+        // from taking as long as whatever was queued behind it.
     }
+    const auto elapsed = std::chrono::steady_clock::now() - begin;
 
-    CHECK(ran.load() < 101);
+    // The queue was dropped rather than run.
+    CHECK(ran.load() < kQueued + 1);
+
+    // And destruction took nothing like as long as draining would have. Half the
+    // total is deliberately loose: the true figure is one task, and a bound this
+    // wide cannot go red merely for running on a busy machine.
+    CHECK(elapsed < (kQueued * kPerTask) / 2);
 }
