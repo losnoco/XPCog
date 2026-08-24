@@ -3,8 +3,10 @@
 // The device is opened when a track starts, so a device or share-mode change
 // used to mean re-opening the track and seeking back -- honest, but a gap of
 // however long the file takes to open rather than however long the driver does.
-// Switching under the running stream keeps both rings, so the new device
-// resumes at the very next sample.
+// Switching under the running stream keeps both rings where the format allows
+// it, so the new device resumes at the very next sample; where it does not, the
+// rings are dropped and the decoder rewound to the frame last heard, so the gap
+// gains a seek and the track is still never re-opened.
 //
 // What that costs is the position clock. Every position the engine records is an
 // absolute count of frames delivered, and a device counts from zero again the
@@ -20,6 +22,7 @@
 #include "../TestShell.hpp"
 #include "../TestSignal.hpp"
 
+#include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/AudioEngine.hpp"
@@ -138,6 +141,14 @@ bool waitFor(Predicate predicate, int milliseconds = 4000) {
 /// Seconds of stereo audio in a captured buffer.
 double secondsOf(const std::vector<float>& captured) {
     return static_cast<double>(captured.size()) / (kRate * kChannels);
+}
+
+/// The same, for a capture taken from a device running some other format --
+/// which is the whole subject of the tests at the bottom of this file, and the
+/// reason the divisor cannot be a constant.
+double secondsOf(const std::vector<float>& captured, double rate,
+                 std::uint32_t channels) {
+    return static_cast<double>(captured.size()) / (rate * channels);
 }
 
 /// Whether `played` is the rest of an eight-second track from `switchedAt`.
@@ -294,6 +305,154 @@ private:
     mutable std::string           askedAbout_;
     mutable bool                  asked_ = false;
 };
+
+/// The rate and width a reshaping device runs at, whatever it is asked for.
+/// Both far enough from the fixtures' own that a wrong answer is a wrong number
+/// rather than a rounding argument.
+constexpr double        kDeviceRate     = 32000.0;
+constexpr std::uint32_t kDeviceChannels = 1;
+
+/// An output whose chosen device runs one format and one only.
+///
+/// Real hardware does this by having a fixed clock -- the exclusive-mode DAC
+/// that runs 48,000 and nothing else, the mono USB interface -- and from the
+/// engine's side there is nothing else to it: start() succeeds and
+/// negotiatedFormat() answers something other than what was asked. Only a named
+/// device reshapes, so the empty-string default the engine falls back to still
+/// runs whatever it is given, which is what makes it a *different* device.
+class ReshapingOutput final : public IAudioOutput {
+public:
+    ReshapingOutput(std::unique_ptr<IAudioOutput> inner, double rate,
+                    std::uint32_t channels)
+        : inner_(std::move(inner)), rate_(rate), channels_(channels) {}
+
+    bool start(const Config& config) override {
+        Config reshaped = config;
+        if (!config.deviceId.empty()) {
+            reshaped.sampleRate = rate_;
+            reshaped.channels   = channels_;
+        }
+        return inner_->start(reshaped);
+    }
+
+    void stop() override { inner_->stop(); }
+    void pause() override { inner_->pause(); }
+    void resume() override { inner_->resume(); }
+
+    [[nodiscard]] AudioFormat negotiatedFormat() const override {
+        return inner_->negotiatedFormat();
+    }
+    [[nodiscard]] double latencySeconds() const override {
+        return inner_->latencySeconds();
+    }
+    [[nodiscard]] std::vector<DeviceInfo> devices() const override {
+        return inner_->devices();
+    }
+    void  setVolume(float gain) override { inner_->setVolume(gain); }
+    [[nodiscard]] float volume() const override { return inner_->volume(); }
+    void rampGain(float target, double milliseconds) override {
+        inner_->rampGain(target, milliseconds);
+    }
+    [[nodiscard]] bool ramping() const override { return inner_->ramping(); }
+    [[nodiscard]] std::uint64_t underrunCount() const override {
+        return inner_->underrunCount();
+    }
+    [[nodiscard]] std::uint64_t framesPlayed() const override {
+        return inner_->framesPlayed();
+    }
+    void setDeviceInvalidatedCallback(std::function<void()> callback) override {
+        inner_->setDeviceInvalidatedCallback(std::move(callback));
+    }
+    void setTap(AudioTap* tap) override { inner_->setTap(tap); }
+
+    [[nodiscard]] const IAudioOutput& capture() const { return *inner_; }
+
+private:
+    std::unique_ptr<IAudioOutput> inner_;
+    double                        rate_;
+    std::uint32_t                 channels_;
+};
+
+/// A source with nothing to read and a decoder that will not seek: between them,
+/// live radio. The point of interest is `seekable`, which is false by default in
+/// TrackProperties and is what decides whether a format change can be followed.
+class UnseekableSource final : public ISource {
+public:
+    bool open(const Url& url) override {
+        url_ = url;
+        return true;
+    }
+    [[nodiscard]] bool         seekable() const override { return false; }
+    bool                       seek(std::int64_t, int) override { return false; }
+    [[nodiscard]] std::int64_t tell() const override { return 0; }
+    std::int64_t               read(void*, std::int64_t) override { return 0; }
+    void                       close() override {}
+    [[nodiscard]] const Url&   url() const override { return url_; }
+
+private:
+    Url url_;
+};
+
+class UnseekableDecoder final : public IDecoder {
+public:
+    bool open(ISource*) override { return true; }
+
+    [[nodiscard]] TrackProperties properties() const override {
+        TrackProperties props;
+        props.format.sampleRate    = kRate;
+        props.format.channels      = kChannels;
+        props.format.channelConfig = 0x3;  // FL | FR
+        props.format.format        = SampleFormat::F32;
+        props.totalFrames          = kChunks * static_cast<std::int64_t>(kFrames);
+        props.seekable             = false;
+        return props;
+    }
+
+    bool readAudio(AudioChunk& out) override {
+        if (chunksLeft_ == 0) {
+            return false;
+        }
+        --chunksLeft_;
+
+        AudioFormat format;
+        format.sampleRate    = kRate;
+        format.channels      = kChannels;
+        format.channelConfig = 0x3;
+        format.format        = SampleFormat::F32;
+        out.setFormat(format);
+        auto* dst = reinterpret_cast<float*>(out.allocFrames(kFrames));
+        for (std::size_t i = 0; i < kFrames * kChannels; ++i) {
+            dst[i] = 0.0F;
+        }
+        out.setFrameCount(kFrames);
+        return true;
+    }
+
+    std::int64_t seek(std::int64_t) override { return -1; }
+    void         close() override {}
+
+private:
+    static constexpr std::size_t  kFrames = 4096;
+    static constexpr std::int64_t kChunks = 128;  // ~12s at 44.1 kHz stereo
+    std::int64_t                  chunksLeft_ = kChunks;
+};
+
+constexpr std::string_view kLiveScheme[] = {"live"};
+constexpr std::string_view kLiveExt[]    = {"live"};
+
+void populateLiveRegistry(PluginRegistry& registry) {
+    registry.addSource({
+        .name    = "UnseekableSource",
+        .schemes = kLiveScheme,
+        .create  = []() -> SourcePtr { return std::make_unique<UnseekableSource>(); },
+    });
+    registry.addDecoder({
+        .name       = "UnseekableDecoder",
+        .extensions = kLiveExt,
+        .create     = []() -> DecoderPtr { return std::make_unique<UnseekableDecoder>(); },
+    });
+    registry.freeze();
+}
 
 /// Counts the delegate calls the failure paths are supposed to make.
 class RecordingDelegate final : public AudioEngine::Delegate {
@@ -627,5 +786,160 @@ TEST_CASE("no chosen device asks about no device", "[device]") {
     CHECK(output.askedAbout().empty());
 
     engine.waitUntilFinished();
+    engine.stop();
+}
+
+// --- following a device to another format --------------------------------
+//
+// Everything above holds the format still, which is the case where the queued
+// audio is still meaningful and nothing is lost. These are the other one: the
+// chosen device runs a rate or a width of its own, so what is queued is the
+// wrong shape and has to go. The stream follows anyway -- the pipeline is
+// re-pointed and the decoder rewound to the frame that was last audible -- so
+// the audio comes back rather than being skipped, and the track is never
+// re-opened.
+
+TEST_CASE("a device that runs another rate takes the stream with it", "[device]") {
+    constexpr int kFrames = static_cast<int>(kRate) * 8;
+
+    const auto file = makeFlac("switch-rate", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer      ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    ReshapingOutput output{makeOfflineOutput(ring, kSpeed), kDeviceRate, kChannels};
+
+    auto              store = makeMemorySettingsStore();
+    Settings          settings{*store};
+    RecordingDelegate delegate;
+    AudioEngine       engine{registry(), output, ring, settings};
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+    REQUIRE(waitFor([&] { return engine.trackPositionSeconds() >= 2.0; }));
+    REQUIRE(output.negotiatedFormat().sampleRate == kRate);
+
+    const double switchedAt = engine.trackPositionSeconds();
+    settings.setOutputDeviceId("offline");
+    REQUIRE(engine.switchOutputDevice());
+
+    // The device really did move, and really did land somewhere else.
+    REQUIRE(waitFor([&] { return output.negotiatedFormat().sampleRate == kDeviceRate; }));
+
+    // Not a failure. The whole point of this case is that the caller is not
+    // asked to re-open the track: a report here would send PlaybackController
+    // down the restart-and-seek path this exists to avoid.
+    CHECK(delegate.switchFailures() == 0);
+
+    // And the clock did not jump. It is denominated in device frames and a
+    // device frame is now a different length of time, so every recorded count
+    // had to be rescaled with the format -- get that wrong and the position
+    // reads 44100/32000 of where it was, which is a jump of most of a second.
+    CHECK(engine.trackPositionSeconds() >= switchedAt - 0.5);
+    REQUIRE(waitFor([&] { return engine.trackPositionSeconds() > switchedAt + 1.0; }));
+
+    engine.waitUntilFinished();
+    engine.stop();
+
+    // The remainder of the track, in the new device's units. Too much means the
+    // track was opened again from the top, which is the whole thing being
+    // avoided; too little means the queue was thrown away without rewinding to
+    // what was in it, and that is the *deep* ring -- about three seconds.
+    //
+    // The lower bound carries the offline output's own artifact, the one
+    // remainderIsIntact() explains: stopping it drains the shallow ring into a
+    // capture that starting the next device then clears, and counts those frames
+    // as played -- so the rewind lands after audio no capture ever shows. A real
+    // device is merely uninitialised and leaves the ring for its successor.
+    const double aRing = static_cast<double>(ring.capacity()) / (kRate * kChannels);
+    const double played =
+        secondsOf(capturedAudio(output.capture()), kDeviceRate, kChannels);
+    INFO("switched at " << switchedAt << "s, new device played " << played << "s");
+    CHECK(played > 8.0 - switchedAt - aRing - 0.25);
+    CHECK(played < 8.0 - switchedAt + 0.25);
+}
+
+TEST_CASE("a device that runs another width takes the stream with it", "[device]") {
+    // The other half of the format, and not the same code path: the rate moves
+    // the clock and the channel count moves the DSP chain, which is prepared for
+    // a width and reads it once per pass. A pump left at the old width reads the
+    // ring in the wrong stride, which is silent, wrong, and does not stop.
+    constexpr int kFrames = static_cast<int>(kRate) * 6;
+
+    const auto file = makeFlac("switch-width", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer      ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    ReshapingOutput output{makeOfflineOutput(ring, kSpeed), kRate, kDeviceChannels};
+
+    auto              store = makeMemorySettingsStore();
+    Settings          settings{*store};
+    RecordingDelegate delegate;
+    AudioEngine       engine{registry(), output, ring, settings};
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+    REQUIRE(waitFor([&] { return engine.trackPositionSeconds() >= 1.5; }));
+
+    const double switchedAt = engine.trackPositionSeconds();
+    settings.setOutputDeviceId("offline");
+    REQUIRE(engine.switchOutputDevice());
+
+    REQUIRE(waitFor([&] { return output.negotiatedFormat().channels == kDeviceChannels; }));
+    CHECK(delegate.switchFailures() == 0);
+
+    // The rate is unchanged here, so the clock needed no rescaling and the
+    // position may be held to a tighter bound than the case above.
+    CHECK(engine.trackPositionSeconds() >= switchedAt - 0.25);
+    REQUIRE(waitFor([&] { return engine.trackPositionSeconds() > switchedAt + 1.0; }));
+
+    engine.waitUntilFinished();
+    engine.stop();
+
+    // Bounded as above, and short by the same shallow ring for the same reason.
+    const double aRing = static_cast<double>(ring.capacity()) / (kRate * kChannels);
+    const double played =
+        secondsOf(capturedAudio(output.capture()), kRate, kDeviceChannels);
+    INFO("switched at " << switchedAt << "s, new device played " << played << "s");
+    CHECK(played > 6.0 - switchedAt - aRing - 0.25);
+    CHECK(played < 6.0 - switchedAt + 0.25);
+}
+
+TEST_CASE("a stream that cannot be rewound declines the format change", "[device]") {
+    // Following a device to another format costs the queue, and what pays that
+    // back is rewinding the decoder to the frame last heard. A live stream
+    // cannot be rewound, so there is nothing to pay with: the honest outcome is
+    // to stay on the device that was working and let the caller decide, which is
+    // exactly what happened for *every* format change before this.
+    PluginRegistry live;
+    populateLiveRegistry(live);
+
+    RingBuffer      ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    ReshapingOutput output{makeOfflineOutput(ring, kSpeed), kDeviceRate, kChannels};
+
+    auto              store = makeMemorySettingsStore();
+    Settings          settings{*store};
+    RecordingDelegate delegate;
+    AudioEngine       engine{live, output, ring, settings};
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(*Url::parse("live://radio.example/stream.live")));
+    REQUIRE(waitFor([&] { return engine.trackPositionSeconds() >= 1.0; }));
+
+    settings.setOutputDeviceId("offline");
+    REQUIRE(engine.switchOutputDevice());
+
+    REQUIRE(waitFor([&] { return delegate.switchFailures() == 1; }));
+
+    // Still on the device that was running, and still at the format it was
+    // running -- the reshaping device was opened, found unusable, and closed.
+    CHECK(output.negotiatedFormat().sampleRate == kRate);
+
+    const double before = engine.trackPositionSeconds();
+    REQUIRE(waitFor([&] { return engine.trackPositionSeconds() > before + 0.5; }));
+
     engine.stop();
 }

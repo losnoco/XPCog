@@ -85,8 +85,16 @@ public:
         virtual void trackFailed(const Url& /*url*/) {}
 
         /// A live output switch could not be made and playback stayed on the
-        /// device it was already using -- the new one would not open, or would
-        /// not run the format the queued audio is already in.
+        /// device it was already using -- the new one would not open, or it
+        /// opened at another format and the stream could not be moved into it.
+        ///
+        /// The second half is narrower than it used to be. A device that runs
+        /// another sample rate or another channel count is now followed there:
+        /// the pipeline is re-pointed at the new format and the decoder is
+        /// rewound to the frame the listener last heard, so what is left here is
+        /// the stream that cannot be rewound -- live radio, or a gapless seam
+        /// already queued whose audio belongs to a track the decoder has moved
+        /// past. See switchOutputDevice().
         ///
         /// The engine cannot do more than that on its own: it has no idea what
         /// is in the playlist, and re-opening the track is the caller's move.
@@ -180,11 +188,22 @@ public:
     /// re-open and seek. Nothing is lost across it: both rings keep what they
     /// hold, so the new device resumes at the very next sample.
     ///
-    /// That only works while the format does not change, which is exactly the
-    /// condition under which the queued audio is still meaningful -- it was
-    /// converted for the format that was running. A device that will not run
-    /// that format is reported through Delegate::outputSwitchFailed(), and
-    /// playback stays where it was.
+    /// Nothing is lost only while the format does not change, which is exactly
+    /// the condition under which the queued audio is still meaningful -- it was
+    /// converted for the format that was running.
+    ///
+    /// A device that runs another sample rate or another channel count is
+    /// followed there anyway, at the cost of that queue. The pipeline is
+    /// re-pointed at the new format -- converter, DSP chain, and every frame
+    /// count the position clock is measured in -- and the decoder is rewound to
+    /// the frame the listener last heard, so the audio that was queued is played
+    /// again rather than skipped. The gap is a driver open plus a seek instead
+    /// of a driver open, and the track is never re-opened.
+    ///
+    /// What that needs is somewhere to rewind to. A stream that cannot seek, and
+    /// a gapless seam already queued -- whose audio belongs to a track the
+    /// decoder has already moved past -- are both reported through
+    /// Delegate::outputSwitchFailed() instead, and playback stays where it was.
     ///
     /// Returns false when there is nothing playing to move, which includes
     /// being paused: the feeder services the switch, and a paused feeder is
@@ -202,25 +221,75 @@ private:
     };
 
     void feederLoop();
+
+    /// Decodes the open track until end of stream, then waits for what is queued
+    /// to be played out. Returns true when a device switch rewound the decoder
+    /// during that wait and there is material in front of it again -- which is
+    /// the one way feederLoop() comes round a second time.
+    bool pumpTrack();
     /// Which device to open: the configured one if it is still there, matched
     /// by id and then by name, and otherwise the system default.
     [[nodiscard]] std::string chosenDeviceId() const;
 
-    /// Applies a pending seek. Feeder thread only.
-    void performSeek(std::int64_t frame);
+    /// Applies a pending seek. Feeder thread only. False when the decoder
+    /// declined and nothing was moved.
+    bool performSeek(std::int64_t frame);
+
+    /// Drops everything queued in both stages and tells the clock that the next
+    /// audio produced belongs at `trackFrame` of the audible track, in device
+    /// frames. The half of a seek that is not the decoder's, shared with the
+    /// device switch that has to throw the queue away for another reason.
+    /// Feeder thread only.
+    void dropQueuedAudio(std::uint64_t trackFrame);
 
     /// Moves the device under the running stream. Feeder thread only, for the
     /// same reason performSeek() is: this rewrites the position clock, and
     /// publishSeams() reads it on every pass.
-    void performDeviceSwitch();
+    ///
+    /// Returns whether the decoder was rewound, which happens only when the new
+    /// device runs another format and the queued audio had to be decoded again.
+    /// The caller needs it after end of stream: there is material in front of a
+    /// decoder that had none.
+    bool performDeviceSwitch();
 
-    /// Opens `config` and keeps it only if the device will run the format the
-    /// queued audio is already in. Records what was asked for on success.
-    [[nodiscard]] bool startDeviceForSwitch(const IAudioOutput::Config& config);
+    /// What opening a device for a live switch came to.
+    enum class DeviceStart : std::uint8_t {
+        Failed,       ///< it would not open, or not in a format we can follow
+        Matched,      ///< it runs the format the queued audio is already in
+        Reformatted,  ///< it runs another one, and the stream can be moved into it
+    };
+
+    /// Opens `config`. Records what was asked for on success. Call with
+    /// seamMutex_ held: whether another format may be followed depends on
+    /// what is queued, and that is guarded state.
+    [[nodiscard]] DeviceStart startDeviceForSwitch(const IAudioOutput::Config& config);
+
+    /// Whether the stream could be re-pointed at another device format. Needs a
+    /// decoder that can be rewound to the audible frame, and needs the audible
+    /// track to still be the one being decoded. seamMutex_ held.
+    [[nodiscard]] bool canFollowFormatChange() const;
+
+    /// Re-points the converter and the DSP chain at `negotiated`. Feeder thread
+    /// only, and only with the DSP thread parked -- prepare() rewrites the very
+    /// state process() reads.
+    void adoptDeviceFormat(const AudioFormat& negotiated);
+
+    /// Parks the DSP thread at the top of its loop and waits for it to get
+    /// there, so the chain may be re-prepared under it. Feeder thread only.
+    ///
+    /// Must be called while a device is still running: a parked pump stops
+    /// refilling the shallow ring, and a thread blocked writing into a ring
+    /// nothing drains never reaches the top of its loop to park.
+    void parkDsp();
+    void unparkDsp();
 
     /// Total frames delivered since play(), across device changes. Call with
     /// seamMutex_ held -- the two halves are only consistent together.
     [[nodiscard]] std::uint64_t totalFramesPlayedLocked() const;
+
+    /// How far into the audible track `played` frames of device output is.
+    /// seamMutex_ held, for the same reason.
+    [[nodiscard]] std::uint64_t trackFramesLocked(std::uint64_t played) const;
 
     /// Asks the source whether the stream renamed itself, and tells the delegate.
     void pollStreamMetadata();
@@ -265,7 +334,20 @@ private:
     std::vector<float> converted_;
 
     RingBuffer& ring_;
+    /// The format the device is running and everything upstream is converted
+    /// into. Written by play() before any thread exists, and thereafter only by
+    /// a live device switch that had to follow the device to another format --
+    /// under seamMutex_, because the position clock is denominated in it.
     AudioFormat format_{};
+
+    /// Whether the FreeSurround upmix may run at all: the setting was on and the
+    /// first track was stereo. Decided once, in play(), because it is a
+    /// statement about the album rather than about the device.
+    bool freeSurroundOffered_ = false;
+    /// Whether it is actually running, which additionally needs a device six
+    /// channels wide. Re-decided whenever a switch changes how wide the device
+    /// is -- a move to stereo headphones drops the upmix rather than the switch.
+    bool freeSurroundActive_ = false;
 
     // The open track, touched only by the feeder thread.
     struct OpenTrack;
@@ -295,6 +377,16 @@ private:
     /// same tone for it to show up at all, as one capture short by exactly one
     /// block.
     std::atomic<bool> dspBusy_{false};
+
+    /// Raised by the feeder while it re-points the chain at another device
+    /// format; dropped when it is done. The DSP thread parks at the top of its
+    /// loop rather than mid-block, so nothing is ever half-processed across the
+    /// change and dspBusy_ is already false by the time it stops.
+    std::atomic<bool> dspReconfigure_{false};
+    /// The pump's answer: raised while it is parked, and the signal the feeder
+    /// waits for. Cleared by the pump itself on the way out, which is where it
+    /// re-reads the format the feeder changed underneath it.
+    std::atomic<bool> dspParked_{false};
 
     /// The chain, in order. Points at the members above rather than owning
     /// anything: the set of stages is fixed at compile time, so a vector of

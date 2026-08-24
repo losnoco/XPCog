@@ -176,15 +176,20 @@ bool AudioEngine::play(const Url& url) {
         format_.sampleRate = output_.supportsSampleRate(preferred) ? preferred : 48000.0;
     }
 
-    // FreeSurround is decided here, and only here, for the same reason the rate
-    // is: it widens the device from two channels to six, and the device is
-    // opened once. A later track that is already multichannel is fitted to
-    // stereo and upmixed again rather than passed through -- which is lossy, and
-    // is the price of not reconfiguring the device mid-album. Only offered when
-    // the first track is stereo, because upmixing something that already has a
-    // surround field is not what the control means.
-    const bool wantFreeSurround = settings_.EnableFSurround() && format_.channels == 2;
-    if (wantFreeSurround) {
+    // Whether FreeSurround is *offered* is decided here and only here, for the
+    // same reason the rate is: it widens the device from two channels to six,
+    // and the device is opened once. A later track that is already multichannel
+    // is fitted to stereo and upmixed again rather than passed through -- which
+    // is lossy, and is the price of not reconfiguring the device mid-album. Only
+    // offered when the first track is stereo, because upmixing something that
+    // already has a surround field is not what the control means.
+    //
+    // Whether it is *running* can still change once, and in one direction: a
+    // live device switch that lands on something narrower than six channels
+    // drops it. See adoptDeviceFormat().
+    freeSurroundOffered_ = settings_.EnableFSurround() && format_.channels == 2;
+    freeSurroundActive_  = freeSurroundOffered_;
+    if (freeSurroundActive_) {
         format_.channels      = 6;
         format_.channelConfig = kChannelFrontLeft | kChannelFrontRight |
                                 kChannelFrontCenter | kChannelLFE | kChannelBackLeft |
@@ -196,7 +201,7 @@ bool AudioEngine::play(const Url& url) {
         closeTrack();
         return false;
     }
-    converter_.setFreeSurround(wantFreeSurround);
+    converter_.setFreeSurround(freeSurroundActive_);
     converter_.reset();
     converter_.setHdcdEnabled(settings_.EnableHDCD());
     converter_.setHalveDsd(settings_.HalveDsdVolume());
@@ -221,6 +226,8 @@ bool AudioEngine::play(const Url& url) {
     framesWritten_ = 0;
     pendingDeviceSwitch_.store(false, std::memory_order_relaxed);
     deviceLost_.store(false, std::memory_order_relaxed);
+    dspReconfigure_.store(false, std::memory_order_relaxed);
+    dspParked_.store(false, std::memory_order_relaxed);
     {
         std::lock_guard lock(seamMutex_);
         pendingSeams_.clear();
@@ -317,10 +324,25 @@ void AudioEngine::applyDspSettings() {
 
 void AudioEngine::dspLoop() {
     std::vector<float> block(kDspBlockSamples);
-    const auto         channels = static_cast<std::size_t>(format_.channels);
+    auto               channels  = static_cast<std::size_t>(format_.channels);
     std::uint64_t      seenEpoch = flushEpoch_.load(std::memory_order_acquire);
 
     while (running_.load(std::memory_order_acquire)) {
+        // Parked while the feeder re-points the chain at another device format.
+        // Here, at the top, rather than anywhere a block might be half-way
+        // through: prepare() rewrites the state process() is reading, and a
+        // block already taken from the deep ring has nowhere to go but on.
+        if (dspReconfigure_.load(std::memory_order_acquire)) {
+            dspParked_.store(true, std::memory_order_release);
+            std::this_thread::sleep_for(kFeederBackoff);
+            continue;
+        }
+        if (dspParked_.exchange(false, std::memory_order_acquire)) {
+            // Whatever changed while we were stopped. The acquire pairs with the
+            // feeder's release on dspReconfigure_, so the new format is visible.
+            channels = static_cast<std::size_t>(format_.channels);
+        }
+
         // Settings first, so a slider moved during the wait below is already in
         // the coefficients by the time the next block is filtered.
         if (dspDirty_.exchange(false, std::memory_order_relaxed)) {
@@ -446,6 +468,35 @@ bool AudioEngine::writeToRing(const AudioChunk& chunk) {
 }
 
 void AudioEngine::feederLoop() {
+    // Round again for one reason only. Decoding runs hundreds of times faster
+    // than playback, so the feeder spends most of a track inside pumpTrack()'s
+    // drain wait with the decoder already at end of stream and seconds of audio
+    // still queued -- and a device switch that lands there and has to follow the
+    // device to another format rewinds that decoder, which puts material back in
+    // front of it. Without a way back to the pump, the rewound tail would be
+    // decoded by nobody: a switch made during the last few seconds of a song
+    // would silently cut it short.
+    while (pumpTrack()) {
+    }
+
+    publishSeams();
+
+    const bool naturalEnd = running_.load(std::memory_order_acquire);
+    if (naturalEnd) {
+        status_.store(PlaybackStatus::Stopped, std::memory_order_relaxed);
+        if (delegate_ != nullptr) {
+            delegate_->stoppedNaturally();
+        }
+    }
+
+    {
+        std::lock_guard lock(finishedMutex_);
+        finished_ = true;
+    }
+    finishedCv_.notify_all();
+}
+
+bool AudioEngine::pumpTrack() {
     AudioChunk chunk;
 
     while (running_.load(std::memory_order_acquire)) {
@@ -465,7 +516,10 @@ void AudioEngine::feederLoop() {
         // discards the queue and then stops the device that was about to be
         // refilled.
         if (pendingDeviceSwitch_.exchange(false, std::memory_order_acq_rel)) {
-            performDeviceSwitch();
+            // The rewind a format change does is a seek, and this loop is
+            // already the thing that decodes -- so nothing has to be done with
+            // the answer here. It only matters below, after end of stream.
+            static_cast<void>(performDeviceSwitch());
             if (deviceLost_.load(std::memory_order_acquire)) {
                 break;
             }
@@ -625,29 +679,20 @@ void AudioEngine::feederLoop() {
         // never read. There is still a device delivering audio; it is still
         // just as switchable.
         if (pendingDeviceSwitch_.exchange(false, std::memory_order_acq_rel)) {
-            performDeviceSwitch();
+            const bool rewound = performDeviceSwitch();
             if (deviceLost_.load(std::memory_order_acquire)) {
                 break;
+            }
+            if (rewound) {
+                // The decoder has material in front of it again, and this loop
+                // is not the thing that reads it. See feederLoop().
+                return true;
             }
         }
         publishSeams();
         std::this_thread::sleep_for(kFeederBackoff);
     }
-    publishSeams();
-
-    const bool naturalEnd = running_.load(std::memory_order_acquire);
-    if (naturalEnd) {
-        status_.store(PlaybackStatus::Stopped, std::memory_order_relaxed);
-        if (delegate_ != nullptr) {
-            delegate_->stoppedNaturally();
-        }
-    }
-
-    {
-        std::lock_guard lock(finishedMutex_);
-        finished_ = true;
-    }
-    finishedCv_.notify_all();
+    return false;
 }
 
 void AudioEngine::pollStreamMetadata() {
@@ -723,30 +768,114 @@ bool AudioEngine::switchOutputDevice() {
     return true;
 }
 
-bool AudioEngine::startDeviceForSwitch(const IAudioOutput::Config& config) {
-    if (!output_.start(config)) {
+bool AudioEngine::canFollowFormatChange() const {
+    // A seam already queued means the audio about to be discarded is the tail of
+    // a track this decoder has already moved past. Rewinding would resume the
+    // wrong one, and there is nothing to rewind it *to* -- the outgoing track's
+    // decoder is closed.
+    if (!pendingSeams_.empty()) {
         return false;
     }
-
-    // The whole point of switching under the stream is that both rings keep
-    // what they hold -- and what they hold was converted for the format that
-    // was running. A device that negotiates another rate or another channel
-    // count would play it at the wrong pitch or with the channels interleaved
-    // wrongly, so it is refused here rather than fed. play() is free to accept
-    // whatever it is given, because it converts the track into it; this is not.
-    const AudioFormat negotiated = output_.negotiatedFormat();
-    if (negotiated.sampleRate != format_.sampleRate ||
-        negotiated.channels != format_.channels) {
-        output_.stop();
+    // track_ is the feeder's, and the feeder is who calls this.
+    if (!track_ || !track_->decoder || !track_->decoder->properties().seekable) {
         return false;
+    }
+    return trackRate_.load(std::memory_order_acquire) > 0.0;
+}
+
+AudioEngine::DeviceStart
+AudioEngine::startDeviceForSwitch(const IAudioOutput::Config& config) {
+    if (!output_.start(config)) {
+        return DeviceStart::Failed;
+    }
+
+    const AudioFormat negotiated = output_.negotiatedFormat();
+    if (negotiated.sampleRate == format_.sampleRate &&
+        negotiated.channels == format_.channels) {
+        openDeviceId_  = config.deviceId;
+        openExclusive_ = config.exclusive;
+        return DeviceStart::Matched;
+    }
+
+    // Another format, which means everything queued is now the wrong shape:
+    // both rings hold audio converted for the rate and channel count that were
+    // running, and handing it to this device would play it at the wrong pitch or
+    // with the channels interleaved wrongly. It is dropped and decoded again
+    // rather than converted in place -- see performDeviceSwitch() -- so the one
+    // thing this device needs is somewhere to rewind to.
+    if (negotiated.sampleRate <= 0.0 || negotiated.channels == 0 ||
+        !canFollowFormatChange()) {
+        output_.stop();
+        return DeviceStart::Failed;
     }
 
     openDeviceId_  = config.deviceId;
     openExclusive_ = config.exclusive;
-    return true;
+    return DeviceStart::Reformatted;
 }
 
-void AudioEngine::performDeviceSwitch() {
+void AudioEngine::adoptDeviceFormat(const AudioFormat& negotiated) {
+    format_.sampleRate    = negotiated.sampleRate;
+    format_.channels      = negotiated.channels;
+    format_.channelConfig = negotiated.channelConfig;
+    // Float from here on, whatever the device carries: the packing into S16 or
+    // S24 is the output's, and everything in front of it works in float.
+    format_.format        = SampleFormat::F32;
+    format_.bitsPerSample = 32;
+
+    // The upmix is six channels wide or it is nothing, and the width just
+    // changed. Dropping it on a move to stereo headphones is the honest answer;
+    // picking it back up on a move to a six-channel device is not offered,
+    // because by then the device is being asked for the stereo it is running.
+    freeSurroundActive_ = freeSurroundOffered_ && format_.channels == 6;
+    if (freeSurroundActive_) {
+        format_.channelConfig = kChannelFrontLeft | kChannelFrontRight |
+                                kChannelFrontCenter | kChannelLFE | kChannelBackLeft |
+                                kChannelBackRight;
+    }
+
+    // Cannot fail here: it refuses only a zero rate or a zero width, and
+    // startDeviceForSwitch() has already turned a device that negotiated either
+    // of those into a device that would not open.
+    static_cast<void>(converter_.setOutputFormat(format_.sampleRate, format_.channels,
+                                                 settings_.Resampling()));
+    converter_.setFreeSurround(freeSurroundActive_);
+    converter_.reset();
+
+    // The chain runs at the device format, so it is re-sized here for the same
+    // reason play() sizes it: an equaliser holding coefficients for 44,100 is
+    // the wrong filter at 48,000. Safe from this thread only because the pump is
+    // parked -- see parkDsp().
+    for (DSPNode* node : chain_) {
+        node->prepare(format_);
+        node->reset();
+    }
+    // prepare() takes the format; the gains come from the settings, and the pump
+    // reads them itself on its way out of the park.
+    dspDirty_.store(true, std::memory_order_relaxed);
+}
+
+void AudioEngine::parkDsp() {
+    // The running_ check is the escape hatch as well as the loop's business: a
+    // pause landing in the window where the pump is blocked writing into a ring
+    // the device has just stopped draining would hold it here until resume, and
+    // stop() is what ends that. Nothing else is held meanwhile -- this runs
+    // before seamMutex_ is taken, so a position poll is never behind it.
+    dspReconfigure_.store(true, std::memory_order_release);
+    while (running_.load(std::memory_order_acquire) &&
+           !dspParked_.load(std::memory_order_acquire)) {
+        std::this_thread::sleep_for(kFeederBackoff);
+    }
+}
+
+void AudioEngine::unparkDsp() {
+    // Release, so a pump that sees this drop also sees the format that was
+    // written while it was stopped. It clears dspParked_ itself, which is what
+    // tells it to re-read that format.
+    dspReconfigure_.store(false, std::memory_order_release);
+}
+
+bool AudioEngine::performDeviceSwitch() {
     IAudioOutput::Config wanted;
     wanted.sampleRate = format_.sampleRate;
     wanted.channels   = format_.channels;
@@ -757,20 +886,43 @@ void AudioEngine::performDeviceSwitch() {
     // will refuse it again, and comparing against what was granted would tear
     // the stream down once per settings write for no change at all.
     if (wanted.deviceId == openDeviceId_ && wanted.exclusive == openExclusive_) {
-        return;
+        return false;
+    }
+
+    // Ask the output what this device would rather run at when the stream's own
+    // rate is one it refuses, exactly as play() does when it opens the first
+    // device. Without it the switch asks for a rate already known to be
+    // unreachable and the only possible answer is failure -- which is the DSD
+    // case in miniature: a DAC running 352,800 and a move to laptop speakers.
+    if (!output_.supportsSampleRate(wanted.sampleRate)) {
+        const double preferred = output_.preferredSampleRate(wanted.deviceId);
+        wanted.sampleRate = output_.supportsSampleRate(preferred) ? preferred : 48000.0;
     }
 
     IAudioOutput::Config previous = wanted;
+    previous.sampleRate           = format_.sampleRate;
+    previous.channels             = format_.channels;
     previous.deviceId             = openDeviceId_;
     previous.exclusive            = openExclusive_;
 
-    bool switched = false;
+    // Before the device stops, not after. Following the device to another format
+    // means re-preparing the chain under the pump, so the pump has to be
+    // stopped -- and a pump blocked writing into a ring nothing drains never
+    // reaches the top of its loop to stop at. While the old device is still
+    // running, that ring still empties.
+    parkDsp();
+
+    bool          switched    = false;
+    bool          reformatted = false;
+    std::int64_t  resumeFrame = 0;
     {
         // Held across the stop and the start, which is the window this exists to
         // close. framesPlayed() returns to zero inside start(), and
         // deviceFramesBase_ is what makes up the difference -- so a reader that
         // saw one of them move without the other would read a clock that had
         // jumped to the top of the track and back. See the member's declaration.
+        // A format change widens the window: format_ itself is what the clock is
+        // denominated in, and it is written here too.
         std::lock_guard lock(seamMutex_);
 
         output_.stop();
@@ -779,16 +931,54 @@ void AudioEngine::performDeviceSwitch() {
         // got, and an output is entitled to hand over a last block on its way
         // out. Read first, it would be short by that much for the rest of the
         // track.
-        const std::uint64_t delivered = totalFramesPlayedLocked();
+        std::uint64_t delivered = totalFramesPlayedLocked();
 
-        switched = startDeviceForSwitch(wanted);
-        if (!switched && !startDeviceForSwitch(previous)) {
-            // Back to the device that was working was the second attempt, and it
-            // ran this very format a moment ago -- so reaching here means the
-            // hardware went away underneath us and there is nothing left to play
-            // through.
-            deviceLost_.store(true, std::memory_order_release);
-            return;
+        DeviceStart started = startDeviceForSwitch(wanted);
+        if (started == DeviceStart::Failed) {
+            started = startDeviceForSwitch(previous);
+            if (started == DeviceStart::Failed) {
+                // Back to the device that was working was the second attempt, and
+                // it ran this very format a moment ago -- so reaching here means
+                // the hardware went away underneath us and there is nothing left
+                // to play through.
+                deviceLost_.store(true, std::memory_order_release);
+                unparkDsp();
+                return false;
+            }
+        } else {
+            switched = true;
+        }
+
+        if (started == DeviceStart::Reformatted) {
+            const AudioFormat negotiated = output_.negotiatedFormat();
+            const double      oldRate    = format_.sampleRate;
+
+            // Where the listener actually is, read off the old clock before any
+            // of it is rewritten, and converted into the decoder's own units --
+            // which are not the device's for DSD, and are for everything else.
+            const double trackRate = trackRate_.load(std::memory_order_acquire);
+            resumeFrame            = static_cast<std::int64_t>(
+                static_cast<double>(trackFramesLocked(delivered)) / oldRate * trackRate);
+
+            adoptDeviceFormat(negotiated);
+
+            // Every count the engine keeps is in device frames, and a device
+            // frame is now a different length of time. Rescaling them here is
+            // what keeps the position clock reading the same number of seconds
+            // across the change; the alternative is to teach every reader which
+            // rate its number was recorded at.
+            const double scale = (oldRate > 0.0) ? format_.sampleRate / oldRate : 1.0;
+            const auto rescale = [scale](std::uint64_t frames) {
+                return static_cast<std::uint64_t>(static_cast<double>(frames) * scale);
+            };
+            delivered          = rescale(delivered);
+            audibleTrackStart_ = rescale(audibleTrackStart_);
+            seekPlayedBase_    = rescale(seekPlayedBase_);
+            seekTrackBase_     = rescale(seekTrackBase_);
+            framesWritten_     = rescale(framesWritten_);
+            // pendingSeams_ needs no rescaling: canFollowFormatChange() only
+            // says yes when it is empty.
+            reformatted = true;
         }
 
         // Either way a device restarted and its counter is back at zero, so the
@@ -797,28 +987,74 @@ void AudioEngine::performDeviceSwitch() {
         deviceFramesBase_ = delivered;
     }
 
+    // The pump may run again, and must: the flush below is acknowledged there.
+    unparkDsp();
+
+    bool rewound = false;
+    if (reformatted) {
+        // The queued audio was converted for a format nothing is running any
+        // more, so it is dropped -- and rewinding to the frame the listener last
+        // heard is what turns that from a skip into a repeat. This is the whole
+        // of the gap: a driver open and a seek, against the file re-open the
+        // caller's fallback would have done.
+        rewound = performSeek(resumeFrame);
+        if (!rewound) {
+            // The decoder said it could seek and then would not. The queued
+            // audio still has to go -- it is in a format nothing is running any
+            // more -- so what is left is a jump forward of however much was
+            // queued: worse than a repeat, far better than a burst of noise at
+            // the wrong pitch. The decoder is still where it was, and where it
+            // was is framesWritten_.
+            std::lock_guard lock(seamMutex_);
+            dropQueuedAudio(trackFramesLocked(framesWritten_));
+        }
+    }
+
     // Outside the lock, as every other delegate call is: the delegate runs
     // application code, and application code is entitled to ask this engine
     // where it has got to.
     if (!switched && delegate_ != nullptr) {
         delegate_->outputSwitchFailed();
     }
+    return rewound;
 }
 
 std::uint64_t AudioEngine::totalFramesPlayedLocked() const {
     return deviceFramesBase_ + output_.framesPlayed();
 }
 
-void AudioEngine::performSeek(std::int64_t frame) {
+std::uint64_t AudioEngine::trackFramesLocked(std::uint64_t played) const {
+    // After a seek the track no longer began where the device's frame counter
+    // says it did, so the offset is measured from the seek instead. A later
+    // track change moves audibleTrackStart_ past the seek base and takes over.
+    if (seekPlayedBase_ > audibleTrackStart_ && played >= seekPlayedBase_) {
+        return seekTrackBase_ + (played - seekPlayedBase_);
+    }
+    return (played > audibleTrackStart_) ? played - audibleTrackStart_ : 0;
+}
+
+bool AudioEngine::performSeek(std::int64_t frame) {
     if (!track_) {
-        return;
+        return false;
     }
 
     const std::int64_t reached = track_->decoder->seek(frame);
     if (reached < 0) {
-        return;  // the decoder declined; stay where we are
+        return false;  // the decoder declined; stay where we are
     }
 
+    // Back into device frames, which is what the position clock is measured in
+    // -- `reached` is the decoder's answer in the decoder's own units. For
+    // everything but DSD the ratio is 1.
+    const double trackRate = trackRate_.load(std::memory_order_acquire);
+    const double scale     = (trackRate > 0.0 && format_.sampleRate > 0.0)
+                                 ? format_.sampleRate / trackRate
+                                 : 1.0;
+    dropQueuedAudio(static_cast<std::uint64_t>(static_cast<double>(reached) * scale));
+    return true;
+}
+
+void AudioEngine::dropQueuedAudio(std::uint64_t trackFrame) {
     // The resampler and the HDCD decoder both carry state from the old position.
     // Keeping it would bleed a few milliseconds of the previous location into
     // the new one, which is audible as a click at exactly the moment a user is
@@ -850,15 +1086,7 @@ void AudioEngine::performSeek(std::int64_t frame) {
     // position for three seconds after every seek. It is taken below instead,
     // once the consumer has acknowledged the flush and framesPlayed() is
     // truthful again.
-    // Back into device frames, which is what the position clock is measured in
-    // -- `reached` is the decoder's answer in the decoder's own units. For
-    // everything but DSD the ratio is 1.
-    const double trackRate = trackRate_.load(std::memory_order_acquire);
-    const double scale     = (trackRate > 0.0 && format_.sampleRate > 0.0)
-                                 ? format_.sampleRate / trackRate
-                                 : 1.0;
-    pendingSeekTrack_ =
-        static_cast<std::uint64_t>(static_cast<double>(reached) * scale);
+    pendingSeekTrack_ = trackFrame;
     seekBasePending_  = true;
 }
 
@@ -1015,42 +1243,29 @@ void AudioEngine::setVolume(float gain) { output_.setVolume(gain); }
 float AudioEngine::volume() const { return output_.volume(); }
 
 double AudioEngine::playedSeconds() const {
-    const double rate = format_.sampleRate;
+    // Inside the lock, along with the frames it divides. A switch that follows
+    // the device to another format rewrites format_ and every recorded count
+    // together, and a rate read from outside could be paired with counts from
+    // the other side of that.
+    std::lock_guard lock(seamMutex_);
+    const double    rate = format_.sampleRate;
     if (rate <= 0.0) {
         return 0.0;
     }
-    std::lock_guard lock(seamMutex_);
     return static_cast<double>(totalFramesPlayedLocked()) / rate;
 }
 
 double AudioEngine::trackPositionSeconds() const {
-    const double rate = format_.sampleRate;
+    // With the bases rather than after them. A device switch rewrites the
+    // clock's base while the device's own counter returns to zero, and a read
+    // that straddled it would pair one with the other and report the track as
+    // having jumped back to its start.
+    std::lock_guard lock(seamMutex_);
+    const double    rate = format_.sampleRate;
     if (rate <= 0.0) {
         return 0.0;
     }
-    std::uint64_t start      = 0;
-    std::uint64_t seekPlayed = 0;
-    std::uint64_t seekTrack  = 0;
-    std::uint64_t played     = 0;
-    {
-        std::lock_guard lock(seamMutex_);
-        start      = audibleTrackStart_;
-        seekPlayed = seekPlayedBase_;
-        seekTrack  = seekTrackBase_;
-        // With the bases rather than after them. A device switch rewrites the
-        // clock's base while the device's own counter returns to zero, and a
-        // read that straddled it would pair one with the other and report the
-        // track as having jumped back to its start.
-        played = totalFramesPlayedLocked();
-    }
-
-    // After a seek the track no longer began where the device's frame counter
-    // says it did, so the offset is measured from the seek instead. A later
-    // track change moves audibleTrackStart_ past the seek base and takes over.
-    if (seekPlayed > start && played >= seekPlayed) {
-        return static_cast<double>(seekTrack + (played - seekPlayed)) / rate;
-    }
-    return (played > start) ? static_cast<double>(played - start) / rate : 0.0;
+    return static_cast<double>(trackFramesLocked(totalFramesPlayedLocked())) / rate;
 }
 
 }  // namespace xpcog

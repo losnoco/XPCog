@@ -2425,14 +2425,36 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   starts the next, which is a gap of however long the driver takes to open
   rather than however long the file takes to re-open, decode and seek.
 
-  What makes it cheap is that **nothing is thrown away**. Both rings hold
-  float32 already converted for the format the device is running, so a device
-  that will run that same format simply takes them over and resumes at the next
-  sample. That is also the condition, and it is checked rather than assumed:
+  What makes the cheap case cheap is that **nothing is thrown away**. Both rings
+  hold float32 already converted for the format the device is running, so a
+  device that will run that same format simply takes them over and resumes at
+  the next sample. Whether it will is checked rather than assumed:
   `startDeviceForSwitch()` compares `negotiatedFormat()` against the running one
-  and refuses a device that answers differently, because queued audio at another
-  rate is queued audio at the wrong pitch. `play()` is free to accept whatever it
-  is given — it converts the track into it — and this is not.
+  and reports which of the two happened, because queued audio at another rate is
+  queued audio at the wrong pitch.
+
+  **A device that answers differently is followed anyway**, at the cost of that
+  queue. `adoptDeviceFormat()` re-points the converter and the DSP chain at the
+  negotiated format, every recorded frame count is rescaled to it, and the
+  decoder is rewound to the frame the listener last heard — so the queued audio
+  is *played again* rather than skipped, and the gap becomes a driver open plus
+  a seek instead of a driver open. The track is still never re-opened. What that
+  needs is somewhere to rewind to, so `canFollowFormatChange()` says no to a
+  stream that cannot seek and to a gapless seam already queued, whose audio
+  belongs to a track the decoder has moved past; both fall back to
+  `Delegate::outputSwitchFailed()`, which is what used to happen for every
+  format change.
+
+  Two things had to move for that. The DSP chain is prepared for a format and
+  the pump reads its width once per pass, so the pump is **parked** at the top of
+  its loop while the chain is re-prepared (`parkDsp()`) — and parked *before* the
+  old device stops, because a pump blocked writing into a ring nothing drains
+  never reaches the top of its loop to stop at. And the feeder can now come round
+  a second time (`pumpTrack()`): decoding outruns playback so far that the feeder
+  spends most of a track in the drain wait with the decoder already at end of
+  stream, and a rewind there puts material back in front of a decoder nothing was
+  reading. Without the way back, a switch during the last seconds of a song cut
+  the song short — silently, and only visible as a capture that stopped early.
 
   **The clock is the whole difficulty, and it was not where it looked.**
   `framesPlayed()` counts from zero at every device start, and every position
@@ -2460,8 +2482,9 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   need for anything else.
 
   Two failures, and neither may be silent. A device that will not open, or one
-  that negotiates another format, puts the stream back on the device that was
-  playing and reports `Delegate::outputSwitchFailed()`; `PlaybackController`
+  that negotiates a format the stream cannot be moved into, puts the stream back
+  on the device that was playing and reports
+  `Delegate::outputSwitchFailed()`; `PlaybackController`
   answers that by re-opening the track and seeking back, which is what used to
   happen every time. And if the old device will not come back either — the
   hardware gone mid-switch — the transport ends, because the feeder's three
@@ -2573,16 +2596,22 @@ underneath it improved. Read the source before acting on one.
 
 **3. What is left of switching the output device live.** The switch itself is
 done — `AudioEngine::switchOutputDevice()` moves the running stream and keeps
-both rings, and the entry under "Then" above says how. Three things it does
-*not* do, in the order they are worth having:
+both rings where it can, and the entry under "Then" above says how. What is
+left:
 
-- **A device at another format still cannot take the stream.** It is refused,
-  and the caller re-opens the track instead, which is honest and is the old
-  behaviour. Doing better means flushing both rings, reconfiguring the converter
-  and the chain, and seeking the decoder back to the audible position — and the
-  hard part is that a gapless handoff may already have moved the decoder on to
-  the *next* track, so "back to the audible position" can mean re-opening the
-  previous one. That is why it is not done rather than half done.
+- ~~**A device at another format cannot take the stream**~~ — **done.** It is
+  followed: the converter and the chain are re-pointed, every frame count is
+  rescaled to the new rate, and the decoder is rewound to the audible frame so
+  the queue is replayed rather than skipped. The hard part named here — a
+  gapless handoff having already moved the decoder on to the *next* track, so
+  "back to the audible position" would mean re-opening the previous one — is not
+  solved, it is *declined*: `canFollowFormatChange()` refuses while a seam is
+  queued, and the caller's re-open covers that window. It is a window of a few
+  seconds once per track rather than the whole of every format change.
+
+  The unseekable stream is refused for the same reason and stays refused, and
+  that one is not a window: live radio has no rewind, and there is no version of
+  this that gives it one.
 - ~~**`preferredSampleRate()` answers for the default device**~~ — **fixed.** It
   takes the device id now, and `AudioEngine::play()` passes `chosenDeviceId()`,
   which it already had. The parameter is defaulted, so `OfflineOutput` and the
