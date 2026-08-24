@@ -405,6 +405,55 @@ set_target_properties(xpcog-app PROPERTIES
     FOLDER app)
 
 # ---------------------------------------------------------------------------
+# The one bundled library.
+#
+# The macOS triplet is static, so every dependency is linked into the executable
+# and the bundle needs no Frameworks directory -- with one exception, and it
+# cannot stop being one. Only vgmstream's *shared* target carries install rules
+# and a CMake export; the static library it also builds is for its own CLI and
+# is never installed. So ports/vgmstream forces BUILD_SHARED_LIBS and vcpkg
+# hands back libvgmstream.dylib whatever the triplet asked for. See
+# ports/vgmstream/portfile.cmake for the rest of why that port looks like it
+# does.
+#
+# Its install name is @rpath/libvgmstream.dylib, and left alone CMake resolves
+# that with the absolute path of this build's vcpkg_installed/lib. That works on
+# the machine that produced it and nowhere else: the bundle cannot be moved to
+# another Mac, and it cannot be moved to another directory on this one once the
+# build tree is gone. Two things fix it together, and neither is enough alone.
+#
+# The dylib is staged into Contents/Frameworks, which is where the loader, a
+# --deep signature and notarisation all expect a bundled library to live -- not
+# beside the binary in MacOS/, which is for helper *programs* like
+# crashpad_handler above.
+#
+# And BUILD_WITH_INSTALL_RPATH replaces the build-tree rpath with
+# @executable_path/../Frameworks rather than adding to it. Adding would leave
+# the absolute path first in the search order, so the staged copy would never be
+# the one loaded and the local build would keep testing the arrangement that is
+# not shipped. There is nothing else in that rpath to preserve: libvgmstream is
+# the only @rpath dependency this executable has, and the dylib itself needs
+# nothing but system libraries.
+#
+# Guarded on the target rather than on XPCOG_WITH_VGMSTREAM so that a build with
+# the codec off gets no Frameworks directory and no rpath it has no use for.
+# ---------------------------------------------------------------------------
+if(APPLE AND TARGET vgmstream::vgmstream)
+    set_target_properties(xpcog-app PROPERTIES
+        BUILD_WITH_INSTALL_RPATH ON
+        INSTALL_RPATH "@executable_path/../Frameworks")
+
+    add_custom_command(TARGET xpcog-app POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+                "$<TARGET_BUNDLE_CONTENT_DIR:xpcog-app>/Frameworks"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "$<TARGET_FILE:vgmstream::vgmstream>"
+                "$<TARGET_BUNDLE_CONTENT_DIR:xpcog-app>/Frameworks"
+        COMMENT "Staging libvgmstream into Contents/Frameworks"
+        VERBATIM)
+endif()
+
+# ---------------------------------------------------------------------------
 # Deployment: there is none, and that is the point.
 #
 # The Qt build needed `cmake --build <dir> --target deploy` before the binary
@@ -416,7 +465,8 @@ set_target_properties(xpcog-app PROPERTIES
 # wxWidgets comes from vcpkg like everything else, and vcpkg's applocal post-build
 # step already copies every dependent DLL beside the executable -- the same step
 # that has been placing FFmpeg's and TagLib's all along. On macOS the triplet is
-# static, so there is nothing to copy at all.
+# static, so the only thing to copy is libvgmstream, which the section above
+# does.
 #
 # What remains is signing, which was never the deploy tool's real job. Set this to
 # a "Developer ID Application: ... (TEAMID)" identity to produce a bundle that can
