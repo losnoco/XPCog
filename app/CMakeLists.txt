@@ -20,6 +20,8 @@ set(XPCOG_APP_SOURCES
     src/InfoPanel.hpp
     src/LucideIcon.cpp
     src/LucideIcon.hpp
+    src/LyricsPanel.cpp
+    src/LyricsPanel.hpp
     src/MainFrame.cpp
     src/MainFrame.hpp
     src/MiniFrame.cpp

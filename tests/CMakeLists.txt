@@ -403,6 +403,7 @@ if(XPCOG_BUILD_APP)
         app/test_embedded_icons.cpp
         app/test_helpers.cpp
         app/test_infopanel.cpp
+        app/test_lyricspanel.cpp
     )
 
     # So the availability case can assert rather than accept either answer. The

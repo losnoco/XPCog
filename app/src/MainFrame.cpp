@@ -6,6 +6,7 @@
 #include "EqualizerPanel.hpp"
 #include "FileTree.hpp"
 #include "InfoPanel.hpp"
+#include "LyricsPanel.hpp"
 #include "MiniFrame.hpp"
 #include "OpenUrlDialog.hpp"
 #include "PreferencesDialog.hpp"
@@ -270,6 +271,7 @@ MainFrame::~MainFrame() {
     scanCancel_ = nullptr;
     equalizer_ = nullptr;
     info_      = nullptr;
+    lyrics_    = nullptr;
     spectrum_  = nullptr;
     mini_      = nullptr;
 #ifdef XPCOG_HAVE_SC55_PANEL
@@ -340,6 +342,7 @@ void MainFrame::buildUi() {
     // ones along the bottom and the tall column of fields at the right.
     equalizer_ = new EqualizerPanel(dockHost_, settings_);
     info_      = new InfoPanel(dockHost_, library_.get());
+    lyrics_    = new LyricsPanel(dockHost_);
     spectrum_  = new SpectrumPanel(dockHost_, playback_->tap());
     spectrum_->applySettings(settings_);
 
@@ -384,6 +387,20 @@ void MainFrame::buildUi() {
                                    .BestSize(FromDIP(wxSize(300, 400)))
                                    .MinSize(FromDIP(wxSize(220, 200)))
                                    .Hide());
+
+    // Beside Info rather than under the playlist, which is where Cog puts its
+    // lyrics window too -- both are "about the track you are looking at", and on
+    // the right they tab together instead of competing for the same edge.
+    //
+    // Taller than it is wide, and the minimum says so: a verse wrapped into a
+    // 200-pixel column is unreadable in a way a truncated tag field is not.
+    auiManager_.AddPane(lyrics_, wxAuiPaneInfo()
+                                     .Name("lyrics")
+                                     .Caption("Lyrics")
+                                     .Right()
+                                     .BestSize(FromDIP(wxSize(320, 480)))
+                                     .MinSize(FromDIP(wxSize(240, 160)))
+                                     .Hide());
 
 #ifdef XPCOG_HAVE_SC55_PANEL
     auiManager_.AddPane(sc55_, wxAuiPaneInfo()
@@ -564,9 +581,14 @@ void MainFrame::wireUp() {
     // --- the playlist selection ------------------------------------------
     //
     // Cog's rule: the info panel follows the selection when there is one, and the
-    // playing track otherwise.
-    list_->Bind(wxEVT_DATAVIEW_SELECTION_CHANGED,
-                [this](wxDataViewEvent&) { refreshInfo(); });
+    // playing track otherwise. The lyrics pane follows the same rule, from the
+    // same event -- Cog observes the selection separately in each of its two
+    // controllers, which is the same wiring with the duplication in a different
+    // place.
+    list_->Bind(wxEVT_DATAVIEW_SELECTION_CHANGED, [this](wxDataViewEvent&) {
+        refreshInfo();
+        refreshLyrics();
+    });
 
     // --- the undo stack --------------------------------------------------
     //
@@ -787,6 +809,19 @@ void MainFrame::refreshInfo() {
     info_->showEntry(playlist_.find(shown));
 }
 
+void MainFrame::refreshLyrics() {
+    if (!paneShown(lyrics_)) {
+        return;
+    }
+
+    // Cog's rule, the same one refreshInfo() uses: the selection when there is
+    // one, the playing track otherwise (LyricsWindowController.m:33-43, which
+    // observes both and prefers the selection exactly like this).
+    const std::vector<TrackId> selection = selectedTracks();
+    const TrackId shown = selection.empty() ? currentTrack_ : selection.front();
+    lyrics_->showEntry(playlist_.find(shown));
+}
+
 void MainFrame::setMiniMode(bool mini) {
     if (mini) {
         if (mini_ == nullptr) {
@@ -946,6 +981,16 @@ void MainFrame::bindCommands() {
             refreshInfo();
         }
     });
+    on(ViewLyrics, [this] {
+        const bool showing = !paneShown(lyrics_);
+        togglePane(lyrics_, showing);
+        // Drawn on the way in, because refreshLyrics() declines while hidden --
+        // so a pane opened between track changes would otherwise stay blank
+        // until the next one.
+        if (showing) {
+            refreshLyrics();
+        }
+    });
     on(ViewMiniPlayer, [this] { setMiniMode(mini_ == nullptr || !mini_->IsShown()); });
     on(ViewSpectrum, [this] {
         const bool showing = !paneShown(spectrum_);
@@ -1043,6 +1088,8 @@ void MainFrame::bindUpdateUi() {
     update(ViewEqualizer,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(equalizer_)); });
     update(ViewInfo, [this](wxUpdateUIEvent& event) { event.Check(paneShown(info_)); });
+    update(ViewLyrics,
+           [this](wxUpdateUIEvent& event) { event.Check(paneShown(lyrics_)); });
     update(ViewMiniPlayer, [this](wxUpdateUIEvent& event) {
         event.Check(mini_ != nullptr && mini_->IsShown());
     });
@@ -1343,6 +1390,7 @@ void MainFrame::onCurrentTrackChanged(TrackId id) {
 
     publishNowPlaying(id);
     refreshInfo();
+    refreshLyrics();
 }
 
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {

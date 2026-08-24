@@ -84,6 +84,7 @@ enum CommandId : int {
     ViewSpectrum,
     ViewEqualizer,
     ViewInfo,
+    ViewLyrics,
     ViewSc55Panel,
     ViewMiniPlayer,
 

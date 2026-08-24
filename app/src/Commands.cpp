@@ -35,6 +35,12 @@ const std::vector<MenuItem>& layout() {
         {nullptr, ViewFileTreeRoot, "Choose &Root Folder...", ""},
         // Cog's Info Inspector, on Cog's shortcut.
         {nullptr, ViewInfo, "&Info", "Ctrl+I", ItemKind::Check, true},
+        // Cog's Lyrics window, on Cog's shortcut and directly under Info, which
+        // is where Cog groups it too. Cog labels it "Show Lyrics"; the items in
+        // this menu are checkable toggles that say what they show rather than
+        // what they do, so it is "&Lyrics" here. Ctrl+L is Open URL, so the
+        // shifted form is not a second choice -- it is Cog's own (Cmd+Shift+L).
+        {nullptr, ViewLyrics, "&Lyrics", "Ctrl+Shift+L", ItemKind::Check},
         {nullptr, ViewSpectrum, "&Spectrum", "Ctrl+U", ItemKind::Check},
         // Cog keeps its equaliser in a window of its own rather than in
         // preferences, and so does this. Ctrl-E, which nothing else claims.

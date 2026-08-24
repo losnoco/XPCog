@@ -62,6 +62,7 @@ namespace xpcog::app {
 class EqualizerPanel;
 class FileTree;
 class InfoPanel;
+class LyricsPanel;
 class MiniFrame;
 class PlaylistDataModel;
 class Sc55Panel;
@@ -132,6 +133,14 @@ private:
     /// -- which is most of the time, and matters because metadata arriving
     /// during a scan would otherwise redraw twenty fields per file.
     void refreshInfo();
+
+    /// Redraws the lyrics pane, on the same rule and with the same guard.
+    ///
+    /// Separate from refreshInfo() rather than folded into it because the two
+    /// panes are shown independently: the common case is one of them open, and
+    /// a single function would do the hidden one's work anyway. They are called
+    /// from the same three places.
+    void refreshLyrics();
 
     /// Shows or hides one of the dockable panes.
     void togglePane(wxWindow* pane, bool show);
@@ -220,6 +229,7 @@ private:
     /// arrangement is saved as a perspective; see persistState().
     EqualizerPanel* equalizer_ = nullptr;
     InfoPanel*      info_      = nullptr;
+    LyricsPanel*    lyrics_    = nullptr;
     SpectrumPanel*  spectrum_  = nullptr;
 #ifdef XPCOG_HAVE_SC55_PANEL
     /// The SC-55's front panel. Closed by default: it is one synthesiser of
