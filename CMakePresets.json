@@ -45,6 +45,15 @@
       }
     },
     {
+      "name": "app-only",
+      "hidden": true,
+      "description": "Just the application: no xpcog-cli, no test suite. What this saves is compile and link time only -- vcpkg still installs the catch2 default feature, because features cannot be subtracted from an inherited list without restating the whole of it (see linux-headless), and unlike the sentry case that taught that lesson, catch2 costs a download rather than a crashpad build. Each concrete preset below configures its own build tree named after itself, as every preset here does.",
+      "cacheVariables": {
+        "XPCOG_BUILD_CLI": "OFF",
+        "XPCOG_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "macos",
       "hidden": true,
       "inherits": "base",
@@ -71,6 +80,22 @@
       "inherits": [
         "macos",
         "release"
+      ]
+    },
+    {
+      "name": "macos-app-debug",
+      "displayName": "macOS (Debug, app only)",
+      "inherits": [
+        "app-only",
+        "macos-debug"
+      ]
+    },
+    {
+      "name": "macos-app-release",
+      "displayName": "macOS (RelWithDebInfo, app only)",
+      "inherits": [
+        "app-only",
+        "macos-release"
       ]
     },
     {
@@ -101,6 +126,22 @@
       "inherits": [
         "linux",
         "release"
+      ]
+    },
+    {
+      "name": "linux-app-debug",
+      "displayName": "Linux (Debug, app only)",
+      "inherits": [
+        "app-only",
+        "linux-debug"
+      ]
+    },
+    {
+      "name": "linux-app-release",
+      "displayName": "Linux (RelWithDebInfo, app only)",
+      "inherits": [
+        "app-only",
+        "linux-release"
       ]
     },
     {
@@ -165,6 +206,22 @@
       }
     },
     {
+      "name": "windows-app-debug",
+      "displayName": "Windows x64 (Debug, app only)",
+      "inherits": [
+        "app-only",
+        "windows-debug"
+      ]
+    },
+    {
+      "name": "windows-app-release",
+      "displayName": "Windows x64 (RelWithDebInfo, app only)",
+      "inherits": [
+        "app-only",
+        "windows-release"
+      ]
+    },
+    {
       "name": "linux-headless",
       "displayName": "Linux headless (core + cli + tests, no toolkit)",
       "inherits": [
@@ -203,6 +260,14 @@
       "configurePreset": "macos-release"
     },
     {
+      "name": "macos-app-debug",
+      "configurePreset": "macos-app-debug"
+    },
+    {
+      "name": "macos-app-release",
+      "configurePreset": "macos-app-release"
+    },
+    {
       "name": "macos-headless",
       "configurePreset": "macos-headless"
     },
@@ -219,6 +284,14 @@
       "configurePreset": "linux-release"
     },
     {
+      "name": "linux-app-debug",
+      "configurePreset": "linux-app-debug"
+    },
+    {
+      "name": "linux-app-release",
+      "configurePreset": "linux-app-release"
+    },
+    {
       "name": "linux-repo-debug",
       "configurePreset": "linux-repo-debug"
     },
@@ -233,6 +306,14 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release"
+    },
+    {
+      "name": "windows-app-debug",
+      "configurePreset": "windows-app-debug"
+    },
+    {
+      "name": "windows-app-release",
+      "configurePreset": "windows-app-release"
     }
   ],
   "testPresets": [
