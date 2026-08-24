@@ -2533,14 +2533,43 @@ anywhere afterwards. Until that happens this item is blocked on hardware rather
 than on effort, which makes **item 2 the practical next one on a PC**; the
 ranking here is still by what each is worth, not by what is reachable today.
 
-**2. Native output backends, replacing miniaudio.** miniaudio is a stopgap;
-`IAudioOutput` is the seam that makes it a swap rather than a rewrite. A native
-WASAPI backend buys rates above miniaudio's 384,000 Hz ceiling, event-driven
-exclusive mode, and the integer output DoP needs. The three questions a backend
-answers for itself are already virtual and already asked:
-`supportsSampleRate()`, `preferredSampleRate()`, `exclusiveHeld()`. Keep new
-ones there rather than in the engine — the DSD failure recorded above is what
-happens when a backend's limit leaks upward. This unblocks items 3 and 5.
+**2. ~~Native output backends, replacing miniaudio~~ — mostly done, and the
+entry that stood here was wrong.** It claimed a native WASAPI backend would buy
+three things: rates above miniaudio's 384,000 Hz ceiling, event-driven exclusive
+mode, and the integer output DoP needs. Checked against the vendored source on
+2026-08-23, two of the three were already in hand and the third was one line.
+
+- **Event-driven exclusive mode** — both already there. `MiniaudioOutput::start()`
+  has asked for exclusive since the device picker landed, falling back to shared
+  and reporting the outcome through `exclusiveHeld()`; and `miniaudio.h:23655`
+  sets `AUDCLNT_STREAMFLAGS_EVENTCALLBACK` unconditionally, so its WASAPI path has
+  always been event-driven.
+- **The integer format** — the one real gap, and now closed.
+  `IAudioOutput::Config::format` requests a device format, `negotiatedFormat()`
+  reports what was actually granted, and `convertFromFloat32()` does the exact
+  inverse of the conversion core has had since M1a. Verified against real
+  hardware, which granted S24 at 44,100 Hz.
+- **The 384,000 Hz ceiling** — not a device limit but a clamp on what
+  *enumeration reports* (`miniaudio.h:25552`), in our own vendored copy. It is
+  only in the way of DSD256 DoP at 705,600 Hz; DoP64 and DoP128 are 176,400 and
+  352,800, both inside it. Two enum lines when something needs them, and a patch
+  against vendored source to carry from then on, so not yet.
+
+What survives of the item: `IAudioOutput` is still the seam, and the three
+questions a backend answers for itself — `supportsSampleRate()`,
+`preferredSampleRate()`, `exclusiveHeld()`, now joined by the negotiated format —
+still belong there rather than in the engine. The DSD failure recorded above is
+what happens when a backend's limit leaks upward.
+
+A *second* backend behind the same seam is still worth having for something
+miniaudio genuinely lacks, and the honest examples are ASIO and WDM-KS rather
+than anything on the old list. PortAudio would supply both; the catch is that
+Steinberg's ASIO SDK is not redistributable under this project's licence, which
+is why vcpkg gates it behind a feature.
+
+**The lesson is the reason this entry is kept rather than deleted.** A roadmap
+item is a claim with a date on it, and this one aged out quietly while the code
+underneath it improved. Read the source before acting on one.
 
 **3. What is left of switching the output device live.** The switch itself is
 done — `AudioEngine::switchOutputDevice()` moves the running stream and keeps
@@ -2595,6 +2624,30 @@ so they are *inside* miniaudio's range and the backend is not the blocker. And
 the device has to be switched to 24-bit integer output
 (`DoPIntegerRenderFormatForDeviceFormat`), because the marker bytes must survive
 bit-exactly and a float path that scales or dithers destroys them.
+
+**The integer half is done** (see item 2). Ask for it with
+`IAudioOutput::Config::format = SampleFormat::S24` and *check
+`negotiatedFormat()` before emitting a single marker* — a device that refused the
+request is running in float, and DoP into a float device is not a degraded
+result, it is full-scale white noise into whatever is plugged in.
+`convertFromFloat32()` is exact by construction and tested at every 24-bit
+boundary code, so what remains is genuinely only the encoder and a DAC.
+
+On the DAC: it wants one that does **DoP specifically**, not native DSD, or a
+failure cannot be attributed. A device that supports both may quietly take the
+native path and tell you nothing. The FiiO JA11 was researched on 2026-08-23 and
+fits unusually well for a dongle — "supports DSD up to 128 in DOP mode. Does not
+support DSD Native mode", 384 kHz/32-bit PCM, driver-free on Windows 10 and
+above, so WASAPI reaches it. Aim at DoP64 first: FiiO's own note that ASIO is
+needed "for further DSD DOP128" suggests 352,800 may not be reachable through
+WASAPI. Nothing has been bought or tested; this is a starting point, not a
+recommendation.
+
+`tests/core/test_audio.cpp` carries a hidden `[.integerdevice]` case that opens a
+real device in an integer format. It is the obvious place to grow a rate and
+format probe — "does this DAC actually expose 176,400 Hz at 24-bit in exclusive
+mode" is the question a datasheet answers unreliably, and plenty of dongles
+advertise 384 kHz while enumerating only the 48 kHz family at the top.
 
 **6. The feature tail.** HRTF (Cog's is an impulse-response convolver in the DSP
 chain, and the DSP section above notes where it would sit), Last.fm scrobbling,
