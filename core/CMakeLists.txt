@@ -24,6 +24,7 @@ add_library(xpcog-core STATIC
     src/AssetPath.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp
+    src/library/CogImport.cpp
     src/library/Library.cpp
     src/library/PlaylistCommands.cpp
     src/library/Playlist.cpp

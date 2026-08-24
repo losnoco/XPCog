@@ -4,6 +4,7 @@ add_executable(xpcog-tests
     core/test_assetpath.cpp
     core/test_audio.cpp
     core/test_dsd.cpp
+    core/test_cogimport.cpp
     core/test_dsp.cpp
     core/test_eqpresets.cpp
     core/test_fft.cpp
@@ -379,6 +380,11 @@ target_link_libraries(xpcog-tests PRIVATE
 # is one more thing that can silently be stale.
 target_compile_definitions(xpcog-tests
     PRIVATE "XPCOG_GOLDEN_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/golden\"")
+
+# The Cog fixtures, likewise by path. Synthetic and small, built by
+# tools/cogimport-fixture/make-fixture.py -- see docs/COGIMPORT.md.
+target_compile_definitions(xpcog-tests
+    PRIVATE "XPCOG_COG_FIXTURE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cog\"")
 
 set_target_properties(xpcog-tests PROPERTIES FOLDER tests)
 

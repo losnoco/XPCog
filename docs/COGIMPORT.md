@@ -197,15 +197,51 @@ To rebuild them:
 python3 tools/cogimport-fixture/make-fixture.py tests/fixtures/cog
 ```
 
+## The reader
+
+`core/include/xpcog/core/library/CogImport.hpp`. `readCogLibrary(path)` returns
+the entries in playlist order with Cog's own prunes applied, the play counts,
+the sandbox paths, and a count of everything it discarded. Portable: it is
+SQLite and nothing else, and it is tested on all five CI jobs against
+`tests/fixtures/cog/`.
+
+Two decisions were taken deliberately rather than defaulted.
+
+**The metadata blob is not read.** XPCog's scanner reads tags from the files,
+which is both more current than a cache of unknown age and work that has to
+happen anyway. What comes out of the store is where the music is and what order
+it was in -- the two things the files cannot say for themselves. ReplayGain is
+the exception and *is* taken from the store, because it is exactly what a rescan
+would find again and computing it is the expensive half of a scan.
+
+**Play counts match on the full tuple, and a field Cog left empty does not
+constrain the match.** The second half is what makes the first usable. On the
+store this was built against, **78 rows of 84 carry no artist and no album** --
+Cog simply had not filled them in -- so requiring all four fields to be equal
+would import six play counts out of eighty-four. That is not a stricter match,
+it is a broken one: a field that was never recorded cannot disagree with
+anything. Every field Cog *did* record must match exactly.
+
+In practice that means filename and title, which were populated on every row
+observed and which together were unique across all 84. `ZFILENAME` is the last
+path component **with the fragment still attached** -- `Album.cue#01` -- which is
+what keeps the tracks of one cue sheet apart, and is why `Url::fileName()` alone
+is not the key: a caller has to rejoin the fragment.
+
+Matching happens *after* a rescan, and that is forced by the first decision: the
+title and artist to match on are the ones the scanner read from the file, not
+ones carried out of the store.
+
 ## What is not established yet
 
-- **Nothing has been written.** This page is the archaeology; the reader is the
-  next commit.
-- **The play-count match is fuzzy and undesigned.** `ZPLAYCOUNT` is keyed by
-  `ZFILENAME` / `ZTITLE` / `ZARTIST` / `ZALBUM` rather than by a relationship, so
-  matching a count back to an entry is a heuristic. Worth deciding deliberately
-  rather than guessing: filename alone collides across albums, and the full tuple
-  misses anything retagged since.
+- **The settings half is not written.** `PropertyList.cpp` is an XML plist
+  reader and says so -- "no binary format" -- and `org.cogx.cog.plist` is
+  binary. That needs either a binary plist reader in core or a macOS-only path
+  through `CFPropertyList` in `platform/`. The mapping itself is already known
+  and is small; it is the parsing that is missing.
+- **Nothing calls the reader yet.** It produces a `CogLibrary`; turning one into
+  an XPCog playlist, and finding a Cog installation to read in the first place,
+  are the macOS-only half.
 - **`ZSHUFFLEINDEX` and the queue** were all-zero on the one store examined, so
   their behaviour under a real shuffle has been read in Cog's source but not
   observed.

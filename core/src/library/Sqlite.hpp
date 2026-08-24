@@ -43,6 +43,24 @@ public:
 
     /// Opens or creates the database. `:memory:` is accepted for tests.
     [[nodiscard]] bool open(const std::filesystem::path& path);
+
+    /// Opens an existing database without being able to write to it, and
+    /// without creating one that is not there.
+    ///
+    /// Both halves matter, and for a database that belongs to another program
+    /// they matter more than they look. `open()` passes SQLITE_OPEN_CREATE, so
+    /// a path that names nothing becomes an empty database rather than a
+    /// failure -- a reader that "failed" would still have left a file behind.
+    /// And merely opening a store read-write rewrites its header: the journal
+    /// mode is set on connect, which is enough to modify a file the caller only
+    /// meant to read. That is a poor thing to do to somebody's library and an
+    /// impossible thing to do to a checked-in fixture, which is where it was
+    /// noticed.
+    ///
+    /// No pragmas are set: every one of them writes, which is the thing being
+    /// avoided. A WAL database opens read-only perfectly well provided its
+    /// `-wal` is beside it, which is also why a copy has to bring one.
+    [[nodiscard]] bool openReadOnly(const std::filesystem::path& path);
     void               close();
 
     [[nodiscard]] bool isOpen() const noexcept { return handle_ != nullptr; }

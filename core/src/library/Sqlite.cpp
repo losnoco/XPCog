@@ -32,6 +32,18 @@ bool Database::open(const std::filesystem::path& path) {
                 "PRAGMA foreign_keys = ON;");
 }
 
+bool Database::openReadOnly(const std::filesystem::path& path) {
+    close();
+
+    const std::string text = pathToUtf8(path);
+    if (sqlite3_open_v2(text.c_str(), &handle_, SQLITE_OPEN_READONLY, nullptr) !=
+        SQLITE_OK) {
+        close();
+        return false;
+    }
+    return true;
+}
+
 void Database::close() {
     if (handle_ != nullptr) {
         sqlite3_close_v2(handle_);
