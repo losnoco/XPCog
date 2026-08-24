@@ -2578,7 +2578,38 @@ locked a real device is a guess with a test around it. Everything else on this
 list — items 3, 6, 8 and 9 — is reachable from a clean checkout on any of the
 three platforms. If you have neither machine, start at item 6.
 
-**1. `cogimport` — pick this one up on a Mac.** Reading an existing Cog
+**1. `cogimport` — the archaeology is done; the reader is next.**
+
+**Updated 2026-08-24.** The gathering half, which was the part blocked on
+hardware, is finished and written up in [`COGIMPORT.md`](COGIMPORT.md): the
+schema, the column semantics, the two prunes Cog applies on load, the
+NSKeyedArchiver layer over the metadata blob, the sparse-plist shape of the
+settings, and synthetic fixtures in `tests/fixtures/cog/`. What is left is
+ordinary cross-platform code that can be written anywhere.
+
+Three corrections to what this entry used to say, all of them the same lesson as
+item 9:
+
+- **The library is `DataModel.sqlite`, not `Default.storedata`.** Cog has two
+  persistence layers in its tree -- the hand-written `SQLiteStore` on
+  `Default.sqlite`, and Core Data on `DataModel.sqlite` -- and only the second
+  exists on a current installation.
+- **The schema is flat.** The warning about relationships reaching SQLite as
+  integer foreign keys into tables named after nothing is generic Core Data
+  lore, and none of it applies: there are no relationships at all. Every join is
+  a soft one on a string.
+- **The defaults mapping is a filter, not a translation.** `NSUserDefaults`
+  persists only what differs from what was registered, so a real plist holds a
+  handful of keys, and the ones XPCog shares are already identical by name and
+  range because `settings.def` kept Cog's spellings for this.
+
+The macOS-only claim survives, for better reasons than "that is where Cog runs":
+`ZSANDBOXTOKEN` holds security-scoped bookmarks, and entries can hold file
+reference URLs that resolve by inode. Both are about reaching the *files*.
+Reading the store is portable SQLite, so the reader belongs in `core/` and can
+be tested on every platform.
+
+**Original entry, kept for the part still true:** Reading an existing Cog
 installation — its playlists, its SQLite library, its defaults — is the
 difference between a port and something a Cog user can switch to. Core already
 has the plist reader and writer that Cog's XML playlists need, and
