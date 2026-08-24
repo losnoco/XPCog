@@ -2565,6 +2565,12 @@ which promotes `cogimport` to the top: with every format Cog plays now playing
 here, the thing standing between this and a player a Cog user can actually move
 to is their library, not their files.
 
+**Re-ranked again on 2026-08-23.** Item 8 is fixed and item 9 is answered, and
+answering it turned a question into a confirmed bug in the shipping default
+configuration -- so the output rate now sits above the rest of the tail on
+worth, below only `cogimport`. HRTF is deferred, which moves scrobbling to the
+top of item 6.
+
 **Two of these are blocked on hardware rather than on effort**, and it is worth
 knowing which before picking one up cold. Item 1 needs a Mac to read a real Cog
 installation; item 5 needs a DoP-capable DAC, because a DoP path that has never
@@ -2731,10 +2737,20 @@ having and one of them has been struck off:
   the page. Self-contained, no toolkit involvement, and the most visible gap
   against Cog for an actual listener: it is the one absence a switcher notices
   on their first evening rather than on some particular file.
-- **HRTF** — Cog's is an impulse-response convolver in the DSP chain, and the
-  DSP section above notes where it would sit. The chain already has the shape
-  for it and Cog ships the impulse data, so this is a node and a setting rather
-  than an architecture.
+- ~~**HRTF**~~ — **deferred**, by decision rather than omission, on
+  2026-08-23. Cog's is an impulse-response convolver in the DSP chain, and the
+  DSP section above notes where it would sit; the chain already has the shape
+  for it and Cog ships the impulse data, so this stays a node and a setting
+  rather than an architecture whenever it is picked up.
+
+  Not struck the way global hotkeys is. That one is *not coming* — the OS
+  already delivers what it would. This is a "not now": nothing about it has
+  been decided against, and nothing has been built that would have to be undone
+  to add it. The DSP chain, the settings table and the preferences pane all
+  take a new node without being reshaped for one.
+
+  What it costs to defer is one item on the M6 feature list, which is why
+  scrobbling moves up to the top of the tail rather than sitting behind it.
 - **Rubber Band** — unported, and the reason its Preferences pane does not
   exist (see the comment at the top of `app/src/PreferencesDialog.hpp`, which
   names it as the one pane with nothing to hold). Time-stretch and pitch are a
@@ -2799,33 +2815,78 @@ Three things worth keeping from it:
   that had been deleted by the time anyone read it. The suite is green at
   632/632 with `-DXPCOG_MIDI_CORPUS` pointed at a real collection.
 
-**9. An unverified question: is miniaudio resampling behind our back?**
+**9. ~~An unverified question: is miniaudio resampling behind our back?~~ —
+answered on 2026-08-23. It is. The question is now a bug.**
 
-Not a finding. A thing noticed while reading `MiniaudioOutput` for the device
-switch above, written down because it would matter a great deal if it were true
-and because the next person to open that file should not have to notice it
-again.
+Settled the way the entry said to settle it: read the source, then confirm on a
+real device. `tools/ma-rate-probe` is the confirmation, committed so the next
+person does not have to rebuild the argument.
 
-`MiniaudioOutput::start()` sets `deviceConfig.sampleRate` to the rate we ask for
-(`core/src/audio/MiniaudioOutput.cpp:96`). If miniaudio's contract is that the
-device runs at *that* rate and converts internally down to the hardware's, then
-a 44.1 kHz track on a 48 kHz-native device is being resampled by miniaudio's own
-resampler — whose default is linear — after `AudioConverter` has already looked
-at the rate, seen it match, and correctly declined to touch it. That is the most
-common configuration there is: shared-mode WASAPI on a machine whose mix format
-is 48 kHz.
+**The source.** `ma_device_init()` overwrites `pDevice->sampleRate` with the
+hardware's rate *only when the caller left it 0* (`miniaudio.h:42543`). XPCog
+always sets it, so it survives as the requested rate, and miniaudio builds a
+data converter between it and `playback.internalSampleRate`
+(`miniaudio.h:42583`). That converter's resampler is
+`ma_resample_algorithm_linear` — `ma_device_config_init()`'s default, never
+overridden here.
 
-**What would settle it**, in order: read miniaudio's WASAPI init to see whether
-`device.sampleRate` is the requested rate or the hardware's, and what
-`playback.internalSampleRate` says beside it; then confirm on a real device by
-comparing the two fields after a `start()` at 44,100 on a 48 kHz-native output.
-If the two differ, the fix is to open the device at its native rate and let
-`AudioConverter` do the conversion with soxr, which is what it is there for and
-what Cog does (`OutputCoreAudio.m`, `-outputFormatForInputFormat:`, which keeps
-the device's own format and resamples everything into it).
+`MiniaudioOutput` then reports `device_.sampleRate` through
+`negotiatedFormat()`, which is exactly the field that cannot see the problem.
+`AudioConverter` is told the rate matches, correctly declines to resample, and
+miniaudio resamples anyway. soxr sits unused one layer up.
 
-If they do not differ, delete this item and say so — a question recorded and
-then answered is worth as much as one recorded and then confirmed.
+**The device.** On macOS with the output at 44,100 Hz:
+
+```
+shared     48000 Hz : device=48000  internal=44100   linear resample
+shared    192000 Hz : device=192000 internal=44100   linear resample
+exclusive  48000 Hz : device=48000  internal=48000   no conversion
+exclusive 192000 Hz : device=192000 internal=192000  no conversion
+```
+
+**Read that the right way round.** The entry guessed the failure was "44.1 kHz
+track on a 48 kHz device"; it is the inverse, and the axis that matters is not
+the rates but the *share mode*. Exclusive mode is the one that behaves —
+CoreAudio switches the hardware to whatever is asked for, and every rate comes
+back native. Shared mode never switches the device, so everything that is not
+its current rate goes through the linear resampler. `exclusiveOutput` defaults
+to false, which makes the resampling path the shipping default.
+
+It also explains why `supportsSampleRate()` never caught it: `MiniaudioOutput`
+does not override the base answer of "anything from 8,000 to 384,000"
+(`IAudioOutput.hpp:101`), which is true of the *format* and says nothing about
+what the device will run without conversion.
+
+**A second, smaller thing falls out of the same confusion.**
+`latencySeconds()` divides `internalPeriodSizeInFrames` — an internal-rate
+quantity — by `format_.sampleRate`, the requested one. Whenever the two rates
+differ, the reported latency is wrong by their ratio.
+
+**The fix, and why it is not in this commit.** The prescription in the old entry
+still stands: open the device at the rate it will really run and let
+`AudioConverter` do the conversion with soxr. What the probe adds is that it
+must not be unconditional — asking for the track's rate is exactly right in
+exclusive mode, where it is what makes the hardware switch and playback
+bit-perfect. The rule that serves both is "ask for the track's rate; if the
+device will not run it, take what it will and resample into that with soxr."
+
+The obstacle is ordering, not policy. `play()` configures `converter_` and
+prepares the DSP chain from `format_`, pre-fills both rings through them, and
+opens the device *last* (`AudioEngine.cpp:281`). Learning the real rate after
+`start()` is too late for everything already built against the wrong one. So the
+fix needs a new question on the seam, asked before any of that:
+
+```cpp
+/// The rate this output would really run at if asked for `wanted` on
+/// `deviceId` in this share mode. Not the same question as
+/// supportsSampleRate(), which is about the format.
+virtual double effectiveSampleRate(double wanted, std::string_view deviceId,
+                                   bool exclusive) const;
+```
+
+Deliberately left for its own change, because it alters what every
+default-configuration listener hears, and because it is a real-time path that
+deserves more than being tacked onto the end of the investigation that found it.
 
 #### The decoder list, and what it left behind
 
