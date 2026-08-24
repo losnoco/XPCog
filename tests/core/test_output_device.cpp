@@ -306,6 +306,85 @@ private:
     mutable bool                  asked_ = false;
 };
 
+/// The rate a shared-mode device is already running, and will not move off.
+constexpr double kSharedRate = 32000.0;
+
+/// An output that converts behind the seam unless it is held exclusively --
+/// which is what miniaudio does, and the bug effectiveSampleRate() exists for.
+///
+/// It answers every rate to supportsSampleRate(), because the rate genuinely
+/// can be *requested*; what it will not do is run at one. That gap is the whole
+/// problem: before this question existed the engine asked for the track's rate,
+/// was told yes, built its converter against it, and the backend quietly
+/// resampled with something worse than soxr while negotiatedFormat() reported
+/// the rate that had been asked for.
+///
+/// Exclusive is modelled the way the hardware measured: an exclusive stream owns
+/// the device and switches it, so it really does run whatever it is handed.
+class SharedModeOutput final : public IAudioOutput {
+public:
+    SharedModeOutput(std::unique_ptr<IAudioOutput> inner, double sharedRate)
+        : inner_(std::move(inner)), sharedRate_(sharedRate) {}
+
+    [[nodiscard]] double effectiveSampleRate(double wanted, std::string_view deviceId,
+                                             bool exclusive) const override {
+        askedWanted_    = wanted;
+        askedDeviceId_  = std::string{deviceId};
+        askedExclusive_ = exclusive;
+        asked_          = true;
+        return exclusive ? wanted : sharedRate_;
+    }
+
+    [[nodiscard]] bool wasAsked() const { return asked_; }
+    [[nodiscard]] double askedWanted() const { return askedWanted_; }
+    [[nodiscard]] std::string askedDeviceId() const { return askedDeviceId_; }
+    [[nodiscard]] bool askedExclusive() const { return askedExclusive_; }
+    [[nodiscard]] double openedAt() const { return openedAt_; }
+
+    bool start(const Config& config) override {
+        openedAt_ = config.sampleRate;
+        return inner_->start(config);
+    }
+    void stop() override { inner_->stop(); }
+    void pause() override { inner_->pause(); }
+    void resume() override { inner_->resume(); }
+
+    [[nodiscard]] AudioFormat negotiatedFormat() const override {
+        return inner_->negotiatedFormat();
+    }
+    [[nodiscard]] double latencySeconds() const override {
+        return inner_->latencySeconds();
+    }
+    [[nodiscard]] std::vector<DeviceInfo> devices() const override {
+        return inner_->devices();
+    }
+    void  setVolume(float gain) override { inner_->setVolume(gain); }
+    [[nodiscard]] float volume() const override { return inner_->volume(); }
+    void rampGain(float target, double milliseconds) override {
+        inner_->rampGain(target, milliseconds);
+    }
+    [[nodiscard]] bool ramping() const override { return inner_->ramping(); }
+    [[nodiscard]] std::uint64_t underrunCount() const override {
+        return inner_->underrunCount();
+    }
+    [[nodiscard]] std::uint64_t framesPlayed() const override {
+        return inner_->framesPlayed();
+    }
+    void setDeviceInvalidatedCallback(std::function<void()> callback) override {
+        inner_->setDeviceInvalidatedCallback(std::move(callback));
+    }
+    void setTap(AudioTap* tap) override { inner_->setTap(tap); }
+
+private:
+    std::unique_ptr<IAudioOutput> inner_;
+    double                        sharedRate_;
+    mutable double                askedWanted_    = 0.0;
+    mutable std::string           askedDeviceId_;
+    mutable bool                  askedExclusive_ = false;
+    mutable bool                  asked_          = false;
+    double                        openedAt_       = 0.0;
+};
+
 /// The rate and width a reshaping device runs at, whatever it is asked for.
 /// Both far enough from the fixtures' own that a wrong answer is a wrong number
 /// rather than a rounding argument.
@@ -720,6 +799,122 @@ TEST_CASE("losing every device ends the transport rather than wedging it", "[dev
     engine.stop();
 }
 
+
+TEST_CASE("a shared device is opened at the rate it really runs", "[device]") {
+    // The bug this closes: miniaudio accepts a rate it has no intention of
+    // running, keeps it in device.sampleRate, runs the hardware at
+    // internalSampleRate, and puts a *linear* resampler between the two. Nothing
+    // downstream could see it, because negotiatedFormat() reported the rate that
+    // had been asked for -- so AudioConverter compared two equal numbers,
+    // correctly did nothing, and soxr sat unused above a linear resampler.
+    //
+    // The engine now asks what the device will really do, before it builds
+    // anything that has to agree about the rate.
+    constexpr int kFrames = static_cast<int>(kRate) * 2;
+
+    const auto file = makeFlac("shared-rate", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer       ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    SharedModeOutput output{makeOfflineOutput(ring, kSpeed), kSharedRate};
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setOutputDeviceId("offline");
+    settings.setOutputExclusive(false);
+
+    AudioEngine engine{registry(), output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+
+    // Asked at all, about the device that was going to be opened, and about the
+    // track's own rate rather than something already substituted.
+    REQUIRE(output.wasAsked());
+    CHECK(output.askedWanted() == kRate);
+    CHECK(output.askedDeviceId() == "offline");
+    CHECK_FALSE(output.askedExclusive());
+
+    // And the answer was used. Both numbers, because they answer different
+    // questions: openedAt() is what the engine asked the device for, and
+    // negotiatedFormat() is what came back -- and the point of the change is
+    // that the first one moved.
+    CHECK(output.openedAt() == kSharedRate);
+    CHECK(output.negotiatedFormat().sampleRate == kSharedRate);
+
+    // Still plays. The conversion did not vanish, it moved: 44,100 to 32,000 is
+    // now AudioConverter's work with soxr, which is where it belongs.
+    engine.waitUntilFinished();
+    engine.stop();
+}
+
+TEST_CASE("an exclusive device is opened at the track's rate", "[device]") {
+    // The half that must not regress, and the reason effectiveSampleRate() takes
+    // the share mode rather than answering one way for everything. An exclusive
+    // stream owns the hardware and switches it -- measured on a real device with
+    // tools/ma-rate-probe, where every rate asked for in exclusive mode came back
+    // as the internal rate. Converting into the mix rate there would throw away
+    // bit-perfect playback to solve a problem that mode does not have.
+    //
+    // It is also what keeps DoP reachable: its carrier has to be running at
+    // exactly 176,400 or 352,800, and an output path that resampled it would put
+    // the markers out as noise.
+    constexpr int kFrames = static_cast<int>(kRate) * 2;
+
+    const auto file = makeFlac("exclusive-rate", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer       ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    SharedModeOutput output{makeOfflineOutput(ring, kSpeed), kSharedRate};
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setOutputDeviceId("offline");
+    settings.setOutputExclusive(true);
+
+    AudioEngine engine{registry(), output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+
+    REQUIRE(output.wasAsked());
+    CHECK(output.askedExclusive());
+
+    // The track's rate, untouched -- not the shared device's.
+    CHECK(output.openedAt() == kRate);
+    CHECK(output.negotiatedFormat().sampleRate == kRate);
+
+    engine.waitUntilFinished();
+    engine.stop();
+}
+
+TEST_CASE("an output that answers nothing keeps the rate it was given",
+          "[device]") {
+    // The default implementation returns `wanted`, which is the truth for an
+    // output that really does run whatever it is handed -- OfflineOutput, and
+    // every test double that does not override this. Pinned because the
+    // alternative reading of "0 means no answer" would substitute a rate for one
+    // of them and quietly resample the whole test suite.
+    constexpr int kFrames = static_cast<int>(kRate) * 2;
+
+    const auto file = makeFlac("plain-rate", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer ring{static_cast<std::size_t>(kRate * 0.5) * kChannels};
+    auto       output = makeOfflineOutput(ring, kSpeed);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+
+    AudioEngine engine{registry(), *output, ring, settings};
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+    CHECK(output->negotiatedFormat().sampleRate == kRate);
+
+    engine.waitUntilFinished();
+    engine.stop();
+}
 
 TEST_CASE("the refused-rate fallback asks about the chosen device", "[device]") {
     // `preferredSampleRate()` used to take no argument and answer for the

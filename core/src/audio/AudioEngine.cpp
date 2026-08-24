@@ -176,6 +176,31 @@ bool AudioEngine::play(const Url& url) {
         format_.sampleRate = output_.supportsSampleRate(preferred) ? preferred : 48000.0;
     }
 
+    // And then the second question, which is not the same one. The block above
+    // asks whether the rate can be *requested*; this asks what the device will
+    // really be running once it has been. A backend is entitled to accept a
+    // request it has no intention of honouring and convert behind the seam --
+    // miniaudio does exactly that, with a linear resampler, while
+    // negotiatedFormat() goes on reporting the rate that was asked for. The
+    // result was that AudioConverter saw matching rates, correctly did nothing,
+    // and soxr sat unused one layer above a linear resampler.
+    //
+    // Asked here rather than after start() because everything that has to agree
+    // about the rate is built between the two: the converter below, the chain's
+    // prepare(), and both rings, all of them pre-filled before the device opens.
+    // Reading the truth back afterwards would be too late for every one of them.
+    //
+    // Cog reaches the same arrangement from the other direction -- its device
+    // keeps its own format and everything is resampled into it
+    // (OutputCoreAudio.m, -outputFormatForInputFormat:). The difference is that
+    // Cog always knew which resampler was doing the work.
+    if (const double effective = output_.effectiveSampleRate(
+            format_.sampleRate, chosenDeviceId(), settings_.OutputExclusive());
+        effective > 0.0 && effective != format_.sampleRate &&
+        output_.supportsSampleRate(effective)) {
+        format_.sampleRate = effective;
+    }
+
     // Whether FreeSurround is *offered* is decided here and only here, for the
     // same reason the rate is: it widens the device from two channels to six,
     // and the device is opened once. A later track that is already multichannel
@@ -897,6 +922,18 @@ bool AudioEngine::performDeviceSwitch() {
     if (!output_.supportsSampleRate(wanted.sampleRate)) {
         const double preferred = output_.preferredSampleRate(wanted.deviceId);
         wanted.sampleRate = output_.supportsSampleRate(preferred) ? preferred : 48000.0;
+    }
+
+    // The same second question play() asks, for the same reason -- see there.
+    // It matters more here, not less: switching to a device whose rate differs
+    // is precisely the case, and the whole point of this path is that the
+    // stream follows the device rather than the device being made to follow the
+    // stream.
+    if (const double effective = output_.effectiveSampleRate(
+            wanted.sampleRate, wanted.deviceId, wanted.exclusive);
+        effective > 0.0 && effective != wanted.sampleRate &&
+        output_.supportsSampleRate(effective)) {
+        wanted.sampleRate = effective;
     }
 
     IAudioOutput::Config previous = wanted;

@@ -116,6 +116,41 @@ public:
         return 0.0;
     }
 
+    /// The rate this output would **really** run at if asked for `wanted`.
+    ///
+    /// Not the same question as supportsSampleRate(), and the difference is the
+    /// whole point. That one asks whether the rate can be *requested*; this one
+    /// asks what the hardware will be doing afterwards. A backend is entitled to
+    /// accept a request it has no intention of honouring and quietly convert,
+    /// which is exactly what miniaudio does: `ma_device_init()` keeps the
+    /// requested rate in `device.sampleRate`, runs the hardware at
+    /// `internalSampleRate`, and inserts a **linear** resampler between them
+    /// (see `tools/ma-rate-probe`). Nothing downstream can see that, because
+    /// negotiatedFormat() reports the requested rate -- so AudioConverter is
+    /// told the rates match, correctly declines to resample, and soxr sits
+    /// unused while a linear resampler does the work.
+    ///
+    /// Asking here, before the converter is built, is what lets the engine open
+    /// the device at a rate it will actually run and do the conversion itself.
+    ///
+    /// `exclusive` matters and is not a hint: an exclusive stream owns the
+    /// hardware and switches it to whatever is asked for, so the honest answer
+    /// there is usually `wanted` itself. A shared stream never switches the
+    /// device, so everything that is not its current rate gets converted.
+    /// Answering the same way for both would either give up bit-perfect
+    /// exclusive playback or keep the silent resampling in shared.
+    ///
+    /// The default returns `wanted`, which is the truth for an output that
+    /// really does run at whatever it is handed -- OfflineOutput, and the test
+    /// doubles.
+    [[nodiscard]] virtual double effectiveSampleRate(double            wanted,
+                                                     std::string_view  deviceId = {},
+                                                     bool exclusive = false) const {
+        static_cast<void>(deviceId);
+        static_cast<void>(exclusive);
+        return wanted;
+    }
+
     /// Whether the running device is actually held exclusively. False when it
     /// was not asked for, when the backend cannot, and when the device refused.
     [[nodiscard]] virtual bool exclusiveHeld() const { return false; }

@@ -219,12 +219,23 @@ public:
     [[nodiscard]] AudioFormat negotiatedFormat() const override { return format_; }
 
     [[nodiscard]] double latencySeconds() const override {
-        if (!deviceValid_ || format_.sampleRate <= 0.0) {
+        if (!deviceValid_) {
+            return 0.0;
+        }
+        // Both halves at the internal rate. The period is counted in the
+        // hardware's frames, so dividing it by the *requested* rate -- which is
+        // what this used to do -- was wrong by exactly the ratio between them
+        // whenever miniaudio had inserted a converter. With the engine now
+        // opening at a rate the device will really run they usually agree, and
+        // "usually" is the reason to take the number from the same place as the
+        // frames rather than from somewhere that happens to match.
+        const double rate = static_cast<double>(device_.playback.internalSampleRate);
+        if (rate <= 0.0) {
             return 0.0;
         }
         const double frames = device_.playback.internalPeriodSizeInFrames *
                               device_.playback.internalPeriods;
-        return frames / format_.sampleRate;
+        return frames / rate;
     }
 
     [[nodiscard]] bool exclusiveHeld() const override {
@@ -265,6 +276,44 @@ public:
             }
         }
         return 0.0;
+    }
+
+    [[nodiscard]] double effectiveSampleRate(double wanted, std::string_view deviceId,
+                                             bool exclusive) const override {
+        if (wanted <= 0.0) {
+            return wanted;
+        }
+
+        // An exclusive stream owns the device and switches it. Measured rather
+        // than assumed: tools/ma-rate-probe opened this machine's output, whose
+        // nominal rate was 44,100, at 48,000 / 88,200 / 96,000 / 176,400 /
+        // 192,000 in exclusive mode and got every one of them back as the
+        // *internal* rate -- the hardware really moved. So the rate asked for is
+        // the rate that runs, and converting anything here would be inventing
+        // work.
+        //
+        // This is also what keeps DoP reachable: its carrier is 176,400 or
+        // 352,800 on a device that must be running exactly there, and an output
+        // path that helpfully resampled it to the mix rate would emit the
+        // markers as noise.
+        if (exclusive) {
+            return wanted;
+        }
+
+        // Shared. The device stays where it is and miniaudio converts into it,
+        // so the rate that matters is the one it is already running -- which is
+        // what preferredSampleRate() reports, the first native format. On the
+        // same machine every shared open came back at 44,100 whatever was asked
+        // for, which is the measurement this is built on.
+        //
+        // Not locked here: preferredSampleRate() takes deviceMutex_ itself, and
+        // it is not recursive.
+        const double native = preferredSampleRate(deviceId);
+
+        // A backend that will not say keeps the caller's answer. Guessing a rate
+        // for a device that could not be described is worse than the resampling
+        // this exists to avoid.
+        return native > 0.0 ? native : wanted;
     }
 
     [[nodiscard]] std::vector<DeviceInfo> devices() const override {

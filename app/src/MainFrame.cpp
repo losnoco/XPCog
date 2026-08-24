@@ -569,7 +569,11 @@ void MainFrame::wireUp() {
         // Through the slider rather than straight to the engine, so the panel and
         // the window cannot end up showing different volumes.
         volume_->SetValue(static_cast<int>(std::lround(gain * 100.0F)));
-        playback_->setVolume(gain);
+        // Widened explicitly. MPRIS carries a float and setVolume() takes a
+        // double, so the conversion happens either way; saying so is what keeps
+        // -Wdouble-promotion quiet, and the tree warning-free is a property that
+        // is only worth anything while it is actually true.
+        playback_->setVolume(static_cast<double>(gain));
     });
     observe(media_->openUrlRequested, [this](const Url& url) { openUrls({url}); });
 

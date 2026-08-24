@@ -382,6 +382,52 @@ TEST_CASE("convertFromFloat32 passes float through untouched", "[convert]") {
 // the wrong order is white noise rather than a quieter or distorted tone. That
 // distinction is audible in a way no assertion here can be -- the test can only
 // see the floats going in, never the integers the driver received.
+// Hidden for the same reason as the case below, and run the same way:
+//
+//     xpcog-tests "[.ratedevice]"
+//
+// It makes no sound. What it checks is the answer the real backend gives to the
+// question the engine now asks before it builds anything -- see
+// IAudioOutput::effectiveSampleRate() and tools/ma-rate-probe. The double in
+// test_output_device.cpp pins what the *engine* does with the answer; this pins
+// that the answer is true of the machine it is running on.
+TEST_CASE("the real backend says what rate it will really run", "[.ratedevice]") {
+    if (enumerateOutputDevices().empty()) {
+        SKIP("no output device on this machine");
+    }
+
+    RingBuffer ring(1U << 12);
+    auto       output = makeMiniaudioOutput(ring);
+    REQUIRE(output != nullptr);
+
+    const double native = output->preferredSampleRate({});
+    if (native <= 0.0) {
+        SKIP("this backend will not say what the device is running");
+    }
+    INFO("device is running at " << native << " Hz");
+
+    // Shared: whatever is asked for, the answer is the rate the device is
+    // already running, because a shared stream never moves it. This is the half
+    // that was silently resampling.
+    for (const double wanted : {44100.0, 48000.0, 96000.0, 192000.0}) {
+        INFO("shared, wanted " << wanted);
+        CHECK(output->effectiveSampleRate(wanted, {}, false) == native);
+    }
+
+    // Exclusive: the stream owns the device and switches it, so the rate asked
+    // for is the rate that runs. Asserted as an identity rather than against
+    // `native`, because the two are only equal by coincidence when the device
+    // happens to already be there.
+    for (const double wanted : {44100.0, 48000.0, 96000.0, 192000.0}) {
+        INFO("exclusive, wanted " << wanted);
+        CHECK(output->effectiveSampleRate(wanted, {}, true) == wanted);
+    }
+
+    // A rate of zero is not a question, and must not become an answer -- the
+    // engine guards on `> 0.0`, and this is the other side of that contract.
+    CHECK(output->effectiveSampleRate(0.0, {}, false) == 0.0);
+}
+
 TEST_CASE("a device opens in an integer format and runs", "[.integerdevice]") {
     if (enumerateOutputDevices().empty()) {
         SKIP("no output device on this machine");

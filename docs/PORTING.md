@@ -2565,11 +2565,11 @@ which promotes `cogimport` to the top: with every format Cog plays now playing
 here, the thing standing between this and a player a Cog user can actually move
 to is their library, not their files.
 
-**Re-ranked again on 2026-08-23.** Item 8 is fixed and item 9 is answered, and
-answering it turned a question into a confirmed bug in the shipping default
-configuration -- so the output rate now sits above the rest of the tail on
-worth, below only `cogimport`. HRTF is deferred, which moves scrobbling to the
-top of item 6.
+**Re-ranked again on 2026-08-23.** Items 8 and 9 are both closed -- 9 turned out
+to be a confirmed bug in the shipping default configuration rather than the open
+question it was filed as, and is fixed. HRTF is deferred, which moves scrobbling
+to the top of item 6. What is left on this page is `cogimport`, scrobbling, and
+work that is blocked on hardware or fixtures rather than on effort.
 
 **Two of these are blocked on hardware rather than on effort**, and it is worth
 knowing which before picking one up cold. Item 1 needs a Mac to read a real Cog
@@ -2816,7 +2816,7 @@ Three things worth keeping from it:
   632/632 with `-DXPCOG_MIDI_CORPUS` pointed at a real collection.
 
 **9. ~~An unverified question: is miniaudio resampling behind our back?~~ —
-answered on 2026-08-23. It is. The question is now a bug.**
+answered and fixed on 2026-08-23. It was.**
 
 Settled the way the entry said to settle it: read the source, then confirm on a
 real device. `tools/ma-rate-probe` is the confirmation, committed so the next
@@ -2862,31 +2862,53 @@ what the device will run without conversion.
 quantity — by `format_.sampleRate`, the requested one. Whenever the two rates
 differ, the reported latency is wrong by their ratio.
 
-**The fix, and why it is not in this commit.** The prescription in the old entry
-still stands: open the device at the rate it will really run and let
-`AudioConverter` do the conversion with soxr. What the probe adds is that it
-must not be unconditional — asking for the track's rate is exactly right in
-exclusive mode, where it is what makes the hardware switch and playback
-bit-perfect. The rule that serves both is "ask for the track's rate; if the
-device will not run it, take what it will and resample into that with soxr."
+**Fixed.** `IAudioOutput::effectiveSampleRate(wanted, deviceId, exclusive)` is
+the question that was missing, and it is deliberately not the same one as
+`supportsSampleRate()`: that asks whether a rate can be *requested*, this asks
+what the hardware will be doing afterwards. `AudioEngine::play()` asks it
+immediately after the existing refused-rate fallback and before it builds
+anything that has to agree about the rate -- the converter, the chain's
+`prepare()`, and both rings, all of which are filled before the device opens.
+`switchOutputDevice()` asks the same question for the same reason.
 
-The obstacle is ordering, not policy. `play()` configures `converter_` and
-prepares the DSP chain from `format_`, pre-fills both rings through them, and
-opens the device *last* (`AudioEngine.cpp:281`). Learning the real rate after
-`start()` is too late for everything already built against the wrong one. So the
-fix needs a new question on the seam, asked before any of that:
+`MiniaudioOutput` answers it in two lines of policy and a paragraph of why:
+exclusive returns `wanted`, because an exclusive stream owns the device and
+switches it; shared returns `preferredSampleRate(deviceId)`, the rate it is
+already running, because a shared stream never moves it. A backend that will not
+say keeps the caller's rate, since guessing for a device that could not be
+described is worse than the resampling this exists to avoid.
 
-```cpp
-/// The rate this output would really run at if asked for `wanted` on
-/// `deviceId` in this share mode. Not the same question as
-/// supportsSampleRate(), which is about the format.
-virtual double effectiveSampleRate(double wanted, std::string_view deviceId,
-                                   bool exclusive) const;
-```
+So the conversion did not disappear -- it moved to `AudioConverter`, which is
+where soxr is. Which is also Cog's arrangement, reached from the other
+direction: its device keeps its own format and everything is resampled into it
+(`OutputCoreAudio.m`, `-outputFormatForInputFormat:`). The difference is that
+Cog always knew which resampler was doing the work.
 
-Deliberately left for its own change, because it alters what every
-default-configuration listener hears, and because it is a real-time path that
-deserves more than being tacked onto the end of the investigation that found it.
+Keeping the share mode in the signature is what preserves bit-perfect exclusive
+playback, and it is what keeps DoP reachable at all: that carrier has to be
+running at exactly 176,400 or 352,800, and an output path that helpfully
+resampled it to the mix rate would emit the markers as noise.
+
+`latencySeconds()` was fixed alongside, since it was the same confusion: it
+divided `internalPeriodSizeInFrames` -- a hardware-rate quantity -- by the
+requested rate. It now takes both numbers from the same place.
+
+**What is still not covered.** Exclusive mode that is *asked for and refused*.
+`start()` falls back to shared on its own, by which point the converter has been
+built against the track's rate, so that stream is resampled by the backend
+exactly as before. It is a narrower case than the one closed -- it needs
+exclusive to be enabled and the device to be busy -- but it is the same bug, and
+closing it means splitting `start()` into an open that negotiates and a start
+that begins pulling, so the truth is known before anything is built against it.
+Worth doing when something else needs that split; not worth the churn on its
+own.
+
+Three tests, in `test_output_device.cpp`: a shared device is opened at the rate
+it really runs, an exclusive one at the track's, and an output that overrides
+nothing keeps what it was given. Plus a hidden `[.ratedevice]` case in
+`test_audio.cpp` that asks the *real* backend the same questions, because a
+double can only prove what the engine does with an answer, never that the
+answer is true.
 
 #### The decoder list, and what it left behind
 
@@ -3282,6 +3304,12 @@ All of these are also documented at the call site.
   sections cost nothing.
 - **A flat equaliser is skipped, not run.** Cog pushes every sample through 31
   sections at 0 dB; skipping makes flat bit-transparent by construction.
+- **The output opens at the rate the device will really run**, and XPCog does the
+  conversion, rather than asking for the track's rate and letting the backend
+  convert behind the seam. Cog reaches the same place from the other direction --
+  its device keeps its own format and everything is resampled into it. Exclusive
+  mode is the exception in both: there the stream owns the device, so the rate
+  asked for is the rate that runs.
 - **The preset extrapolation's 1.05 step does nothing.** Cog builds four synthetic
   points beyond each end of a preset's ten, stepping by 1.05 in gain and frequency
   together. They lie on the line through the two outermost stored points, so the
