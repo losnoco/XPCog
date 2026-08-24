@@ -32,6 +32,7 @@
 #pragma once
 
 #include <functional>
+#include <utility>
 
 namespace xpcog {
 
@@ -55,7 +56,24 @@ public:
 
     using Notify = std::function<void()>;
 
-    explicit PlayMonitor(Rules rules = {}) : rules_(rules) {}
+    /// Two constructors rather than one with `Rules rules = {}`, which is what
+    /// this was and which only MSVC accepts.
+    ///
+    /// A default argument is part of the enclosing class's *declaration*, so it
+    /// is parsed while `PlayMonitor` is still incomplete -- and `Rules` is a
+    /// member of `PlayMonitor`, so its default member initializers are not
+    /// usable yet. Clang says so plainly ("default member initializer for
+    /// 'playCountSeconds' needed within definition of enclosing class"); GCC
+    /// says it could not convert a brace-enclosed initializer list, which is the
+    /// same complaint wearing a disguise. Both are right and MSVC is wrong, so
+    /// this compiled on the machine it was written on and on none of the four
+    /// CI jobs.
+    ///
+    /// Defaulting the constructor instead moves the initialiser to where the
+    /// class is complete, which is the point at which `rules_` is actually
+    /// built.
+    PlayMonitor() = default;
+    explicit PlayMonitor(Rules rules) : rules_(rules) {}
 
     /// Both fire at most once per track, on the caller's thread inside
     /// advance(). Neither is called for a track that never reaches its

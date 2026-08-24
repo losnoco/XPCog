@@ -41,6 +41,7 @@
 #include "xpcog/core/net/HttpClient.hpp"
 
 #include <cstdint>
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string>

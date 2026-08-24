@@ -47,6 +47,8 @@
 #include <wx/frame.h>
 
 #include <functional>
+#include <cstddef>
+#include <optional>
 #include <memory>
 #include <string>
 #include <vector>
