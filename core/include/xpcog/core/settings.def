@@ -180,6 +180,22 @@ XPCOG_SETTING(ReadPlaylistsInFolders, bool, "readPlaylistsInFolders", false)
 
 // --- equaliser ------------------------------------------------------------
 
+/// Whether the equaliser runs at all -- Cog's `GraphicEQenable`, and its
+/// default of off.
+///
+/// Not the same thing as a flat curve, which is why it exists. A flat equaliser
+/// is already skipped rather than run, so 0 dB costs nothing; what this buys is
+/// bypassing a curve *without* flattening it, which is the whole of what A/B-ing
+/// one means. Zeroing 31 sliders to hear the track without them, and then
+/// putting them back, is not a comparison anybody makes twice.
+///
+/// Off by default, as in Cog. A listener who has never opened the equaliser has
+/// a flat curve, which is skipped either way, so the default is invisible until
+/// somebody moves a slider -- at which point the panel turns it on for them,
+/// because a slider that does nothing is worse than a checkbox they did not
+/// ask for.
+XPCOG_SETTING(GraphicEqEnable, bool, "GraphicEQenable", false)
+
 /// Gain in dB applied ahead of the bands, to buy back headroom a boost costs.
 XPCOG_SETTING(EqPreamp, double, "eqPreamp", 0.0)
 

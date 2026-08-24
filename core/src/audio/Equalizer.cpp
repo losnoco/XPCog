@@ -70,6 +70,8 @@ std::span<const char* const> Equalizer::bandSettingsKeys() noexcept {
 
 Equalizer::Equalizer() : gainsDb_(kBands, 0.0), biquads_(kBands) {}
 
+void Equalizer::setEnabled(bool enabled) { enabled_ = enabled; }
+
 void Equalizer::setPreamp(double decibels) {
     preampDb_   = decibels;
     preampGain_ = std::pow(10.0, decibels / 20.0);
@@ -134,6 +136,12 @@ Equalizer::Biquad Equalizer::coefficients(int band) const {
 }
 
 bool Equalizer::active() const {
+    // Checked first, and it is the whole point of the switch: a disabled
+    // equaliser is inactive however far from flat its bands are, which is what
+    // makes bypassing one different from flattening it.
+    if (!enabled_) {
+        return false;
+    }
     if (preampDb_ != 0.0) {
         return true;
     }

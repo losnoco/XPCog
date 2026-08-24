@@ -94,6 +94,12 @@ private:
     /// The curve stopped being a preset's, because a slider moved.
     void markCustom();
 
+    /// A slider moved while the equaliser was switched off. Turns it on, because
+    /// a control that visibly does nothing reads as broken -- and somebody
+    /// dragging a band has said what they want more clearly than the checkbox
+    /// they have not found yet.
+    void enableIfSilent();
+
     /// Sliders and readouts from the settings, without publishing. The selector
     /// and checkbox too.
     void syncFromSettings();
@@ -109,6 +115,7 @@ private:
     Settings&                     settings_;
     const EqualizerPresetLibrary& presets_;
 
+    wxCheckBox* enabled_      = nullptr;
     wxChoice*   presetChoice_ = nullptr;
     wxCheckBox* trackGenre_   = nullptr;
 

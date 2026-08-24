@@ -132,6 +132,63 @@ TEST_CASE("a flat equaliser is inactive and bit-transparent", "[dsp]") {
     REQUIRE(buffer == reference);
 }
 
+TEST_CASE("a disabled equaliser bypasses its curve without destroying it",
+          "[dsp]") {
+    // The difference between a switch and the Flat button, and the whole reason
+    // the switch exists. Flattening loses the curve; bypassing keeps it, which is
+    // what comparing a curve against the original actually needs -- nobody zeroes
+    // 31 sliders and puts them back to A/B an equaliser.
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+    equalizer.setBandGain(17, 9.0);   // 1 kHz
+    equalizer.setPreamp(-3.0);
+
+    REQUIRE(equalizer.active());
+
+    equalizer.setEnabled(false);
+    CHECK_FALSE(equalizer.active());
+
+    // Bit-transparent, not merely quiet: a bypassed equaliser must not touch the
+    // buffer at all, which is the same standard flat is held to.
+    std::vector<float> audio;
+    audio.reserve(2048);
+    for (int index = 0; index < 2048; ++index) {
+        audio.push_back(static_cast<float>(std::sin(0.03 * index) * 0.7));
+    }
+    const std::vector<float> before = audio;
+    equalizer.process(audio.data(), audio.size() / kChannels);
+    CHECK(audio == before);
+
+    // And the curve is still there to come back to -- both the band and the
+    // preamp, since the preamp is the half a "reset to flat" would also lose.
+    CHECK(equalizer.bandGain(17) == Approx(9.0));
+    CHECK(equalizer.preamp() == Approx(-3.0));
+
+    equalizer.setEnabled(true);
+    CHECK(equalizer.active());
+    equalizer.process(audio.data(), audio.size() / kChannels);
+    CHECK(audio != before);
+}
+
+TEST_CASE("a disabled equaliser is inactive however far from flat it is",
+          "[dsp]") {
+    // active() is what the chain branches on, so the switch has to win over
+    // every other reason to be active -- a boosted band, a cut band, or a preamp
+    // on its own, which is the one a check written as "are all the bands zero"
+    // would miss.
+    Equalizer equalizer;
+    equalizer.prepare(formatFor(kRate, kChannels));
+    equalizer.setEnabled(false);
+
+    CHECK_FALSE(equalizer.active());
+    equalizer.setPreamp(6.0);
+    CHECK_FALSE(equalizer.active());
+    equalizer.setBandGain(0, -20.0);
+    CHECK_FALSE(equalizer.active());
+    equalizer.setBandGain(30, 20.0);
+    CHECK_FALSE(equalizer.active());
+}
+
 TEST_CASE("a flat band's numerator and denominator are the same polynomial", "[dsp]") {
     Equalizer equalizer;
     equalizer.prepare(formatFor(kRate, kChannels));
@@ -398,6 +455,13 @@ std::vector<float> renderWith(double preampDb, int band, double bandDb) {
 
     auto     store = makeMemorySettingsStore();
     Settings settings{*store};
+    // Said out loud, because GraphicEQenable defaults to *off* -- Cog's default,
+    // for a setting that is Cog's. Every one of these renders wants an equaliser
+    // in the chain, and after the switch was added three of them were quietly
+    // measuring an engine that had none. A test that asks for a filter now has
+    // to say so, which is the setting doing its job rather than an inconvenience
+    // to route around.
+    settings.setGraphicEqEnable(true);
     settings.setEqPreamp(preampDb);
     if (band >= 0) {
         settings.setRawValue(Equalizer::bandSettingsKeys()[static_cast<std::size_t>(band)],
@@ -500,6 +564,9 @@ TEST_CASE("an equaliser change is heard promptly", "[dsp]") {
 
     auto     store = makeMemorySettingsStore();
     Settings settings{*store};
+    // As in renderWith(): the equaliser is off by default, and a test measuring
+    // how promptly a band change is heard needs one running to hear it in.
+    settings.setGraphicEqEnable(true);
 
     AudioEngine engine{dspRegistry(), *output, ring, settings};
     REQUIRE(engine.play(Url::fromLocalPath(toneWav())));

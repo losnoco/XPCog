@@ -55,20 +55,18 @@ TEST_CASE("a binary defaults file converts and imports", "[cogplist]") {
     CogSettingsReport report;
     importCogSettings(*xml, settings, &report);
 
-    // Sixteen keys: ten XPCog shares, six it does not. The six are four Cog-only
-    // settings (metadataMigrated, miniPlusMode, and the pitch/tempo pair that
-    // belong to Rubber Band, which is not ported), one of AppKit's window
-    // frames, and one that is more interesting than the rest --
+    // Sixteen keys: eleven XPCog shares, five it does not. The five are four
+    // Cog-only settings (metadataMigrated, miniPlusMode, and the pitch/tempo
+    // pair that belong to Rubber Band, which is not ported) and one of AppKit's
+    // window frames.
     //
-    // **GraphicEQenable**, Cog's equaliser on/off switch, which XPCog has no
-    // setting for. Its equaliser skips a *flat* chain, so 0 dB costs nothing,
-    // but there is no way to bypass a curve without flattening it -- which is
-    // exactly what such a switch is for, since A/B-ing an equaliser means
-    // hearing the same curve on and off rather than rebuilding it. So this
-    // number is not just arithmetic: it is one Cog setting that has nowhere to
-    // land, and if that changes this case should say 11 and 5.
-    CHECK(report.applied == 10);
-    CHECK(report.ignored == 6);
+    // It read ten and six until GraphicEQenable had somewhere to land. The
+    // previous version of this comment said "if that changes this case should
+    // say 11 and 5", which it now does -- the arithmetic here is a census of how
+    // much of a Cog installation XPCog can actually accept, so it is supposed to
+    // move when that changes, and supposed to be looked at when it does.
+    CHECK(report.applied == 11);
+    CHECK(report.ignored == 5);
     CHECK(report.mismatched == 0);
 
     // Spot-checked across the three value shapes, since the conversion is where
@@ -78,6 +76,7 @@ TEST_CASE("a binary defaults file converts and imports", "[cogplist]") {
     CHECK(settings.Eq20Hz() == Approx(3.5));
     CHECK(settings.Eq1kHz() == Approx(-2.0));
     CHECK(settings.GraphicEqPreset() == 7);
+    CHECK(settings.GraphicEqEnable());
     CHECK(settings.SentryAskedConsent());
 #else
     // Documented behaviour rather than an accident: only CoreFoundation reads

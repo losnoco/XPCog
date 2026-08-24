@@ -3498,7 +3498,12 @@ asserted a property Qt provides rather than the one the code was responsible for
   Two of the six come from RareWares, which is not a versioned host in the way a
   GitHub release is.
 
-  **That has now happened twice**, so it is a pattern rather than an observation.
+  **Mirrored on 2026-08-24, and the entry below is kept for how it got there.**
+  The two RareWares archives are now served from this repository's own
+  `ci-encoders-1` release, byte for byte, with both SHA-256s and the upstream
+  URLs recorded in its notes.
+
+  **That had by then happened twice**, so it was a pattern rather than an observation.
   The first time the Windows job failed with a connection timeout during the
   download step, on a commit whose code was fine and which passed on the other
   three platforms. The step behaved correctly — it failed loudly rather than

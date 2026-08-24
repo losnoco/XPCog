@@ -59,6 +59,25 @@ public:
 
     Equalizer();
 
+    /// Whether the equaliser runs at all, independently of what its bands hold.
+    ///
+    /// Cog's `GraphicEQenable`. Distinct from a flat curve on purpose: flat is
+    /// already skipped, so this is not an optimisation, it is the difference
+    /// between bypassing a curve and destroying it. Disabled, active() answers
+    /// false whatever the gains are, so the chain leaves the buffer alone and
+    /// the sliders keep their positions to come back to.
+    ///
+    /// **Defaults to on here, while the setting defaults to off.** Those are two
+    /// different questions and the first draft answered them with one value,
+    /// which broke six tests that construct an equaliser and expect it to
+    /// equalise. A filter that has been handed a curve should apply it; whether
+    /// the *player* runs an equaliser at all is a product decision, and it is
+    /// pushed in from settings.def by AudioEngine::applyDspSettings(). Defaulting
+    /// this off would mean every direct user had to remember a call whose
+    /// omission is silence.
+    void setEnabled(bool enabled);
+    [[nodiscard]] bool enabled() const noexcept { return enabled_; }
+
     /// Overall gain in dB applied ahead of the bands, matching Cog's eqPreamp.
     /// Exists because boosting bands without headroom clips, and the preamp is
     /// how a user buys that headroom back.
@@ -105,6 +124,7 @@ private:
         double s2 = 0.0;
     };
 
+    bool                enabled_  = true;
     double              preampDb_ = 0.0;
     double              preampGain_ = 1.0;
     std::vector<double> gainsDb_;

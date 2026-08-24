@@ -142,16 +142,31 @@ jobs:
             'https://github.com/dbry/WavPack/releases/download/5.9.0/wavpack-5.9.0-x64.zip',
             'https://archive.mozilla.org/pub/opus/win32/opus-tools-0.2-opus-1.3.1.zip',
             'https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip',
-            'https://www.rarewares.org/files/mp3/lame3.100.1-x64.zip',
-            'https://www.rarewares.org/files/ogg/oggenc2.88-1.3.7-x64.zip'
+            # Mirrored, not because the upstream host went away but because it
+            # stopped being reachable from Azure-hosted runners. On 2026-08-24
+            # eight attempts across two runs were refused while the same URLs
+            # served a developer machine at HTTP 200 in under two seconds, so
+            # the files are there and the route is not -- which retrying cannot
+            # fix and waiting will not either.
+            #
+            # The assets are byte-for-byte copies; ci-encoders-1 records the
+            # upstream URLs and both SHA-256s. Re-point at rarewares.org if it
+            # ever becomes reachable again, but there is nothing to gain by it:
+            # a GitHub release is the host the other four already use and the
+            # one these runners demonstrably reach.
+            'https://github.com/losnoco/XPCog/releases/download/ci-encoders-1/lame3.100.1-x64.zip',
+            'https://github.com/losnoco/XPCog/releases/download/ci-encoders-1/oggenc2.88-1.3.7-x64.zip'
           )
           # oggenc2.exe is oggenc; the tests invoke it under the portable name.
           $wanted = 'flac.exe','metaflac.exe','wavpack.exe','opusenc.exe','ffmpeg.exe','lame.exe','oggenc.exe','oggenc2.exe'
           $root = Join-Path $env:RUNNER_TEMP 'encoders'
           New-Item -ItemType Directory -Force $root | Out-Null
-          # Six third-party hosts, and any one of them having a slow morning
-          # used to fail the whole Windows job with nothing wrong in the tree --
-          # one connection timeout on rarewares.org was enough.
+          # Five third-party hosts now, plus this repository's own release for
+          # the two that were unreachable. Any one of them having a slow morning
+          # still fails the whole Windows job with nothing wrong in the tree,
+          # which is why the retry below exists -- but the failure that actually
+          # happened twice was not a slow morning, and is now mirrored rather
+          # than retried at.
           #
           # Retried rather than tolerated. Skipping an encoder that would not
           # download turns a red job into a quietly smaller test run, which is

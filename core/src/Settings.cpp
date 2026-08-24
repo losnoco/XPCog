@@ -158,6 +158,40 @@ void Settings::applyMigrations() {
                  }
              }
          }},
+        // v2: the equaliser gained an on/off switch, and its default is off --
+        // Cog's default, for a setting that is Cog's. That is right for somebody
+        // installing XPCog today and wrong for everybody already running it,
+        // because until this existed a non-flat curve was simply always on. Left
+        // alone, the upgrade would have silently killed every curve anyone had
+        // built.
+        //
+        // So: a stored curve that is not flat turns the switch on, once. A flat
+        // one does not, because a flat equaliser is skipped either way and
+        // enabling it would only be a checkbox appearing ticked for no reason.
+        //
+        // Found by adding the setting and asking what it does to a settings file
+        // that predates it, which is a question every default needs asked of it
+        // and this one answered badly.
+        {2, [](ISettingsStore& store) {
+             // Untouched if the user already has an opinion, which is the case
+             // for a settings file that has been through a Cog import.
+             if (store.getRaw("GraphicEQenable")) {
+                 return;
+             }
+             // By prefix, over the declared list, rather than against a copy of
+             // the 31 band names -- the same reason the engine reads them that
+             // way. `eqPreamp` and the bands all start "eq"; nothing else does.
+             for (const Desc& descriptor : all()) {
+                 if (!descriptor.key.starts_with("eq")) {
+                     continue;
+                 }
+                 const auto raw = store.getRaw(descriptor.key);
+                 if (raw && fromStorage(*raw, 0.0) != 0.0) {
+                     store.setRaw("GraphicEQenable", toStorage(true));
+                     return;
+                 }
+             }
+         }},
     };
 
     int version = SettingsSchemaVersion();

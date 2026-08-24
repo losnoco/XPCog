@@ -251,11 +251,12 @@ ones carried out of the store.
   mismatched** -- the last being the number that matters, since a mismatch would
   mean the two programs disagreeing about the type of a key they share.
 
-  One thing the count surfaced: **`GraphicEQenable` has nowhere to land.** Cog's
-  equaliser has an on/off switch and XPCog's has none -- `active()` skips a flat
-  chain, so 0 dB is free, but there is no way to bypass a curve without
-  flattening it, which is exactly what A/B-ing an equaliser needs. It is the one
-  Cog setting in the fixture that is dropped rather than ignored-as-irrelevant.
+  The count surfaced one gap, since closed: **`GraphicEQenable` had nowhere to
+  land.** Cog's equaliser has an on/off switch and XPCog's had none -- `active()`
+  skips a flat chain, so 0 dB was free, but there was no way to bypass a curve
+  without flattening it, which is exactly what A/B-ing one needs. XPCog now has
+  the same setting under the same name, so the fixture reads 11 applied and 5
+  ignored rather than 10 and 6.
 - **Nothing calls the reader yet.** It produces a `CogLibrary`; turning one into
   an XPCog playlist, and finding a Cog installation to read in the first place,
   are the macOS-only half.

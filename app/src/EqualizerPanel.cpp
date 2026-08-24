@@ -123,6 +123,16 @@ void EqualizerPanel::buildPresetRow(wxBoxSizer* layout) {
         return;
     }
 
+    enabled_ = new wxCheckBox(this, wxID_ANY, "Enable");
+    enabled_->SetToolTip(
+        "Bypasses the equaliser without disturbing the curve, which is what "
+        "comparing one against the original needs. A flat equaliser is skipped "
+        "either way, so this costs nothing until a band is moved.");
+    enabled_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent& event) {
+        settings_.setGraphicEqEnable(event.IsChecked());
+        settingChanged.publish("GraphicEQenable");
+    });
+
     presetChoice_ = new wxChoice(this, wxID_ANY);
     for (const EqualizerPreset& preset : presets_.presets()) {
         presetChoice_->Append(toWx(preset.name));
@@ -151,6 +161,7 @@ void EqualizerPanel::buildPresetRow(wxBoxSizer* layout) {
     });
 
     auto* row = new wxBoxSizer(wxHORIZONTAL);
+    row->Add(enabled_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(12));
     row->Add(new wxStaticText(this, wxID_ANY, "Preset"), 0,
              wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(6));
     row->Add(presetChoice_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(12));
@@ -179,6 +190,7 @@ wxSlider* EqualizerPanel::addBand(wxBoxSizer* columns, const std::string& captio
         const int scaled = event.GetInt();
         readout->SetLabelText(toWx(decibelLabel(scaled)));
         settings_.setRawValue(key, std::to_string(static_cast<double>(scaled) / kEqScale));
+        enableIfSilent();
         markCustom();
         settingChanged.publish(key);
     });
@@ -217,6 +229,9 @@ void EqualizerPanel::syncFromSettings() {
     if (trackGenre_ != nullptr) {
         trackGenre_->SetValue(settings_.GraphicEqTrackGenre());
     }
+    if (enabled_ != nullptr) {
+        enabled_->SetValue(settings_.GraphicEqEnable());
+    }
 }
 
 void EqualizerPanel::publishCurve() {
@@ -237,6 +252,13 @@ void EqualizerPanel::selectPreset(int index) {
     }
 
     applyEqualizerPreset(settings_, *preset);
+    // For the reason a moved slider does: picking "Bass Booster" and hearing
+    // nothing is the same trap. Flat is the exception -- it is what somebody
+    // reaches for to *stop* hearing the equaliser, so switching it on to deliver
+    // a curve that does nothing would be perverse.
+    if (preset->name != "Flat") {
+        enableIfSilent();
+    }
     syncFromSettings();
     publishCurve();
 }
@@ -255,6 +277,18 @@ void EqualizerPanel::markCustom() {
     }
     settings_.setGraphicEqPreset(custom);
     presetChoice_->SetSelection(custom);
+}
+
+void EqualizerPanel::enableIfSilent() {
+    if (settings_.GraphicEqEnable()) {
+        return;
+    }
+    settings_.setGraphicEqEnable(true);
+    if (enabled_ != nullptr) {
+        enabled_->SetValue(true);
+    }
+    // Not published: the caller publishes the band key it just wrote, and the
+    // frame's response to either is the same single reload.
 }
 
 void EqualizerPanel::refresh() { syncFromSettings(); }

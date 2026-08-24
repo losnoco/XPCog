@@ -223,6 +223,73 @@ TEST_CASE("migrations run once and record the version", "[settings]") {
     CHECK(settings.Volume() == Catch::Approx(0.75));
 }
 
+TEST_CASE("an existing curve survives the equaliser gaining a switch",
+          "[settings]") {
+    // The upgrade hazard, and the reason this migration exists. GraphicEQenable
+    // defaults to off -- Cog's default, for a setting that is Cog's -- which is
+    // right for a new install and silently wrong for every settings file written
+    // before the switch existed, because until then a non-flat curve was simply
+    // always on. Without this, upgrading would have turned everybody's equaliser
+    // off and left the sliders showing a curve nobody could hear.
+    auto     store = makeMemorySettingsStore();
+    Settings settings(*store);
+
+    // A settings file from before the switch: a curve, and no opinion about
+    // whether the equaliser runs.
+    store->setRaw("eq1kHz", "6.0");
+    REQUIRE_FALSE(store->getRaw("GraphicEQenable").has_value());
+
+    settings.applyMigrations();
+
+    CHECK(settings.GraphicEqEnable());
+    CHECK(settings.SettingsSchemaVersion() >= 2);
+}
+
+TEST_CASE("a flat curve does not switch the equaliser on", "[settings]") {
+    // Flat is skipped whether or not it is enabled, so turning the switch on
+    // would change nothing audible and would leave a checkbox ticked that the
+    // user never touched. Doing nothing is the honest answer.
+    auto     store = makeMemorySettingsStore();
+    Settings settings(*store);
+
+    store->setRaw("eq1kHz", "0.0");
+    store->setRaw("eqPreamp", "0.0");
+
+    settings.applyMigrations();
+
+    CHECK_FALSE(settings.GraphicEqEnable());
+}
+
+TEST_CASE("the preamp alone counts as a curve", "[settings]") {
+    // The case a check written as "are all 31 bands zero" would miss: somebody
+    // whose only equaliser setting is a preamp was hearing it, and must go on
+    // hearing it.
+    auto     store = makeMemorySettingsStore();
+    Settings settings(*store);
+
+    store->setRaw("eqPreamp", "-4.0");
+    settings.applyMigrations();
+
+    CHECK(settings.GraphicEqEnable());
+}
+
+TEST_CASE("a stated preference about the switch is not overridden",
+          "[settings]") {
+    // Somebody who has turned it off, or a settings file that has been through a
+    // Cog import carrying GraphicEQenable=false, has already said what they
+    // want. A migration exists to supply an answer where there is none, not to
+    // replace one.
+    auto     store = makeMemorySettingsStore();
+    Settings settings(*store);
+
+    store->setRaw("eq1kHz", "6.0");
+    store->setRaw("GraphicEQenable", "false");
+
+    settings.applyMigrations();
+
+    CHECK_FALSE(settings.GraphicEqEnable());
+}
+
 // --- AudioConverter -------------------------------------------------------
 
 namespace {

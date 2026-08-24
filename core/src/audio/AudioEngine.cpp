@@ -333,6 +333,7 @@ void AudioEngine::applyReplayGain(const TrackProperties& props) {
 
 void AudioEngine::applyDspSettings() {
     fader_.setEnabled(settings_.EnableFading());
+    equalizer_.setEnabled(settings_.GraphicEqEnable());
     equalizer_.setPreamp(settings_.EqPreamp());
 
     const auto keys = Equalizer::bandSettingsKeys();

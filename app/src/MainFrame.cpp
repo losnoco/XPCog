@@ -752,7 +752,8 @@ void MainFrame::onSettingChanged(const std::string& key) {
     // The equaliser and the DSP chain are read by the engine when it is asked to,
     // so a band that moves has to say so or the slider does nothing until the
     // next track.
-    if (key.starts_with("eq") || key == "enableFSurround" || key == "enableFading" ||
+    if (key.starts_with("eq") || key == "GraphicEQenable" ||
+        key == "enableFSurround" || key == "enableFading" ||
         key == "volumeScaling" || key == "enableHDCD") {
         playback_->reloadDsp();
         return;
