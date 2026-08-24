@@ -2526,6 +2526,13 @@ which promotes `cogimport` to the top: with every format Cog plays now playing
 here, the thing standing between this and a player a Cog user can actually move
 to is their library, not their files.
 
+**Two of these are blocked on hardware rather than on effort**, and it is worth
+knowing which before picking one up cold. Item 1 needs a Mac to read a real Cog
+installation; item 5 needs a DoP-capable DAC, because a DoP path that has never
+locked a real device is a guess with a test around it. Everything else on this
+list — items 3, 6, 8 and 9 — is reachable from a clean checkout on any of the
+three platforms. If you have neither machine, start at item 6.
+
 **1. `cogimport` — pick this one up on a Mac.** Reading an existing Cog
 installation — its playlists, its SQLite library, its defaults — is the
 difference between a port and something a Cog user can switch to. Core already
@@ -2678,9 +2685,27 @@ format probe — "does this DAC actually expose 176,400 Hz at 24-bit in exclusiv
 mode" is the question a datasheet answers unreliably, and plenty of dongles
 advertise 384 kHz while enumerating only the 48 kHz family at the top.
 
-**6. The feature tail.** HRTF (Cog's is an impulse-response convolver in the DSP
-chain, and the DSP section above notes where it would sit), Last.fm scrobbling,
-global hotkeys.
+**6. The feature tail.** Ranked, because the three left are not equally worth
+having and one of them has been struck off:
+
+- **Last.fm scrobbling** — the top of this list and the most reachable thing on
+  the page. Self-contained, no toolkit involvement, and the most visible gap
+  against Cog for an actual listener: it is the one absence a switcher notices
+  on their first evening rather than on some particular file.
+- **HRTF** — Cog's is an impulse-response convolver in the DSP chain, and the
+  DSP section above notes where it would sit. The chain already has the shape
+  for it and Cog ships the impulse data, so this is a node and a setting rather
+  than an architecture.
+- **Rubber Band** — unported, and the reason its Preferences pane does not
+  exist (see the comment at the top of `app/src/PreferencesDialog.hpp`, which
+  names it as the one pane with nothing to hold). Time-stretch and pitch are a
+  real feature with a narrower audience than the two above, which is the whole
+  of why it is last.
+- ~~**Global hotkeys**~~ — **not coming**, by decision rather than omission.
+  Cog's Hot Keys pane binds seven shortcuts and all seven are media keys, which
+  SMTC, MPRIS and MediaPlayer.framework already deliver through `platform/`. A
+  pane of key bindings would be a second way to ask for something the OS is
+  already sending.
 
 **7. The MIDI leftovers**, all recorded in `docs/MIDI.md`. Two of the three are
 now closed and the third is the only one left:
@@ -2698,6 +2723,51 @@ now closed and the third is the only one left:
   `GeneralUserXG-SFeTest.sf3`, the 1.5 MB `GeneralUserGS-Drums.sf3`, and the
   51 KB `tg300b.sflist.json` that names both and remaps XG onto GS. Which one
   plays is asked of the sequence, as Cog asks it — see "Shipping a bank" below.
+
+**8. The one failing test: Loudness `.lds` parses 0 of 25.**
+`tests/codecs/test_midi_container.cpp:154` asserts that each format in the MIDI
+corpus parses for more than half its files, and Loudness returns none. Every
+other format in that corpus passes, and this is the only red assertion in the
+whole suite.
+
+Small, and worth doing ahead of things that are larger and more interesting, for
+a reason that has nothing to do with `.lds` files: a suite with one permanent
+failure in it stops being a signal. Every run since has had to be read as "one
+failure, the expected one", which is exactly the reading that lets a second one
+through. Either fix the container or establish that the corpus's `.lds` files
+are not what the parser is entitled to expect and change the assertion to say
+so — but do not leave it red.
+
+It predates all of the recent work and has never been investigated. Start at
+`midi_processing`'s Loudness reader and one file from the corpus.
+
+**9. An unverified question: is miniaudio resampling behind our back?**
+
+Not a finding. A thing noticed while reading `MiniaudioOutput` for the device
+switch above, written down because it would matter a great deal if it were true
+and because the next person to open that file should not have to notice it
+again.
+
+`MiniaudioOutput::start()` sets `deviceConfig.sampleRate` to the rate we ask for
+(`core/src/audio/MiniaudioOutput.cpp:96`). If miniaudio's contract is that the
+device runs at *that* rate and converts internally down to the hardware's, then
+a 44.1 kHz track on a 48 kHz-native device is being resampled by miniaudio's own
+resampler — whose default is linear — after `AudioConverter` has already looked
+at the rate, seen it match, and correctly declined to touch it. That is the most
+common configuration there is: shared-mode WASAPI on a machine whose mix format
+is 48 kHz.
+
+**What would settle it**, in order: read miniaudio's WASAPI init to see whether
+`device.sampleRate` is the requested rate or the hardware's, and what
+`playback.internalSampleRate` says beside it; then confirm on a real device by
+comparing the two fields after a `start()` at 44,100 on a 48 kHz-native output.
+If the two differ, the fix is to open the device at its native rate and let
+`AudioConverter` do the conversion with soxr, which is what it is there for and
+what Cog does (`OutputCoreAudio.m`, `-outputFormatForInputFormat:`, which keeps
+the device's own format and resamples everything into it).
+
+If they do not differ, delete this item and say so — a question recorded and
+then answered is worth as much as one recorded and then confirmed.
 
 #### The decoder list, and what it left behind
 
