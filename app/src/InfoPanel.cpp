@@ -375,9 +375,11 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
 
     wxImage cover;
     if (library_ != nullptr && !entry->artHash.empty()) {
-        const std::vector<std::byte> bytes = library_->artwork(entry->artHash);
-        if (!bytes.empty()) {
-            wxMemoryInputStream stream(bytes.data(), bytes.size());
+        // Shared rather than copied: the same cover is wanted by the info
+        // panel and the now-playing display, and it is only being read from.
+        const auto bytes = library_->sharedArtwork(entry->artHash);
+        if (bytes && !bytes->empty()) {
+            wxMemoryInputStream stream(bytes->data(), bytes->size());
             wxImage             image;
             // wxBITMAP_TYPE_ANY: the artwork is whatever the file carried, which
             // is usually JPEG and sometimes PNG.

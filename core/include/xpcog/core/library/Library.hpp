@@ -94,6 +94,21 @@ public:
 
     [[nodiscard]] std::vector<std::byte> artwork(std::string_view hash) const;
 
+    /// The same image, shared rather than copied out.
+    ///
+    /// One cover is asked for by the info panel, the now-playing display and the
+    /// operating system's media integration, and each used to get its own copy
+    /// read back out of the file -- three reads and three allocations of an
+    /// image that may be fifteen megabytes. Callers holding the returned handle
+    /// hold the same bytes.
+    ///
+    /// Cached weakly, plus a strong reference to the most recent one. Weak
+    /// alone would miss the case this exists for, where the three callers ask in
+    /// turn rather than at once; strong alone would accumulate every cover ever
+    /// looked at. Returns an empty handle for an unknown hash.
+    [[nodiscard]] std::shared_ptr<const std::vector<std::byte>> sharedArtwork(
+        std::string_view hash) const;
+
     /// Moves the image a metadata reader left in `entry.metadata["albumart"]`
     /// into the artwork table and replaces it with a hash. Returns false when
     /// there was nothing to move.

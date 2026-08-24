@@ -3,6 +3,7 @@
 #include "Sqlite.hpp"
 #include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/Sha256.hpp"
+#include "xpcog/core/SharedString.hpp"
 
 #include <algorithm>
 #include <array>
@@ -381,12 +382,18 @@ private:
 
 /// The whole dictionary, for reading back. One pass beats a join per row, and
 /// the table is small by construction -- that being the point of it.
-[[nodiscard]] std::unordered_map<std::int64_t, std::string> readStrings(
+///
+/// SharedString values, so the sharing survives the read: every entry naming a
+/// given id is handed the same one rather than its own copy. That is the
+/// difference between a load costing one string per *reference* and one per
+/// distinct string, which on a library carrying two comments between a hundred
+/// entries is 1.5 GiB against 31 MiB.
+[[nodiscard]] std::unordered_map<std::int64_t, SharedString> readStrings(
     sql::Database& database) {
-    std::unordered_map<std::int64_t, std::string> strings;
+    std::unordered_map<std::int64_t, SharedString> strings;
     sql::Statement query{database, "SELECT id, text FROM string;"};
     while (query.step()) {
-        strings.emplace(query.columnInt(0), query.columnText(1));
+        strings.emplace(query.columnInt(0), SharedString{query.columnText(1)});
     }
     return strings;
 }
@@ -451,6 +458,13 @@ struct Library::Impl {
     std::string   error;
     int           version = 0;
 
+    /// Covers handed out and still held by somebody, plus a strong reference to
+    /// the last one so the common "asked for three times in a row" case does not
+    /// go back to the file each time. See Library::sharedArtwork.
+    std::unordered_map<std::string, std::weak_ptr<const std::vector<std::byte>>>
+                                                  artCache;
+    std::shared_ptr<const std::vector<std::byte>> artMostRecent;
+
     [[nodiscard]] bool migrate();
     [[nodiscard]] bool writeEntry(EntryWriter& writer, const PlaylistEntry& entry,
                                   std::int64_t position, const std::string& tagHash,
@@ -460,7 +474,7 @@ struct Library::Impl {
                                    std::optional<TrackId>&     current);
     [[nodiscard]] bool readTags(
         sql::Statement& query, PlaylistEntry& entry,
-        const std::unordered_map<std::int64_t, std::string>& strings);
+        const std::unordered_map<std::int64_t, SharedString>& strings);
 
     bool fail(std::string message) {
         error = std::move(message) + ": " + database.lastError();
@@ -690,13 +704,13 @@ bool Library::Impl::writeTags(EntryWriter& writer, const PlaylistEntry& entry) {
 
 bool Library::Impl::readTags(
     sql::Statement& query, PlaylistEntry& entry,
-    const std::unordered_map<std::int64_t, std::string>& strings) {
+    const std::unordered_map<std::int64_t, SharedString>& strings) {
     query.reset();
     query.bind(1, static_cast<std::int64_t>(entry.id));
 
     const auto text = [&strings](std::int64_t id) -> const std::string* {
         const auto found = strings.find(id);
-        return (found != strings.end()) ? &found->second : nullptr;
+        return (found != strings.end()) ? &found->second.str() : nullptr;
     };
 
     while (query.step()) {
@@ -728,10 +742,10 @@ bool Library::Impl::readEntries(std::vector<PlaylistEntry>& entries,
 
     // Before the loop, because the entries' own text refers into it now as well
     // as the tags' does.
-    const std::unordered_map<std::int64_t, std::string> strings = readStrings(database);
-    const auto resolve = [&strings](std::int64_t id) -> std::string {
+    const std::unordered_map<std::int64_t, SharedString> strings = readStrings(database);
+    const auto resolve = [&strings](std::int64_t id) -> SharedString {
         const auto found = strings.find(id);
-        return (found != strings.end()) ? found->second : std::string{};
+        return (found != strings.end()) ? found->second : SharedString{};
     };
 
     while (query.step()) {
@@ -1105,15 +1119,37 @@ std::string Library::storeArtwork(std::span<const std::byte> data) {
 }
 
 std::vector<std::byte> Library::artwork(std::string_view hash) const {
+    const auto shared = sharedArtwork(hash);
+    return shared ? *shared : std::vector<std::byte>{};
+}
+
+std::shared_ptr<const std::vector<std::byte>> Library::sharedArtwork(
+    std::string_view hash) const {
     if (!isOpen() || hash.empty()) {
         return {};
     }
+
+    const std::string key{hash};
+    if (const auto cached = impl_->artCache.find(key); cached != impl_->artCache.end()) {
+        if (auto alive = cached->second.lock()) {
+            return alive;
+        }
+        // The last holder let go. The entry is stale rather than wrong, and
+        // clearing it here is what keeps the map from filling with dead weak
+        // pointers to covers nobody has looked at in a while.
+        impl_->artCache.erase(cached);
+    }
+
     sql::Statement query{impl_->database, "SELECT data FROM artwork WHERE art_hash = ?;"};
     query.bind(1, hash);
     if (!query.step()) {
         return {};
     }
-    return query.columnBlob(0);
+
+    auto image = std::make_shared<const std::vector<std::byte>>(query.columnBlob(0));
+    impl_->artCache[key]   = image;
+    impl_->artMostRecent   = image;
+    return image;
 }
 
 bool Library::adoptArtwork(PlaylistEntry& entry) {

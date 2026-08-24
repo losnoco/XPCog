@@ -1034,7 +1034,7 @@ void MainFrame::notifyTrack(const PlaylistEntry* entry) {
     // announce itself with a dangling dash.
     std::string subtitle;
     if (!entry->artist.empty() && !entry->album.empty()) {
-        subtitle = entry->artist + " - " + entry->album;
+        subtitle = entry->artist.str() + " - " + entry->album.str();
     } else if (!entry->artist.empty()) {
         subtitle = entry->artist;
     } else {
@@ -1052,9 +1052,11 @@ void MainFrame::notifyTrack(const PlaylistEntry* entry) {
     // touches the disk here.
     wxIcon cover;
     if (settings_.NotificationsShowAlbumArt() && library_ && !entry->artHash.empty()) {
-        const std::vector<std::byte> bytes = library_->artwork(entry->artHash);
-        if (!bytes.empty()) {
-            wxMemoryInputStream stream(bytes.data(), bytes.size());
+        // Shared rather than copied: the same cover is wanted by the info
+        // panel and the now-playing display, and it is only being read from.
+        const auto bytes = library_->sharedArtwork(entry->artHash);
+        if (bytes && !bytes->empty()) {
+            wxMemoryInputStream stream(bytes->data(), bytes->size());
             wxImage             image;
             if (image.LoadFile(stream, wxBITMAP_TYPE_ANY) && image.IsOk()) {
                 // Scaled down first. A balloon draws this at icon size, and

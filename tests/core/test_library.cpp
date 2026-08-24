@@ -355,6 +355,58 @@ TEST_CASE("an entry removed between saves is removed from the file", "[library]"
     CHECK(restored.at(1).metadata.joined("performer") == "Number 2");
 }
 
+TEST_CASE("loading shares one string between the entries naming it", "[library]") {
+    // The file stores repeated text once; loading used to expand it back into a
+    // copy per entry, which is where a library carrying two distinct comments
+    // between a hundred entries spent 1.5 GiB. Same storage, not merely equal.
+    Library library = openMemoryLibrary();
+
+    Playlist playlist;
+    for (int i = 0; i < 3; ++i) {
+        PlaylistEntry entry;
+        entry.url     = Url::fromLocalPath(
+            pathFromUtf8("/music/shared" + std::to_string(i) + ".flac"));
+        entry.album   = "One Album";
+        entry.comment = std::string(8192, 'c');
+        playlist.add(std::move(entry));
+    }
+    REQUIRE(library.savePlaylist(playlist));
+
+    Playlist restored;
+    REQUIRE(library.loadPlaylist(restored));
+    REQUIRE(restored.size() == 3);
+
+    for (std::size_t i = 1; i < restored.size(); ++i) {
+        CHECK(restored.at(i).album.handle() == restored.at(0).album.handle());
+        CHECK(restored.at(i).comment.handle() == restored.at(0).comment.handle());
+    }
+    CHECK(restored.at(0).album == "One Album");
+    CHECK(restored.at(0).comment.size() == 8192);
+
+    // An entry that names something else must not be caught up in it.
+    CHECK(restored.at(0).artist.empty());
+    CHECK(restored.at(0).artist.handle() == nullptr);  // empty costs no allocation
+}
+
+TEST_CASE("the same cover is handed out once, not copied per caller", "[library]") {
+    Library library = openMemoryLibrary();
+
+    const std::string hash = library.storeArtwork(bytesOf("a cover"));
+    REQUIRE_FALSE(hash.empty());
+
+    const auto first  = library.sharedArtwork(hash);
+    const auto second = library.sharedArtwork(hash);
+    REQUIRE(first);
+    CHECK(first == second);
+    CHECK(*first == bytesOf("a cover"));
+
+    CHECK(library.sharedArtwork("no such hash") == nullptr);
+    CHECK(library.sharedArtwork("") == nullptr);
+
+    // The by-value accessor still answers, for callers that want their own.
+    CHECK(library.artwork(hash) == bytesOf("a cover"));
+}
+
 TEST_CASE("unreferenced artwork is pruned", "[library]") {
     Library library = openMemoryLibrary();
 

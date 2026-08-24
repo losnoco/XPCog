@@ -15,6 +15,7 @@
 #pragma once
 
 #include "xpcog/core/MetadataMap.hpp"
+#include "xpcog/core/SharedString.hpp"
 #include "xpcog/core/TrackProperties.hpp"
 #include "xpcog/core/Url.hpp"
 
@@ -39,15 +40,19 @@ struct PlaylistEntry {
     // These are columns rather than map entries because they are sorted on,
     // grouped by and displayed for every row; going through MetadataMap for
     // each would turn a sort into a string search per comparison.
-    std::string  album;
-    std::string  albumArtist;
-    std::string  artist;
+    // SharedString, not std::string, for the ones that repeat: an album's tracks
+    // hold one copy of their artist between them rather than one each. rawTitle
+    // is the exception and stays a plain string -- it is as good as unique per
+    // entry, so sharing it would cost a control block to save nothing.
+    SharedString album;
+    SharedString albumArtist;
+    SharedString artist;
     std::string  rawTitle;
-    std::string  genre;
-    std::string  composer;
-    std::string  date;
-    std::string  comment;
-    std::string  unsyncedLyrics;
+    SharedString genre;
+    SharedString composer;
+    SharedString date;
+    SharedString comment;
+    SharedString unsyncedLyrics;
     std::int32_t track = 0;
     std::int32_t disc  = 0;
     std::int32_t year  = 0;

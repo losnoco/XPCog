@@ -113,7 +113,7 @@ std::string PlaylistEntry::display() const {
     if (artist.empty()) {
         return title();
     }
-    return artist + " - " + title();
+    return artist.str() + " - " + title();
 }
 
 std::string PlaylistEntry::filename() const {

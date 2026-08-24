@@ -299,7 +299,7 @@ TEST_CASE("a chip log renders audio, not silence", "[libvgm][corpus]") {
         // name here -- Game_Music_Emu says "Sega MegaCD / SegaCD" for the very
         // first file in this corpus.
         INFO("codec " << props.codec);
-        CHECK(props.codec.rfind("VGM v", 0) == 0);
+        CHECK(props.codec.view().starts_with("VGM v"));
 
         const std::vector<std::byte> audio =
             drain(*opened.decoder, 44100 * 6 * 4);  // about four seconds
@@ -419,7 +419,7 @@ TEST_CASE("the format is decided by content, not by extension", "[libvgm][corpus
 
     PluginRegistry::OpenResult opened = registry().open(Url::fromLocalPath(renamed));
     REQUIRE(opened);
-    CHECK(opened.decoder->properties().codec.rfind("VGM v", 0) == 0);
+    CHECK(opened.decoder->properties().codec.view().starts_with("VGM v"));
 }
 
 TEST_CASE("a chip log carries its game's tags", "[libvgm][corpus]") {

@@ -98,7 +98,7 @@ void LyricsPanel::showEntry(const PlaylistEntry* entry) {
         body = kNoTrack;
     } else {
         heading = entry->artist.empty() ? entry->title()
-                                        : entry->artist + " \xE2\x80\x94 " + entry->title();
+                                        : entry->artist.str() + " \xE2\x80\x94 " + entry->title();
         body    = normaliseLyrics(entry->unsyncedLyrics);
         if (body.empty()) {
             body = kNoLyrics;

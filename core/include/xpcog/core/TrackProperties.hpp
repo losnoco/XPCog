@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "xpcog/core/SharedString.hpp"
+
 #include "xpcog/core/AudioFormat.hpp"
 
 #include <cstdint>
@@ -44,8 +46,8 @@ struct TrackProperties {
     /// lossless indicator and HDCD detection.
     bool lossless = false;
 
-    std::string codec;     ///< "FLAC"
-    std::string encoding;  ///< "lossless" | "lossy" | "synthesized"
+    SharedString codec;     ///< "FLAC"
+    SharedString encoding;  ///< "lossless" | "lossy" | "synthesized"
 
     /// Embedded cue sheet, if the container carried one.
     std::optional<std::string> cuesheet;
