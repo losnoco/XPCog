@@ -67,8 +67,8 @@ public:
 
 private:
     // One pane per screen, named and ordered after Cog's own
-    // (Preferences/Preferences/GeneralPreferencesPlugin.m:44) minus the panes
-    // that have nothing to hold here: Rubber Band is unported, and Hot Keys is
+    // (Preferences/Preferences/GeneralPreferencesPlugin.m:44) minus the one
+    // pane that has nothing to hold here: Hot Keys is
     // not coming -- its seven shortcuts are media keys, which SMTC, MPRIS and
     // MediaPlayer.framework already deliver through platform/, so a pane of key
     // bindings would be a second way to ask for something the OS is already
@@ -78,6 +78,12 @@ private:
     // spectrum rows on Appearance, and there are eight here.
     [[nodiscard]] wxWindow* buildPlaylistPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildOutputPane(wxWindow* parent);
+    /// Cog's Rubber Band pane under the name the feature deserves -- the
+    /// engine picker grew Varispeed, which is no Rubber Band -- plus the pitch
+    /// and tempo sliders Cog keeps in its main window: the transport bar here
+    /// is full, and a slider that does nothing until an engine is chosen
+    /// belongs beside that choice. Rows appear and disappear with the engine.
+    [[nodiscard]] wxWindow* buildPitchTempoPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildGeneralPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildNotificationsPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildMidiPane(wxWindow* parent);

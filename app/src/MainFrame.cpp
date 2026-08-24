@@ -765,7 +765,8 @@ void MainFrame::onSettingChanged(const std::string& key) {
     // next track.
     if (key.starts_with("eq") || key == "GraphicEQenable" ||
         key == "enableFSurround" || key == "enableFading" ||
-        key == "volumeScaling" || key == "enableHDCD") {
+        key == "volumeScaling" || key == "enableHDCD" ||
+        key == "pitch" || key == "tempo" || key.starts_with("rubberband")) {
         playback_->reloadDsp();
         return;
     }
