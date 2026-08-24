@@ -132,6 +132,13 @@ _xpcog_system_dep(soxr "soxr"
     FEATURE soxr
     MODULES "soxr >= 0.1.2")
 
+# core/src/audio/TimeStretch.cpp: rubberband_get_process_size_limit and
+# rubberband_set_max_process_size are 3.3; the R3 (EngineFiner) options this
+# calls are 3.0. Everything else it uses is older.
+_xpcog_system_dep(rubberband "Rubber Band"
+    FEATURE rubberband
+    MODULES "rubberband >= 3.3")
+
 # codecs/taglib/TagLibReader.cpp includes <tvariant.h> and constructs a
 # TagLib::FileName. TagLib::Variant is new in 2.0, and FileName became a class in
 # the same release -- 1.13 has neither, which is what Ubuntu 24.04 ships.

@@ -28,6 +28,11 @@
 #   hively/   <- Cog Frameworks/HivelyPlayer       (M6) -- done. The AHX and
 #             HVL replayer, here rather than in ../ports because Cog's copy
 #             carries a blip_buf resampler upstream has never had.
+#   signalsmith/ <- Cog ThirdParty/signalsmith     -- done. Signalsmith Stretch
+#             and the signalsmith-linear FFT under it, the pitch/tempo engine
+#             beside Rubber Band. Header-only; vendored from Cog rather than
+#             ported because the pair have to match each other and upstream's
+#             tags trail what Cog ships against.
 #   syntrax/  <- Cog Frameworks/Syntrax-c          (M6) -- done. libjaytrax,
 #             here rather than in ../ports because upstream is an untagged
 #             Bitbucket repository and Cog's copy has grown the memory loader
@@ -46,6 +51,7 @@ if(XPCOG_WITH_MIDI)
     add_subdirectory(nuked-sc55)
 endif()
 add_subdirectory(miniaudio)
+add_subdirectory(signalsmith)
 if(XPCOG_WITH_SYNTRAX)
     add_subdirectory(syntrax)
 endif()

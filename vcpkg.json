@@ -17,6 +17,7 @@
     "spessasynth-core",
     "sqlite3",
     "soxr",
+    "rubberband",
     "taglib",
     "libopenmpt",
     "libgme",
@@ -44,6 +45,12 @@
       "description": "soxr, the sample-rate converter. Substitutable; see the `sqlite3` feature.",
       "dependencies": [
         "soxr"
+      ]
+    },
+    "rubberband": {
+      "description": "Rubber Band, behind the tempo and pitch controls. Substitutable at 3.3 or newer -- core calls rubberband_get_process_size_limit, which is where the 3.x line settled. See the `sqlite3` feature.",
+      "dependencies": [
+        "rubberband"
       ]
     },
     "taglib": {
