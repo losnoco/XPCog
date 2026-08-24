@@ -965,6 +965,12 @@ void AudioEngine::pause() {
         return;
     }
 
+    // Asked now rather than remembered from start(), so unticking the box takes
+    // effect on the next pause instead of the next track. The output holds the
+    // answer because it is the only thing that knows what releasing a device
+    // costs.
+    output_.setSuspendOnPause(settings_.SuspendOutputOnPause());
+
     const double fade = fadeMilliseconds();
     if (fade <= 0.0) {
         output_.pause();

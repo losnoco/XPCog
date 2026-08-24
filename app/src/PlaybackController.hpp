@@ -95,6 +95,19 @@ public:
     /// Starts the playlist entry `id`, or resumes/starts the current one when
     /// `id` is absent.
     void playTrack(TrackId id);
+
+    /// Starts `id` at `seconds` rather than at its top.
+    ///
+    /// For resuming where the listener left off, which playTrack() cannot do:
+    /// it clears the resume position deliberately, because an ordinary gesture
+    /// begins at the beginning. Seeking afterwards does not work either --
+    /// seek() declines while a start is still in flight, which is exactly when
+    /// a caller would be asking.
+    ///
+    /// `startPaused` opens the track and holds it, which is what Cog does when
+    /// the last session was paused rather than playing
+    /// (AppController.m:288, -playEntryAtIndex:startPaused:andSeekTo:).
+    void resumeTrack(TrackId id, double seconds, bool startPaused);
     void playPause();
     void stop();
     void next();
@@ -217,6 +230,11 @@ private:
     /// call that quietly does nothing. Restarting for a device change used to do
     /// exactly that, which sent the track back to its beginning.
     double resumeAt_ = 0.0;
+
+    /// A resumed session that was paused when it ended. Held until the track
+    /// is actually open, because playPause() declines while a start is in
+    /// flight -- which is when resumeTrack() asks.
+    bool pauseOnStart_ = false;
 
     /// What the engine is currently playing, as far as the interface knows.
     TrackId audible_ = kInvalidTrackId;

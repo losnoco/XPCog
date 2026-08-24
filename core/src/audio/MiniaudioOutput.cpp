@@ -154,6 +154,11 @@ public:
 
         framesPlayed_.store(0, std::memory_order_relaxed);
         underruns_.store(0, std::memory_order_relaxed);
+        // A fresh device is not a paused one. Without this, a stop() taken while
+        // paused-and-held would leave the flag set and the next track would open
+        // a device that plays silence -- a player that appears to start and emits
+        // nothing, with the clock frozen to match.
+        silenced_.store(false, std::memory_order_release);
 
         // Before the device runs, and this is not housekeeping. A faded stop
         // leaves the level at zero, and the engine's play() calls stop() first --
@@ -175,18 +180,40 @@ public:
         stopLocked();
     }
 
+    void setSuspendOnPause(bool suspend) override {
+        suspendOnPause_.store(suspend, std::memory_order_relaxed);
+    }
+
     void pause() override {
         std::lock_guard lock(deviceMutex_);
-        if (deviceValid_) {
-            ma_device_stop(&device_);
+        if (!deviceValid_) {
+            return;
         }
+        if (suspendOnPause_.load(std::memory_order_relaxed)) {
+            silenced_.store(false, std::memory_order_release);
+            ma_device_stop(&device_);
+            return;
+        }
+        // Held rather than handed back. The device keeps running and the callback
+        // emits silence, so the driver never loses its stream -- which is the
+        // point for an exclusive device another application would take in the
+        // gap, or a DAC that clicks every time the stream stops.
+        silenced_.store(true, std::memory_order_release);
     }
 
     void resume() override {
         std::lock_guard lock(deviceMutex_);
-        if (deviceValid_) {
-            ma_device_start(&device_);
+        if (!deviceValid_) {
+            return;
         }
+        // Cleared first: the device may never have stopped, in which case the
+        // callback is running right now and this flag is the only thing between
+        // it and the audio.
+        silenced_.store(false, std::memory_order_release);
+        // Harmless on a device that was never stopped -- miniaudio answers
+        // MA_INVALID_OPERATION and changes nothing -- so the two pause modes
+        // need no bookkeeping here to tell them apart.
+        ma_device_start(&device_);
     }
 
     [[nodiscard]] AudioFormat negotiatedFormat() const override { return format_; }
@@ -302,6 +329,18 @@ private:
                              ma_uint32 frameCount) {
         auto*             self     = static_cast<MiniaudioOutput*>(device->pUserData);
         const std::size_t channels = device->playback.channels;
+
+        // Paused, on a device we chose not to hand back. Silence, and nothing
+        // else: the ring is not drained, so playback resumes on the sample it
+        // stopped on, and framesPlayed_ does not advance, because that counter is
+        // the playback clock every track change is timed against. Counting
+        // silence into it would walk the seek bar forward through a pause.
+        if (self->silenced_.load(std::memory_order_acquire)) {
+            std::memset(output, 0,
+                        static_cast<std::size_t>(frameCount) * channels *
+                            ma_get_bytes_per_sample(device->playback.format));
+            return;
+        }
 
         if (device->playback.format == ma_format_f32) {
             // The float path, unchanged: the ring holds float32, so the device
@@ -464,6 +503,15 @@ private:
     /// for -- what was given.
     bool               exclusiveHeld_ = false;
     AudioFormat        format_{};
+
+    /// Whether pause() releases the device or holds it. Cog's
+    /// `suspendOutputOnPause`; see IAudioOutput::setSuspendOnPause().
+    std::atomic<bool> suspendOnPause_{true};
+
+    /// Set while paused on a device that was held. Read by the callback on every
+    /// buffer, which is why it is atomic rather than guarded by deviceMutex_ --
+    /// the real-time thread may not take a lock.
+    std::atomic<bool> silenced_{false};
 
     /// Float staging for an integer device, sized in start() and never resized
     /// afterwards -- the callback runs on a real-time thread and must not

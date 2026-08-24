@@ -128,6 +128,26 @@ void PlaybackController::reopenOutput() {
     restartForOutputChange();
 }
 
+void PlaybackController::resumeTrack(TrackId id, double seconds, bool startPaused) {
+    if (playlist_.find(id) == nullptr) {
+        return;
+    }
+    // The same route restartForOutputChange() takes, and for the same reason:
+    // resumeAt_ survives requestStart() and is applied by finishStart() at the
+    // first moment a seek is allowed.
+    failedStarts_.clear();
+    resumeAt_ = std::max(0.0, seconds);
+    requestStart(id);
+
+    if (startPaused) {
+        // After the request, not before: pausing an engine that is being rebuilt
+        // is not a defined thing to do, and playPause() declines while a start is
+        // in flight for that reason. The flag is set here and the engine is told
+        // once the track is actually open -- see finishStart().
+        pauseOnStart_ = true;
+    }
+}
+
 void PlaybackController::restartForOutputChange() {
     const TrackId current = currentTrack();
     if (current == kInvalidTrackId) {
@@ -219,6 +239,15 @@ void PlaybackController::finishStart(TrackId id, bool opened,
             const double target = resumeAt_;
             resumeAt_           = 0.0;
             seek(target);
+        }
+
+        // Likewise the pause a resumed session asked for: playPause() declines
+        // while a start is in flight, so the request is held until here. After
+        // the seek, so the track is paused at the position it resumed to rather
+        // than at its top.
+        if (pauseOnStart_) {
+            pauseOnStart_ = false;
+            playPause();
         }
         return;
     }

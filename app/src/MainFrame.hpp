@@ -152,6 +152,11 @@ private:
     /// notifications look unreliable.
     void notifyTrack(const PlaylistEntry* entry);
 
+    /// Puts the last session back: selects the track that was current, and
+    /// starts it where it left off when resumePlaybackOnStartup says to.
+    /// Does nothing when the last session ended stopped.
+    void restorePlayback();
+
     /// The track the last notification was about, so one track produces one.
     /// kInvalidTrackId while nothing is playing, which is what lets the same
     /// track announce itself again the next time it is started.

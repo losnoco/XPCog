@@ -43,8 +43,11 @@ public:
     /// shape as platform::Dispatcher, and for the same reason.
     using Dispatcher = std::function<void(std::function<void()>)>;
 
+    /// `options` is the Scanner's, and the caller supplies it because the
+    /// answer lives in Settings, which core takes by injection rather than
+    /// reaching for -- the same rule the engine follows.
     ScanTask(const PluginRegistry& registry, PluginCache* cache, std::vector<Url> inputs,
-             Dispatcher dispatch);
+             Dispatcher dispatch, Scanner::Options options = {});
 
     ScanTask(const ScanTask&)            = delete;
     ScanTask& operator=(const ScanTask&) = delete;

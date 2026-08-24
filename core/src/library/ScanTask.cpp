@@ -6,8 +6,11 @@
 namespace xpcog {
 
 ScanTask::ScanTask(const PluginRegistry& registry, PluginCache* cache,
-                   std::vector<Url> inputs, Dispatcher dispatch)
-    : scanner_(registry), inputs_(std::move(inputs)), dispatch_(std::move(dispatch)) {
+                   std::vector<Url> inputs, Dispatcher dispatch,
+                   Scanner::Options options)
+    : scanner_(registry, options),
+      inputs_(std::move(inputs)),
+      dispatch_(std::move(dispatch)) {
     scanner_.setCache(cache);
 }
 

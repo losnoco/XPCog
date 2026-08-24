@@ -212,6 +212,7 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
 
     if (library_ && library_->loadPlaylist(playlist_)) {
         setStatusText(statusSummary());
+        restorePlayback();
     }
     // Restoring the saved playlist is not an edit the user made, so it must not
     // be the first thing Undo offers to take back.
@@ -894,6 +895,52 @@ void MainFrame::refreshLyrics() {
     lyrics_->showEntry(playlist_.find(panelTrackId()));
 }
 
+void MainFrame::restorePlayback() {
+    // Cog's shape (AppController.m:266-292): if the last session was not stopped,
+    // find the entry the library marked current and *select* it -- always -- and
+    // start it only if the listener asked for that. Selecting either way is the
+    // part worth copying: coming back to a playlist with the last thing you were
+    // listening to highlighted is useful even to someone who does not want it
+    // playing the moment the window opens.
+    const int last = settings_.LastPlaybackStatus();
+    if (last == 0) {
+        return;
+    }
+
+    const auto current = playlist_.current();
+    if (!current) {
+        return;
+    }
+
+    if (const auto row = view_.rowForTrack(*current)) {
+        const wxDataViewItem item = model_->GetItem(static_cast<unsigned>(*row));
+        list_->Select(item);
+        list_->EnsureVisible(item);
+    }
+
+    if (!settings_.ResumePlaybackOnStartup()) {
+        return;
+    }
+
+    double position = 0.0;
+    try {
+        const std::string stored = settings_.rawValue("xpcog.playback.position");
+        position = stored.empty() ? 0.0 : std::stod(stored);
+    } catch (const std::exception&) {
+        // A value that will not parse is a position we do not have, not a reason
+        // to refuse to play. The top of the track is the honest fallback.
+        position = 0.0;
+    }
+
+    // Queued, for the reason the mini player's restore is: this runs from the
+    // constructor, and starting playback before the window exists means the first
+    // track change redraws widgets that are still being built.
+    const TrackId id = *current;
+    CallAfter([this, id, position, last] {
+        playback_->resumeTrack(id, position, last == 2);
+    });
+}
+
 void MainFrame::notifyTrack(const PlaylistEntry* entry) {
     if (entry == nullptr) {
         // Stopped, or the track failed. Forgetting what was announced is what
@@ -1406,8 +1453,20 @@ void MainFrame::pumpScanQueue() {
     ScanRequest request = std::move(pendingScans_.front());
     pendingScans_.erase(pendingScans_.begin());
 
+    // Read per scan rather than once, so unticking the box in Preferences applies
+    // to the next folder added instead of the next launch.
+    //
+    // Cog skips .cue files while walking a folder when this is off
+    // (PlaylistLoader.m:264-282), which is what stops a folder holding album.cue
+    // beside album.flac from adding every track twice -- once through the cue
+    // sheet and once as the whole file. The Scanner has always honoured the
+    // option; nothing ever set it from the setting.
+    Scanner::Options scanOptions;
+    scanOptions.readCueSheets = settings_.ReadCueSheetsInFolders();
+    scanOptions.readPlaylists = settings_.ReadPlaylistsInFolders();
+
     scan_ = std::make_unique<ScanTask>(registry_, &cache_, std::move(request.inputs),
-                                       dispatch_);
+                                       dispatch_, scanOptions);
 
     subscriptions_.push_back(scan_->progress.connect([this](int done, int total) {
         // A range of zero is a busy indicator, which is the truthful display
@@ -1578,6 +1637,12 @@ void MainFrame::onCurrentTrackChanged(TrackId id) {
 }
 
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {
+    // Recorded as it changes rather than at exit, which is Cog's vocabulary and
+    // the safer moment: a player that crashed while stopped must not come back
+    // playing, and a status written only on a tidy exit says nothing about the
+    // session that did not have one.
+    settings_.setLastPlaybackStatus(!playing ? 0 : (paused ? 2 : 1));
+
     refreshTransportIcons();
     taskbar_->setPlaybackState(playing, paused);
     presence_->setPlaybackState(playing, paused);
@@ -1703,6 +1768,16 @@ void MainFrame::restoreState() {
 
 void MainFrame::persistState() {
     settings_.setRawValue("xpcog.fileTree.root", tree_->rootPath());
+
+    // Where the current track had got to. A raw key rather than a settings.def
+    // entry because it is this application's own state, like the window geometry
+    // below it -- Cog keeps the equivalent as a Core Data attribute on the entry
+    // (`currentPosition`), which is not a preference either.
+    //
+    // Which entry it belongs to needs no recording: the library already marks the
+    // current one, and loadPlaylist restores it.
+    settings_.setRawValue("xpcog.playback.position",
+                          std::to_string(playback_->position()));
 
     if (!normalRect_.IsEmpty()) {
         settings_.setRawValue(

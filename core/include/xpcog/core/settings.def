@@ -79,12 +79,24 @@ XPCOG_SETTING(OutputDSDAsDoP, bool, "outputDSDAsDoP", false)
 
 /// Release the audio device while paused, so other applications can use it.
 ///
-/// **Nothing reads this yet, and Preferences offers it a checkbox.** Found by
-/// the audit on 2026-08-23; the Output pane has had a row for it since the pane
-/// existed, and ticking or unticking it has never done anything. Honouring it
-/// means stopping the device in PlaybackController::playPause() and reopening on
-/// resume, which is a real change to the transport rather than a wiring fix --
-/// so it is written down here rather than quietly implemented.
+/// On -- the default, and what the output did unconditionally before this was
+/// read -- pause() hands the device back. Off, it is held open and the callback
+/// emits silence.
+///
+/// Cog reads it in OutputCoreAudio (:127, :1091); here the engine asks at each
+/// pause rather than remembering it from start(), so unticking the box takes
+/// effect on the next pause instead of the next track.
+///
+/// Holding the device is what someone chooses when reacquiring costs more than
+/// it saves: an exclusive device another application would take in the gap, or a
+/// DAC that clicks or drops its lock every time the stream stops. Suspending is
+/// the polite default -- a paused player has no business holding a device
+/// somebody else wants.
+///
+/// While held, the ring is not drained and the frame counter does not advance.
+/// The second is the one that bites: that counter is the playback clock every
+/// track change is timed against, so counting silence into it would walk the
+/// seek bar forward through a pause.
 XPCOG_SETTING(SuspendOutputOnPause, bool, "suspendOutputOnPause", true)
 
 // --- output ---------------------------------------------------------------
@@ -118,18 +130,53 @@ XPCOG_SETTING(SelectionFollowsPlayback, bool, "selectionFollowsPlayback", false)
 
 /// Start playing whatever was playing when the player last closed.
 ///
-/// **Nothing reads this yet**, and nothing records a resume position either, so
-/// honouring it is a feature rather than a wiring fix. No Preferences row, so at
-/// least it is not promising anything.
+/// Cog's, off as it is there. The track itself is already restored either way --
+/// the library records which entry was current, and the row is selected on
+/// launch whatever this says, which is Cog's behaviour too
+/// (AppController.m:285-290: select always, play only if this is set).
+///
+/// What this adds is starting it, at the position it stopped at, paused if that
+/// is how it was left. See LastPlaybackStatus below for how "how it was left" is
+/// remembered.
 XPCOG_SETTING(ResumePlaybackOnStartup, bool, "resumePlaybackOnStartup", false)
 
-/// Expand cue sheets found beside the audio when a folder is added.
+/// How playback was last left: 0 stopped, 1 playing, 2 paused.
 ///
-/// **Nothing reads this yet, and Preferences offers it a checkbox** -- the
-/// Playlist pane's second row, which has never done anything. The cue sheet
-/// container itself works and is tested; what is missing is the scanner
-/// consulting this before it decides what a folder contains.
-XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", true)
+/// Cog's key and Cog's vocabulary (CogStatusStopped and friends). Not a
+/// preference -- nothing offers it a control -- but it is Cog's key rather than
+/// one of ours, so it belongs here beside the setting that reads it rather than
+/// among the `xpcog.*` window state.
+///
+/// Stopped is what stops the previous session being resumed at all, which is why
+/// it is written on every transport change rather than only at exit: a player
+/// that crashed while stopped must not come back playing.
+XPCOG_SETTING(LastPlaybackStatus, int, "lastPlaybackStatus", 0)
+
+/// Take cue sheets found beside the audio when a folder is added.
+///
+/// **The default changed from true to false on 2026-08-23, to match Cog.** Cog
+/// registers @NO (PlaylistLoader.m:70) and skips .cue while walking a folder
+/// when it is off (:264-282), and the reason is duplication: a folder holding
+/// album.cue beside album.flac otherwise adds every track twice, once through
+/// the cue sheet and once as the whole file underneath it.
+///
+/// The old `true` was not a decision. Nothing read the setting at all, so the
+/// scanner took every cue sheet it found, and `true` was the value that
+/// described what already happened rather than one anybody chose. Someone who
+/// wants both still gets both by ticking the box.
+XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", false)
+
+/// Take M3U and PLS files found in a folder as playlists to expand.
+///
+/// Cog's `readPlaylistsInFolders`, @NO as it is there and for the same reason as
+/// the cue sheet setting above -- a folder holding its own .m3u adds everything
+/// in it a second time.
+///
+/// Added with that one because Scanner::Options has carried `readPlaylists`
+/// beside `readCueSheets` since it was written, and nothing could ever set it.
+/// Half a pair of options where only one can be reached is the same dead wiring
+/// the audit was looking for.
+XPCOG_SETTING(ReadPlaylistsInFolders, bool, "readPlaylistsInFolders", false)
 
 // --- equaliser ------------------------------------------------------------
 

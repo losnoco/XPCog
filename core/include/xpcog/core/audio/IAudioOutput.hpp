@@ -63,6 +63,22 @@ public:
     virtual void pause()                     = 0;
     virtual void resume()                    = 0;
 
+    /// Whether pause() should hand the device back to the system, or hold it and
+    /// emit silence. Cog's `suspendOutputOnPause`, which it reads in
+    /// OutputCoreAudio (:127, :1091).
+    ///
+    /// Suspending is the polite default and is what this did unconditionally
+    /// before the setting existed: a paused player has no business holding a
+    /// device another application wants, and on an exclusive-mode device it has
+    /// no business holding the *only* one. Holding it is what someone chooses
+    /// when reacquiring costs more than it saves -- an exclusive device another
+    /// application may take in the gap, or a DAC that clicks or drops its lock
+    /// each time the stream stops.
+    ///
+    /// A no-op for a backend with nothing to release, and for OfflineOutput,
+    /// which has no device at all.
+    virtual void setSuspendOnPause(bool suspend) { static_cast<void>(suspend); }
+
     /// What the device actually negotiated, which may differ from the request.
     [[nodiscard]] virtual AudioFormat negotiatedFormat() const = 0;
 

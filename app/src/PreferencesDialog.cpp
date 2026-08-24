@@ -103,7 +103,7 @@ constexpr std::array kMidiSynthChoices = {
 /// apart, disagreeing about what the value should look like.
 constexpr std::array kCuratedKeys = {
     // Playlist
-    "alwaysStopAfterCurrent", "readCueSheetsInFolders",
+    "alwaysStopAfterCurrent", "readCueSheetsInFolders", "readPlaylistsInFolders",
     // Output
     "volumeScaling", "resampling", "enableHDCD", "halveDSDVolume", "outputDeviceId",
     "outputDeviceName", "exclusiveOutput", "enableFSurround", "enableFading",
@@ -487,12 +487,11 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
     pane->SetClientObject(row);
 
     row->toggle("Stop after every track", "alwaysStopAfterCurrent");
-    // Labelled rather than left to imply something. Nothing consults this yet:
-    // the cue sheet container works and is tested, but the scanner never asks
-    // before deciding what a folder holds. A checkbox that has never done
-    // anything is worse than one that admits it.
-    row->toggle("Read cue sheets when adding folders (not yet honoured)",
-                "readCueSheetsInFolders");
+    // Both off by default, as in Cog, and for the reason Cog has: a folder
+    // holding album.cue or its own .m3u beside the audio otherwise adds every
+    // track twice -- once through the container and once as the file under it.
+    row->toggle("Read cue sheets when adding folders", "readCueSheetsInFolders");
+    row->toggle("Read playlists when adding folders", "readPlaylistsInFolders");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -633,10 +632,10 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
                 "Turn this on if a recording that goes louder is clipping.");
     row->toggle("FreeSurround stereo-to-surround upmix", "enableFSurround");
     row->toggle("Fade on seek and stop", "enableFading");
-    // Likewise unread. Honouring it means stopping the device on pause and
-    // reopening on resume, which is a transport change rather than a wiring fix.
-    row->toggle("Release the audio device while paused (not yet honoured)",
-                "suspendOutputOnPause");
+    // On, the device is handed back while paused; off, it is held open and fed
+    // silence. Off is what someone chooses when reacquiring costs more than it
+    // saves -- an exclusive device another application may take in the gap.
+    row->toggle("Release the audio device while paused", "suspendOutputOnPause");
 
     row->note("Volume scaling and resampler quality take effect on the next track. "
               "The device and exclusive mode move whatever is playing on to the new "
