@@ -51,6 +51,23 @@ public:
     /// Lowercase, no dot, fragment-stripped. Empty when there is no extension.
     [[nodiscard]] std::string extension() const;
 
+    /// The last path component, percent-decoded. Empty when the URL names no
+    /// file -- a bare host, or a path ending in a separator.
+    ///
+    /// Deliberately *not* lowercased, where extension() is. An extension is a
+    /// key into tables this project writes, so folding its case is what makes
+    /// `.MID` and `.mid` one format; a file name is the file's own, and a
+    /// library that is handed one may be doing anything with it -- storing it,
+    /// showing it, or matching it case-insensitively itself. Lowercasing here
+    /// would be this layer deciding on their behalf.
+    ///
+    /// It exists because spessasynth's MIDI loader takes a file name and does
+    /// its own extension separation: `ss_midi_is_lds()` tests the last four
+    /// characters for ".lds", so a bare "lds" is three characters and can never
+    /// match. Handing that API an extension is not a smaller version of the
+    /// right argument, it is the wrong one.
+    [[nodiscard]] std::string fileName() const;
+
     /// Filesystem path for file:// URLs, percent-decoded, with native separators.
     /// nullopt for every other scheme.
     [[nodiscard]] std::optional<std::filesystem::path> localPath() const;

@@ -25,7 +25,7 @@ MidiFile::MidiFile(MidiFile&&) noexcept            = default;
 MidiFile& MidiFile::operator=(MidiFile&&) noexcept = default;
 
 bool MidiFile::parse(const std::vector<std::uint8_t>& bytes,
-                     std::string_view                 extension) {
+                     std::string_view                 fileName) {
     impl_          = std::make_unique<Impl>();
     if (bytes.empty()) {
         return false;
@@ -38,11 +38,13 @@ bool MidiFile::parse(const std::vector<std::uint8_t>& bytes,
         return false;
     }
 
-    // The extension is a hint, not a decision: midi_processor sniffs content
-    // too. It is passed with no leading dot, which is how the library wants it
-    // and is also how Url::extension() gives it.
-    const std::string ext{extension};
-    SS_MIDIFile* midi = ss_midi_load(file, ext.c_str());
+    // The whole name, not the extension -- see the header. For every format but
+    // Loudness this is only recorded; for that one it is the entire detection,
+    // and handing it "lds" instead of "song.lds" is why the corpus parsed none
+    // of them. A std::string because the API wants a NUL-terminated name and a
+    // string_view carries no such promise.
+    const std::string name{fileName};
+    SS_MIDIFile* midi = ss_midi_load(file, name.c_str());
     ss_file_close(file);
 
     impl_->container = midi;

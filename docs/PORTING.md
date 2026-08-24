@@ -2763,22 +2763,41 @@ now closed and the third is the only one left:
   51 KB `tg300b.sflist.json` that names both and remaps XG onto GS. Which one
   plays is asked of the sequence, as Cog asks it — see "Shipping a bank" below.
 
-**8. The one failing test: Loudness `.lds` parses 0 of 25.**
-`tests/codecs/test_midi_container.cpp:154` asserts that each format in the MIDI
-corpus parses for more than half its files, and Loudness returns none. Every
-other format in that corpus passes, and this is the only red assertion in the
-whole suite.
+**8. ~~The one failing test: Loudness `.lds` parses 0 of 25~~ — fixed.**
+Diagnosed by kode54 and fixed on 2026-08-23. It was never a parser bug and never
+about `.lds` files: `MidiFile::parse()` took an *extension* and handed it to
+`ss_midi_load()`, whose second parameter is a **file name**. The library does its
+own extension separation.
 
-Small, and worth doing ahead of things that are larger and more interesting, for
-a reason that has nothing to do with `.lds` files: a suite with one permanent
-failure in it stops being a signal. Every run since has had to be read as "one
-failure, the expected one", which is exactly the reading that lets a second one
-through. Either fix the container or establish that the corpus's `.lds` files
-are not what the parser is entitled to expect and change the assertion to say
-so — but do not leave it red.
+For every format but one that made no difference, because they are all detected
+by sniffing content. Loudness is the exception — an LDS file's first byte is a
+version number `<= 2` and nothing else about it is distinctive — so
+`ss_midi_is_lds()` gates on the name first:
 
-It predates all of the recent work and has never been investigated. Start at
-`midi_processing`'s Loudness reader and one file from the corpus.
+```c
+size_t n = strlen(name);
+if(n < 4) return false;             /* "lds" is 3, so: always */
+const char *ext = name + n - 4;     /* needs the dot */
+```
+
+A bare `"lds"` is three characters and can never match, so the format never
+dispatched and every file fell through to `ss_midi_parse_smf()`, which rejected
+it. 0 of 25 was not "the parser is bad at these files", it was "the parser was
+never called".
+
+Three things worth keeping from it:
+
+- **The parameter is now `fileName`, and `Url::fileName()` exists to supply it.**
+  Renaming the parameter is most of the fix: `extension` was a name that made the
+  wrong call site read correctly.
+- **The test made the same mistake as the caller.** It passed `format.extension`
+  where it had the real path in hand. A test that abbreviates its input the way
+  the caller does cannot catch the caller doing it — which is why this sat red
+  and unexplained rather than pointing at itself.
+- **It was mistaken for a parser-quality problem for as long as it stood**, and
+  the entry here said to "start at `midi_processing`'s Loudness reader" — a tree
+  that had been deleted by the time anyone read it. The suite is green at
+  632/632 with `-DXPCOG_MIDI_CORPUS` pointed at a real collection.
 
 **9. An unverified question: is miniaudio resampling behind our back?**
 

@@ -175,7 +175,10 @@ struct SynthChoice {
     const std::vector<std::uint8_t> raw(
         reinterpret_cast<const std::uint8_t*>(bytes->data()),
         reinterpret_cast<const std::uint8_t*>(bytes->data()) + bytes->size());
-    return out.parse(raw, source.url().extension());
+    // The whole name, not the extension: Loudness .lds is detected by name and
+    // by nothing else, so an extension here loses the format entirely. See
+    // MidiFile::parse().
+    return out.parse(raw, source.url().fileName());
 }
 
 class MidiDecoder final : public IDecoder {

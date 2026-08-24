@@ -158,6 +158,12 @@ std::string Url::extension() const {
     return ext;
 }
 
+std::string Url::fileName() const {
+    const std::size_t slash = body_.find_last_of('/');
+    const std::size_t start = (slash == std::string::npos) ? 0 : slash + 1;
+    return percentDecode(std::string_view{body_}.substr(start));
+}
+
 std::optional<std::filesystem::path> Url::localPath() const {
     if (scheme_ != "file") {
         return std::nullopt;

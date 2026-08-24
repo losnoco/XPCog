@@ -28,6 +28,43 @@ TEST_CASE("Url keeps fragments, which carry cue and subsong indices", "[url]") {
     CHECK(url->withFragment("3").fragment() == "3");
 }
 
+TEST_CASE("Url::fileName is the whole name, with its case kept", "[url]") {
+    // Not a convenience over extension(). A library handed a name may separate
+    // the extension itself, and one of them does: spessasynth's MIDI loader
+    // detects Loudness .lds by testing the last four characters of the name for
+    // ".lds", so an extension is not a shorter version of the right argument --
+    // it is short enough to never match, which cost the whole format once
+    // already.
+    const auto lds = Url::parse("file:///music/ADLIB/SONG1.LDS");
+    REQUIRE(lds.has_value());
+    CHECK(lds->fileName() == "SONG1.LDS");
+    // Case kept, where extension() folds it: the extension is a key into our own
+    // tables, the name is the file's.
+    CHECK(lds->extension() == "lds");
+
+    // Percent-decoded, like localPath() and extension().
+    const auto spaced = Url::parse("file:///music/a%20b.flac");
+    REQUIRE(spaced.has_value());
+    CHECK(spaced->fileName() == "a b.flac");
+
+    // The fragment carries subsong indices and must not reach the name, or
+    // every file in a cue sheet is called something ending in a number.
+    const auto subsong = Url::parse("file:///music/album.flac#12");
+    REQUIRE(subsong.has_value());
+    CHECK(subsong->fileName() == "album.flac");
+
+    // A name with no extension is still a name.
+    const auto bare = Url::parse("file:///music/README");
+    REQUIRE(bare.has_value());
+    CHECK(bare->fileName() == "README");
+    CHECK(bare->extension().empty());
+
+    // And nothing to name is empty rather than the whole path.
+    const auto directory = Url::parse("file:///music/");
+    REQUIRE(directory.has_value());
+    CHECK(directory->fileName().empty());
+}
+
 TEST_CASE("Url round-trips through toString", "[url]") {
     const std::string text = "file:///music/a%20b.flac#2";
     const auto        url  = Url::parse(text);

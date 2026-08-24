@@ -144,13 +144,26 @@ public:
     MidiFile(const MidiFile&)            = delete;
     MidiFile& operator=(const MidiFile&) = delete;
 
-    /// Parses `bytes`. `extension` steers which processor is tried first --
-    /// midi_processing sniffs content as well, so a mislabelled file still
-    /// parses, but a `.mus` and a `.mid` can begin alike and the hint settles
-    /// it. Empty on failure, which is the only signal: the library reports by
-    /// returning false and says nothing about why.
+    /// Parses `bytes`. `fileName` is the file's **whole name**, not its
+    /// extension, and it is not a formality.
+    ///
+    /// Every format but one is detected by sniffing content: RIFF by its magic,
+    /// MUS, XMI, GMF, HMP, HMI and XMF each by their own probe. Loudness `.lds`
+    /// is the exception, because an LDS file's first byte is a version number
+    /// `<= 2` and nothing else about it is distinctive -- so `ss_midi_is_lds()`
+    /// requires the name to end in ".lds" before it will even look. It tests the
+    /// last four characters for a dot and three letters, case-insensitively,
+    /// which means a bare "lds" is three characters and can never match. An
+    /// extension here is not a shorter version of the right argument; it is the
+    /// wrong one, and it silently costs the whole format.
+    ///
+    /// Pass what the file is called -- `Url::fileName()`, or any name ending in
+    /// the real extension. The loader also keeps a copy for itself.
+    ///
+    /// False on failure, which is the only signal: the library reports by
+    /// returning null and says nothing about why.
     [[nodiscard]] bool parse(const std::vector<std::uint8_t>& bytes,
-                             std::string_view                 extension);
+                             std::string_view                 fileName);
 
     [[nodiscard]] bool valid() const noexcept;
 

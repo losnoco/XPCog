@@ -16,6 +16,7 @@
 
 #include "midi/MidiFile.hpp"
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/MetadataMap.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -34,7 +35,7 @@ namespace fs = std::filesystem;
 
 TEST_CASE("a Standard MIDI file parses to one subsong of a known length", "[midi]") {
     codecs::MidiFile file;
-    REQUIRE(file.parse(tinyMidi(), "mid"));
+    REQUIRE(file.parse(tinyMidi(), "tiny.mid"));
     CHECK(file.valid());
     REQUIRE(file.subsongCount() == 1);
 
@@ -50,7 +51,7 @@ TEST_CASE("a Standard MIDI file parses to one subsong of a known length", "[midi
 
 TEST_CASE("the event stream comes out in order and in samples", "[midi]") {
     codecs::MidiFile file;
-    REQUIRE(file.parse(tinyMidi(), "mid"));
+    REQUIRE(file.parse(tinyMidi(), "tiny.mid"));
 
     const auto events = file.stream(0, 44100.0).events;
     REQUIRE(events.size() >= 2);
@@ -69,7 +70,7 @@ TEST_CASE("the event stream comes out in order and in samples", "[midi]") {
 
 TEST_CASE("a format-2 file is several songs, not several parts", "[midi]") {
     codecs::MidiFile file;
-    REQUIRE(file.parse(formatTwoMidi(), "mid"));
+    REQUIRE(file.parse(formatTwoMidi(), "two.mid"));
 
     // Two, because format 2 says the tracks are independent. Everything else --
     // format 0 and format 1 -- is one song however many tracks it has, and
@@ -96,7 +97,7 @@ TEST_CASE("a format-2 file is several songs, not several parts", "[midi]") {
 TEST_CASE("a file that is not MIDI is refused", "[midi]") {
     codecs::MidiFile file;
     const std::vector<std::uint8_t> notMidi(512, 0x42);
-    CHECK_FALSE(file.parse(notMidi, "mid"));
+    CHECK_FALSE(file.parse(notMidi, "notmidi.mid"));
     CHECK_FALSE(file.valid());
     CHECK(file.subsongCount() == 0);
     CHECK(file.duration(0) == 0.0);
@@ -138,7 +139,13 @@ TEST_CASE("the corpus parses across every format it holds", "[midi][corpus]") {
                 continue;
             }
             codecs::MidiFile file;
-            if (!file.parse(bytes, format.extension)) {
+            // The file's own name, which is what the loader wants. This line
+            // used to pass `format.extension` and that is exactly how Loudness
+            // came to parse 0 of 25: `.lds` is the one format detected by name
+            // rather than by content, and "lds" is too short to end in ".lds".
+            // A test that abbreviates its input the same way the caller did
+            // cannot catch the caller doing it.
+            if (!file.parse(bytes, pathToUtf8(path.filename()))) {
                 continue;
             }
             ++parsed;
@@ -166,7 +173,7 @@ TEST_CASE("an RMID hands back the bank it carries", "[midi]") {
     const std::vector<std::uint8_t> bank = fakeSoundBank();
 
     codecs::MidiFile file;
-    REQUIRE(file.parse(rmidWithBank(tinyMidi(), bank, 8), "rmi"));
+    REQUIRE(file.parse(rmidWithBank(tinyMidi(), bank, 8), "banked.rmi"));
     CHECK(file.valid());
 
     // Still a MIDI file underneath the wrapper.
@@ -191,13 +198,13 @@ TEST_CASE("a MIDI file that carries no bank says so", "[midi]") {
     // bytes: an empty optional sends the decoder on to the companion bank and
     // then to the configured one, while an empty bank would be loaded and fail.
     codecs::MidiFile plain;
-    REQUIRE(plain.parse(tinyMidi(), "mid"));
+    REQUIRE(plain.parse(tinyMidi(), "tiny.mid"));
     CHECK_FALSE(plain.embeddedBank().has_value());
 
     // An RMID with no nested RIFF is the other half of it -- the wrapper alone
     // does not imply a bank.
     codecs::MidiFile wrapped;
-    REQUIRE(wrapped.parse(rmidWithBank(tinyMidi(), {}, 0), "rmi"));
+    REQUIRE(wrapped.parse(rmidWithBank(tinyMidi(), {}, 0), "bankless.rmi"));
     CHECK(wrapped.valid());
     CHECK_FALSE(wrapped.embeddedBank().has_value());
 }
@@ -207,13 +214,13 @@ TEST_CASE("a sequence's own reset says which dialect it is", "[midi]") {
     // or the map that puts a GS file's instruments back where it expects them.
     // Asked of the file, because the file is what knows.
     codecs::MidiFile plain;
-    REQUIRE(plain.parse(tinyMidi(), "mid"));
+    REQUIRE(plain.parse(tinyMidi(), "tiny.mid"));
     CHECK_FALSE(plain.dialect(0).gs);
     CHECK_FALSE(plain.dialect(0).gm2);
     CHECK_FALSE(plain.dialect(0).any());
 
     codecs::MidiFile gs;
-    REQUIRE(gs.parse(gsResetMidi(), "mid"));
+    REQUIRE(gs.parse(gsResetMidi(), "gs.mid"));
     CHECK(gs.dialect(0).gs);
     CHECK_FALSE(gs.dialect(0).gm2);
     CHECK(gs.dialect(0).any());
