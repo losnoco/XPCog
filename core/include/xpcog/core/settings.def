@@ -105,10 +105,15 @@ XPCOG_SETTING(ShuffleMode, int, "shuffle", 0)
 XPCOG_SETTING(AlwaysStopAfterCurrent, bool, "alwaysStopAfterCurrent", false)
 /// Move the playlist selection to each track as it starts.
 ///
-/// **Nothing reads this yet.** Cog's key, and a different question from
-/// PanelFollowMode below it: this moves the *selection*, which is what the panes
-/// then follow by default. With both, "panels follow selection" would track
-/// playback on its own until the listener clicked something else.
+/// Cog's key, and a different question from PanelFollowMode below it: this moves
+/// the *selection*, which is what the panes then follow by default. With both
+/// on, "panels follow selection" tracks playback on its own until the listener
+/// clicks something else.
+///
+/// Cog moves the selection as each next entry is chosen, from six places inside
+/// -getNextEntry: and -getPrevEntry:. MainFrame does it once, as the track
+/// becomes current: choosing the next entry is core's job and selecting a row is
+/// the interface's, so there is no equivalent hook to hang six calls on.
 XPCOG_SETTING(SelectionFollowsPlayback, bool, "selectionFollowsPlayback", false)
 
 /// Start playing whatever was playing when the player last closed.
@@ -285,10 +290,13 @@ XPCOG_SETTING(PanelFollowMode, int, "panelFollowMode", 0)
 /// second window: Cog's -setMiniMode: closes one and opens the other, and restores
 /// it at launch from this key.
 ///
-/// **Nothing reads or writes this yet.** The mode works -- View -> Mini Player
-/// switches both ways -- but it is not recorded on exit and not restored on
-/// launch, so someone who quits in the mini player comes back to the full window.
-/// That is the half Cog's comment above describes and this does not do.
+/// Written as the mode changes rather than on the way out, which is where Cog
+/// writes it too (AppController.m:1027, inside -setMiniMode:). After a crash you
+/// come back to the mode you were last in rather than the one you were in the
+/// last time the application exited tidily.
+///
+/// Restored from a queued call rather than during construction: setMiniMode(true)
+/// hides the frame, and XPCogApp::OnInit shows it after the constructor returns.
 XPCOG_SETTING(MiniMode, bool, "miniMode", false)
 
 /// Keep the mini player above other windows.

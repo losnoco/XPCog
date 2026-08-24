@@ -38,9 +38,20 @@ enum : int {
 }  // namespace
 
 MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& settings)
+    // An ordinary frame, resizable. This used to be wxFRAME_TOOL_WINDOW with a
+    // hand-assembled style and no resize border, which is the shape Cog's mini
+    // window has -- and a tool window is the wrong promise on every platform
+    // here: it gets a thin title bar, is skipped by Alt-Tab on Windows, and is
+    // not what the *only* window the application is showing should look like.
+    // Cog can be casual about that because its mini window is a panel beside a
+    // Dock icon; in mini mode this is the whole application.
+    //
+    // wxDEFAULT_FRAME_STYLE carries the resize border, the maximise box and the
+    // system menu together. Growing is the useful direction -- a wider strip
+    // gives the seek bar and the title room -- and the minimum below stops it
+    // being shrunk into the controls.
     : wxFrame(parent, wxID_ANY, "XPCog", wxDefaultPosition, wxDefaultSize,
-              wxCAPTION | wxCLOSE_BOX | wxSYSTEM_MENU | wxCLIP_CHILDREN |
-                  wxFRAME_TOOL_WINDOW),
+              wxDEFAULT_FRAME_STYLE | wxCLIP_CHILDREN),
       playback_(playback),
       settings_(settings) {
     SetIcons(applicationIcons());
@@ -78,7 +89,16 @@ MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& s
     auto* outer = new wxBoxSizer(wxVERTICAL);
     outer->Add(panel, 1, wxEXPAND);
     SetSizerAndFit(outer);
-    SetMinSize(GetSize());
+
+    // The fitted size is the floor, not the size: SetMinSize alone would let the
+    // frame be dragged narrower than its controls on a platform that does not
+    // consult the sizer's minimum. Height is pinned to the fitted height -- there
+    // is one row of controls and nothing to do with more vertical space -- while
+    // width is left open, because that is the dimension the title and the seek
+    // bar can actually use.
+    const wxSize fitted = GetSize();
+    SetSizeHints(fitted.GetWidth(), fitted.GetHeight(), wxDefaultCoord,
+                 fitted.GetHeight());
 
     // The transport buttons post the frame's own command ids, which the parent
     // handles -- so there is one Play/Pause implementation rather than two.

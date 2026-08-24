@@ -217,6 +217,21 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
     // be the first thing Undo offers to take back.
     undo_.clear();
 
+    // The mini player, if that is where the listener left off. Cog restores it at
+    // launch from the same key (AppController.m:314).
+    //
+    // Queued rather than done here, and for a harder reason than the consent
+    // prompt below: setMiniMode(true) hides this frame, and XPCogApp::OnInit
+    // calls Show() on it *after* this constructor returns. Restoring in place
+    // would be undone one line later by the code that opens the window, which is
+    // the kind of ordering bug that looks like the setting not being saved.
+    //
+    // Before the consent prompt, so that the prompt's parent is whichever window
+    // is actually on screen.
+    if (settings_.MiniMode()) {
+        CallAfter([this] { setMiniMode(true); });
+    }
+
     // Cog asks as the window appears (Window/MainWindow.m:57). Queued rather
     // than called here for the one difference between the two: this constructor
     // runs before XPCogApp shows the frame, and a modal dialog whose parent is
@@ -945,6 +960,13 @@ void MainFrame::notifyTrack(const PlaylistEntry* entry) {
 }
 
 void MainFrame::setMiniMode(bool mini) {
+    // Recorded as it changes, which is where Cog records it
+    // (AppController.m:1027, in -setMiniMode: itself) rather than on the way out.
+    // The difference matters after a crash: the mode you were last in is the one
+    // you come back to, instead of the one you were in the last time the
+    // application managed to exit tidily.
+    settings_.setMiniMode(mini);
+
     if (mini) {
         if (mini_ == nullptr) {
             mini_ = new MiniFrame(this, *playback_, settings_);
@@ -1514,6 +1536,25 @@ void MainFrame::onPositionChanged(double seconds, double duration) {
 void MainFrame::onCurrentTrackChanged(TrackId id) {
     currentTrack_ = id;
     view_.setCurrentTrack(id);
+
+    // Cog moves the selection as each next entry is *chosen*, inside
+    // -getNextEntry: (PlaylistController.m:1448-1522, six call sites). Done here
+    // instead, as the track actually becomes current, which lands on the same
+    // rows in the same order and needs one call site rather than six -- the
+    // playlist here has no equivalent hook, because choosing the next entry is
+    // core's job and selecting a row is the interface's.
+    //
+    // EnsureVisible as well as Select: a selection that has scrolled out of
+    // sight is one the listener has to go looking for, which is the opposite of
+    // what following playback is for.
+    if (settings_.SelectionFollowsPlayback() && id != kInvalidTrackId) {
+        if (const auto row = view_.rowForTrack(id)) {
+            const wxDataViewItem item = model_->GetItem(static_cast<unsigned>(*row));
+            list_->UnselectAll();
+            list_->Select(item);
+            list_->EnsureVisible(item);
+        }
+    }
 
     const PlaylistEntry* entry = playlist_.find(id);
     const std::string    text  = entry != nullptr ? entry->display() : std::string{};
