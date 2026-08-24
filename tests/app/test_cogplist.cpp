@@ -55,18 +55,18 @@ TEST_CASE("a binary defaults file converts and imports", "[cogplist]") {
     CogSettingsReport report;
     importCogSettings(*xml, settings, &report);
 
-    // Sixteen keys: eleven XPCog shares, five it does not. The five are four
-    // Cog-only settings (metadataMigrated, miniPlusMode, and the pitch/tempo
-    // pair that belong to Rubber Band, which is not ported) and one of AppKit's
-    // window frames.
+    // Sixteen keys: thirteen XPCog shares, three it does not. The three are
+    // two Cog-only settings (metadataMigrated, miniPlusMode) and one of
+    // AppKit's window frames.
     //
-    // It read ten and six until GraphicEQenable had somewhere to land. The
-    // previous version of this comment said "if that changes this case should
-    // say 11 and 5", which it now does -- the arithmetic here is a census of how
-    // much of a Cog installation XPCog can actually accept, so it is supposed to
-    // move when that changes, and supposed to be looked at when it does.
-    CHECK(report.applied == 11);
-    CHECK(report.ignored == 5);
+    // It read ten and six until GraphicEQenable had somewhere to land, and
+    // eleven and five until the stretchers were ported and the pitch/tempo
+    // pair stopped being "Rubber Band, which is not ported". The arithmetic
+    // here is a census of how much of a Cog installation XPCog can actually
+    // accept, so it is supposed to move when that changes, and supposed to be
+    // looked at when it does.
+    CHECK(report.applied == 13);
+    CHECK(report.ignored == 3);
     CHECK(report.mismatched == 0);
 
     // Spot-checked across the three value shapes, since the conversion is where
