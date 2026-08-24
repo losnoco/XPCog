@@ -747,14 +747,10 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     // reachable once you are in it. Here as well, so it can be set beforehand.
     row->toggle("Keep the mini player on top", "floatingMiniWindow");
 
-    auto* note = new wxStaticText(
-        pane, wxID_ANY,
-        "XPCog follows the system appearance and has no theme of its own. "
-        "Switching to dark mode re-strokes the interface icons straight away.");
-    note->Wrap(pane->FromDIP(440));
-    note->Enable(false);
-    form->AddSpacer(0);
-    form->Add(note, 1, wxEXPAND | wxTOP, pane->FromDIP(6));
+    // No note about following the system appearance. It said that XPCog has no
+    // theme of its own, which is an answer to a question nobody standing in front
+    // of two checkboxes has asked -- and it read as an apology for a pane that
+    // does not need one.
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -840,9 +836,11 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
     });
     row->add("Quietest level shown (dB)", floorDb);
 
+    // One sentence, and only because it says what the display *means*. The
+    // sentence that followed it explained why the lowest bars move together,
+    // which is defending the analysis to someone who was choosing a colour.
     row->note("Bars sit on semitones from C0, so the display lines up with the "
-              "notes being played. The lowest bars share an analysis bin and move "
-              "together.");
+              "notes being played.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -925,8 +923,8 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
         row->add(label.c_str(), editor);
     }
 
-    row->note("Settings without a place of their own, and the values XPCog keeps "
-              "about the last session. The greyed rows are records, not choices.");
+    row->note("The greyed rows are what XPCog remembers about the last session, "
+              "not settings.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
