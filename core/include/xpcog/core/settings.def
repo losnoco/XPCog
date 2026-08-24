@@ -225,6 +225,36 @@ XPCOG_SETTING(Eq12kHz, double, "eq12kHz", 0.0)
 XPCOG_SETTING(Eq16kHz, double, "eq16kHz", 0.0)
 XPCOG_SETTING(Eq20kHz, double, "eq20kHz", 0.0)
 
+/// Which preset the current curve came from, as an index into the shipped
+/// library -- Cog's `GraphicEQpreset`, and its default of -1.
+///
+/// Two values mean "no preset": -1, which is a curve that was never a preset,
+/// and the library's size, which is the "Custom" row at the end of the selector
+/// and is what moving any slider sets. Cog distinguishes them only by which one
+/// it happens to write, and so does this.
+///
+/// An index rather than a name because that is what Cog stores, and the cost of
+/// it is real: reorder the library file and every settings file that names a
+/// preset now names a different one. Kept anyway, so that a preferences file
+/// carried over from Cog selects the preset it selected there -- the same
+/// bargain the band keys above make.
+///
+/// The stored curve is the record, not this. XPCog does not re-apply the preset
+/// at startup the way Cog's equalizerLoadPreset() does, because the 32 band
+/// settings already hold what the preset produced and re-deriving them would
+/// only differ if the library file had changed underneath -- in which case
+/// keeping the curve the user has been listening to is the better answer.
+XPCOG_SETTING(GraphicEqPreset, int, "GraphicEQpreset", -1)
+
+/// Follow each track's genre tag, choosing the preset whose name matches it.
+///
+/// Off by default, as in Cog, and worth understanding before turning on: a
+/// track with no genre tag matches nothing, and Cog's fallback for matching
+/// nothing is the preset named "Flat". So this does not mean "adjust when there
+/// is something to adjust for" -- it means the equaliser is rewritten at every
+/// track boundary, to flat if the tag is missing.
+XPCOG_SETTING(GraphicEqTrackGenre, bool, "GraphicEQtrackgenre", false)
+
 // --- appearance -----------------------------------------------------------
 
 /// Which Qt widget style to use. Empty means whatever the platform picks for

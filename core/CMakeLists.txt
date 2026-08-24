@@ -10,6 +10,7 @@ add_library(xpcog-core STATIC
     src/audio/AudioEngine.cpp
     src/audio/Downmix.cpp
     src/audio/Equalizer.cpp
+    src/audio/EqualizerPresets.cpp
     src/audio/Fader.cpp
     src/audio/FreeSurround.cpp
     src/audio/Fft.cpp

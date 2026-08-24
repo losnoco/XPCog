@@ -18,6 +18,7 @@
 #include "Text.hpp"
 
 #include "xpcog/core/FilePath.hpp"
+#include "xpcog/core/audio/EqualizerPresets.hpp"
 #include "xpcog/core/library/PlaylistCommands.hpp"
 #include "xpcog/core/library/PlaylistFile.hpp"
 #include "xpcog/platform/CrashReporter.hpp"
@@ -753,6 +754,24 @@ void MainFrame::onSettingChanged(const std::string& key) {
         return;
     }
 
+    // Turning genre tracking on applies the playing track's genre at once. Cog's
+    // -toggleTracking: does the same, and the reason is that the alternative --
+    // waiting for the next track -- makes the checkbox look like it did nothing.
+    // Turning it *off* deliberately leaves the curve where it is: the last
+    // preset it chose is as good a starting point as any, and silently flipping
+    // back to some remembered curve would be a second surprise.
+    if (key == "GraphicEQtrackgenre") {
+        if (settings_.GraphicEqTrackGenre()) {
+            // Past the memo deliberately: the playing track has almost certainly
+            // been matched already, and the whole point of the toggle is to act
+            // on it now.
+            lastGenreTrack_ = kInvalidTrackId;
+            lastGenre_.clear();
+            applyGenreEqualizer(playlist_.find(currentTrack_));
+        }
+        return;
+    }
+
     // The device is read when the engine opens it, which is when a track starts.
     // Moving what is already playing is what reopenOutput() is for.
     if (key == "outputDeviceId" || key == "exclusiveOutput") {
@@ -939,6 +958,46 @@ void MainFrame::restorePlayback() {
     CallAfter([this, id, position, last] {
         playback_->resumeTrack(id, position, last == 2);
     });
+}
+
+void MainFrame::applyGenreEqualizer(const PlaylistEntry* entry) {
+    if (!settings_.GraphicEqTrackGenre()) {
+        return;
+    }
+
+    if (entry == nullptr) {
+        // Stopped, or the track failed. Forgetting what was matched is what lets
+        // the same track be matched again when it is played again.
+        lastGenreTrack_ = kInvalidTrackId;
+        lastGenre_.clear();
+        return;
+    }
+
+    // Once per track and genre, not once per call -- see the members for why
+    // this handler runs more than once for one track, and what an unguarded
+    // second run would cost.
+    if (entry->id == lastGenreTrack_ && entry->genre == lastGenre_) {
+        return;
+    }
+    lastGenreTrack_ = entry->id;
+    lastGenre_      = entry->genre;
+
+    const EqualizerPresetLibrary& library = shippedEqualizerPresets();
+    const int                     index   = library.matchGenre(entry->genre);
+    const EqualizerPreset*        preset  = library.at(index);
+    if (preset == nullptr) {
+        // No library shipped, so there is no preset to choose. Leaving the curve
+        // alone is the only sensible answer: the setting asked for a genre's
+        // preset, not for the equaliser to be reset.
+        return;
+    }
+
+    settings_.setGraphicEqPreset(index);
+    applyEqualizerPreset(settings_, *preset);
+    if (equalizer_ != nullptr) {
+        equalizer_->refresh();
+    }
+    playback_->reloadDsp();
 }
 
 void MainFrame::notifyTrack(const PlaylistEntry* entry) {
@@ -1634,6 +1693,7 @@ void MainFrame::onCurrentTrackChanged(TrackId id) {
     refreshInfo();
     refreshLyrics();
     notifyTrack(entry);
+    applyGenreEqualizer(entry);
 }
 
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {

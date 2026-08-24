@@ -322,6 +322,15 @@ elseif(APPLE)
     set_source_files_properties(${XPCOG_SOUNDFONTS} PROPERTIES
         MACOSX_PACKAGE_LOCATION Resources/soundfonts
         HEADER_FILE_ONLY ON)
+
+    # The equaliser's preset library, under the same arrangement. Cog puts its
+    # copy at the top of Resources; this follows the subdirectory rule the banks
+    # already established, so assetPath("equalizer/Cog.q1.json") is one lookup
+    # everywhere rather than one per platform.
+    target_sources(xpcog-app PRIVATE ${XPCOG_EQ_PRESETS})
+    set_source_files_properties(${XPCOG_EQ_PRESETS} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources/equalizer
+        HEADER_FILE_ONLY ON)
 endif()
 
 # Everywhere else the lookup is relative to the executable, so the staged copy

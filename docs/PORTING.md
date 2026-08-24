@@ -264,6 +264,45 @@ Cost, measured rather than assumed: all 31 bands on stereo 44.1 kHz is **0.31% o
 one core**, 322× realtime, 35 ns/sample. The first stage with a real per-sample
 cost on the feeder thread, and comfortably free.
 
+**Presets** are `core/.../EqualizerPresets.hpp`, a port of the half of
+`EqualizerWindowController.m` that is not the window. XPCog ships Cog's own
+`Cog.q1.json` unchanged, so a library curated on either player reads on the
+other. The thing to know before touching any of it: a preset stores **ten**
+points, not 31, and the 31 bands are interpolated from them -- linearly between
+the stored points, and by continuing the outermost segment for the four centres
+(20, 25, 31.5 and 20000 Hz) that fall outside them.
+
+Two divergences and one finding:
+
+- The document's members are looked up by name. Cog requires exactly two, in
+  order, and rejects the file otherwise; matching that could only reject files
+  Cog's own format allows.
+- `altGenres` actually works. Cog's alias loop indexes the value array with the
+  preset's index rather than the entry's
+  (`EqualizerWindowController.m:200`), so an alias list reads the wrong element
+  or runs off the end. No preset in the shipped library declares aliases, which
+  is why nobody has hit it.
+- **Cog's 1.05 extrapolation step is inert.** The synthetic points are generated
+  along the line through the two outermost stored points, so the scale cancels
+  in the interpolation that follows: all four extrapolated centres land inside
+  the first synthetic interval, and every one of them is the outermost segment
+  continued straight. `1.05` could be any positive number. The code keeps Cog's
+  form because the cancellation stops holding if a centre ever falls past the
+  first synthetic point, and `test_eqpresets.cpp` checks the closed form rather
+  than replaying the loop -- which is what makes that claim checkable.
+
+Genre tracking (`GraphicEQtrackgenre`) is Cog's, from `-didBeginStream:`, and is
+off by default there and here. Worth stating plainly because the name
+undersells it: an untagged track matches nothing, Cog's fallback for matching
+nothing is Flat, so turning it on rewrites the curve at **every** track
+boundary rather than only when it has something to say.
+
+XPCog does not re-apply the selected preset at startup the way
+`equalizerLoadPreset()` does. The 32 band settings already hold what the preset
+produced, so re-deriving them could only differ if the library file had changed
+underneath -- and keeping the curve the listener has been hearing is the better
+answer to that.
+
 **Also done:** the fader, which is what finally implements `enableFading` -- the
 setting existed in `settings.def` and was read by nothing. A linear 200 ms ramp,
 Cog's `fadeTimeMS` and Cog's shape (`vDSP_vrampmuladd` is linear too).
@@ -3163,6 +3202,13 @@ All of these are also documented at the call site.
   sections cost nothing.
 - **A flat equaliser is skipped, not run.** Cog pushes every sample through 31
   sections at 0 dB; skipping makes flat bit-transparent by construction.
+- **The preset extrapolation's 1.05 step does nothing.** Cog builds four synthetic
+  points beyond each end of a preset's ten, stepping by 1.05 in gain and frequency
+  together. They lie on the line through the two outermost stored points, so the
+  factor cancels and every extrapolated band is that segment continued straight.
+  Kept in Cog's form, tested against the closed form.
+- **`altGenres` is read correctly**, where Cog's loop indexes the alias array with
+  the wrong variable and so never loads one.
 - **Downmix is not a DSP node.** Cog's nodes pass chunks carrying their own format, so
   one can change the channel count; a `DSPNode` here works in place at a fixed format,
   so downmix lives in `AudioConverter` where channel geometry already changes.

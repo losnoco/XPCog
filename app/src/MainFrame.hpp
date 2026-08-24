@@ -152,6 +152,20 @@ private:
     /// notifications look unreliable.
     void notifyTrack(const PlaylistEntry* entry);
 
+    /// Points the equaliser at the preset matching `entry`'s genre, when
+    /// `GraphicEQtrackgenre` says to. Cog does this from -didBeginStream:, as
+    /// each track actually starts.
+    ///
+    /// Here rather than in the panel because it is the frame that learns a track
+    /// began, and rather than in core because choosing a preset for a genre is a
+    /// policy about the library the interface presents -- core knows how to match
+    /// a genre and stops there.
+    ///
+    /// Worth knowing before turning it on: an untagged track matches nothing and
+    /// Cog's fallback for matching nothing is Flat, so this rewrites the curve at
+    /// every track boundary rather than only when it has something to say.
+    void applyGenreEqualizer(const PlaylistEntry* entry);
+
     /// Puts the last session back: selects the track that was current, and
     /// starts it where it left off when resumePlaybackOnStartup says to.
     /// Does nothing when the last session ended stopped.
@@ -161,6 +175,23 @@ private:
     /// kInvalidTrackId while nothing is playing, which is what lets the same
     /// track announce itself again the next time it is started.
     TrackId lastNotified_ = kInvalidTrackId;
+
+    /// What genre tracking last acted on, so one track produces one preset
+    /// change.
+    ///
+    /// The same guard notifications need, and for a sharper reason.
+    /// onCurrentTrackChanged is a redraw-everything handler that runs two or
+    /// three times per track by design, and each extra run here would rewrite 32
+    /// settings -- which is not merely wasteful: it would undo a slider the
+    /// listener moved between the decoder opening the track and the gapless seam
+    /// reaching the speaker.
+    ///
+    /// Paired with the genre rather than keyed on the track alone, because
+    /// metadata can arrive after playback starts. A track whose genre was empty
+    /// at the first call and filled in by the second should be matched again,
+    /// and the pair is what tells that apart from the same call arriving twice.
+    TrackId     lastGenreTrack_ = kInvalidTrackId;
+    std::string lastGenre_;
 
     /// Redraws the lyrics pane, on the same rule and with the same guard.
     ///

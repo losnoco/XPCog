@@ -175,6 +175,13 @@ constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsK
     if (key.starts_with("eq")) {
         return true;
     }
+    // And the two the preset row owns, which do not share that prefix because
+    // they are Cog's names. `GraphicEQpreset` is the worse of the two to leave
+    // here: it is an index into a list this dialog cannot show, so a spin box
+    // would offer a number with no way to find out which preset it means.
+    if (key.starts_with("GraphicEQ")) {
+        return true;
+    }
     return contains(kCuratedKeys, key);
 }
 

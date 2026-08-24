@@ -5,6 +5,7 @@ add_executable(xpcog-tests
     core/test_audio.cpp
     core/test_dsd.cpp
     core/test_dsp.cpp
+    core/test_eqpresets.cpp
     core/test_fft.cpp
     core/test_realfft.cpp
     core/test_freesurround.cpp
