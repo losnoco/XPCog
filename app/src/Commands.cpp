@@ -41,7 +41,23 @@ const std::vector<MenuItem>& layout() {
         // what they do, so it is "&Lyrics" here. Ctrl+L is Open URL, so the
         // shifted form is not a second choice -- it is Cog's own (Cmd+Shift+L).
         {nullptr, ViewLyrics, "&Lyrics", "Ctrl+Shift+L", ItemKind::Check},
-        {nullptr, ViewSpectrum, "&Spectrum", "Ctrl+U", ItemKind::Check},
+        // Which track those two describe. A radio pair rather than one checkable
+        // item, because "Follow Playback" unticked does not say what it does
+        // instead -- and what it does instead is not "nothing", it is the other
+        // mode.
+        //
+        // Deliberately *not* separated from Info and Lyrics above: it governs
+        // exactly those two and nothing else, and a separator here would file it
+        // with Spectrum and the Equalizer, which it has nothing to do with. The
+        // separator moves down to Spectrum instead, which is where the subject
+        // actually changes.
+        //
+        // Consecutive radio items form one exclusive group and anything between
+        // them breaks it -- including a separator -- so nothing may be inserted
+        // between these two.
+        {nullptr, ViewFollowSelection, "Panels Follow &Selection", "", ItemKind::Radio},
+        {nullptr, ViewFollowPlayback, "Panels Follow Play&back", "", ItemKind::Radio},
+        {nullptr, ViewSpectrum, "&Spectrum", "Ctrl+U", ItemKind::Check, true},
         // Cog keeps its equaliser in a window of its own rather than in
         // preferences, and so does this. Ctrl-E, which nothing else claims.
         {nullptr, ViewEqualizer, "&Equalizer", "Ctrl+E", ItemKind::Check},

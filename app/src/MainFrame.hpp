@@ -127,11 +127,20 @@ private:
     /// Cog: one is shown and the other hidden, never both.
     void setMiniMode(bool mini);
 
-    /// Redraws the info panel. Cog's rule (InfoWindowController): the playlist
-    /// selection when there is one, the playing track otherwise. Cheap to call
-    /// from anywhere, because it returns immediately while the panel is hidden
-    /// -- which is most of the time, and matters because metadata arriving
-    /// during a scan would otherwise redraw twenty fields per file.
+    /// Which track the Info and Lyrics panes should be describing.
+    ///
+    /// One function because the two panes must never disagree -- they sit next
+    /// to each other, and an Info pane showing one track beside a Lyrics pane
+    /// showing another is a bug you cannot look away from. `panelFollowMode`
+    /// chooses the rule, and its default is Cog's: the playlist selection when
+    /// there is one, the playing track otherwise. See settings.def for why the
+    /// alternative exists and why there are two modes and not three.
+    [[nodiscard]] TrackId panelTrackId() const;
+
+    /// Redraws the info panel. Cheap to call from anywhere, because it returns
+    /// immediately while the panel is hidden -- which is most of the time, and
+    /// matters because metadata arriving during a scan would otherwise redraw
+    /// twenty fields per file.
     void refreshInfo();
 
     /// Redraws the lyrics pane, on the same rule and with the same guard.

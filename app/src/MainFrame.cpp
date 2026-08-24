@@ -752,6 +752,17 @@ void MainFrame::onSettingChanged(const std::string& key) {
         return;
     }
 
+    // The View menu is where this is normally changed, and that path refreshes
+    // the panes itself. This is the other one: the generated row in Advanced,
+    // which every setting gets. Without it, changing the mode there does nothing
+    // visible until the next selection or track change, which reads as the row
+    // being inert.
+    if (key == "panelFollowMode") {
+        refreshInfo();
+        refreshLyrics();
+        return;
+    }
+
     // Immediately, in both directions, which is the half of Cog's arrangement
     // that is easy to leave out: its observer on `sentryConsented` calls
     // `[SentrySDK close]` the moment the box is unticked
@@ -796,6 +807,23 @@ bool MainFrame::paneShown(wxWindow* pane) const {
     return info.IsOk() && info.IsShown();
 }
 
+TrackId MainFrame::panelTrackId() const {
+    // Following playback ignores the selection entirely, which is the whole
+    // point: the panes stay on what is playing while the playlist is browsed.
+    // No fallback in this direction -- with nothing playing the panes are empty,
+    // and that is the honest answer rather than quietly reverting to the other
+    // mode the moment it would have something to show.
+    if (settings_.PanelFollowMode() == 1) {
+        return currentTrack_;
+    }
+
+    // Cog's rule, from both of its controllers (InfoWindowController and
+    // LyricsWindowController.m:33-43, which observe the selection and the
+    // current entry and prefer the selection exactly like this).
+    const std::vector<TrackId> selection = selectedTracks();
+    return selection.empty() ? currentTrack_ : selection.front();
+}
+
 void MainFrame::refreshInfo() {
     // Returns immediately while the panel is hidden, which is most of the time --
     // and matters, because metadata arriving during a scan would otherwise redraw
@@ -803,23 +831,14 @@ void MainFrame::refreshInfo() {
     if (!paneShown(info_)) {
         return;
     }
-
-    const std::vector<TrackId> selection = selectedTracks();
-    const TrackId shown = selection.empty() ? currentTrack_ : selection.front();
-    info_->showEntry(playlist_.find(shown));
+    info_->showEntry(playlist_.find(panelTrackId()));
 }
 
 void MainFrame::refreshLyrics() {
     if (!paneShown(lyrics_)) {
         return;
     }
-
-    // Cog's rule, the same one refreshInfo() uses: the selection when there is
-    // one, the playing track otherwise (LyricsWindowController.m:33-43, which
-    // observes both and prefers the selection exactly like this).
-    const std::vector<TrackId> selection = selectedTracks();
-    const TrackId shown = selection.empty() ? currentTrack_ : selection.front();
-    lyrics_->showEntry(playlist_.find(shown));
+    lyrics_->showEntry(playlist_.find(panelTrackId()));
 }
 
 void MainFrame::setMiniMode(bool mini) {
@@ -991,6 +1010,18 @@ void MainFrame::bindCommands() {
             refreshLyrics();
         }
     });
+
+    // Both panes redraw, because the mode is what decides which track they show
+    // and neither would otherwise notice until the next selection or track
+    // change -- which, for someone who switched to Follow Playback precisely so
+    // that clicking around stops moving the panes, could be the rest of the song.
+    const auto follow = [this](int mode) {
+        settings_.setPanelFollowMode(mode);
+        refreshInfo();
+        refreshLyrics();
+    };
+    on(ViewFollowSelection, [follow] { follow(0); });
+    on(ViewFollowPlayback, [follow] { follow(1); });
     on(ViewMiniPlayer, [this] { setMiniMode(mini_ == nullptr || !mini_->IsShown()); });
     on(ViewSpectrum, [this] {
         const bool showing = !paneShown(spectrum_);
@@ -1090,6 +1121,14 @@ void MainFrame::bindUpdateUi() {
     update(ViewInfo, [this](wxUpdateUIEvent& event) { event.Check(paneShown(info_)); });
     update(ViewLyrics,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(lyrics_)); });
+    // Read from the setting rather than from a remembered flag, so the tick is
+    // right on the first idle after launch without anything having to restore it.
+    update(ViewFollowSelection, [this](wxUpdateUIEvent& event) {
+        event.Check(settings_.PanelFollowMode() != 1);
+    });
+    update(ViewFollowPlayback, [this](wxUpdateUIEvent& event) {
+        event.Check(settings_.PanelFollowMode() == 1);
+    });
     update(ViewMiniPlayer, [this](wxUpdateUIEvent& event) {
         event.Check(mini_ != nullptr && mini_->IsShown());
     });

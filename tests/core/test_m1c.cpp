@@ -104,6 +104,11 @@ TEST_CASE("settings return their defaults when unset", "[settings]") {
     // true means the "still playing, in the tray" notice is never shown to
     // anyone, and nothing about that looks broken.
     CHECK_FALSE(settings.TrayHideAnnounced());
+
+    // 0 is Cog's rule -- selection, falling back to the playing track. The other
+    // mode is a deliberate departure from Cog, so it must be the one you choose
+    // rather than the one you get.
+    CHECK(settings.PanelFollowMode() == 0);
 }
 
 TEST_CASE("crash reporting is off until it is consented to", "[settings]") {

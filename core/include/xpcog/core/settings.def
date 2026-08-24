@@ -190,6 +190,30 @@ XPCOG_SETTING(CloseToTray, bool, "closeToTray", false)
 /// Set back to false to see it again.
 XPCOG_SETTING(TrayHideAnnounced, bool, "trayHideAnnounced", false)
 
+/// Which track the Info and Lyrics panes describe. 0 selection, 1 playback.
+///
+/// **No Cog counterpart**, and the default is Cog's behaviour so that it needs
+/// none: 0 is the rule both of Cog's controllers implement -- the playlist
+/// selection when there is one, the playing track otherwise
+/// (InfoWindowController, LyricsWindowController.m:33-43).
+///
+/// 1 exists because that rule has a real failure mode once the panes are docked
+/// rather than floating. Reading the lyrics of what is playing while arrowing
+/// down the playlist looking for what to queue next changes the pane under you
+/// on every keypress, and there is no way to say "no, keep showing that one".
+/// Cog never had to answer this because its windows are opened *about* a track;
+/// a pane that is always on screen is a different question.
+///
+/// Not three modes. "Selection only" would blank the panes whenever nothing is
+/// selected -- clicking empty space, or removing the last row -- which is the
+/// case the fallback in mode 0 exists to prevent, so it would be an option whose
+/// whole content is a bug.
+///
+/// An int rather than a bool, following `repeat` and `shuffle` above: these are
+/// modes chosen from a radio group in a menu, and the two that already work that
+/// way are ints.
+XPCOG_SETTING(PanelFollowMode, int, "panelFollowMode", 0)
+
 // --- mini player ----------------------------------------------------------
 
 /// Whether the mini player is showing instead of the main window. A mode, not a
