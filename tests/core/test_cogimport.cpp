@@ -10,6 +10,7 @@
 // and that Cog prunes entries on load, so a reader that keeps them produces a
 // playlist Cog itself would not show.
 
+#include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/library/CogImport.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -106,9 +107,18 @@ TEST_CASE("a non-ASCII path survives percent-decoding", "[cogimport]") {
 
     // Stored percent-encoded, as a real store holds it, and the path comes back
     // as the bytes that name the file rather than as the escapes.
+    //
+    // Compared through pathToUtf8() rather than path::string(), which is the
+    // project's own rule and one this test broke on its first run: on Windows
+    // `.string()` narrows the native wide path to the *active code page*, so
+    // UTF-8 bytes are never found in it however right the path is. FilePath.hpp
+    // opens by naming exactly that ("wide -> CP-1252, lossy"), and Url.hpp
+    // records the bug it caused -- a folder named "Björk - Post" reaching the
+    // scanner as "BjÃ¶rk - Post". The path here was correct on all four
+    // platforms; only the assertion was not.
     const auto path = bjork->url.localPath();
     REQUIRE(path.has_value());
-    CHECK(path->string().find("Bj\xC3\xB6rk") != std::string::npos);
+    CHECK(pathToUtf8(*path).find("Bj\xC3\xB6rk") != std::string::npos);
 }
 
 TEST_CASE("a file reference URL is flagged rather than dropped or trusted",
