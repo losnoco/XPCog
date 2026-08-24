@@ -82,7 +82,7 @@ PlaylistEntry fullyPopulatedEntry() {
 TEST_CASE("a new database migrates to the current schema", "[library]") {
     const Library library = openMemoryLibrary();
     REQUIRE(library.isOpen());
-    REQUIRE(library.schemaVersion() == 2);
+    REQUIRE(library.schemaVersion() == 3);
 }
 
 TEST_CASE("migrations are not reapplied", "[library]") {
@@ -93,13 +93,13 @@ TEST_CASE("migrations are not reapplied", "[library]") {
     {
         Library library;
         REQUIRE(library.open(path));
-        REQUIRE(library.schemaVersion() == 2);
+        REQUIRE(library.schemaVersion() == 3);
     }
     {
         // Reopening must not try to CREATE TABLE again, which would fail.
         Library library;
         REQUIRE(library.open(path));
-        REQUIRE(library.schemaVersion() == 2);
+        REQUIRE(library.schemaVersion() == 3);
         REQUIRE(library.lastError().empty());
     }
 
@@ -275,6 +275,84 @@ TEST_CASE("text shared between entries survives the dictionary", "[library]") {
 
         CHECK(entry.metadata.joined("performer", "|") == "First|Second|Third");
     }
+}
+
+TEST_CASE("saving twice keeps tags that did not change", "[library]") {
+    // The trap this is here for: the second save decides an entry's tags have
+    // not moved and leaves the rows alone, which is only safe if rewriting the
+    // entry row leaves them alone too. INSERT OR REPLACE does not -- it deletes
+    // the row it replaces, and entry_tag's foreign key cascades on delete, so
+    // the tags would go and nothing would put them back. Silent, and it would
+    // look like the tags were never written.
+    Library library = openMemoryLibrary();
+
+    Playlist playlist;
+    PlaylistEntry entry;
+    entry.url   = Url::fromLocalPath(pathFromUtf8("/music/twice.flac"));
+    entry.album = "An Album";
+    entry.metadata.add("performer", "First");
+    entry.metadata.add("performer", "Second");
+    playlist.add(std::move(entry));
+
+    REQUIRE(library.savePlaylist(playlist));
+    REQUIRE(library.savePlaylist(playlist));
+
+    Playlist restored;
+    REQUIRE(library.loadPlaylist(restored));
+    REQUIRE(restored.size() == 1);
+    CHECK(restored.at(0).album == "An Album");
+    CHECK(restored.at(0).metadata.joined("performer", "|") == "First|Second");
+}
+
+TEST_CASE("a tag edit between saves is not skipped", "[library]") {
+    // The opposite failure: skipping too much. The fingerprint has to notice a
+    // value changing, a value being added, and a key going away.
+    Library library = openMemoryLibrary();
+
+    Playlist playlist;
+    PlaylistEntry entry;
+    entry.url = Url::fromLocalPath(pathFromUtf8("/music/edited.flac"));
+    entry.metadata.add("performer", "First");
+    const TrackId id = playlist.add(std::move(entry));
+    REQUIRE(library.savePlaylist(playlist));
+
+    playlist.update(id, [](PlaylistEntry& target) {
+        target.metadata.set("performer", std::vector<std::string>{"Changed", "Added"});
+        target.metadata.set("mood", std::vector<std::string>{"New Key"});
+    });
+    REQUIRE(library.savePlaylist(playlist));
+
+    Playlist restored;
+    REQUIRE(library.loadPlaylist(restored));
+    REQUIRE(restored.size() == 1);
+    CHECK(restored.at(0).metadata.joined("performer", "|") == "Changed|Added");
+    CHECK(restored.at(0).metadata.joined("mood") == "New Key");
+}
+
+TEST_CASE("an entry removed between saves is removed from the file", "[library]") {
+    // The delete is no longer "clear the table", so what goes has to be worked
+    // out rather than assumed -- and what stays has to keep its tags.
+    Library library = openMemoryLibrary();
+
+    Playlist playlist;
+    std::vector<TrackId> ids;
+    for (int i = 0; i < 3; ++i) {
+        PlaylistEntry entry;
+        entry.url = Url::fromLocalPath(
+            pathFromUtf8("/music/gone" + std::to_string(i) + ".flac"));
+        entry.metadata.add("performer", "Number " + std::to_string(i));
+        ids.push_back(playlist.add(std::move(entry)));
+    }
+    REQUIRE(library.savePlaylist(playlist));
+
+    playlist.remove({ids[1]});
+    REQUIRE(library.savePlaylist(playlist));
+
+    Playlist restored;
+    REQUIRE(library.loadPlaylist(restored));
+    REQUIRE(restored.size() == 2);
+    CHECK(restored.at(0).metadata.joined("performer") == "Number 0");
+    CHECK(restored.at(1).metadata.joined("performer") == "Number 2");
 }
 
 TEST_CASE("unreferenced artwork is pruned", "[library]") {

@@ -9,8 +9,10 @@
 #include <cstddef>
 #include <filesystem>
 #include <string>
+#include <span>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace xpcog {
 namespace {
@@ -21,7 +23,7 @@ namespace {
 /// Cog has no equivalent -- Core Data infers lightweight migrations from the
 /// model file, which is convenient right up to the point where it cannot, and
 /// then the store fails to open with nothing to fix by hand.
-constexpr std::array<std::string_view, 2> kMigrations = {
+constexpr std::array<std::string_view, 3> kMigrations = {
     R"sql(
 CREATE TABLE playlist_entry (
     id               INTEGER PRIMARY KEY,
@@ -222,6 +224,19 @@ ALTER TABLE playlist_entry DROP COLUMN unsynced_lyrics;
 ALTER TABLE playlist_entry DROP COLUMN codec;
 ALTER TABLE playlist_entry DROP COLUMN encoding;
 )sql",
+    R"sql(
+-- What an entry's tags hashed to when they were last written.
+--
+-- Saving used to clear the playlist and write it back whole, which meant every
+-- shutdown rewrote every tag row whether or not anything had changed. On a
+-- library with millions of them that is over a minute of work to store what was
+-- already stored. Comparing this against the entry's current tags says, in one
+-- integer's worth of reading, whether the rows need touching at all.
+--
+-- Empty means "unknown", which is what every existing row gets: the first save
+-- after this migration writes everything once and settles from there.
+ALTER TABLE playlist_entry ADD COLUMN tag_hash TEXT NOT NULL DEFAULT '';
+)sql",
 };
 
 /// Columns of playlist_entry, in the order both the insert and the select use.
@@ -237,9 +252,72 @@ constexpr std::string_view kEntryColumns =
     "rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak, rg_volume, "
     "rg_soundcheck, "
     "metadata_loaded, error, error_message, play_count, current_position, "
-    "stop_after, shuffle_index, queue_position, is_current";
+    "stop_after, shuffle_index, queue_position, is_current, tag_hash";
 
-constexpr int kEntryColumnCount = 44;
+constexpr int kEntryColumnCount = 45;
+
+/// kEntryColumns split into names, for building the upsert's assignment list.
+[[nodiscard]] std::vector<std::string_view> entryColumnNames() {
+    std::vector<std::string_view> names;
+    std::string_view              rest = kEntryColumns;
+    while (!rest.empty()) {
+        const std::size_t  comma = rest.find(',');
+        std::string_view   name  = rest.substr(0, comma);
+        while (!name.empty() && name.front() == ' ') {
+            name.remove_prefix(1);
+        }
+        while (!name.empty() && name.back() == ' ') {
+            name.remove_suffix(1);
+        }
+        if (!name.empty()) {
+            names.push_back(name);
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        rest.remove_prefix(comma + 1);
+    }
+    return names;
+}
+
+/// A fingerprint of everything writeTags() would store for this entry.
+///
+/// Keys are visited in sorted order so the answer does not depend on how the
+/// map happens to be laid out -- an entry read back from the file arrives in a
+/// different order from the one the scanner built, and without this every
+/// entry would look changed exactly once after every load.
+[[nodiscard]] std::string hashTags(const MetadataMap& metadata) {
+    std::vector<std::string_view> keys;
+    for (const auto& [key, value] : metadata) {
+        static_cast<void>(value);
+        keys.push_back(key);
+    }
+    std::sort(keys.begin(), keys.end());
+
+    std::string blob;
+    for (const std::string_view key : keys) {
+        blob.append(key);
+        blob.push_back('\0');
+
+        const MetaValue* value = metadata.find(key);
+        if (value == nullptr) {
+            continue;
+        }
+        if (const auto* strings = std::get_if<std::vector<std::string>>(value)) {
+            // Ordinal order is significant -- it is what the values come back
+            // in -- so these are not sorted.
+            for (const std::string& text : *strings) {
+                blob.append(text);
+                blob.push_back('\0');
+            }
+        } else if (const auto* bytes = std::get_if<std::vector<std::byte>>(value)) {
+            blob.append(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+        }
+        blob.push_back('\x01');
+    }
+
+    return sha256Hex(std::as_bytes(std::span{blob}));
+}
 
 void bindOptional(sql::Statement& statement, int index,
                   const std::optional<float>& value) {
@@ -346,8 +424,25 @@ private:
         for (int i = 0; i < kEntryColumnCount; ++i) {
             marks += (i == 0) ? "?" : ",?";
         }
-        return "INSERT OR REPLACE INTO playlist_entry (" + std::string{kEntryColumns} +
-               ") VALUES (" + marks + ");";
+        // An upsert, not INSERT OR REPLACE. REPLACE deletes the row it replaces,
+        // and entry_tag's foreign key cascades on delete -- so every save would
+        // throw away the very tags it is about to decide it need not rewrite.
+        std::string updates;
+        for (const std::string_view name : entryColumnNames()) {
+            if (name == "id") {
+                continue;  // what the conflict is on; assigning it is a no-op
+            }
+            if (!updates.empty()) {
+                updates += ", ";
+            }
+            updates.append(name);
+            updates += " = excluded.";
+            updates.append(name);
+        }
+
+        return "INSERT INTO playlist_entry (" + std::string{kEntryColumns} +
+               ") VALUES (" + marks + ") ON CONFLICT(id) DO UPDATE SET " + updates +
+               ";";
     }
 };
 
@@ -358,7 +453,8 @@ struct Library::Impl {
 
     [[nodiscard]] bool migrate();
     [[nodiscard]] bool writeEntry(EntryWriter& writer, const PlaylistEntry& entry,
-                                  std::int64_t position);
+                                  std::int64_t position, const std::string& tagHash,
+                                  bool tagsChanged);
     [[nodiscard]] bool writeTags(EntryWriter& writer, const PlaylistEntry& entry);
     [[nodiscard]] bool readEntries(std::vector<PlaylistEntry>& entries,
                                    std::optional<TrackId>&     current);
@@ -440,7 +536,8 @@ bool Library::Impl::migrate() {
 // --- entries ------------------------------------------------------------
 
 bool Library::Impl::writeEntry(EntryWriter& writer, const PlaylistEntry& entry,
-                               std::int64_t position) {
+                               std::int64_t position, const std::string& tagHash,
+                               bool tagsChanged) {
     sql::Statement& statement = writer.insert;
     statement.reset();
 
@@ -532,9 +629,16 @@ bool Library::Impl::writeEntry(EntryWriter& writer, const PlaylistEntry& entry,
     statement.bind(i++, entry.shuffleIndex);
     statement.bind(i++, static_cast<std::int64_t>(entry.queuePosition));
     statement.bind(i++, static_cast<std::int64_t>(0));  // is_current, set below
+    statement.bind(i++, tagHash);
 
     if (!statement.run()) {
         return fail("cannot write entry " + entry.url.toString());
+    }
+
+    // The rows themselves are the expensive part -- an entry can carry tens of
+    // thousands -- and they are also the part that almost never changes.
+    if (!tagsChanged) {
+        return true;
     }
     return writeTags(writer, entry);
 }
@@ -695,6 +799,7 @@ bool Library::Impl::readEntries(std::vector<PlaylistEntry>& entries,
         if (query.columnInt(i++) != 0) {
             current = entry.id;
         }
+        ++i;  // tag_hash: the file's own bookkeeping, not part of the entry
 
         entries.push_back(std::move(entry));
     }
@@ -739,8 +844,48 @@ bool Library::savePlaylist(const Playlist& playlist) {
     }
 
     sql::Transaction transaction{impl_->database};
-    if (!impl_->database.exec("DELETE FROM playlist_entry;")) {
-        return impl_->fail("cannot clear playlist");
+
+    // What the file already holds, and what each entry's tags hashed to when
+    // they were last written. Two columns over the entries -- cheap even when
+    // the tag rows behind them number in the millions.
+    std::unordered_map<std::int64_t, std::string> storedHash;
+    {
+        sql::Statement query{impl_->database,
+                             "SELECT id, tag_hash FROM playlist_entry;"};
+        if (!query.valid()) {
+            return impl_->fail("cannot read the stored entries");
+        }
+        while (query.step()) {
+            storedHash.emplace(query.columnInt(0), query.columnText(1));
+        }
+    }
+
+    // Only the entries that are actually gone. Clearing the table and writing it
+    // back was what made a save cost the whole library every time: the delete
+    // cascaded into every tag row and the write put every one of them back, to
+    // arrive at what was already there.
+    {
+        std::unordered_set<std::int64_t> keep;
+        keep.reserve(state.entries.size());
+        for (const PlaylistEntry& entry : state.entries) {
+            keep.insert(static_cast<std::int64_t>(entry.id));
+        }
+
+        sql::Statement drop{impl_->database, "DELETE FROM playlist_entry WHERE id = ?;"};
+        if (!drop.valid()) {
+            return impl_->fail("cannot prepare the entry delete");
+        }
+        for (const auto& [id, hash] : storedHash) {
+            static_cast<void>(hash);
+            if (keep.contains(id)) {
+                continue;
+            }
+            drop.reset();
+            drop.bind(1, id);
+            if (!drop.run()) {
+                return impl_->fail("cannot remove a deleted entry");
+            }
+        }
     }
 
     EntryWriter writer{impl_->database};
@@ -748,8 +893,16 @@ bool Library::savePlaylist(const Playlist& playlist) {
         return impl_->fail("cannot prepare the entry statements");
     }
     for (std::size_t position = 0; position < state.entries.size(); ++position) {
-        if (!impl_->writeEntry(writer, state.entries[position],
-                               static_cast<std::int64_t>(position))) {
+        const PlaylistEntry& entry = state.entries[position];
+
+        // The row is rewritten either way -- it is one row, and its position or
+        // play count may well have moved. The tags are what get skipped.
+        const std::string tagHash = hashTags(entry.metadata);
+        const auto        stored  = storedHash.find(static_cast<std::int64_t>(entry.id));
+        const bool        changed = stored == storedHash.end() || stored->second != tagHash;
+
+        if (!impl_->writeEntry(writer, entry, static_cast<std::int64_t>(position),
+                               tagHash, changed)) {
             return false;
         }
     }
@@ -808,6 +961,11 @@ bool Library::savePlaylist(const Playlist& playlist) {
     // And the same for the dictionary. Text nothing points at any more is text
     // the file has no reason to carry, and a save that only ever added to it
     // would trade one kind of unbounded growth for another.
+    // Every reference gathered once, then the gaps deleted. Asking per string
+    // instead -- NOT EXISTS against each table -- reads better and is far worse:
+    // the entry columns are not indexed, so it scans the whole playlist once for
+    // every string in the dictionary. That is quadratic, and a fifty-thousand
+    // entry playlist found it immediately.
     if (!impl_->database.exec(
             "DELETE FROM string WHERE id NOT IN ("
             "  SELECT key_id FROM entry_tag"
@@ -912,7 +1070,10 @@ bool Library::saveEntry(const PlaylistEntry& entry) {
     if (!writer.valid()) {
         return impl_->fail("cannot prepare the entry statements");
     }
-    if (!impl_->writeEntry(writer, entry, position)) {
+    // Unconditionally, tags and all: a caller saving one entry by hand is saying
+    // it changed, and there is no cost worth avoiding in a single row.
+    if (!impl_->writeEntry(writer, entry, position, hashTags(entry.metadata),
+                           /*tagsChanged=*/true)) {
         return false;
     }
     if (!transaction.commit()) {
