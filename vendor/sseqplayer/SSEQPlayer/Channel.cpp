@@ -68,10 +68,17 @@ inline int32_t sex(int32_t x)
     return z.s.hi;
 }
 
+// Not defined under MSVC: with /O2 (any optimised configuration) cl treats
+// `abs` as an intrinsic and refuses to see it defined at all -- C2169 -- while
+// the debug build accepts it, which is how this survived every debug compile.
+// The ::abs call sites below then take the CRT's abs(int), which computes the
+// same thing this branchless version does, INT_MIN undefined in both.
+#ifndef _MSC_VER
 inline int32_t abs(int32_t x)
 {
     return (x ^ sex(x)) - sex(x);
 }
+#endif
 
 // Code from http://learningcppisfun.blogspot.com/2010/04/comparing-floating-point-numbers.html
 template<typename T> inline bool fEqual(T x, T y, int N = 1)

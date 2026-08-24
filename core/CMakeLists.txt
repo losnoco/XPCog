@@ -85,6 +85,21 @@ set_target_properties(rubberband::rubberband PROPERTIES
     IMPORTED_LOCATION "${RUBBERBAND_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${RUBBERBAND_INCLUDE_DIR}")
 
+# A static librubberband does not carry its dependencies the way the Windows
+# DLL does, so the ones the vcpkg port builds it against are appended when the
+# tree has them: SLEEF's DFT and libsamplerate on Linux and x64 Windows, FFTW
+# and libsamplerate on Apple platforms. Optional on purpose -- a distribution's
+# shared librubberband resolves its own dependencies, and this list finding
+# nothing is exactly that case.
+foreach(_xpcog_rb_dep sleefdft sleef samplerate fftw3f fftw3)
+    string(TOUPPER "${_xpcog_rb_dep}" _xpcog_rb_var)
+    find_library(RUBBERBAND_${_xpcog_rb_var}_LIBRARY NAMES ${_xpcog_rb_dep})
+    if(RUBBERBAND_${_xpcog_rb_var}_LIBRARY)
+        target_link_libraries(rubberband::rubberband
+            INTERFACE "${RUBBERBAND_${_xpcog_rb_var}_LIBRARY}")
+    endif()
+endforeach()
+
 # SQLite replaces Core Data. Core talks to the C API directly rather than to
 # QtSql, so the scanner, the CLI and the tests reach the library without needing
 # a QCoreApplication -- and Cog sets the precedent with SQLiteStore.m.

@@ -356,6 +356,7 @@ jobs:
             libcurl4-openssl-dev libarchive-dev libsqlite3-dev libsoxr-dev \
             libopusfile-dev libwavpack-dev libopenmpt-dev libgme-dev \
             libmpcdec-dev libsidplayfp-dev libadplug-dev libbinio-dev \
+            librubberband-dev \
             catch2 libtag1-dev
 
       - name: Set up vcpkg
