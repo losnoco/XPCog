@@ -104,6 +104,13 @@ constexpr std::array kMidiSynthChoices = {
 constexpr std::array kCuratedKeys = {
     // Playlist
     "alwaysStopAfterCurrent", "readCueSheetsInFolders", "readPlaylistsInFolders",
+    "selectionFollowsPlayback", "resumePlaybackOnStartup",
+    // Owned by a control outside this dialog, and listed here so that Advanced
+    // does not offer a second one that disagrees with it. `volume` is the
+    // transport slider; `repeat` and `shuffle` are the Order menu's radio
+    // groups; `panelFollowMode` is View -> Panels Follow. All four are state a
+    // gesture sets, not preferences someone comes here to type.
+    "volume", "repeat", "shuffle", "panelFollowMode",
     // Output
     "volumeScaling", "resampling", "enableHDCD", "halveDSDVolume", "outputDeviceId",
     "outputDeviceName", "exclusiveOutput", "enableFSurround", "enableFading",
@@ -113,8 +120,6 @@ constexpr std::array kCuratedKeys = {
     "synthDefaultSeconds", "synthDefaultFadeSeconds", "synthDefaultLoopCount",
     // Appearance
     //
-    // floatingMiniWindow is deliberately absent: the mini player carries its own
-    // control for it and applies it as it is clicked.
     //
     // widgetStyle is listed even though no pane draws a row for it any more. The
     // toolkit has no style engine -- see docs/WXPORT.md -- so the key is dead
@@ -131,7 +136,9 @@ constexpr std::array kCuratedKeys = {
     "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode", "spectrumFloorDb",
     "spectrumShowPeaks",
     // General
-    "sentryConsented",
+    "sentryConsented", "httpStreamingBufferSize",
+    // Appearance
+    "floatingMiniWindow",
     // Notifications
     "notifications.enable", "notifications.show-album-art",
 };
@@ -146,8 +153,15 @@ constexpr std::array kCuratedKeys = {
 /// records that the prompt has been shown; it is the answer next to it on General
 /// that decides anything, and a checkbox here that re-armed a one-time dialog
 /// would read as a second consent switch.
+/// The rest are the session's own record of itself rather than anything asked
+/// for: which mode the window was in, how playback was left and where, whether
+/// the tray notice has been shown, and the pre-split `outputDevice` a settings
+/// file may still carry. Editing any of them changes what the *last* session is
+/// remembered to have done, which is not a preference.
 constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsKey",
-                                      "sentryAskedConsent"};
+                                      "sentryAskedConsent",    "lastPlaybackStatus",
+                                      "miniMode",              "trayHideAnnounced",
+                                      "outputDevice"};
 
 [[nodiscard]] bool contains(std::span<const char* const> keys, std::string_view key) {
     return std::any_of(keys.begin(), keys.end(),
@@ -487,6 +501,11 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
     pane->SetClientObject(row);
 
     row->toggle("Stop after every track", "alwaysStopAfterCurrent");
+    row->toggle("Follow the playing track in the playlist", "selectionFollowsPlayback",
+                "Move the selection to each track as it starts.");
+    row->toggle("Resume playback on startup", "resumePlaybackOnStartup",
+                "Continue the last track from where it stopped. The track is "
+                "selected either way.");
     // Both off by default, as in Cog, and for the reason Cog has: a folder
     // holding album.cue or its own .m3u beside the audio otherwise adds every
     // track twice -- once through the container and once as the file under it.
@@ -505,6 +524,13 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
 
+    // Cog keeps the streaming buffer on General too, under a Network heading
+    // (GeneralPaneView.swift:120-131). One row does not need a heading.
+    row->number("Streaming buffer (bytes)", "httpStreamingBufferSize", 65536,
+                134217728);
+    row->note("How much of an internet radio stream is read ahead. Raise it for a "
+              "slow or distant station.");
+
     // Cog's label, word for word (Preferences/Panes/GeneralPaneView.swift:133).
     // "Usage data" is not padding: session tracking is on, so a launch and a
     // clean exit are reported as well as a crash, and a label saying only "crash
@@ -512,11 +538,8 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
     wxCheckBox* box = row->toggle("Send crash reports and usage data", "sentryConsented");
 
     if (platform::crashReportingAvailable()) {
-        row->note("Off unless you turn it on. Nothing is collected, written or "
-                  "sent while this is unticked -- the reporter is not started at "
-                  "all rather than started and silenced.");
-        row->link("What is collected, and what happens to it",
-                  platform::kPrivacyPolicyUrl);
+        row->note("Nothing is collected or sent while this is off.");
+        row->link("Privacy policy", platform::kPrivacyPolicyUrl);
     } else {
         // Shown rather than hidden, and greyed rather than lying. A build
         // configured without XPCOG_WITH_SENTRY has no reporter to start, and a
@@ -525,8 +548,7 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
         // runs in the direction of sending more.
         box->Enable(false);
         box->SetValue(false);
-        row->note("This build was compiled without crash reporting, so there is "
-                  "nothing to turn on.");
+        row->note("Crash reporting is not included in this build.");
     }
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
@@ -544,10 +566,8 @@ wxWindow* PreferencesDialog::buildNotificationsPane(wxWindow* parent) {
     // Cog's two, with Cog's labels and Cog's defaults -- both on.
     row->toggle("Enable notifications", "notifications.enable");
     row->toggle("Show album art", "notifications.show-album-art");
-    row->note("Announced as each track starts. Where the cover appears, and how "
-              "long the notice stays, is the desktop's decision rather than "
-              "XPCog's -- on Windows it is a notification-area balloon, and a "
-              "system set to Focus Assist or Do Not Disturb will hold it back.");
+    row->note("Shown as each track starts. Focus Assist or Do Not Disturb can "
+              "hold notifications back.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -614,32 +634,33 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
     });
     row->add("Output device", deviceBox);
 
-    row->toggle("Take the device exclusively", "exclusiveOutput",
-                "Plays at the file's own rate and format instead of the system "
-                "mixer's, and silences everything else on the machine while it does. "
-                "Falls back to sharing when the device or the platform will not "
-                "allow it.");
+    row->toggle("Play exclusively", "exclusiveOutput",
+                "Use the file's own rate and format instead of the system mixer's. "
+                "Other applications cannot play while this is active. Falls back to "
+                "sharing if the device is unavailable.");
 
     row->choice("Volume scaling", "volumeScaling", kVolumeScalingChoices);
     row->choice("Resampler quality", "resampling", kResamplingChoices);
 
     row->toggle("Decode HDCD", "enableHDCD",
-                "Only affects 16-bit 44.1 kHz stereo lossless material, and is "
-                "bit-transparent on files carrying no HDCD codes.");
-    row->toggle("Halve the volume of DSD", "halveDSDVolume",
+                "Applies to 16-bit 44.1 kHz stereo only. Files without HDCD codes "
+                "are unaffected.");
+    row->toggle("Halve DSD volume", "halveDSDVolume",
                 "DSD is converted with a filter whose gain puts half modulation "
                 "\xE2\x80\x94 as loud as most SACDs go \xE2\x80\x94 at full scale. "
-                "Turn this on if a recording that goes louder is clipping.");
-    row->toggle("FreeSurround stereo-to-surround upmix", "enableFSurround");
+                "Turn on if a loud SACD rip clips.");
+    row->toggle("Upmix stereo to surround", "enableFSurround",
+                "Uses FreeSurround. Takes effect when the device is next opened.");
     row->toggle("Fade on seek and stop", "enableFading");
     // On, the device is handed back while paused; off, it is held open and fed
     // silence. Off is what someone chooses when reacquiring costs more than it
     // saves -- an exclusive device another application may take in the gap.
-    row->toggle("Release the audio device while paused", "suspendOutputOnPause");
+    row->toggle("Release the device while paused", "suspendOutputOnPause",
+                "Let other applications use the device while playback is paused. "
+                "Turn off to keep an exclusive device reserved.");
 
-    row->note("Volume scaling and resampler quality take effect on the next track. "
-              "The device and exclusive mode move whatever is playing on to the new "
-              "device, with a short break while it opens.");
+    row->note("Volume scaling and resampler quality apply from the next track. "
+              "Changing the device moves playback across with a brief gap.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -666,18 +687,14 @@ wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
     row->seconds("Default fade time (s)", "synthDefaultFadeSeconds", 60.0);
     row->number("Default loop count", "synthDefaultLoopCount", 0, 10);
 
-    row->note("SpessaSynth plays a SoundFont bank, and has no sound of its own "
-              "without one \xE2\x80\x94 any .sf2, .sf3 or .dls will do. A file that "
-              "has a bank of its own beside it is played with that one instead, "
-              "whatever is chosen here.");
-    row->note("The Roland needs its five ROM files, which are not something this "
-              "player can supply. Name either the folder holding them or the archive "
-              "they came in \xE2\x80\x94 they are recognised by content, so nothing "
-              "has to be renamed. Without them a MIDI file still plays, on the OPL3.");
-    row->note("The sample rate and the defaults below it apply to every synthesised "
-              "format, not only MIDI \xE2\x80\x94 a game music rip has no length of "
-              "its own either. The Roland ignores the sample rate: it renders at the "
-              "rate its hardware ran at and nothing else.");
+    row->note("SpessaSynth needs a bank: any .sf2, .sf3 or .dls. Files that carry "
+              "their own bank use that instead.");
+    row->note("The SC-55 needs its five ROM files, which are not supplied. Choose "
+              "the folder or the archive they came in; they are recognised by "
+              "content, so nothing needs renaming. Without them, MIDI plays on the "
+              "OPL3.");
+    row->note("These apply to every synthesised format, not only MIDI. The SC-55 "
+              "ignores the sample rate and always renders at its own.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -726,11 +743,14 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     });
     row->add("", closeToTray);
 
+    // The mini player's own control is a button on the mini player, which is only
+    // reachable once you are in it. Here as well, so it can be set beforehand.
+    row->toggle("Keep the mini player on top", "floatingMiniWindow");
+
     auto* note = new wxStaticText(
         pane, wxID_ANY,
-        "XPCog draws with the platform's own controls, so it follows the system "
-        "appearance rather than offering a theme of its own. Switching the system "
-        "to dark mode re-strokes the interface icons while the window is open.");
+        "XPCog follows the system appearance and has no theme of its own. "
+        "Switching to dark mode re-strokes the interface icons straight away.");
     note->Wrap(pane->FromDIP(440));
     note->Enable(false);
     form->AddSpacer(0);
@@ -820,10 +840,9 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
     });
     row->add("Quietest level shown (dB)", floorDb);
 
-    row->note("Bars sit on semitones from C0, so a spectrum of music lines up with "
-              "the notes being played. Below a few hundred hertz several bars share "
-              "one analysis bin and move together \xE2\x80\x94 that is the resolution "
-              "of the window, not a fault.");
+    row->note("Bars sit on semitones from C0, so the display lines up with the "
+              "notes being played. The lowest bars share an analysis bin and move "
+              "together.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -905,6 +924,9 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
         }
         row->add(label.c_str(), editor);
     }
+
+    row->note("Settings without a place of their own, and the values XPCog keeps "
+              "about the last session. The greyed rows are records, not choices.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));

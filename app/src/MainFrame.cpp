@@ -131,7 +131,7 @@ private:
     text->Wrap(dialog.FromDIP(400));
 
     auto* policy = new wxHyperlinkCtrl(
-        &dialog, wxID_ANY, "What is collected, and what happens to it",
+        &dialog, wxID_ANY, "Privacy policy",
         wxString::FromUTF8(std::string{platform::kPrivacyPolicyUrl}));
 
     auto* layout = new wxBoxSizer(wxVERTICAL);

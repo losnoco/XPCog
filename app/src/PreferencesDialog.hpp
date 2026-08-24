@@ -20,6 +20,13 @@
 //    and cannot silently become unreachable from the UI the way a Cog setting
 //    with no pane does.
 //
+// The second half is now nearly empty, and that is the intended end state rather
+// than a sign it is unused. Every setting a listener would look for has a pane
+// row; what falls through is one unimplemented option and the session's own
+// record of itself, shown but not editable. Its job from here is to catch the
+// *next* setting somebody adds, so a new key is visible from the first build
+// rather than from the commit that remembers to draw it.
+//
 // The sidebar-and-pages shape is a wxListbook, which is exactly the widget the
 // Qt version was assembling by hand out of a QListWidget and a QStackedWidget.
 
