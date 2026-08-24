@@ -41,6 +41,19 @@ public:
         /// 0 lets the backend choose. Smaller means lower latency and more
         /// callbacks; the feeder must keep up either way.
         std::uint32_t bufferFrames = 0;
+        /// What the device should carry. Float unless something needs the bits
+        /// to arrive exactly as written, and the thing that needs that is DoP:
+        /// DSD travels inside PCM as a 0x05/0xFA marker plus payload, and a
+        /// float path that scales or dithers turns it into noise at the DAC.
+        ///
+        /// A request, like `exclusive`. A backend that cannot open the device
+        /// this way opens it in float instead and says so through
+        /// negotiatedFormat(), because refusing to play is a worse answer to "I
+        /// would rather not be converted" than converting.
+        ///
+        /// S16, S24, S32 and F32 only -- the layouts a device is opened in. The
+        /// rest of SampleFormat describes what a *decoder* produces.
+        SampleFormat format = SampleFormat::F32;
     };
 
     virtual ~IAudioOutput() = default;

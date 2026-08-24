@@ -1,5 +1,6 @@
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include <cmath>
 #include <cstring>
 
 namespace xpcog {
@@ -98,6 +99,91 @@ std::size_t convertToFloat32(const AudioChunk& chunk, std::span<float> out) noex
     }
 
     return samples;
+}
+
+namespace {
+
+/// Rounds and clamps one sample to an integer of `bits`.
+///
+/// In double throughout. The multiply is exact in float32 for anything that came
+/// back from convertToFloat32, but the *rounding* is not: 8388607 / 2^23 scaled
+/// back is 8388607.0, and adding 0.5 to that in float32 needs a 25th mantissa
+/// bit, so it becomes 8388608.0 and clamps to 8388606 -- an off-by-one at
+/// exactly the extreme where a DoP marker lives.
+[[nodiscard]] std::int32_t quantise(float sample, int bits) noexcept {
+    const double scale   = static_cast<double>(std::int64_t{1} << (bits - 1));
+    const double maximum = scale - 1.0;
+    // std::round rather than std::lround, which returns `long` -- 32 bits on
+    // Windows, so rounding a full-scale S32 sample overflows it before the clamp
+    // below ever runs. Staying in double until after the clamp has no such edge.
+    const double scaled = std::round(static_cast<double>(sample) * scale);
+    if (scaled >= maximum) {
+        return static_cast<std::int32_t>(maximum);
+    }
+    if (scaled <= -scale) {
+        return static_cast<std::int32_t>(-scale);
+    }
+    return static_cast<std::int32_t>(scaled);
+}
+
+void store24(std::byte* p, std::int32_t value) noexcept {
+    const auto raw = static_cast<std::uint32_t>(value);
+    p[0]           = static_cast<std::byte>(raw & 0xFFU);
+    p[1]           = static_cast<std::byte>((raw >> 8) & 0xFFU);
+    p[2]           = static_cast<std::byte>((raw >> 16) & 0xFFU);
+}
+
+template <typename T>
+void storeNative(std::byte* p, T value) noexcept {
+    std::memcpy(p, &value, sizeof(T));
+}
+
+}  // namespace
+
+std::size_t packedByteCount(std::size_t sampleCount, SampleFormat format) noexcept {
+    switch (format) {
+        case SampleFormat::S16: return sampleCount * 2;
+        case SampleFormat::S24: return sampleCount * 3;
+        case SampleFormat::S32:
+        case SampleFormat::F32: return sampleCount * 4;
+        default: return 0;
+    }
+}
+
+std::size_t convertFromFloat32(std::span<const float> in, SampleFormat format,
+                               std::span<std::byte> out) noexcept {
+    const std::size_t needed = packedByteCount(in.size(), format);
+    if (needed == 0 || out.size() < needed) {
+        return 0;
+    }
+
+    std::byte* p = out.data();
+    switch (format) {
+        case SampleFormat::F32:
+            // Straight through: no scaling, no rounding, nothing to get wrong.
+            std::memcpy(p, in.data(), needed);
+            break;
+        case SampleFormat::S16:
+            for (const float sample : in) {
+                storeNative<std::int16_t>(p, static_cast<std::int16_t>(quantise(sample, 16)));
+                p += 2;
+            }
+            break;
+        case SampleFormat::S24:
+            for (const float sample : in) {
+                store24(p, quantise(sample, 24));
+                p += 3;
+            }
+            break;
+        case SampleFormat::S32:
+            for (const float sample : in) {
+                storeNative<std::int32_t>(p, quantise(sample, 32));
+                p += 4;
+            }
+            break;
+        default: return 0;
+    }
+    return needed;
 }
 
 }  // namespace xpcog

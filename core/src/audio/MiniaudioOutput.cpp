@@ -10,22 +10,66 @@
 // it gets named here rather than appearing quietly. The tap is the most recent
 // addition and it is the last step on purpose: it must see what the speakers get,
 // which means after the gain, not before.
+//
+// One step has since joined it: converting to an integer device format, when the
+// device was opened in one. It is still no lock, no allocation and no system
+// call -- the scratch buffer it needs is sized once, in start(), and a callback
+// asking for more frames than it holds is served in chunks rather than by
+// growing it. See the callback.
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/AudioTap.hpp"
+#include "xpcog/core/audio/SampleConvert.hpp"
 #include "xpcog/core/audio/TransportGain.hpp"
 
 #include <miniaudio.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstring>
 #include <mutex>
+#include <span>
 #include <utility>
+#include <vector>
 
 namespace xpcog {
 namespace {
+
+/// The device layouts, and only those. Anything else -- U8, S8, F64, the DSD
+/// that arrives from a decoder -- is not something a device is opened in here,
+/// and asking for one falls back to float rather than failing to play.
+[[nodiscard]] ma_format toMaFormat(SampleFormat format) noexcept {
+    switch (format) {
+        case SampleFormat::S16: return ma_format_s16;
+        case SampleFormat::S24: return ma_format_s24;
+        case SampleFormat::S32: return ma_format_s32;
+        default: return ma_format_f32;
+    }
+}
+
+/// What the device actually ended up carrying. Asked of the device rather than
+/// assumed from the request, because miniaudio negotiates: a device that will
+/// not do s24 is opened in something it will.
+[[nodiscard]] SampleFormat fromMaFormat(ma_format format) noexcept {
+    switch (format) {
+        case ma_format_u8: return SampleFormat::U8;
+        case ma_format_s16: return SampleFormat::S16;
+        case ma_format_s24: return SampleFormat::S24;
+        case ma_format_s32: return SampleFormat::S32;
+        default: return SampleFormat::F32;
+    }
+}
+
+[[nodiscard]] std::uint32_t bitsFor(SampleFormat format) noexcept {
+    switch (format) {
+        case SampleFormat::U8: return 8;
+        case SampleFormat::S16: return 16;
+        case SampleFormat::S24: return 24;
+        default: return 32;
+    }
+}
 
 class MiniaudioOutput final : public IAudioOutput {
 public:
@@ -47,7 +91,7 @@ public:
         }
 
         ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
-        deviceConfig.playback.format   = ma_format_f32;
+        deviceConfig.playback.format   = toMaFormat(config.format);
         deviceConfig.playback.channels = config.channels;
         deviceConfig.sampleRate        = static_cast<ma_uint32>(config.sampleRate);
         deviceConfig.periodSizeInFrames = config.bufferFrames;
@@ -80,11 +124,33 @@ public:
         }
         deviceValid_ = true;
 
-        format_.sampleRate    = device_.sampleRate;
-        format_.channels      = device_.playback.channels;
-        format_.format        = SampleFormat::F32;
-        format_.bitsPerSample = 32;
+        format_.sampleRate = device_.sampleRate;
+        format_.channels   = device_.playback.channels;
+        // Read back rather than echoed: a device that refused s24 is running in
+        // whatever it accepted, and a caller that asked for exact integers needs
+        // to be told it did not get them -- that is the difference between DoP
+        // playing and DoP being emitted as noise.
+        format_.format        = fromMaFormat(device_.playback.format);
+        format_.bitsPerSample = bitsFor(format_.format);
         format_.channelConfig = guessChannelConfig(device_.playback.channels);
+
+        // The scratch the callback converts through, sized once here so that it
+        // never allocates. miniaudio asks for at most a period at a time; the
+        // callback chunks anyway rather than trusting that, because being wrong
+        // about it would be a buffer overrun on a real-time thread.
+        //
+        // Not allocated at all for a float device, where the callback reads the
+        // ring straight into the device buffer as it always has.
+        if (format_.format == SampleFormat::F32) {
+            scratch_.clear();
+            scratch_.shrink_to_fit();
+        } else {
+            const std::size_t frames =
+                device_.playback.internalPeriodSizeInFrames > 0
+                    ? device_.playback.internalPeriodSizeInFrames
+                    : 4096;
+            scratch_.assign(frames * device_.playback.channels, 0.0F);
+        }
 
         framesPlayed_.store(0, std::memory_order_relaxed);
         underruns_.store(0, std::memory_order_relaxed);
@@ -234,18 +300,70 @@ private:
 
     static void dataCallback(ma_device* device, void* output, const void* /*input*/,
                              ma_uint32 frameCount) {
-        auto* self = static_cast<MiniaudioOutput*>(device->pUserData);
-        auto* out  = static_cast<float*>(output);
+        auto*             self     = static_cast<MiniaudioOutput*>(device->pUserData);
+        const std::size_t channels = device->playback.channels;
 
-        const std::size_t wanted =
-            static_cast<std::size_t>(frameCount) * device->playback.channels;
+        if (device->playback.format == ma_format_f32) {
+            // The float path, unchanged: the ring holds float32, so the device
+            // buffer is filled in place with nothing between the two.
+            self->fill(static_cast<float*>(output),
+                       static_cast<std::size_t>(frameCount) * channels, channels);
+            self->framesPlayed_.fetch_add(frameCount, std::memory_order_relaxed);
+            return;
+        }
 
-        const std::size_t got = self->sink_.read(out, wanted);
+        // An integer device. Same work, then a conversion -- through a scratch
+        // buffer sized in start(), in chunks of whole frames so that a callback
+        // larger than the scratch is served correctly rather than truncated.
+        //
+        // Whole frames matter: the gain and the tap both take a channel count and
+        // would be wrong about which channel a sample belonged to if a chunk
+        // split one.
+        const SampleFormat format = self->format_.format;
+        const std::size_t  bytesPerSample = self->format_.bytesPerSample();
+        auto*              bytes          = static_cast<std::byte*>(output);
+
+        const std::size_t chunkFrames = channels > 0 ? self->scratch_.size() / channels : 0;
+        if (chunkFrames == 0) {
+            // Cannot happen -- start() sizes the scratch whenever the device is
+            // not float -- but silence is the only safe answer on this thread.
+            std::memset(output, 0, static_cast<std::size_t>(frameCount) *
+                                       channels * bytesPerSample);
+            return;
+        }
+
+        std::size_t remaining = frameCount;
+        while (remaining > 0) {
+            const std::size_t frames  = std::min(remaining, chunkFrames);
+            const std::size_t samples = frames * channels;
+
+            self->fill(self->scratch_.data(), samples, channels);
+            convertFromFloat32(std::span<const float>{self->scratch_.data(), samples},
+                               format,
+                               std::span<std::byte>{bytes, samples * bytesPerSample});
+
+            bytes += samples * bytesPerSample;
+            remaining -= frames;
+        }
+
+        // The playback clock. Track changes are announced against this, so a seam
+        // is reported when it is audible rather than when it was decoded.
+        self->framesPlayed_.fetch_add(frameCount, std::memory_order_relaxed);
+    }
+
+    /// Ring to float buffer, with the tail silenced, the gain applied and the tap
+    /// fed. Everything the callback did before a device format came into it.
+    ///
+    /// Shared by both paths rather than duplicated, because the two differ only
+    /// in where the floats end up -- and a second copy of the gain-then-tap order
+    /// is exactly the divergence TransportGain.hpp was written about.
+    void fill(float* out, std::size_t wanted, std::size_t channels) {
+        const std::size_t got = sink_.read(out, wanted);
 
         if (got < wanted) {
             // Silence the tail rather than repeating stale samples.
             std::memset(out + got, 0, (wanted - got) * sizeof(float));
-            self->underruns_.fetch_add(1, std::memory_order_relaxed);
+            underruns_.fetch_add(1, std::memory_order_relaxed);
         }
 
         // Volume and the transport fade are separate multipliers -- a fade must not
@@ -253,21 +371,13 @@ private:
         // TransportGain, which is shared with OfflineOutput. It used to be written
         // out here, and having a second copy of it in the test double is how the
         // two came to disagree; see TransportGain.hpp.
-        self->fade_.apply(out, got,
-                          static_cast<std::size_t>(device->playback.channels),
-                          self->volume_.load(std::memory_order_relaxed));
+        fade_.apply(out, got, channels, volume_.load(std::memory_order_relaxed));
 
         // After the gain, so the visualiser sees what the speakers get -- including
         // a fade, which is the point of tapping here rather than upstream.
-        if (AudioTap* tap = self->tap_.load(std::memory_order_relaxed);
-            tap != nullptr) {
-            tap->write(out, got,
-                       static_cast<std::size_t>(device->playback.channels));
+        if (AudioTap* tap = tap_.load(std::memory_order_relaxed); tap != nullptr) {
+            tap->write(out, got, channels);
         }
-
-        // The playback clock. Track changes are announced against this, so a seam
-        // is reported when it is audible rather than when it was decoded.
-        self->framesPlayed_.fetch_add(frameCount, std::memory_order_relaxed);
     }
 
     /// Fires on a miniaudio-internal thread, not the RT thread. It only hands the
@@ -354,6 +464,11 @@ private:
     /// for -- what was given.
     bool               exclusiveHeld_ = false;
     AudioFormat        format_{};
+
+    /// Float staging for an integer device, sized in start() and never resized
+    /// afterwards -- the callback runs on a real-time thread and must not
+    /// allocate. Empty when the device carries float, where nothing stages.
+    std::vector<float> scratch_;
 
     std::mutex            callbackMutex_;
     std::function<void()> onInvalidated_;

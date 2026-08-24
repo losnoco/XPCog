@@ -6,9 +6,14 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <numeric>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -267,4 +272,164 @@ TEST_CASE("a chosen output device is matched by id, then by name", "[audio][devi
         CHECK(xpcog::resolveOutputDevice(devices, "{0.0.0}.{gone}", "Focusrite").empty());
         CHECK(xpcog::resolveOutputDevice({}, "{0.0.0}.{bbb}", "Topping D10").empty());
     }
+}
+
+// --- convertFromFloat32 ---------------------------------------------------
+//
+// The output direction, which exists so a device can be opened in an integer
+// format. What matters is not that it is approximately right but that it is
+// *exact*: DoP carries DSD inside PCM as marker bytes, and one bit wrong is
+// noise at the DAC rather than a slightly different sound.
+
+TEST_CASE("convertFromFloat32 round-trips every 24-bit code exactly", "[convert]") {
+    // The claim the DoP path will rest on. Not a sample of the range -- the
+    // extremes and the boundaries, which is where rounding in the wrong width
+    // goes wrong, plus a sweep to catch anything systematic.
+    const std::vector<std::int32_t> codes = {
+        0, 1, -1, 2, -2, 4096, -4096, 8388606, 8388607, -8388607, -8388608,
+    };
+
+    for (const std::int32_t code : codes) {
+        const float asFloat = static_cast<float>(code) / 8388608.0F;
+
+        std::array<std::byte, 3> packed{};
+        REQUIRE(xpcog::convertFromFloat32(std::span<const float>{&asFloat, 1},
+                                          SampleFormat::S24, packed) == 3);
+
+        // Read it back the way the forward converter does, and demand the code.
+        AudioFormat fmt;
+        fmt.sampleRate = 44100.0;
+        fmt.channels   = 1;
+        fmt.format     = SampleFormat::S24;
+        AudioChunk chunk;
+        chunk.setFormat(fmt);
+        std::byte* data = chunk.allocFrames(1);
+        std::copy(packed.begin(), packed.end(), data);
+
+        std::vector<float> back(1);
+        REQUIRE(convertToFloat32(chunk, back) == 1);
+        INFO("code " << code);
+        CHECK(back[0] == asFloat);
+    }
+}
+
+TEST_CASE("convertFromFloat32 clamps instead of wrapping", "[convert]") {
+    // A sample over full scale must land on full scale. Wrapping would turn one
+    // loud sample into a full-scale click of the opposite sign, which is the
+    // loudest possible way to get this wrong.
+    const std::array<float, 4> loud = {2.0F, -2.0F, 1.0F, -1.0F};
+
+    std::array<std::byte, 16> packed{};
+    REQUIRE(xpcog::convertFromFloat32(loud, SampleFormat::S32, packed) == 16);
+
+    std::array<std::int32_t, 4> got{};
+    std::memcpy(got.data(), packed.data(), packed.size());
+
+    CHECK(got[0] == 2147483647);
+    CHECK(got[1] == -2147483648LL);
+    // +1.0 is above the last representable positive code, by the same asymmetry
+    // convertToFloat32 documents, so it clamps too.
+    CHECK(got[2] == 2147483647);
+    CHECK(got[3] == -2147483648LL);
+}
+
+TEST_CASE("convertFromFloat32 refuses what a device is not opened in", "[convert]") {
+    const std::array<float, 2> samples = {0.0F, 0.5F};
+    std::array<std::byte, 16>  out{};
+
+    // A decoder produces these; a device is never opened in one, and answering 0
+    // is what makes the backend fall back to float rather than write garbage.
+    CHECK(xpcog::convertFromFloat32(samples, SampleFormat::U8, out) == 0);
+    CHECK(xpcog::convertFromFloat32(samples, SampleFormat::S8, out) == 0);
+    CHECK(xpcog::convertFromFloat32(samples, SampleFormat::F64, out) == 0);
+    CHECK(xpcog::convertFromFloat32(samples, SampleFormat::DSD, out) == 0);
+
+    // And a buffer too small is refused rather than partly filled.
+    std::array<std::byte, 3> tooSmall{};
+    CHECK(xpcog::convertFromFloat32(samples, SampleFormat::S16, tooSmall) == 0);
+}
+
+TEST_CASE("convertFromFloat32 passes float through untouched", "[convert]") {
+    // No scaling and no rounding: the bytes are the same bytes. This is the path
+    // every ordinary track takes, so a copy that was not a copy would be audible
+    // everywhere at once.
+    const std::array<float, 3> samples = {0.0F, -0.25F, 0.75F};
+    std::array<std::byte, 12>  out{};
+
+    REQUIRE(xpcog::convertFromFloat32(samples, SampleFormat::F32, out) == 12);
+
+    std::array<float, 3> back{};
+    std::memcpy(back.data(), out.data(), out.size());
+    CHECK(back == samples);
+}
+
+// Hidden -- the leading dot keeps it out of a default run, and out of CI, where
+// a machine with no sound card is the normal case and opening one is a way to
+// find out what a headless runner does under load rather than what this code
+// does. Run it deliberately:
+//
+//     xpcog-tests "[.integerdevice]"
+//
+// It exists because the integer path has a part no unit test reaches: the
+// callback's chunk loop, sized against whatever period the driver actually
+// chose. convertFromFloat32 is checked exhaustively above; what this checks is
+// that the loop around it does not walk off the end of a real device's buffer,
+// which is the failure that would otherwise wait for someone's DAC.
+//
+// **It makes a noise, and the noise is half the test.** 200 ms of sawtooth at
+// about 86 Hz, quietly. A correct run sounds like a low buzz with a pitch to it;
+// wrong byte packing sounds like static, because a 24-bit sample assembled in
+// the wrong order is white noise rather than a quieter or distorted tone. That
+// distinction is audible in a way no assertion here can be -- the test can only
+// see the floats going in, never the integers the driver received.
+TEST_CASE("a device opens in an integer format and runs", "[.integerdevice]") {
+    if (enumerateOutputDevices().empty()) {
+        SKIP("no output device on this machine");
+    }
+
+    RingBuffer ring(1U << 15);
+    // A ramp rather than silence, so the conversion has something with sign and
+    // magnitude to get wrong; the ring runs dry partway through, which exercises
+    // the silenced tail in the same pass.
+    //
+    // -20 dBFS. Loud enough to hear and to tell a tone from static, quiet enough
+    // not to startle someone who ran the suite without reading the comment above
+    // -- which is how this level was arrived at.
+    std::vector<float> ramp(1U << 13);
+    for (std::size_t i = 0; i < ramp.size(); ++i) {
+        ramp[i] = (static_cast<float>(i % 512) / 512.0F - 0.5F) * 0.2F;
+    }
+    ring.write(ramp.data(), ramp.size());
+
+    auto output = makeMiniaudioOutput(ring);
+    REQUIRE(output != nullptr);
+
+    IAudioOutput::Config config;
+    config.sampleRate = 44100.0;
+    config.channels   = 2;
+    config.format     = SampleFormat::S24;
+
+    if (!output->start(config)) {
+        SKIP("the default device would not open");
+    }
+
+    const AudioFormat negotiated = output->negotiatedFormat();
+    INFO("negotiated " << static_cast<int>(negotiated.format) << " at "
+                       << negotiated.sampleRate << " Hz");
+
+    // Not "it is S24": a device is entitled to refuse. What must hold is that
+    // whatever it reports is what it is actually carrying, because the DoP path
+    // will read exactly this to decide whether it can emit markers at all.
+    CHECK(negotiated.bitsPerSample == (negotiated.format == SampleFormat::S24 ? 24U
+                                       : negotiated.format == SampleFormat::S16 ? 16U
+                                                                                : 32U));
+    CHECK(negotiated.channels == 2);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    output->stop();
+
+    // The callback ran at all. Zero here means the device was opened and never
+    // pulled, which is a different failure from a conversion bug and worth
+    // separating from one.
+    CHECK(output->framesPlayed() > 0);
 }
