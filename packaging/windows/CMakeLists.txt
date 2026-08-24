@@ -21,6 +21,14 @@
 find_program(XPCOG_MAKENSIS
     NAMES makensis
     HINTS
+        # negrutiu's fork before the official build, for the reason the probe
+        # below sets out: it is the one that can emit a 64-bit installer. Its
+        # own installer offers NSIS_FORK as the directory precisely so that it
+        # can sit beside an official copy, so a machine with both keeps both and
+        # this picks the more capable one.
+        "$ENV{PROGRAMFILES}/NSIS_FORK"
+        "$ENV{PROGRAMW6432}/NSIS_FORK"
+        "$ENV{ProgramFiles\(x86\)}/NSIS_FORK"
         "$ENV{PROGRAMFILES}/NSIS"
         "$ENV{ProgramFiles\(x86\)}/NSIS"
         "$ENV{PROGRAMW6432}/NSIS"
@@ -45,6 +53,71 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     message(STATUS
         "XPCog: the `installer` target in a Debug tree packages debug runtime "
         "DLLs, which cannot be redistributed. Use windows-release to ship.")
+endif()
+
+# A 32-bit or a 64-bit installer, decided by asking this compiler rather than by
+# being told which one it is.
+#
+# Every official NSIS emits a 32-bit installer and nothing else. The `Target`
+# directive exists there -- 3.07 and later -- but the stubs beside it are
+# x86-ansi and x86-unicode, so `Target amd64-unicode` is a compile error rather
+# than a different output. negrutiu's fork (https://github.com/negrutiu/nsis)
+# ships amd64-unicode stubs and the matching plugins, and changes nothing else:
+# the script below is the same script either way.
+#
+# What a 64-bit installer buys, given that a 32-bit one installs a 64-bit
+# program perfectly well and almost every Windows application ships exactly
+# that: it stands on the same side of WoW64 as the program it installs. The
+# registry view is the case that matters and the script says so at SetRegView --
+# a 32-bit installer writing HKLM\Software lands in WOW6432Node while XPCog.exe
+# reads the 64-bit view. That is fixable from the script, and is fixed there, but
+# the whole class of it stops existing when the stub is native.
+#
+# What it costs is one message. A 32-bit Windows cannot start a 64-bit installer
+# at all, so instead of this script's "XPCog requires 64-bit Windows" the user
+# gets the shell's "This app can't run on your PC". The triplet is x64-windows;
+# there was never going to be anything to install on that machine.
+#
+# Probed by compiling rather than by reading a version string, because what
+# matters is whether the amd64 stubs are installed and the version does not say.
+# The answer is cached against the path it was measured for, so a reconfigure
+# does not pay for it and changing XPCOG_MAKENSIS does.
+if(NOT XPCOG_NSIS_AMD64_PROBED STREQUAL XPCOG_MAKENSIS)
+    set(_probe_dir "${CMAKE_CURRENT_BINARY_DIR}/amd64-probe")
+    file(MAKE_DIRECTORY "${_probe_dir}")
+    file(WRITE "${_probe_dir}/probe.nsi"
+        "Target amd64-unicode\n"
+        "OutFile \"probe.exe\"\n"
+        "RequestExecutionLevel user\n"
+        "Section\n"
+        "SectionEnd\n")
+    execute_process(
+        COMMAND "${XPCOG_MAKENSIS}" -V1 "probe.nsi"
+        WORKING_DIRECTORY "${_probe_dir}"
+        RESULT_VARIABLE _probe_result
+        OUTPUT_QUIET
+        ERROR_QUIET)
+    if(_probe_result EQUAL 0)
+        set(XPCOG_NSIS_AMD64 ON CACHE INTERNAL "makensis can emit a 64-bit installer")
+    else()
+        set(XPCOG_NSIS_AMD64 OFF CACHE INTERNAL "makensis can emit a 64-bit installer")
+    endif()
+    set(XPCOG_NSIS_AMD64_PROBED "${XPCOG_MAKENSIS}" CACHE INTERNAL
+        "the makensis XPCOG_NSIS_AMD64 was measured for")
+    file(REMOVE_RECURSE "${_probe_dir}")
+endif()
+
+if(XPCOG_NSIS_AMD64)
+    set(XPCOG_NSIS_TARGET "Target amd64-unicode")
+    message(STATUS "XPCog: NSIS at ${XPCOG_MAKENSIS} -- 64-bit installer")
+else()
+    # Unicode true is what the script carried before there was a choice, and is
+    # what `Target x86-unicode` means; spelled the old way so that this line
+    # also compiles under an NSIS older than 3.07.
+    set(XPCOG_NSIS_TARGET "Unicode true")
+    message(STATUS
+        "XPCog: NSIS at ${XPCOG_MAKENSIS} -- 32-bit installer. "
+        "negrutiu's NSIS fork builds a 64-bit one; see packaging/windows/CMakeLists.txt.")
 endif()
 
 # NSIS wants four integers; the project has three.

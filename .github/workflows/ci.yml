@@ -551,3 +551,201 @@ jobs:
         with:
           path: .vcpkg-cache
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+  installer:
+    # The Windows installer, built the way it would ship rather than merely
+    # proved to compile.
+    #
+    # It is a job of its own and not a step on the Windows matrix entry, for the
+    # reason packaging/windows/CMakeLists.txt prints as a status line: a Debug
+    # tree links the debug CRT and the debug wx DLLs, neither of which may be
+    # redistributed, so an installer built from one fails on any machine without
+    # Visual Studio. The matrix job is a Debug tree because that is what runs the
+    # test suite. This one is RelWithDebInfo because that is what a person
+    # downloads.
+    #
+    # `windows-app-release` rather than `windows-release`: the CLI and the three
+    # test binaries are built by the matrix job and left out of the installer by
+    # Harvest.cmake's allowlist anyway, so building them here would be link time
+    # spent on files that get skipped and reported. vcpkg installs the same
+    # packages either way -- XPCOG_BUILD_CLI and XPCOG_BUILD_TESTS are ours, not
+    # features -- which is what makes the cache key below able to fall back on
+    # the matrix job's.
+    #
+    # This runs on pull requests too, and not only on main. Packaging breaks in
+    # ways compiling does not: an asset directory that stopped being staged, a
+    # DLL applocal no longer copies, an NSIS section referring to a file the
+    # harvest no longer finds. All of those are invisible to every other job here
+    # and none of them is worth discovering at release time.
+    name: Windows installer
+    runs-on: windows-2022
+    # See the matrix job above for why.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # See the matrix job: MinGW's gcc sits earlier on the runner's PATH and the
+      # Ninja generator does not activate the MSVC environment by itself.
+      - name: Activate MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # NSIS, from negrutiu's fork rather than from whatever the runner image
+      # happens to carry.
+      #
+      # The image does have an official NSIS today, and it would build an
+      # installer. Two reasons not to leave it at that. That NSIS emits a 32-bit
+      # installer and only that -- packaging/windows/CMakeLists.txt sets out what
+      # the difference is worth, and probes for the fork on a developer machine
+      # for the same reason -- and a runner image is a moving target for the tool
+      # that decides what people download. `installer` is not a target that fails
+      # when makensis is missing; it is a target that does not exist, because the
+      # CMake file returns early on purpose so that a developer without NSIS gets
+      # a working build rather than a configure failure. In CI that absence would
+      # arrive a quarter of an hour later as `ninja: unknown target 'installer'`.
+      #
+      # Pinned to a release, like the encoder downloads above and for the same
+      # reason: the compiler that builds what people download changes when this
+      # file says it does. Bump it against
+      # https://github.com/negrutiu/nsis/releases. `@v3` and not `@v2` because
+      # the `version` input arrived in v3; on v2 it would be ignored and this
+      # would silently track whatever `latest` is.
+      #
+      # `arch` is the compiler's own bitness and not the installer's -- either
+      # build emits either stub. It matters here for where the files land: amd64
+      # installs to Program Files, leaving the image's official NSIS alone in
+      # Program Files (x86), and packaging/windows/CMakeLists.txt looks in that
+      # order. The architecture of what ships is the script's `Target` line, and
+      # the check after Configure is what confirms it.
+      - name: Install NSIS
+        uses: negrutiu/nsis-install@v3
+        with:
+          distro: negrutiu
+          version: v3.13.7497.330
+          arch: amd64
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          runVcpkgInstall: false
+          # See the matrix job: an overlay port's manifest is also a vcpkg.json.
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
+
+      # Two restore keys, and the second one is the point. `windows-app-release`
+      # asks vcpkg for exactly the package set `windows-debug` does -- same
+      # triplet, same feature list, and the x64-windows triplet builds each port
+      # in both configurations regardless -- so the matrix job's cache is a
+      # complete answer for this one. Without the fallback the first run on any
+      # manifest change would build all forty-one ports from source for a second
+      # time in the same workflow.
+      #
+      # It still saves under a key of its own rather than sharing one, so that
+      # neither job's save step is storing the other's misses.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-v3-windows-app-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          restore-keys: |
+            vcpkg-v3-windows-app-release-
+            vcpkg-v3-windows-debug-
+
+      # See the matrix job: vcpkg creates this, but not if configure dies first.
+      - name: Prepare the binary cache directory
+        shell: bash
+        run: mkdir -p .vcpkg-cache
+
+      # The Last.fm credentials, and this is the only job that gets them.
+      #
+      # Through the environment rather than `-D`, which app/CMakeLists.txt
+      # supports for the reason it gives there: a -D lands in CMakeCache.txt and
+      # outlives the run that supplied it. Reading the environment leaves nothing
+      # behind and keeps the value off the command line the log echoes.
+      #
+      # What this does *not* do is hide the key. It is compiled into XPCog.exe,
+      # which is the whole point of a client API key and exactly what Cog does;
+      # anyone who can download this installer can read it out of the binary. The
+      # secrets exist so that the key is not in a public git history where it
+      # gets scraped and revoked, not because the shipped program keeps it.
+      #
+      # Set them as repository secrets named LASTFM_API_KEY and LASTFM_API_SECRET
+      # (Settings -> Secrets and variables -> Actions), from the application
+      # registered at https://www.last.fm/api/account/create. A build without
+      # them still succeeds: every line of the scrobbling code compiles and the
+      # preferences pane reports the feature as unavailable. That is why the
+      # check below exists rather than a build failure being relied on.
+      - name: Configure
+        id: configure
+        shell: bash
+        env:
+          XPCOG_LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          XPCOG_LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: cmake --preset windows-app-release 2>&1 | tee configure.log
+
+      # Asserted from the configure output rather than from the secret being
+      # non-empty, because those are different claims. A secret that is set but
+      # holds a trailing newline, a key without its matching secret, a rename of
+      # either cache variable: all of them leave the workflow looking correct and
+      # produce an installer whose Last.fm pane says the feature is not available
+      # in this build. The status line app/CMakeLists.txt prints is the build's
+      # own account of what it did, so that is what gets read.
+      #
+      # Skipped for pull requests from forks, where GitHub withholds secrets by
+      # design. Those runs package an installer without scrobbling, which is the
+      # correct outcome and not a failure -- the packaging is what they are
+      # testing.
+      - name: Check the Last.fm credentials were baked in
+        if: github.event.pull_request.head.repo.fork != true
+        shell: bash
+        run: |
+          if ! grep -q "Last.fm: API key configured" configure.log; then
+              echo "::error::configure reports no Last.fm API key. Set the LASTFM_API_KEY and LASTFM_API_SECRET repository secrets; see the Configure step for what they are."
+              exit 1
+          fi
+          echo "Last.fm credentials reached the build."
+
+      # The other half of what Configure decided, and it is asserted here rather
+      # than assumed because the failure is silent by construction: find_program
+      # would happily pick the image's official NSIS, the amd64 probe would come
+      # back negative, and the job would go green having built a 32-bit
+      # installer. Which works -- that is the whole trouble with it.
+      - name: Check the installer will be 64-bit
+        shell: bash
+        run: |
+          if ! grep -q "64-bit installer" configure.log; then
+              echo "::error::configure did not choose a 64-bit installer. $(grep -i 'XPCog: NSIS' configure.log || echo 'no NSIS line in the configure log at all')"
+              exit 1
+          fi
+          grep "XPCog: NSIS" configure.log
+
+      - name: Build
+        run: cmake --build --preset windows-app-release
+
+      # Named explicitly because `installer` is deliberately not part of ALL.
+      - name: Build the installer
+        run: cmake --build --preset windows-app-release --target installer
+
+      # if-no-files-found: error, because the harvest and makensis both report
+      # what they skipped on stdout and a green job with no setup.exe in it is
+      # the one way this could fail quietly.
+      #
+      # The .exe is unsigned, as the local build's is. Windows SmartScreen will
+      # say so to anyone who runs it.
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: XPCog-windows-x64-installer
+          path: build/windows-app-release/XPCog-*-x64-setup.exe
+          if-no-files-found: error
+
+      # See the matrix job: gated on configure, not on the job as a whole.
+      - name: Save vcpkg binary cache
+        if: >-
+          always() && steps.configure.outcome == 'success'
+          && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}

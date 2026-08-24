@@ -128,6 +128,18 @@ To build the toolkit through vcpkg anyway, add the feature back:
 if it is installed; without it the target simply does not exist, because NSIS is
 needed to package XPCog and not to build or run it.
 
+[**negrutiu's fork**](https://github.com/negrutiu/nsis) is preferred when both
+are present — it installs alongside the official one, under `NSIS_FORK`, and is
+the only NSIS that emits a *64-bit* installer. Configuring says which it found
+and which kind of installer that makes; the choice is measured by compiling a
+two-line script, not by reading a version. An official NSIS builds a 32-bit
+installer of the same 64-bit XPCog, which is what almost every Windows
+application ships and is entirely fine — the difference is that a native
+installer is on the same side of WoW64 as the program it installs, and cannot
+have its registry writes redirected out from under it. A build tree configured
+before the fork was installed keeps the compiler it found: `cmake -S . -B
+build\windows-release -U XPCOG_MAKENSIS` makes it look again.
+
 ```bat
 cmake --build build\windows-release --target installer
 :: -> build\windows-release\XPCog-0.1.0-x64-setup.exe
@@ -158,6 +170,14 @@ XPCog-0.1.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 with nobody there to answer it; without it, pushing XPCog to a fleet would
 rearrange every machine's file associations on a default chosen for someone
 clicking through a wizard.
+
+**CI builds one on every run.** The `Windows installer` job installs the fork
+through [`negrutiu/nsis-install`](https://github.com/negrutiu/nsis-install) at a
+pinned release, configures `windows-app-release`, packages it, and attaches
+`XPCog-<version>-x64-setup.exe` to the run as an artifact — so a pull request that breaks the packaging says so
+where it broke rather than at release time. It is unsigned, as a locally built
+one is. Its Last.fm credentials come from repository secrets; see
+[Last.fm](#lastfm) below.
 
 ### Linux: building against the distribution's libraries
 
@@ -491,7 +511,13 @@ op run --env-file=lastfm.env -- cmake --preset windows-debug
 ```
 
 Configure prints `Last.fm: API key configured`, or says the feature will report
-itself unavailable. To check a key works before wiring anything up:
+itself unavailable. CI reads the same two values out of the
+`LASTFM_API_KEY` and `LASTFM_API_SECRET` repository secrets, by that same
+environment path, and only in the job that builds the Windows installer — no
+other job produces something a person downloads. That job fails when configure
+reports no key, because the alternative is shipping an installer whose Last.fm
+pane is greyed with nothing to say why. A pull request from a fork cannot see
+secrets and packages exactly such a build, deliberately. To check a key works before wiring anything up:
 
 ```
 XPCOG_LASTFM_API_KEY=... XPCOG_LASTFM_API_SECRET=... xpcog-tests "[.lastfmlive]"

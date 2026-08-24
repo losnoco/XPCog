@@ -32,7 +32,12 @@
 ; installed with is baked into the UninstallString, so Add/Remove Programs
 ; passes the right one without anyone having to remember.
 
-Unicode true
+; `Target amd64-unicode` with an NSIS that has the stubs for it, and `Unicode
+; true` -- a 32-bit installer -- with one that does not. Which of the two this
+; is was decided at configure time by compiling a two-line script and seeing
+; whether it built; packaging/windows/CMakeLists.txt says what the choice is
+; worth. Both installers install the same 64-bit XPCog.
+@XPCOG_NSIS_TARGET@
 ManifestDPIAware true
 SetCompressor /SOLID lzma
 CRCCheck on
@@ -313,6 +318,20 @@ SectionEnd
 ; Entry points.
 ; ---------------------------------------------------------------------------
 Function .onInit
+    ; The 64-bit registry, whichever installer this was built as.
+    ;
+    ; A 32-bit installer writing HKLM\Software gets WOW6432Node under it, while
+    ; XPCog.exe -- 64-bit, always -- reads the 64-bit view. Everything this
+    ; script keeps in the registry is read back by something on the other side of
+    ; that: Add/Remove Programs finds the entry either way, but a second run of
+    ; this installer looks up InstallLocation to discover where the first one put
+    ; things, and the app's own --register writes its file associations natively.
+    ; Without this line an upgrade built with a different NSIS would fail to see
+    ; the earlier install and put a second copy beside it.
+    ;
+    ; Before MULTIUSER_INIT, because that is what reads the key.
+    SetRegView 64
+
     ; x64 only, and said plainly here rather than discovered as "the application
     ; was unable to start correctly (0xc000007b)" after a successful install.
     ; The triplet is x64-windows; there is no 32-bit build to fall back to.
@@ -362,6 +381,11 @@ Function .onInit
 FunctionEnd
 
 Function un.onInit
+    ; The view the installer wrote in. See .onInit; DeleteRegKey in SecUninstall
+    ; would otherwise remove a key nobody wrote and leave the real one behind, as
+    ; an Add/Remove Programs entry for a program that is no longer there.
+    SetRegView 64
+
     ; The same clobber, and here the correct value is never in doubt: an
     ; uninstaller's $INSTDIR is the directory it is running from, or the one
     ; passed as _?= by the upgrade path in SecCore. MULTIUSER_UNINIT replaces it
