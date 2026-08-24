@@ -82,7 +82,7 @@ PlaylistEntry fullyPopulatedEntry() {
 TEST_CASE("a new database migrates to the current schema", "[library]") {
     const Library library = openMemoryLibrary();
     REQUIRE(library.isOpen());
-    REQUIRE(library.schemaVersion() == 1);
+    REQUIRE(library.schemaVersion() == 2);
 }
 
 TEST_CASE("migrations are not reapplied", "[library]") {
@@ -93,13 +93,13 @@ TEST_CASE("migrations are not reapplied", "[library]") {
     {
         Library library;
         REQUIRE(library.open(path));
-        REQUIRE(library.schemaVersion() == 1);
+        REQUIRE(library.schemaVersion() == 2);
     }
     {
         // Reopening must not try to CREATE TABLE again, which would fail.
         Library library;
         REQUIRE(library.open(path));
-        REQUIRE(library.schemaVersion() == 1);
+        REQUIRE(library.schemaVersion() == 2);
         REQUIRE(library.lastError().empty());
     }
 
@@ -238,6 +238,45 @@ TEST_CASE("artwork is stored once per distinct image", "[library]") {
     REQUIRE(library.artwork("nothing stored under this").empty());
 }
 
+TEST_CASE("text shared between entries survives the dictionary", "[library]") {
+    // Repeated text is stored once and referred to by id, so the interesting
+    // case is the second entry: its strings come back from the write cache
+    // rather than the table, and a mix-up there would give one entry another's
+    // album. Multi-value tags matter too -- ordinal ordering has to survive the
+    // indirection, and the tag select now sorts by the dictionary's text.
+    Library library = openMemoryLibrary();
+
+    Playlist playlist;
+    for (int i = 0; i < 3; ++i) {
+        PlaylistEntry entry;
+        entry.url         = Url::fromLocalPath(
+            pathFromUtf8("/music/shared/" + std::to_string(i) + ".flac"));
+        entry.album       = "One Album";
+        entry.albumArtist = "One Artist";
+        entry.comment     = std::string(4096, 'c');  // the kind of thing worth sharing
+        entry.rawTitle    = "Track " + std::to_string(i);
+        entry.metadata.add("performer", "First");
+        entry.metadata.add("performer", "Second");
+        entry.metadata.add("performer", "Third");
+        playlist.add(std::move(entry));
+    }
+    REQUIRE(library.savePlaylist(playlist));
+
+    Playlist restored;
+    REQUIRE(library.loadPlaylist(restored));
+    REQUIRE(restored.size() == 3);
+
+    for (std::size_t i = 0; i < restored.size(); ++i) {
+        const PlaylistEntry& entry = restored.at(i);
+        CHECK(entry.album == "One Album");
+        CHECK(entry.albumArtist == "One Artist");
+        CHECK(entry.comment == std::string(4096, 'c'));
+        CHECK(entry.rawTitle == "Track " + std::to_string(i));
+
+        CHECK(entry.metadata.joined("performer", "|") == "First|Second|Third");
+    }
+}
+
 TEST_CASE("unreferenced artwork is pruned", "[library]") {
     Library library = openMemoryLibrary();
 
@@ -251,9 +290,14 @@ TEST_CASE("unreferenced artwork is pruned", "[library]") {
     playlist.add(std::move(entry));
     REQUIRE(library.savePlaylist(playlist));
 
-    REQUIRE(library.pruneArtwork() == 1);
+    // Saving prunes: the transaction that decides which covers are referenced is
+    // the right place to drop the ones that are not, and leaving it to a caller
+    // meant nobody did it. So by here the orphan is already gone, and the
+    // explicit sweep -- still public, and still what a caller would reach for
+    // outside a save -- has nothing left to find.
     REQUIRE_FALSE(library.artwork(kept).empty());
     REQUIRE(library.artwork(orphan).empty());
+    CHECK(library.pruneArtwork() == 0);
 }
 
 TEST_CASE("play counts accumulate on the natural key", "[library]") {

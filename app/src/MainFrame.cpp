@@ -1579,6 +1579,22 @@ void MainFrame::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow,
         return;
     }
 
+    // Embedded covers go to the artwork table, which is content-addressed, and
+    // leave a hash behind on the entry. Here because this is the first point at
+    // which a scanned entry and the library are both in reach.
+    //
+    // The table exists precisely so an album's twelve tracks hold one copy of
+    // their cover between them rather than twelve. Nothing called this, so every
+    // cover was persisted the other way instead -- as a blob on the entry's tag
+    // rows, once per track. A library with high-resolution art embedded in it
+    // reached gigabytes that way, which is most of what made saving and loading
+    // the playlist slow.
+    if (library_) {
+        for (PlaylistEntry& entry : entries) {
+            static_cast<void>(library_->adoptArtwork(entry));
+        }
+    }
+
     // The row a drop targeted may no longer exist: the scan took time and the
     // user could have edited the playlist meanwhile. insert() clamps, so this
     // lands at the end rather than nowhere.
