@@ -162,17 +162,30 @@ void StatusPresence::refreshTooltip() {
     SetIcon(applicationIconAt(16), toWx(text));
 }
 
-void StatusPresence::notify(const std::string& title, const std::string& body) {
-    if (!hasTrayIcon_) {
-        return;
-    }
+void StatusPresence::notify(const std::string& title, const std::string& body,
+                            const wxIcon& icon) {
     // wxNotificationMessage rather than a balloon: ShowBalloon() is MSW-only,
     // and this is the portable spelling that also reaches a Linux desktop's
     // notification daemon.
     wxNotificationMessage message(toWx(title), toWx(body), frame_);
+
+    if (icon.IsOk()) {
+        // Honoured in the MSW balloon path, which passes it straight to
+        // ShowBalloon (wxWidgets/src/msw/notifmsg.cpp). Elsewhere it is a request
+        // the platform may decline, which is why nothing branches on it.
+        message.SetIcon(icon);
+    }
+
 #if defined(__WXMSW__)
-    message.UseTaskBarIcon(this);
+    // Only when there is one to offer. UseTaskBarIcon() hands wx *our* icon to
+    // hang the balloon on; handing it one that was never installed would leave
+    // the balloon with nothing to come from, where passing nothing at all lets
+    // wx make its own.
+    if (hasTrayIcon_) {
+        message.UseTaskBarIcon(this);
+    }
 #endif
+
     message.Show();
 }
 

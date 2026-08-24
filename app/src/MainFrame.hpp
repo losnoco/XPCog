@@ -143,6 +143,15 @@ private:
     /// twenty fields per file.
     void refreshInfo();
 
+    /// Announces a track as it starts, if the listener wants announcing.
+    ///
+    /// Cog's, from PlaybackEventController -performPlaybackDidBeginActions:
+    /// (:148-200), including the shape of the text and the decision not to
+    /// suppress it while the window is in front -- Cog does not check, and a
+    /// player whose notification depends on where the focus is is a player whose
+    /// notifications look unreliable.
+    void notifyTrack(const PlaylistEntry* entry);
+
     /// Redraws the lyrics pane, on the same rule and with the same guard.
     ///
     /// Separate from refreshInfo() rather than folded into it because the two

@@ -132,6 +132,8 @@ constexpr std::array kCuratedKeys = {
     "spectrumShowPeaks",
     // General
     "sentryConsented",
+    // Notifications
+    "notifications.enable", "notifications.show-album-art",
 };
 
 /// Not settings at all, but internal state that happens to live in the same
@@ -437,6 +439,7 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings)
     page(buildPlaylistPane(book), "Playlist");
     page(buildOutputPane(book), "Output");
     page(buildGeneralPane(book), "General");
+    page(buildNotificationsPane(book), "Notifications");
     // Absent on macOS. Its only control is the close-to-tray checkbox, which is
     // already Windows and Linux only -- macOS closes to the Dock unconditionally,
     // by platform convention rather than by preference -- so what remains there is
@@ -521,6 +524,26 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
         row->note("This build was compiled without crash reporting, so there is "
                   "nothing to turn on.");
     }
+
+    auto* layout = new wxBoxSizer(wxVERTICAL);
+    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
+    pane->SetSizer(layout);
+    return pane;
+}
+
+wxWindow* PreferencesDialog::buildNotificationsPane(wxWindow* parent) {
+    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* form = makeForm(pane->FromDIP(6));
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
+
+    // Cog's two, with Cog's labels and Cog's defaults -- both on.
+    row->toggle("Enable notifications", "notifications.enable");
+    row->toggle("Show album art", "notifications.show-album-art");
+    row->note("Announced as each track starts. Where the cover appears, and how "
+              "long the notice stays, is the desktop's decision rather than "
+              "XPCog's -- on Windows it is a notification-area balloon, and a "
+              "system set to Focus Assist or Do Not Disturb will hold it back.");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));

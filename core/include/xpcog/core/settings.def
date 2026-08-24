@@ -190,6 +190,45 @@ XPCOG_SETTING(CloseToTray, bool, "closeToTray", false)
 /// Set back to false to see it again.
 XPCOG_SETTING(TrayHideAnnounced, bool, "trayHideAnnounced", false)
 
+// --- notifications --------------------------------------------------------
+
+/// Announce each track as it starts. Cog's `notifications.enable`, and Cog's
+/// default: **on**.
+///
+/// The one setting here whose default is on rather than off, and it is Cog's
+/// call rather than a new one. A player that says what it just started is doing
+/// the thing the listener asked for; the tray notice next door defaults to
+/// showing once precisely because *it* is about the application rather than
+/// about the music.
+///
+/// The keys carry Cog's dots. Every other key in this file is a flat
+/// identifier, and SettingsStore.hpp asks that they stay that way -- but the
+/// thing it asks for is no '/' or '=', because those are what the three stores
+/// would have to escape. A '.' is a value name in the registry, a key in a
+/// plist, and text before the first '=' in the file store, so it costs nothing.
+/// Matching Cog exactly is worth more than tidiness in a file nobody reads by
+/// hand: a preferences plist carried over from Cog brings the answer with it.
+XPCOG_SETTING(NotificationsEnable, bool, "notifications.enable", true)
+
+/// Put the cover in the notification, where the platform can show one.
+///
+/// Cog's `notifications.show-album-art`, on as it is there. Cog attaches the art
+/// by writing it to a temp file, because UNNotificationAttachment takes a URL
+/// (PlaybackEventController.m:190-200); wx takes a wxIcon, so nothing is written
+/// to disk here.
+///
+/// Honoured where the platform's notification can carry an image and ignored
+/// where it cannot, which is a real difference rather than a bug -- see
+/// StatusPresence::notifyTrack().
+XPCOG_SETTING(NotificationsShowAlbumArt, bool, "notifications.show-album-art", true)
+
+/// **Not ported: `notifications.itunes-style`.** Cog reads it, defaults it to
+/// true, and no longer offers it in the Notifications pane -- and what it
+/// selects is a second notification style built on the deprecated
+/// NSUserNotification path that exists alongside the UNUserNotificationCenter
+/// one. There is one notification API here and no second style for a setting to
+/// choose between, so a key for it would be a switch wired to nothing.
+
 /// Which track the Info and Lyrics panes describe. 0 selection, 1 playback.
 ///
 /// **No Cog counterpart**, and the default is Cog's behaviour so that it needs

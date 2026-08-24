@@ -31,7 +31,9 @@
 #include <wx/dirdlg.h>
 #include <wx/gauge.h>
 #include <wx/hyperlink.h>
+#include <wx/icon.h>
 #include <wx/menu.h>
+#include <wx/mstream.h>
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
 #include <wx/settings.h>
@@ -841,6 +843,53 @@ void MainFrame::refreshLyrics() {
     lyrics_->showEntry(playlist_.find(panelTrackId()));
 }
 
+void MainFrame::notifyTrack(const PlaylistEntry* entry) {
+    if (entry == nullptr || entry->error || !settings_.NotificationsEnable()) {
+        return;
+    }
+
+    // Cog's text, from PlaybackEventController.m:172-186. "Now Playing" is the
+    // title; the body is the track title, then artist and album on the line
+    // below, joined only where both exist so that a file with neither does not
+    // announce itself with a dangling dash.
+    std::string subtitle;
+    if (!entry->artist.empty() && !entry->album.empty()) {
+        subtitle = entry->artist + " - " + entry->album;
+    } else if (!entry->artist.empty()) {
+        subtitle = entry->artist;
+    } else {
+        subtitle = entry->album;
+    }
+
+    std::string body = entry->title();
+    if (!subtitle.empty()) {
+        body += "\n" + subtitle;
+    }
+
+    // The cover, decoded from the library the same way the info panel decodes it.
+    // Cog writes the art to a temp file because UNNotificationAttachment takes a
+    // URL (PlaybackEventController.m:190-200); wx takes a wxIcon, so nothing
+    // touches the disk here.
+    wxIcon cover;
+    if (settings_.NotificationsShowAlbumArt() && library_ && !entry->artHash.empty()) {
+        const std::vector<std::byte> bytes = library_->artwork(entry->artHash);
+        if (!bytes.empty()) {
+            wxMemoryInputStream stream(bytes.data(), bytes.size());
+            wxImage             image;
+            if (image.LoadFile(stream, wxBITMAP_TYPE_ANY) && image.IsOk()) {
+                // Scaled down first. A balloon draws this at icon size, and
+                // handing it a 1500-pixel scan means the platform rescales a
+                // megabyte of cover art on the interface thread once a track.
+                const int side = FromDIP(48);
+                image.Rescale(side, side, wxIMAGE_QUALITY_HIGH);
+                cover.CopyFromBitmap(wxBitmap(image));
+            }
+        }
+    }
+
+    presence_->notify("Now Playing", body, cover);
+}
+
 void MainFrame::setMiniMode(bool mini) {
     if (mini) {
         if (mini_ == nullptr) {
@@ -1430,6 +1479,7 @@ void MainFrame::onCurrentTrackChanged(TrackId id) {
     publishNowPlaying(id);
     refreshInfo();
     refreshLyrics();
+    notifyTrack(entry);
 }
 
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {

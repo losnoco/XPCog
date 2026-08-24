@@ -109,6 +109,18 @@ TEST_CASE("settings return their defaults when unset", "[settings]") {
     // mode is a deliberate departure from Cog, so it must be the one you choose
     // rather than the one you get.
     CHECK(settings.PanelFollowMode() == 0);
+
+    // Cog's defaults, and the only two in this file that default to *on*. Both
+    // are Cog's call rather than a new one, so an installation carrying a Cog
+    // plist over keeps behaving the way it did.
+    CHECK(settings.NotificationsEnable());
+    CHECK(settings.NotificationsShowAlbumArt());
+
+    // The keys keep Cog's dots. Pinned because a well-meaning tidy to
+    // `notificationsEnable` would compile, pass every other test, and silently
+    // stop reading the value an imported Cog plist actually carries.
+    CHECK(Settings::defaultValue("notifications.enable") == "true");
+    CHECK(Settings::defaultValue("notifications.show-album-art") == "true");
 }
 
 TEST_CASE("crash reporting is off until it is consented to", "[settings]") {

@@ -49,14 +49,18 @@ public:
 private:
     // One pane per screen, named and ordered after Cog's own
     // (Preferences/Preferences/GeneralPreferencesPlugin.m:44) minus the panes
-    // that have nothing to hold here: Hot Keys, Notifications and Rubber Band are
-    // unported. Cog's General pane is sandbox paths and crash reporting, and only
+    // that have nothing to hold here: Rubber Band is unported, and Hot Keys is
+    // not coming -- its seven shortcuts are media keys, which SMTC, MPRIS and
+    // MediaPlayer.framework already deliver through platform/, so a pane of key
+    // bindings would be a second way to ask for something the OS is already
+    // sending. Cog's General pane is sandbox paths and crash reporting, and only
     // the second of those exists here -- the sandbox is a macOS entitlement
     // arrangement with nothing to port. Spectrum is ours -- Cog keeps its three
     // spectrum rows on Appearance, and there are eight here.
     [[nodiscard]] wxWindow* buildPlaylistPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildOutputPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildGeneralPane(wxWindow* parent);
+    [[nodiscard]] wxWindow* buildNotificationsPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildMidiPane(wxWindow* parent);
     // Appearance is not built on macOS: its one control is Windows and Linux only,
     // and what would be left is a category holding a single greyed-out paragraph.

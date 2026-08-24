@@ -76,9 +76,27 @@ public:
     /// macOS and leave nothing to click.
     [[nodiscard]] bool hasTrayIcon() const { return hasTrayIcon_; }
 
-    /// A transient notification, or nothing where there is no tray. Used once, to
-    /// say the application is still running after its window disappeared.
-    void notify(const std::string& title, const std::string& body);
+    /// A transient notification. `icon` is shown alongside the text where the
+    /// platform's notification can carry one; wxNullIcon asks for the default.
+    ///
+    /// **No tray icon is required, and it used to insist on one.** That guard was
+    /// written for the single caller it then had -- the "still playing, in the
+    /// tray" notice, which is definitionally about a tray -- and it is that
+    /// caller's business rather than this one's, so it now lives there.
+    ///
+    /// What made the guard look necessary is real but does not have this
+    /// consequence: on Windows a notification *is* a taskbar balloon, hung off a
+    /// tray icon. wxMSW creates a temporary one when none was supplied
+    /// (wxWidgets/src/msw/notifmsg.cpp, wxBalloonNotifMsgImpl::SetUpIcon), so the
+    /// notification appears either way. Ours is offered when it exists only so
+    /// the balloon comes from the icon already sitting there rather than from one
+    /// that blinks into existence to carry it.
+    ///
+    /// macOS and Linux need no tray at all: wx goes to NSUserNotificationCenter
+    /// and to the desktop's notification daemon, neither of which knows what a
+    /// tray icon is.
+    void notify(const std::string& title, const std::string& body,
+                const wxIcon& icon = wxNullIcon);
 
     // --- wxTaskBarIcon ----------------------------------------------------
     wxMenu* CreatePopupMenu() override;
