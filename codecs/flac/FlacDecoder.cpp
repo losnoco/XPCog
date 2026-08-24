@@ -1,5 +1,7 @@
 #include "FlacDecoder.hpp"
 
+#include "common/CueSheet.hpp"
+
 #include "../common/OggChain.hpp"
 
 #include <algorithm>
@@ -23,6 +25,21 @@ constexpr std::size_t kMaxBlockBytes = 65535U * 8U * 4U;
     if (bitsPerSample <= 16) return SampleFormat::S16;
     if (bitsPerSample <= 24) return SampleFormat::S24;
     return SampleFormat::S32;
+}
+
+/// How far a sample has to move left to sit at the top of that container.
+///
+/// libFLAC hands back a 32-bit integer carrying the sample in its N least
+/// significant bits, sign-extended -- so a 12-bit sample spans about +/-2^11,
+/// not +/-2^15. Writing that into a 16-bit container unchanged is a recording
+/// four times too quiet, because everything downstream scales by the container
+/// and has no reason to ask what the source depth was. Moving the valid bits up
+/// to meet the container is exact, being a multiply by a power of two, and it is
+/// what Cog's own default case does: it pads to the nearest byte upward and
+/// emits the sample left-aligned (FlacDecoder.m:161-176).
+[[nodiscard]] std::uint32_t containerShift(std::uint32_t bitsPerSample) {
+    const std::uint32_t containerBits = ((bitsPerSample + 7U) / 8U) * 8U;
+    return containerBits > bitsPerSample ? containerBits - bitsPerSample : 0U;
 }
 
 [[nodiscard]] std::string lowercased(std::string_view text) {
@@ -144,14 +161,21 @@ void FlacDecoder::interleave(const FLAC__Frame*       frame,
     const std::uint32_t channels  = frame->header.channels;
     const std::uint32_t blocksize = frame->header.blocksize;
     const std::uint32_t bits      = frame->header.bits_per_sample;
+    const std::uint32_t shift     = containerShift(bits);
 
     std::byte* out = block_.data();
+
+    // Through unsigned, so shifting a negative sample stays arithmetic rather
+    // than relying on how signed overflow is defined.
+    const auto aligned = [shift](FLAC__int32 sample) {
+        return static_cast<std::int32_t>(static_cast<std::uint32_t>(sample) << shift);
+    };
 
     switch (containerFor(bits)) {
         case SampleFormat::S8:
             for (std::uint32_t s = 0; s < blocksize; ++s) {
                 for (std::uint32_t c = 0; c < channels; ++c) {
-                    const auto v = static_cast<std::int8_t>(buffer[c][s]);
+                    const auto v = static_cast<std::int8_t>(aligned(buffer[c][s]));
                     std::memcpy(out, &v, 1);
                     out += 1;
                 }
@@ -161,7 +185,7 @@ void FlacDecoder::interleave(const FLAC__Frame*       frame,
         case SampleFormat::S16:
             for (std::uint32_t s = 0; s < blocksize; ++s) {
                 for (std::uint32_t c = 0; c < channels; ++c) {
-                    const auto v = static_cast<std::int16_t>(buffer[c][s]);
+                    const auto v = static_cast<std::int16_t>(aligned(buffer[c][s]));
                     std::memcpy(out, &v, 2);
                     out += 2;
                 }
@@ -172,7 +196,7 @@ void FlacDecoder::interleave(const FLAC__Frame*       frame,
             // Little-endian 3-byte packing, matching what WAV and `flac -d` write.
             for (std::uint32_t s = 0; s < blocksize; ++s) {
                 for (std::uint32_t c = 0; c < channels; ++c) {
-                    const std::int32_t v = buffer[c][s];
+                    const std::int32_t v = aligned(buffer[c][s]);
                     out[0] = static_cast<std::byte>(v & 0xFF);
                     out[1] = static_cast<std::byte>((v >> 8) & 0xFF);
                     out[2] = static_cast<std::byte>((v >> 16) & 0xFF);
@@ -185,7 +209,7 @@ void FlacDecoder::interleave(const FLAC__Frame*       frame,
         default:
             for (std::uint32_t s = 0; s < blocksize; ++s) {
                 for (std::uint32_t c = 0; c < channels; ++c) {
-                    const std::int32_t v = buffer[c][s];
+                    const std::int32_t v = aligned(buffer[c][s]);
                     std::memcpy(out, &v, 4);
                     out += 4;
                 }
@@ -248,6 +272,41 @@ void FlacDecoder::metadataCb(const FLAC__StreamDecoder*,
 
         self->totalFrames_   = static_cast<std::int64_t>(info.total_samples);
         self->hasStreamInfo_ = true;
+    }
+
+    if (metadata->type == FLAC__METADATA_TYPE_CUESHEET) {
+        // The offsets-only sheet. It carries no titles, so a file that also has
+        // a CUESHEET tag is better served by that; this is what is left when it
+        // does not, and it is still enough to cut the album into tracks.
+        const auto& sheet = metadata->data.cue_sheet;
+        self->cueTrackOffsets_.clear();
+
+        for (std::uint32_t t = 0; t < sheet.num_tracks; ++t) {
+            const auto& track = sheet.tracks[t];
+            // The lead-out closes the sheet rather than naming a track. CD-DA
+            // numbers it 170, and a non-CD sheet 255.
+            if (track.num_indices == 0 || track.number == 170 || track.number == 255) {
+                continue;
+            }
+
+            // INDEX 01 is where the music starts; INDEX 00 is the pre-gap, and
+            // belongs to the track before it as far as playback is concerned.
+            auto offset = static_cast<std::int64_t>(track.offset);
+            for (std::uint32_t i = 0; i < track.num_indices; ++i) {
+                if (track.indices[i].number == 1) {
+                    offset += static_cast<std::int64_t>(track.indices[i].offset);
+                    break;
+                }
+            }
+
+            // Two digits, because that is how a cue sheet writes a track number
+            // and the fragment has to match either spelling of the same track.
+            std::string number = std::to_string(track.number);
+            if (number.size() < 2) {
+                number.insert(number.begin(), '0');
+            }
+            self->cueTrackOffsets_.emplace_back(std::move(number), offset);
+        }
     }
 
     if (metadata->type == FLAC__METADATA_TYPE_PICTURE) {
@@ -426,10 +485,78 @@ bool FlacDecoder::open(ISource* source) {
     framePos_    = 0;
     seconds_     = 0.0;
 
+    // After the metadata, because that is where the sheet comes from.
+    applyCueTrack(source_->url());
+
     return true;
 }
 
+void FlacDecoder::applyCueTrack(const Url& url) {
+    trackStart_ = 0;
+    trackEnd_   = -1;
+    hasTrack_   = false;
+    trackTags_  = {};
+    trackGain_  = {};
+
+    const std::string_view fragment = url.fragment();
+    if (fragment.empty()) {
+        return;
+    }
+
+    const double rate = format_.sampleRate;
+
+    // The tag sheet first: it is the one with titles on it.
+    if (!cuesheet_.empty()) {
+        const codecs::CueSheet sheet = codecs::CueSheet::parse(cuesheet_, url);
+        if (const codecs::CueTrack* track = sheet.findTrack(fragment)) {
+            const codecs::CueTrack* next = sheet.nextInSameFile(sheet.indexOf(track));
+
+            trackStart_ = track->startFrame(rate);
+            trackEnd_   = (next != nullptr) ? next->startFrame(rate) : totalFrames_;
+            trackTags_  = track->metadata();
+            trackGain_  = track->replayGain;
+            hasTrack_   = true;
+        }
+    }
+
+    if (!hasTrack_) {
+        for (std::size_t i = 0; i < cueTrackOffsets_.size(); ++i) {
+            if (cueTrackOffsets_[i].first != fragment) {
+                continue;
+            }
+            trackStart_ = cueTrackOffsets_[i].second;
+            trackEnd_   = (i + 1 < cueTrackOffsets_.size())
+                              ? cueTrackOffsets_[i + 1].second
+                              : totalFrames_;
+            trackTags_.set("tracknumber", {cueTrackOffsets_[i].first});
+            hasTrack_ = true;
+            break;
+        }
+    }
+
+    // A sheet naming a track that does not fit the audio is not one to trust.
+    // Playing the whole file is wrong, but it is wrong audibly rather than by
+    // returning nothing at all.
+    if (hasTrack_ && (trackStart_ < 0 || trackEnd_ <= trackStart_)) {
+        trackStart_ = 0;
+        trackEnd_   = -1;
+        hasTrack_   = false;
+        trackTags_  = {};
+        trackGain_  = {};
+    }
+
+    if (hasTrack_) {
+        static_cast<void>(seek(0));
+    }
+}
+
 bool FlacDecoder::readAudio(AudioChunk& out) {
+    // The track ended even though the file has not. Checked before decoding, so
+    // the last block of a track is not paid for twice over.
+    if (trackEnd_ >= 0 && framePos_ >= trackEnd_) {
+        return false;
+    }
+
     while (blockFrames_ == 0) {
         if (abort_) {
             return false;
@@ -461,24 +588,37 @@ bool FlacDecoder::readAudio(AudioChunk& out) {
         notifyChanged(false, true);
     }
 
+    // A block straddling the boundary is cut at it, or the track bleeds into
+    // the one after -- which on an album in a single file is every track.
+    std::size_t frames = blockFrames_;
+    if (trackEnd_ >= 0) {
+        const std::int64_t remaining = trackEnd_ - framePos_;
+        if (static_cast<std::int64_t>(frames) > remaining) {
+            frames = static_cast<std::size_t>(remaining);
+        }
+    }
+
     out.clear();
     out.setFormat(format_);
     out.lossless        = true;
     out.streamTimestamp = seconds_;
     out.streamTimeRatio = 1.0;
-    out.assign(block_.data(), blockFrames_);
+    out.assign(block_.data(), frames);
 
-    framePos_ += static_cast<std::int64_t>(blockFrames_);
+    framePos_ += static_cast<std::int64_t>(frames);
     seconds_ += out.duration();
     blockFrames_ = 0;
 
-    return true;
+    return frames > 0;
 }
 
 std::int64_t FlacDecoder::seek(std::int64_t frame) {
     if (decoder_ == nullptr) {
         return -1;
     }
+
+    // Callers seek within the track; libFLAC only knows the file.
+    const std::int64_t target = trackStart_ + frame;
 
     // Drop stale pre-seek audio BEFORE seeking, never after.
     //
@@ -490,11 +630,11 @@ std::int64_t FlacDecoder::seek(std::int64_t frame) {
     blockFrames_ = 0;
 
     if (!FLAC__stream_decoder_seek_absolute(decoder_,
-                                            static_cast<FLAC__uint64>(frame))) {
+                                            static_cast<FLAC__uint64>(target))) {
         return -1;
     }
 
-    framePos_ = frame;
+    framePos_ = target;
     seconds_     = (format_.sampleRate > 0.0)
                        ? static_cast<double>(frame) / format_.sampleRate
                        : 0.0;
@@ -511,6 +651,7 @@ void FlacDecoder::beginLink() {
     replayGain_       = {};
     albumArt_.clear();
     cuesheet_.clear();
+    cueTrackOffsets_.clear();
     cuesheetFound_    = false;
     hasVorbisComment_ = false;
     // The new link carries its own STREAMINFO, which is not the "several
@@ -528,6 +669,23 @@ void FlacDecoder::close() {
     block_.clear();
     block_.shrink_to_fit();
     blockFrames_ = 0;
+
+    // The per-stream state too, because open() begins by calling this and tags_
+    // appends rather than replaces -- a second open on the same decoder would
+    // otherwise report both files' tags and the first one's cue sheet.
+    tags_       = {};
+    replayGain_ = {};
+    albumArt_.clear();
+    cuesheet_.clear();
+    cueTrackOffsets_.clear();
+    cuesheetFound_    = false;
+    hasVorbisComment_ = false;
+    hasStreamInfo_    = false;
+    trackStart_       = 0;
+    trackEnd_         = -1;
+    hasTrack_         = false;
+    trackTags_        = {};
+    trackGain_        = {};
 }
 
 void FlacDecoder::interrupt() {
@@ -539,14 +697,25 @@ void FlacDecoder::interrupt() {
 TrackProperties FlacDecoder::properties() const {
     TrackProperties props;
     props.format      = format_;
-    props.totalFrames = totalFrames_;
+    props.totalFrames = hasTrack_ ? trackEnd_ - trackStart_ : totalFrames_;
     props.seekable    = source_ != nullptr && source_->seekable();
     props.lossless    = true;
     props.codec       = "FLAC";
     props.encoding    = "lossless";
     props.replayGain  = replayGain_;
 
-    if (!cuesheet_.empty()) {
+    // The track's own gain wins field by field, so a sheet that names only a
+    // track gain does not throw away the file's album gain along with it.
+    if (hasTrack_) {
+        if (trackGain_.trackGain) props.replayGain.trackGain = trackGain_.trackGain;
+        if (trackGain_.trackPeak) props.replayGain.trackPeak = trackGain_.trackPeak;
+        if (trackGain_.albumGain) props.replayGain.albumGain = trackGain_.albumGain;
+        if (trackGain_.albumPeak) props.replayGain.albumPeak = trackGain_.albumPeak;
+    }
+
+    // Only for the file as a whole. Reporting it for a track would offer the
+    // sheet back to whatever expands containers, which has already used it.
+    if (!cuesheet_.empty() && !hasTrack_) {
         props.cuesheet = cuesheet_;
     }
 
@@ -562,9 +731,45 @@ TrackProperties FlacDecoder::properties() const {
     return props;
 }
 
+std::vector<std::string> FlacDecoder::cueTracks() const {
+    // The tag sheet first, for the same reason applyCueTrack prefers it: the
+    // fragments have to be the ones that will later be looked up in it.
+    if (!cuesheet_.empty() && source_ != nullptr) {
+        const codecs::CueSheet sheet = codecs::CueSheet::parse(cuesheet_, source_->url());
+
+        std::vector<std::string> tracks;
+        tracks.reserve(sheet.tracks().size());
+        for (const codecs::CueTrack& track : sheet.tracks()) {
+            tracks.push_back(track.track);
+        }
+        if (!tracks.empty()) {
+            return tracks;
+        }
+    }
+
+    std::vector<std::string> tracks;
+    tracks.reserve(cueTrackOffsets_.size());
+    for (const auto& [number, offset] : cueTrackOffsets_) {
+        static_cast<void>(offset);
+        tracks.push_back(number);
+    }
+    return tracks;
+}
+
 MetadataMap FlacDecoder::metadata() const {
     MetadataMap out = tags_;
-    if (!cuesheet_.empty()) {
+
+    // The track's tags replace the file's where they overlap: on an album in one
+    // file the file-level TITLE is the album's, and the track's is the song's.
+    for (const auto& [key, value] : trackTags_) {
+        if (const auto* strings = std::get_if<std::vector<std::string>>(&value)) {
+            out.set(key, *strings);
+        } else if (const auto* bytes = std::get_if<std::vector<std::byte>>(&value)) {
+            out.setBytes(key, *bytes);
+        }
+    }
+
+    if (!cuesheet_.empty() && !hasTrack_) {
         out.set("cuesheet", cuesheet_);
     }
     if (!albumArt_.empty()) {

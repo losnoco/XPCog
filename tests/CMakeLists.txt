@@ -69,6 +69,7 @@ endif()
 
 if(XPCOG_WITH_FLAC)
     target_sources(xpcog-tests PRIVATE codecs/test_flac_chained.cpp)
+    target_sources(xpcog-tests PRIVATE codecs/test_flac.cpp)
 endif()
 
 if(XPCOG_WITH_HIVELY)

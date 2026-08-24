@@ -5,7 +5,7 @@
 // metadata. Real sheets in the wild also use CRLF, quoted REM values and INDEX 00
 // pre-gaps, so those are covered here rather than only the tidy synthetic case.
 
-#include "../../codecs/cuesheet/CueSheet.hpp"
+#include "../../codecs/common/CueSheet.hpp"
 
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"

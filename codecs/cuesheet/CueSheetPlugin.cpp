@@ -5,7 +5,7 @@
 // album.cue#2, ... Opening one of those decodes the referenced audio file,
 // seeks to the track's INDEX 01, and stops at the next track's start.
 
-#include "CueSheet.hpp"
+#include "common/CueSheet.hpp"
 
 #include "../common/PlaylistText.hpp"
 
