@@ -285,6 +285,18 @@ public:
                                          AVRational{1, codec_ctx_->sample_rate});
                         skipFrames_ = (landed < seekTarget_) ? seekTarget_ - landed : 0;
                         framePos_   = std::max(landed, seekTarget_);
+                    } else {
+                        // No timestamp to land by, so fall back to what was asked
+                        // for: the seek deliberately went short, and dropping
+                        // exactly that much puts the target back where it was
+                        // meant to be. Assuming the demuxer honoured the request
+                        // exactly is a worse guess than the packet boundary it
+                        // actually gave us -- but doing nothing is worse still,
+                        // because then the pre-roll is emitted as if it were the
+                        // target and every position after the seek is early by up
+                        // to the whole 250 ms.
+                        skipFrames_ = seekUnderBy_;
+                        framePos_   = seekTarget_;
                     }
                     resolveSeek_ = false;
                 }
@@ -379,6 +391,9 @@ public:
         // first warms that state up; the extra frames are discarded below.
         const std::int64_t preRoll = codec_ctx_->sample_rate / 4;  // 250 ms
         const std::int64_t from    = std::max<std::int64_t>(0, frame - preRoll);
+        // Less than the pre-roll near the start of the file, where there is not
+        // 250 ms in front of the target to ask for.
+        seekUnderBy_ = frame - from;
 
         const std::int64_t target =
             av_rescale_q(from, AVRational{1, codec_ctx_->sample_rate}, stream->time_base);
@@ -658,6 +673,9 @@ private:
     // Sample-accurate seek bookkeeping.
     std::int64_t seekTarget_  = 0;
     std::int64_t skipFrames_  = 0;
+    /// How far short of the target the seek deliberately landed. Only read when
+    /// the first frame back carries no timestamp of its own.
+    std::int64_t seekUnderBy_ = 0;
     bool         resolveSeek_ = false;
 
     AudioFormat        audioFormat_{};
