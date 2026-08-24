@@ -152,7 +152,23 @@ public:
 
     [[nodiscard]] std::optional<TrackId> current() const noexcept { return current_; }
     [[nodiscard]] const PlaylistEntry*   currentEntry() const;
+
+    /// Playback is being repositioned to `id` -- the user picked a track, or
+    /// pressed Next. Restarts the read-ahead cursor from there, because whatever
+    /// had been handed out for decoding is no longer what follows.
     void setCurrent(std::optional<TrackId> id);
+
+    /// `id` is now the entry being *heard*.
+    ///
+    /// An observation, not a command, and the difference is the whole reason
+    /// this is a separate call. A gapless engine hands out the next track when
+    /// it stops *decoding* the current one, which is a buffer's worth of audio
+    /// before that track is heard -- so what is audible always trails what has
+    /// been handed out. Routing this through setCurrent() would drag the
+    /// read-ahead cursor back to the audible track, and nextForPlayback() would
+    /// then answer the same track it answered last time: the engine opens it a
+    /// second time and it plays twice.
+    void setAudible(TrackId id);
 
     // --- queue ----------------------------------------------------------
 
@@ -208,6 +224,10 @@ private:
     [[nodiscard]] std::optional<TrackId> firstTrack();
     [[nodiscard]] std::optional<TrackId> lastTrack();
 
+    /// The shared body of setCurrent() and setAudible(): moves current_ and
+    /// notifies, without an opinion about the cursor.
+    void moveCurrent(std::optional<TrackId> id);
+
     [[nodiscard]] std::optional<TrackId> nextEntry(TrackId from, bool ignoreRepeatOne);
     [[nodiscard]] std::optional<TrackId> previousEntry(TrackId from, bool ignoreRepeatOne);
 
@@ -247,6 +267,19 @@ private:
     /// ends playback, the second starts it.
     bool                   currentRemoved_ = false;
     std::optional<TrackId> resumeAt_;
+
+    /// The last entry handed out by nextForPlayback(), which is where the next
+    /// one is measured from.
+    ///
+    /// current_ cannot serve: it means "what is being heard", and a gapless
+    /// engine asks what comes next a whole buffer before the track it asked
+    /// about becomes audible. Empty means nothing has been handed out yet, and
+    /// current_ is the right place to measure from after all.
+    ///
+    /// Deliberately absent from Snapshot. It only describes a decode that is
+    /// under way, and nothing is decoding when a playlist is restored -- saving
+    /// it would restore a read-ahead position for audio nobody is playing.
+    std::optional<TrackId> playbackCursor_;
 
     RepeatMode  repeat_  = RepeatMode::All;
     ShuffleMode shuffle_ = ShuffleMode::Off;

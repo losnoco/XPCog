@@ -417,7 +417,11 @@ void PlaybackController::trackBegan(const Url& url) {
         for (std::size_t i = 0; i < playlist_.size(); ++i) {
             if (playlist_.at(i).url.toString() == text) {
                 audible_ = playlist_.at(i).id;
-                playlist_.setCurrent(audible_);
+                // setAudible, not setCurrent: this is the seam reaching the
+                // speaker, and the engine asked what follows this track a
+                // buffer's worth of audio ago. Resetting the read-ahead cursor
+                // to here would have it answer with that same track again.
+                playlist_.setAudible(audible_);
                 currentTrackChanged.publish(audible_);
                 publishState();
                 return;

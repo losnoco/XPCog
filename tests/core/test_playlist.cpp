@@ -82,6 +82,70 @@ TEST_CASE("move rotates a run of rows", "[playlist]") {
     REQUIRE(playlist.indexOf(ids[1]) == 0);
 }
 
+TEST_CASE("the read-ahead cursor advances without waiting to be heard", "[playlist]") {
+    // What a gapless engine does: it asks for the next track when it stops
+    // *decoding* the current one, which is a buffer's worth of audio before that
+    // track is heard. So several asks can land before anything reports back
+    // about what became audible, and each has to answer with a different track.
+    // Measuring from the current entry answers with the track already being
+    // decoded, and the engine opens and plays it a second time.
+    Playlist   playlist;
+    const auto ids = fill(playlist, 4);
+    playlist.setCurrent(ids[0]);
+
+    CHECK(playlist.nextForPlayback() == ids[1]);
+    CHECK(playlist.nextForPlayback() == ids[2]);
+    CHECK(playlist.nextForPlayback() == ids[3]);
+}
+
+TEST_CASE("what became audible does not drag the cursor back", "[playlist]") {
+    // setAudible is the report that a seam reached the speaker. It moves what is
+    // current -- the interface has to follow the music -- without disturbing how
+    // far ahead the decoder has been allowed to run.
+    Playlist   playlist;
+    const auto ids = fill(playlist, 4);
+    playlist.setCurrent(ids[0]);
+
+    REQUIRE(playlist.nextForPlayback() == ids[1]);
+    REQUIRE(playlist.nextForPlayback() == ids[2]);
+
+    playlist.setAudible(ids[1]);
+    CHECK(playlist.current() == ids[1]);
+    CHECK(playlist.nextForPlayback() == ids[3]);
+}
+
+TEST_CASE("repositioning playback restarts the cursor", "[playlist]") {
+    // setCurrent is the command, and the distinction matters: picking a track or
+    // pressing Next invalidates whatever was queued up for decoding, so the next
+    // answer has to come from the new position rather than from wherever the
+    // read-ahead had got to.
+    Playlist   playlist;
+    const auto ids = fill(playlist, 4);
+    playlist.setCurrent(ids[0]);
+
+    REQUIRE(playlist.nextForPlayback() == ids[1]);
+    REQUIRE(playlist.nextForPlayback() == ids[2]);
+
+    playlist.setCurrent(ids[0]);
+    CHECK(playlist.nextForPlayback() == ids[1]);
+}
+
+TEST_CASE("deleting a track the cursor has passed plays its replacement",
+          "[playlist]") {
+    // The engine was handed "3" and is decoding it when the user deletes it.
+    // What follows must be "4" -- the entry that moves up into its place -- and
+    // not "2" over again, which is what falling back to the audible entry gives.
+    Playlist   playlist;
+    const auto ids = fill(playlist, 5);
+    playlist.setCurrent(ids[0]);
+
+    REQUIRE(playlist.nextForPlayback() == ids[1]);
+    REQUIRE(playlist.nextForPlayback() == ids[2]);
+
+    playlist.removeAt(2, 1);  // "3", the one the cursor is sitting on
+    CHECK(playlist.nextForPlayback() == ids[3]);
+}
+
 TEST_CASE("repeat none stops at the end", "[playlist]") {
     Playlist   playlist;
     const auto ids = fill(playlist, 3);

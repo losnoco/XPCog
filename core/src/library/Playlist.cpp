@@ -167,6 +167,18 @@ void Playlist::removeAt(std::size_t index, std::size_t count) {
             (after < entries_.size()) ? std::optional{entries_[after].id} : std::nullopt;
     }
 
+    // The read-ahead cursor needs the same care, and gets it by pointing at the
+    // surviving entry *before* the hole rather than after it: the next thing
+    // handed out is then whatever moves up into the removed one's place, which
+    // is what deleting a preloaded track should play next. Nothing survives in
+    // front of it when the hole starts at the top, and the cursor falls back to
+    // current_ -- the one case where a track already handed out could come round
+    // again, and an ambiguous one, since the user deleted it mid-flight.
+    if (playbackCursor_ && removed.contains(*playbackCursor_)) {
+        playbackCursor_ =
+            (index > 0) ? std::optional{entries_[index - 1].id} : std::nullopt;
+    }
+
     entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(index),
                    entries_.begin() + static_cast<std::ptrdiff_t>(index + count));
     reindex();
@@ -211,6 +223,7 @@ void Playlist::clear() {
     current_.reset();
     currentRemoved_ = false;
     resumeAt_.reset();
+    playbackCursor_.reset();
     notify({Change::Kind::Reset, 0, 0, 0});
 }
 
@@ -286,6 +299,7 @@ void Playlist::restore(Snapshot state) {
                                                                  : std::nullopt;
     currentRemoved_ = false;
     resumeAt_.reset();
+    playbackCursor_.reset();
 
     repeat_  = state.repeat;
     shuffle_ = state.shuffle;
@@ -324,6 +338,20 @@ void Playlist::setShuffle(ShuffleMode mode) {
 // --- current ------------------------------------------------------------
 
 void Playlist::setCurrent(std::optional<TrackId> id) {
+    // A command: playback is being repositioned, so whatever was handed out for
+    // decoding no longer follows anything. Measure from here again.
+    playbackCursor_.reset();
+    moveCurrent(id);
+}
+
+void Playlist::setAudible(TrackId id) {
+    // An observation, and the cursor is deliberately left alone: it is ahead of
+    // what is audible by design -- a buffer's worth -- and pulling it back to
+    // here is what made a track get handed out, and played, twice.
+    moveCurrent(id);
+}
+
+void Playlist::moveCurrent(std::optional<TrackId> id) {
     if (id && !find(*id)) {
         return;
     }
@@ -684,12 +712,25 @@ std::optional<TrackId> Playlist::previousEntry(TrackId from, bool ignoreRepeatOn
 }
 
 std::optional<TrackId> Playlist::nextForPlayback() {
-    if (!current_ && !currentRemoved_) {
-        return firstTrack();
+    // Measured from the last entry handed out, not from the one being heard.
+    // Those differ for as long as the engine is decoding ahead, which is the
+    // whole of a gapless handoff; asking from current_ answers with the track
+    // already being decoded, and it gets opened and played a second time.
+    const std::optional<TrackId> from =
+        playbackCursor_.has_value() ? playbackCursor_ : current_;
+
+    if (!from && !currentRemoved_) {
+        playbackCursor_ = firstTrack();
+        return playbackCursor_;
     }
-    // A removed current entry still has a successor to find, so `from` stays the
-    // id that is no longer there and nextEntry() picks up resumeAt_.
-    return nextEntry(current_.value_or(kInvalidTrackId), /*ignoreRepeatOne=*/false);
+
+    // A removed entry still has a successor to find, so `from` stays the id that
+    // is no longer there and nextEntry() picks up resumeAt_.
+    const auto id = nextEntry(from.value_or(kInvalidTrackId), /*ignoreRepeatOne=*/false);
+    if (id) {
+        playbackCursor_ = id;
+    }
+    return id;
 }
 
 bool Playlist::next() {

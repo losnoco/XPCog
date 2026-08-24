@@ -11,6 +11,7 @@
 #include "xpcog/core/audio/OfflineOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
+#include "xpcog/core/library/Playlist.hpp"
 
 #include "../TestShell.hpp"
 #include "../TestSignal.hpp"
@@ -148,6 +149,50 @@ struct PlaylistDelegate final : AudioEngine::Delegate {
     void trackBegan(const Url& url) override { began.push_back(url); }
 };
 
+/// The delegate the application actually has, wired to a real Playlist.
+///
+/// PlaylistDelegate above answers with queue[next++], which hands out each track
+/// exactly once because the counter says so -- it cannot express the question
+/// the real one is asked. PlaybackController answers from
+/// Playlist::nextForPlayback() and reports what became audible through the
+/// playlist too, so both halves of the contract are exercised here rather than
+/// modelled.
+///
+/// Optimistic in one respect: the application defers its half of trackBegan onto
+/// the interface thread, and this does it at once. The real gap is wider.
+struct PlaylistBackedDelegate final : AudioEngine::Delegate {
+    Playlist         playlist;
+    std::vector<Url> handedOut;
+    std::vector<Url> began;
+
+    std::optional<Url> nextTrack() override {
+        // A runaway would hang waitUntilFinished() rather than fail the test.
+        if (handedOut.size() > 4 * playlist.size()) {
+            return std::nullopt;
+        }
+        const auto id = playlist.nextForPlayback();
+        if (!id) {
+            return std::nullopt;
+        }
+        const PlaylistEntry* entry = playlist.find(*id);
+        if (entry == nullptr) {
+            return std::nullopt;
+        }
+        handedOut.push_back(entry->url);
+        return entry->url;
+    }
+
+    void trackBegan(const Url& url) override {
+        began.push_back(url);
+        for (std::size_t i = 0; i < playlist.size(); ++i) {
+            if (playlist.at(i).url.toString() == url.toString()) {
+                playlist.setAudible(playlist.at(i).id);
+                return;
+            }
+        }
+    }
+};
+
 std::vector<float> playThrough(const std::vector<std::filesystem::path>& paths,
                                std::vector<Url>*                        began = nullptr) {
     RingBuffer ring(static_cast<std::size_t>(kSampleRate * 0.5) * kChannels);
@@ -173,6 +218,64 @@ std::vector<float> playThrough(const std::vector<std::filesystem::path>& paths,
 }
 
 }  // namespace
+
+TEST_CASE("a track is never handed out for decoding twice", "[gapless]") {
+    // A gapless engine asks what comes next when it stops *decoding* a track,
+    // which is a buffer's worth of audio before that track is heard. Answering
+    // from the audible entry therefore answers with the track already being
+    // decoded, and the engine opens and plays it a second time.
+    std::vector<std::filesystem::path> paths;
+    for (int i = 0; i < 6; ++i) {
+        const auto track = makeFlac("short_" + std::to_string(i), i * 44100, 44100);
+        if (!track) {
+            SKIP("the `flac` command-line tool is not available");
+        }
+        paths.push_back(*track);
+    }
+
+    RingBuffer ring(static_cast<std::size_t>(kSampleRate * 0.5) * kChannels);
+    // Paced, so playback lags decoding the way it does on a device. Unpaced, the
+    // drain keeps up with the feeder, the lead never builds, and the bug cannot
+    // appear -- which is why the seam tests below never caught it.
+    auto        output = makeOfflineOutput(ring, 8.0);
+    auto        store  = makeMemorySettingsStore();
+    Settings    settings(*store);
+    AudioEngine engine(registry(), *output, ring, settings);
+
+    PlaylistBackedDelegate delegate;
+    std::vector<PlaylistEntry> entries;
+    for (const auto& path : paths) {
+        PlaylistEntry entry;
+        entry.url = Url::fromLocalPath(path);
+        entries.push_back(std::move(entry));
+    }
+    const auto ids = delegate.playlist.insert(0, std::move(entries));
+    REQUIRE(ids.size() == paths.size());
+    // Repeat-all is the default, and would cycle the list for ever rather than
+    // ending -- the run has to stop for the handout list to mean anything.
+    delegate.playlist.setRepeat(RepeatMode::None);
+    // What playTrack() does before handing the engine the first URL.
+    delegate.playlist.setCurrent(ids.front());
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(Url::fromLocalPath(paths.front())));
+    engine.waitUntilFinished();
+    engine.stop();
+
+    // One handout per track after the first, each of them different. Measured
+    // from the audible entry instead, short_1 was handed out seven times, then
+    // short_2 seven times, and so on.
+    std::vector<std::string> seen;
+    for (const auto& url : delegate.handedOut) {
+        const std::string key = url.toString();
+        if (std::find(seen.begin(), seen.end(), key) != seen.end()) {
+            FAIL("handed out twice: "
+                 << std::filesystem::path(key).filename().string());
+        }
+        seen.push_back(key);
+    }
+    CHECK(delegate.handedOut.size() == paths.size() - 1);
+}
 
 TEST_CASE("gapless handoff is sample-exact across a track boundary", "[gapless]") {
     // Two halves of one continuous 440 Hz tone, 1 second each.
