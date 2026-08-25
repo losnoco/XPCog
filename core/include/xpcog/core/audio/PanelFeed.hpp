@@ -114,8 +114,16 @@ public:
     /// Drops one track's frames, when it will not be played after all.
     void forget(const Url& track);
 
-    /// Drops everything and forgets the audible track. Tests share a process
-    /// with each other; this is what keeps one from seeing another's frames.
+    /// Drops everything and forgets the audible track.
+    ///
+    /// For a stop, where nothing is audible any more and a display must go back
+    /// to saying so. Stronger than flush() on purpose: the decoder is still
+    /// winding down when the stop is asked for, so frames can arrive after the
+    /// drop, and only forgetting the audible track makes those unreachable
+    /// rather than a panel that reappears a moment after it was cleared.
+    ///
+    /// Also what keeps one test from seeing another's frames -- they share a
+    /// process with each other, which is the cost of the singleton above.
     void clear();
 
 private:

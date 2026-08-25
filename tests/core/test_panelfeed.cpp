@@ -183,6 +183,32 @@ TEST_CASE("history does not grow without bound", "[panelfeed]") {
     CHECK(old->seconds >= 399.0 - 120.0);
 }
 
+TEST_CASE("a stop leaves nothing for a panel to draw", "[panelfeed]") {
+    PanelFeed& feed = PanelFeed::instance();
+    feed.clear();
+
+    const Url one = track("one.mid");
+    feed.setAudibleTrack(one);
+    feed.post(one, 1.0, blob(1));
+    feed.post(one, 2.0, blob(2));
+    REQUIRE(feed.stateAt(2.0).has_value());
+
+    // What PlaybackController::stop() does. A display asking after this must get
+    // nothing rather than the oldest kept state -- the position it asks at goes
+    // back to zero when playback ends, and the answer to "what did the panel look
+    // like at zero seconds" is a frame from a track that is no longer running.
+    feed.clear();
+    CHECK_FALSE(feed.stateAt(0.0).has_value());
+    CHECK_FALSE(feed.producing());
+
+    // And the decoder is still winding down on its own thread, so a state or two
+    // arrives after the stop. Nothing is audible now, so they stay unreachable
+    // instead of putting the panel back on screen.
+    feed.post(one, 3.0, blob(3));
+    CHECK_FALSE(feed.stateAt(3.0).has_value());
+    CHECK_FALSE(feed.producing());
+}
+
 TEST_CASE("a display can tell 'no panel at all' from 'nothing yet'",
           "[panelfeed]") {
     PanelFeed& feed = PanelFeed::instance();

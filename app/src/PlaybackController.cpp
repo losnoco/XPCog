@@ -79,6 +79,16 @@ bool PlaybackController::playing() const {
     if (starting_.load()) {
         return false;
     }
+    // And a stop in flight is not playing any more. Same reason, from the other
+    // side: stop() posts engine_->stop() and returns, so the engine's status is
+    // still Playing for as long as the fade and the two joins take. Answering
+    // from it there would report playback that the listener has already ended --
+    // which is what left the spectrum's clock running after a manual stop, while
+    // a track ending by itself came back through stoppedNaturally() with the
+    // status already settled and switched it off correctly.
+    if (stopping_.load()) {
+        return false;
+    }
     return engine_ && engine_->status() != PlaybackStatus::Stopped;
 }
 
@@ -335,13 +345,32 @@ void PlaybackController::stop() {
 
     // Posted, because stop() blocks: it plays out the fade and joins two threads.
     // Short, but it is the same thread that draws the window.
-    starter_->post([this] { engine_->stop(); });
+    //
+    // Which is why the flag is raised first: everything below publishes state,
+    // and until that task has run the engine still reports itself as playing.
+    // Cleared on the far side of the call, in the executor's order -- a start
+    // queued behind this one cannot overtake it, so the clear cannot land after
+    // a later play() and take that track's state down with it.
+    stopping_.store(true);
+    starter_->post([this] {
+        engine_->stop();
+        stopping_.store(false);
+    });
 
-    // So the visualiser goes quiet with the audio rather than holding the last
-    // window on screen. Only on an explicit stop: a gapless advance never comes
-    // through here, and clearing between tracks would blank a display watching
-    // audio that never actually stopped.
+    // So the visualisers go quiet with the audio rather than holding the last
+    // thing they were given on screen. Only on an explicit stop: a gapless
+    // advance never comes through here, and clearing between tracks would blank
+    // a display watching audio that never actually stopped.
+    //
+    // The panel feed is cleared rather than merely flushed, and the difference
+    // matters here. engine_->stop() is posted, so the decoder is still winding
+    // down on its own thread and may post another state or two after this line;
+    // dropping the frames alone would leave the track still marked audible and
+    // those late arrivals would put the panel back on screen. Forgetting which
+    // track is audible is what makes them unreachable. trackBegan() names one
+    // again on the next start.
     tap_.clear();
+    PanelFeed::instance().clear();
     paused_  = false;
     audible_ = kInvalidTrackId;
     currentTrackChanged.publish(audible_);

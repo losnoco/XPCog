@@ -225,6 +225,15 @@ private:
     /// interface's thread to decide whether the engine is safe to touch.
     std::atomic<bool> starting_{false};
 
+    /// Set between asking the engine to stop and it having done so.
+    ///
+    /// The mirror of starting_, and it exists for the mirrored reason: stop() is
+    /// posted to the executor, so between the gesture and the engine acting on it
+    /// the engine's own status still says Playing. playing() reads this instead,
+    /// so a stop is reported the moment it is asked for rather than once the fade
+    /// and the joins have finished.
+    std::atomic<bool> stopping_{false};
+
     /// Entries that failed to open during the current gesture. The skip-to-next
     /// rule needs a memory across asynchronous hops for the same reason the
     /// engine's advance loop does: nextForPlayback() answers from the repeat

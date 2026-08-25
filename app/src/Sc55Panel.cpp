@@ -78,11 +78,17 @@ void Sc55Panel::tick() {
     // heard. See PanelFeed::stateAt().
     const std::optional<PanelFrame> draw = PanelFeed::instance().stateAt(position_());
     if (!draw) {
-        // The explanation drawn in its place can change without any state ever
-        // arriving, so it is still worth a repaint.
-        if (!haveFrame_) {
-            Refresh(false);
-        }
+        // Back to the explanation -- and *back* is the direction that was
+        // missing. The feed is emptied on a stop, and a panel that goes on
+        // drawing the last frame it was handed is showing a machine that is no
+        // longer running.
+        //
+        // Repainted whether or not that is a change, because the explanation
+        // itself can change with no state ever arriving: which of the two is
+        // drawn comes from producing(), and the feed it answers about is filled
+        // by a thread this one never hears from.
+        haveFrame_ = false;
+        Refresh(false);
         return;
     }
 
