@@ -304,59 +304,95 @@ using Pane = wxScrolled<wxPanel>;
     return pane;
 }
 
-[[nodiscard]] int paragraphWidth(wxWindow* pane) {
-    return pane->GetClientSize().GetWidth() -
-           wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, pane) - pane->FromDIP(28);
-}
-
 /// A paragraph of explanation that re-wraps as the dialog changes width.
 ///
-/// wxStaticText::Wrap() inserts the breaks into the label itself, so it cannot
-/// simply be called again -- a second call wraps the already-wrapped text and
-/// the paragraph creeps narrower with every resize until it is one word per
-/// line. Keeping the original and re-setting it before each wrap is what makes
-/// it repeatable, and repeatable is what lets a note be as long as it needs to
-/// be instead of as long as one fixed width allowed.
+/// Two things have to be true at once, and the second is what the first attempt
+/// at this got wrong.
+///
+/// **It has to be re-wrappable.** wxStaticText::Wrap() inserts the breaks into
+/// the label itself, so it cannot simply be called again -- a second call wraps
+/// the already-wrapped text and the paragraph creeps narrower with every resize
+/// until it is one word per line. Keeping the original and re-setting it before
+/// each wrap is what makes it repeatable.
+///
+/// **And it has to wrap to the width it will actually be given**, which is the
+/// *second column's*, not the pane's: a note sits in a two-column form beside a
+/// caption column that is a third of the pane wide. Wrapping to the pane's width
+/// -- which is what the fixed `FromDIP(440)` here amounted to as well -- writes
+/// lines about a third too long for the cell they are drawn in, and a
+/// wxStaticText does not scroll or ellipsize: the ends are simply cut off. That
+/// is the clipped help text this dialog shipped with.
+///
+/// So the width comes from this window's own size event, which is the width the
+/// sizer just handed it. The obvious objection is that wrapping changes this
+/// window's best size and would therefore change the width it is next given --
+/// a loop. `SetMinSize` is what breaks it: a note contributes almost nothing to
+/// its column's minimum width, so the column is sized by the controls above it
+/// and the number arriving in the size event does not move when the text
+/// re-wraps. It converges in one extra event, and the guard below stops even
+/// that from doing any work.
 class NoteText : public wxStaticText {
 public:
-    NoteText(Pane* pane, const wxString& text)
+    /// `quiet` greys the text, which is right for a pane explaining itself and
+    /// wrong for the Last.fm pane's status line -- that one is the answer to
+    /// what the listener just did.
+    NoteText(Pane* pane, const wxString& text, bool quiet = true)
         : wxStaticText(pane, wxID_ANY, text), original_(text) {
-        // Greyed: this is the pane explaining itself, not a control.
-        Enable(false);
+        if (quiet) {
+            Enable(false);
+        }
+        pinMinimumWidth();
         // Bound to its *own* size event rather than to the pane's. The pane
         // outlives nothing here -- it destroys this window on its way out -- but
         // a handler registered on the parent is not removed when the child dies,
         // and a size event arriving in that window is a call through a destroyed
-        // object. Self-binding cannot get that wrong, and the sizer resizes this
-        // window whenever the pane changes width, which is the same signal.
+        // object. Self-binding cannot get that wrong.
         Bind(wxEVT_SIZE, &NoteText::onResized, this);
     }
 
-private:
-    void onResized(wxSizeEvent& event) {
-        event.Skip();
-        rewrap();
+    /// Replaces the text, keeping the wrap. For a note whose words change.
+    void setText(const wxString& text) {
+        original_ = text;
+        SetLabel(original_);
+        if (wrappedAt_ > 0) {
+            Wrap(wrappedAt_);
+        }
+        pinMinimumWidth();
+        relayout();
     }
 
-    void rewrap() {
-        auto* pane = static_cast<Pane*>(GetParent());
-        // Measured from the pane rather than from this window's own new width,
-        // which is what stops the two from chasing each other: wrapping changes
-        // this window's best size, the sizer answers with another size event,
-        // and a width derived from that event would be a different number every
-        // time round.
-        const int room = paragraphWidth(pane);
-        // A pane mid-construction reports nonsense, and a width that has not
-        // moved is work with nothing to show for it.
-        if (room < pane->FromDIP(120) || room == wrappedAt_) {
+private:
+    /// Height from the wrapped text, width from almost nothing.
+    ///
+    /// wxSizerItem asks for the effective minimum size, which takes each
+    /// component from the min size where it is set and from the best size where
+    /// it is -1 -- so this keeps the paragraph's real height, which the row needs
+    /// to be tall enough for, and throws away its width, which is the half that
+    /// would otherwise widen the column and feed back into the wrap.
+    void pinMinimumWidth() { SetMinSize(wxSize(FromDIP(40), -1)); }
+
+    void onResized(wxSizeEvent& event) {
+        event.Skip();
+
+        const int room = event.GetSize().GetWidth();
+        // A window that has not been laid out yet reports nonsense, and a width
+        // that has not moved is work with nothing to show for it.
+        if (room < FromDIP(80) || room == wrappedAt_) {
             return;
         }
         wrappedAt_ = room;
         SetLabel(original_);
         Wrap(room);
+        pinMinimumWidth();
+        relayout();
+    }
+
+    void relayout() {
+        auto* pane = static_cast<Pane*>(GetParent());
         pane->Layout();
         // The virtual size follows the form's new height, or a paragraph that
-        // grew from two lines to five would be as clipped as it was before.
+        // grew from two lines to five would be as clipped at the bottom as it
+        // used to be at the side.
         pane->FitInside();
     }
 
@@ -1452,11 +1488,14 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
     // The status line and the buttons are rebuilt rather than recreated, so the
     // pane has one place that decides what state it is in. Everything below is a
     // closure over these three.
-    auto* status  = new wxStaticText(pane, wxID_ANY, wxEmptyString);
+    // A NoteText rather than a plain wxStaticText: this is the pane's longest
+    // paragraph and it sits in the same second column the notes do, so it wants
+    // the same wrap. Not greyed, though -- it is the answer to what the listener
+    // just did rather than a footnote about the pane.
+    auto* status  = new NoteText(pane, wxEmptyString, false);
     auto* connect = new wxButton(pane, wxID_ANY, _("Connect..."));
     auto* cancel  = new wxButton(pane, wxID_ANY, _("Cancel"));
     auto* forget  = new wxButton(pane, wxID_ANY, _("Disconnect"));
-    status->Wrap(paragraphWidth(pane));
 
     auto* buttons = new wxBoxSizer(wxHORIZONTAL);
     buttons->Add(connect, 0, wxRIGHT, pane->FromDIP(6));
@@ -1484,7 +1523,7 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
 
     // Captured by the handlers below. `refresh` is the only thing that decides
     // what is shown, so there is no way for two paths to disagree about it.
-    const auto refresh = [this, token, status, connect, cancel, forget, enable, pane] {
+    const auto refresh = [this, token, status, connect, cancel, forget, enable] {
         if (token.expired()) {
             return;
         }
@@ -1500,43 +1539,46 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
         forget->Show(session.connected() && !working);
         connect->Enable(built && store);
 
+        // Built up and handed over once, rather than written to the control and
+        // then read back to append to. Reading it back stopped being an option
+        // when the control started wrapping: GetLabel() returns the text *with*
+        // the line breaks wrapping put in, so appending to it and wrapping again
+        // would fold the paragraph a little narrower on every refresh.
+        wxString text;
         if (!built) {
             // Greyed and explained rather than hidden, which is how the
             // crash-reporting checkbox handles a build without Sentry. A control
             // that does nothing is worse than one that says why.
             enable->SetValue(false);
-            status->SetLabel(account_->unavailableReason());
+            text = account_->unavailableReason();
         } else if (!store) {
-            status->SetLabel(
-                storeProblem.empty()
-                    ? wxString(_("The system password store is not available, so a "
-                                 "Last.fm session cannot be kept."))
-                    : storeProblem);
+            text = storeProblem.empty()
+                       ? wxString(_("The system password store is not available, "
+                                    "so a Last.fm session cannot be kept."))
+                       : storeProblem;
         } else if (working) {
-            status->SetLabel(_("Waiting for you to allow access in your browser..."));
+            text = _("Waiting for you to allow access in your browser...");
         } else if (session.connected()) {
-            status->SetLabel(wxString::Format(
-                _("Connected as %s."), wxString::FromUTF8(session.username)));
+            text = wxString::Format(_("Connected as %s."),
+                                    wxString::FromUTF8(session.username));
         } else {
-            status->SetLabel(_("Not connected. Connecting opens Last.fm in your "
-                               "browser; XPCog never sees your password."));
+            text = _("Not connected. Connecting opens Last.fm in your browser; "
+                     "XPCog never sees your password.");
         }
 
         const std::size_t waiting = scrobbler_->pending();
         if (waiting > 0) {
             // Worth saying, because the alternative is a listener concluding
             // that the plays were lost. They were not; they are on disk.
-            status->SetLabel(
-                status->GetLabel() + "\n" +
-                wxString::Format(wxPLURAL("%zu play waiting to be sent.",
-                                          "%zu plays waiting to be sent.",
-                                          static_cast<unsigned>(waiting)),
-                                 waiting));
+            text += "\n";
+            text += wxString::Format(wxPLURAL("%zu play waiting to be sent.",
+                                              "%zu plays waiting to be sent.",
+                                              static_cast<unsigned>(waiting)),
+                                     waiting);
         }
 
-        status->Wrap(paragraphWidth(pane));
-        pane->Layout();
-        pane->FitInside();
+        // Wraps and re-lays the pane out itself.
+        status->setText(text);
     };
 
     connect->Bind(wxEVT_BUTTON, [this, refresh, token, status](wxCommandEvent&) {
@@ -1560,7 +1602,7 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
         handlers.failed = [refresh, token, status](const wxString& message) {
             refresh();
             if (!token.expired()) {
-                status->SetLabel(message);
+                status->setText(message);
             }
         };
 

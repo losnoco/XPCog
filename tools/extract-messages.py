@@ -59,6 +59,27 @@ EXTERNAL = [
      "#: core/src/library/PlaylistView.cpp\n", "#"),
 ]
 
+# wxWidgets' own stock labels, for the buttons this application does not put a
+# label on itself -- Close, OK, Cancel, Yes, No on the standard dialog button
+# sizers.
+#
+# They belong here because wx looks them up with a plain `_()`, which is
+# wxGetTranslation with no domain, and that searches *every* loaded catalogue.
+# So ours can answer them. It has to: vcpkg's wxwidgets port installs none of
+# wx's own .mo files, so without these rows the buttons stay English in an
+# otherwise translated dialog -- which is exactly how they shipped.
+#
+# Both spellings of each, because the mnemonic form is what a button asks for
+# and the plain one is what wxMSW substitutes for Cancel, whose mnemonic it
+# drops to match the native dialogs.
+STOCK = [
+    "&Close", "Close",
+    "&OK", "OK",
+    "&Cancel", "Cancel",
+    "&Yes", "Yes",
+    "&No", "No",
+]
+
 HEADER = '''# XPCog, the wxWidgets port of Cog.
 # Copyright (C) 2026 the XPCog authors.
 # This file is distributed under the same licence as XPCog.
@@ -189,8 +210,27 @@ def main():
 
     with io.open(OUT, 'w', encoding='utf-8', newline='\n') as out:
         out.write(HEADER)
+        # A msgid is a key, so it may appear once. Several of the stock labels
+        # are words this application also marks for itself -- Cancel is a button
+        # on the Last.fm pane as well as wx's -- and emitting both would produce
+        # a catalogue with two entries under one key: undefined which one a
+        # lookup gets, and not a valid .mo. The source's own row wins, because it
+        # is the one with a file and a line number on it.
+        marked = {msgid for msgid, _plural in order}
         for note, msgid in EXTERNAL:
+            if msgid in marked:
+                continue
+            marked.add(msgid)
             out.write(note)
+            out.write(po_field('msgid', msgid))
+            out.write('msgstr ""\n\n')
+        for msgid in STOCK:
+            if msgid in marked:
+                continue
+            marked.add(msgid)
+            out.write('#. A wxWidgets stock label. See STOCK in '
+                      'tools/extract-messages.py.\n')
+            out.write('#: wxWidgets/src/common/stockitem.cpp\n')
             out.write(po_field('msgid', msgid))
             out.write('msgstr ""\n\n')
         for msgid, plural in order:
@@ -202,7 +242,7 @@ def main():
                 out.write(po_field('msgid_plural', plural))
                 out.write('msgstr[0] ""\nmsgstr[1] ""\n\n')
 
-    print('%d messages -> %s' % (len(order) + len(EXTERNAL), OUT), file=sys.stderr)
+    print('%d messages -> %s' % (len(marked), OUT), file=sys.stderr)
 
 
 main()

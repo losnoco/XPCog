@@ -129,17 +129,30 @@ TEST_CASE("the header comes first and names the charset", "[wx][locale]") {
     CHECK(stringAt(view, translated, 0).find("nplurals=2") != std::string_view::npos);
 }
 
-TEST_CASE("the entries are sorted by key", "[wx][locale]") {
-    // The format requires it so that a reader may binary search. wx builds a
-    // hash map instead and would not notice -- which is the reason to check:
-    // an image only the lenient parser can read is not the format it claims.
+TEST_CASE("the entries are sorted, and each key appears once", "[wx][locale]") {
+    // Sorted because the format requires it so that a reader may binary search.
+    // wx builds a hash map instead and would not notice -- which is the reason
+    // to check: an image only the lenient parser can read is not the format it
+    // claims to be.
+    //
+    // Strictly ascending, so this is a uniqueness check as well, and that is the
+    // half that has already earned its keep. A msgid is a key: two entries
+    // under one leaves it undefined which a lookup gets. It happens the moment
+    // a word this application marks for itself is also added to the catalogue
+    // from somewhere else -- "Cancel" is a button on the Last.fm pane and also
+    // one of wxWidgets' stock labels -- and the .po is generated, so nothing
+    // upstream of here would have said so.
     const std::string      image = assembleCatalog(spanish());
     const std::string_view view{image};
     const std::uint32_t    count     = readLittleEndian(view, 8);
     const std::uint32_t    originals = readLittleEndian(view, 12);
 
     for (std::uint32_t i = 1; i < count; ++i) {
-        CHECK(stringAt(view, originals, i - 1) < stringAt(view, originals, i));
+        const std::string_view previous = stringAt(view, originals, i - 1);
+        const std::string_view current  = stringAt(view, originals, i);
+        INFO("entry " << i << ": equal keys are a duplicate msgid, out-of-order "
+                              "ones a broken sort");
+        CHECK(previous < current);
     }
 }
 
