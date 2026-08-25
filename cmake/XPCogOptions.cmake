@@ -1,6 +1,6 @@
 # Build-shape options. Codec toggles live next to their xpcog_add_codec() call.
 
-option(XPCOG_BUILD_APP   "Build the Qt application"        ON)
+option(XPCOG_BUILD_APP   "Build the wxWidgets application" ON)
 option(XPCOG_BUILD_CLI   "Build the headless xpcog-cli"    ON)
 option(XPCOG_BUILD_TESTS "Build the test suite"            ON)
 

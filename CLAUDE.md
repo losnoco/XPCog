@@ -7,9 +7,17 @@ XPCog is a wxWidgets audio player for Windows, macOS and Linux, ported from
 
 ## Versioning
 
-**Any change bumps the version.** Every commit that touches this repository —
-code, build files, documentation, this file included — raises the version number
-as part of the same change. There is no "too small to bump".
+**Code changes bump the version; nothing else does.** Plenty of commits here are
+too small to bump, and they should not. A bump means the built player is not the
+one the last version number described.
+
+Bumps: anything under `core/`, `codecs/`, `platform/`, `app/`, `tools/`,
+`vendor/`, `ports/`, or a build file that changes what comes out of the build.
+
+Does not bump: documentation (`README.md`, `docs/`, this file), comments,
+CI configuration, and test-only changes — the suite is not what ships.
+
+Bump in the same commit as the code, never as a follow-up.
 
 The version lives in exactly two places, and they are kept identical:
 
@@ -28,15 +36,21 @@ HTTP source's `User-Agent`.
 installer section shows `XPCog-<version>-x64-setup.exe` in two examples, and those
 follow the bump.
 
-Which component moves:
+Which component moves is [semver](https://semver.org), read against the public
+surface this project actually has: the `core` and `codecs` headers, the plugin
+contract, the setting keys in `settings.def`, the CLI's commands and output, and
+the CMake options and preset names.
 
-- **Patch** — the default: fixes, documentation, tests, build tweaks, a codec
-  added without changing the plugin contract.
-- **Minor** — a user-visible feature arrives, or a `core`/`codecs` public header
-  changes shape.
-- **Major** — reserved; not moved without being asked.
+- **PATCH** — backwards-compatible fixes. A bug fix, a build change that alters
+  the output, a codec added without touching the plugin contract.
+- **MINOR** — backwards-compatible additions. A user-visible feature, a new
+  setting, a new option or preset, a new interface alongside the existing ones.
+- **MAJOR** — incompatible changes to that surface.
 
-Bump both files in the same commit as the change itself, never as a follow-up.
+While the version is **0.x**, semver puts no compatibility promise on it: a
+breaking change goes in the minor, and the major stays at 0 until releasing 1.0.0
+is a decision someone makes deliberately. So in practice, today, only PATCH and
+MINOR move.
 
 ## Build and test
 
