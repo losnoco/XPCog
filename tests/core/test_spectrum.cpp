@@ -15,12 +15,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
 using Catch::Approx;
 using xpcog::AudioTap;
 using xpcog::SpectrumAnalyzer;
+using xpcog::TapCursor;
 
 namespace {
 
@@ -361,4 +363,221 @@ TEST_CASE("switching modes keeps the band table consistent", "[audio][spectrum]"
     const std::vector<float> window = sineWindow(1000.0);
     analyzer.analyze(window.data(), window.size());
     consistent();
+}
+
+// ---------------------------------------------------------------------------
+// The display's own read cursor
+// ---------------------------------------------------------------------------
+//
+// What these are about: the playback chain does not hand the tap audio at the rate
+// a display draws at. It hands over a device period at a time, and if that period
+// is large -- several thousand frames -- a display that asks for "the newest
+// window" every repaint sees the same samples five or six times and then jumps a
+// tenth of a second. TapCursor is what breaks that coupling, so the tests below
+// drive a slow, lumpy writer against a fast, even reader and check the reader keeps
+// its own time.
+
+namespace {
+
+/// Appends `frames` of a mono ramp whose values are the absolute frame numbers, so
+/// the samples a window contains say exactly where in the stream it was taken.
+void writeRamp(AudioTap& tap, std::uint64_t& next, std::size_t frames) {
+    std::vector<float> chunk(frames);
+    for (std::size_t index = 0; index < frames; ++index) {
+        chunk[index] = static_cast<float>(next + index);
+    }
+    tap.write(chunk.data(), frames, 1);
+    next += frames;
+}
+
+}  // namespace
+
+TEST_CASE("the display cursor advances by its own clock, not the writer's",
+          "[audio][spectrum]") {
+    // A writer pushing 100 ms chunks against a reader drawing at 60 Hz: the fault
+    // this exists for. Following the write head, five of every six windows would be
+    // identical to the one before and the sixth would move 4800 samples.
+    constexpr double      kSampleRate  = 48000.0;
+    constexpr double      kFrame       = 1.0 / 60.0;
+    constexpr std::size_t kChunkFrames = 4800;
+    constexpr std::size_t kWindow      = 64;
+
+    AudioTap      tap(1U << 14);
+    TapCursor     cursor;
+    std::uint64_t written = 0;
+    cursor.setSampleRate(kSampleRate);
+
+    // A few chunks in already, which is what a display opened part-way through a
+    // track sees. The first chunk of a track is its own case -- there is no history
+    // to sit behind yet -- and it is covered by the resync tests below.
+    for (int chunk = 0; chunk < 3; ++chunk) {
+        writeRamp(tap, written, kChunkFrames);
+    }
+    REQUIRE(tap.writeGranularity() == kChunkFrames);
+
+    std::vector<float> window(kWindow, -1.0F);
+    REQUIRE(cursor.read(tap, kFrame, window.data(), window.size()));
+
+    // Six repaints per chunk, over several chunks, with the audio arriving in one
+    // lump per six frames the way a device callback does.
+    double        secondsSinceChunk = 0.0;
+    std::uint64_t previousEnd       = cursor.position();
+    for (int frame = 0; frame < 60; ++frame) {
+        secondsSinceChunk += kFrame;
+        if (secondsSinceChunk >= static_cast<double>(kChunkFrames) / kSampleRate) {
+            writeRamp(tap, written, kChunkFrames);
+            secondsSinceChunk -= static_cast<double>(kChunkFrames) / kSampleRate;
+        }
+
+        REQUIRE(cursor.read(tap, kFrame, window.data(), window.size()));
+
+        // Every frame moves, and moves by a frame's worth of audio -- not by a
+        // chunk, and not by nothing.
+        const std::uint64_t moved = cursor.position() - previousEnd;
+        REQUIRE(moved == static_cast<std::uint64_t>(kSampleRate * kFrame));
+        previousEnd = cursor.position();
+
+        // And the samples are the ones at that position: the ramp values say so,
+        // which is what rules out a window that merely looks fresh.
+        REQUIRE(window.back() == Approx(static_cast<float>(cursor.position() - 1)));
+    }
+
+    // A second of that, and not one frame of it was a resync -- the loop above
+    // would have caught a jump either way. The cursor is still behind the writer,
+    // by somewhere between a frame and a couple of chunks: it closes on the head as
+    // a chunk is consumed and is pushed back out when the next one lands, which is
+    // the cycle it is supposed to be in. Falling a second behind, or catching the
+    // head, are the two ways this goes wrong.
+    const std::uint64_t behind = tap.framesWritten() - cursor.position();
+    REQUIRE(behind >= 1);
+    REQUIRE(behind <= 2 * kChunkFrames);
+}
+
+TEST_CASE("small chunks cost the display no extra lag", "[audio][spectrum]") {
+    // The lag is one chunk, so a chain that already pushes small buffers pays
+    // almost nothing -- which is what keeps this from being a trade rather than a
+    // fix.
+    constexpr double      kSampleRate  = 48000.0;
+    constexpr std::size_t kChunkFrames = 256;
+
+    AudioTap      tap(1U << 14);
+    TapCursor     cursor;
+    std::uint64_t written = 0;
+    cursor.setSampleRate(kSampleRate);
+
+    std::vector<float> window(64, -1.0F);
+    for (int chunk = 0; chunk < 40; ++chunk) {
+        writeRamp(tap, written, kChunkFrames);
+        REQUIRE(cursor.read(tap, static_cast<double>(kChunkFrames) / kSampleRate,
+                            window.data(), window.size()));
+    }
+    REQUIRE(tap.framesWritten() - cursor.position() <= 2 * kChunkFrames);
+}
+
+TEST_CASE("the display cursor resyncs rather than drifting", "[audio][spectrum]") {
+    constexpr double kSampleRate = 48000.0;
+
+    AudioTap      tap(1U << 12);
+    TapCursor     cursor;
+    std::uint64_t written = 0;
+    cursor.setSampleRate(kSampleRate);
+
+    std::vector<float> window(64, -1.0F);
+    writeRamp(tap, written, 1024);
+    REQUIRE(cursor.read(tap, 0.0, window.data(), window.size()));
+
+    SECTION("running past a producer that has stalled") {
+        // Half a second of frames against a writer that has produced nothing. The
+        // cursor cannot advance into audio that does not exist, so it drops back to
+        // where the audio is instead of sitting on a position in the future.
+        for (int frame = 0; frame < 30; ++frame) {
+            REQUIRE(cursor.read(tap, 1.0 / 60.0, window.data(), window.size()));
+        }
+        REQUIRE(cursor.position() <= tap.framesWritten());
+        REQUIRE(window.back() == Approx(static_cast<float>(cursor.position() - 1)));
+    }
+
+    SECTION("a producer running faster than real time") {
+        // An offline render fills the tap as fast as it can decode. A cursor pacing
+        // itself at 1x would fall behind until the samples it wants have been
+        // overwritten; it gives up on the position rather than reading whatever is
+        // in those slots now.
+        for (int chunk = 0; chunk < 20; ++chunk) {
+            writeRamp(tap, written, 1024);
+            REQUIRE(cursor.read(tap, 1.0 / 60.0, window.data(), window.size()));
+            REQUIRE(tap.framesWritten() - cursor.position() <= tap.capacity());
+            REQUIRE(window.back() == Approx(static_cast<float>(cursor.position() - 1)));
+        }
+    }
+
+    SECTION("a track change under the cursor") {
+        // clear() puts the tap back to nothing. The cursor must not carry a
+        // position from the previous track into the next one.
+        tap.clear();
+        REQUIRE_FALSE(cursor.read(tap, 1.0 / 60.0, window.data(), window.size()));
+
+        written = 0;
+        writeRamp(tap, written, 1024);
+        REQUIRE(cursor.read(tap, 1.0 / 60.0, window.data(), window.size()));
+        REQUIRE(cursor.position() <= tap.framesWritten());
+        REQUIRE(window.back() == Approx(static_cast<float>(cursor.position() - 1)));
+    }
+}
+
+TEST_CASE("a display with no sample rate still follows the head",
+          "[audio][spectrum]") {
+    // Nothing has told the cursor what rate the tap is filled at -- a panel drawing
+    // before a device has been negotiated. Seconds cannot be turned into frames, so
+    // it does what a visualiser did before it existed: the newest window, choppy or
+    // not. Never a blank display.
+    AudioTap      tap(1U << 12);
+    TapCursor     cursor;
+    std::uint64_t written = 0;
+    writeRamp(tap, written, 512);
+
+    std::vector<float> window(64, -1.0F);
+    REQUIRE(cursor.read(tap, 1.0 / 60.0, window.data(), window.size()));
+    REQUIRE(window.back() == Approx(511.0F));
+}
+
+TEST_CASE("the tap refuses windows it cannot honestly fill", "[audio][spectrum]") {
+    AudioTap      tap(1U << 8);
+    std::uint64_t written = 0;
+    writeRamp(tap, written, 300);  // more than the tap holds, so it has wrapped
+
+    std::vector<float> window(16, -1.0F);
+    REQUIRE(tap.readEnding(300, window.data(), window.size()));
+    REQUIRE(window.back() == Approx(299.0F));
+
+    // Past the write head is audio that has not been played yet.
+    REQUIRE_FALSE(tap.readEnding(301, window.data(), window.size()));
+    // And far enough behind it, the slots hold newer audio, not older -- returning
+    // them would splice the present into the middle of the past.
+    REQUIRE_FALSE(tap.readEnding(20, window.data(), window.size()));
+    // Nothing at all is not a window of silence.
+    REQUIRE_FALSE(tap.readEnding(0, window.data(), window.size()));
+}
+
+TEST_CASE("the tap reports how large the chunks reaching it are",
+          "[audio][spectrum]") {
+    // This is what tells a display how far behind the head to sit, so it has to
+    // rise the moment a large chunk lands -- a reader starved by one needs to know
+    // on the next frame -- and to come back down afterwards rather than holding the
+    // display back for the rest of the track because of one hiccup.
+    AudioTap      tap;
+    std::uint64_t written = 0;
+
+    writeRamp(tap, written, 256);
+    REQUIRE(tap.writeGranularity() == 256);
+
+    writeRamp(tap, written, 4096);
+    REQUIRE(tap.writeGranularity() == 4096);
+
+    for (int chunk = 0; chunk < 2000; ++chunk) {
+        writeRamp(tap, written, 256);
+    }
+    REQUIRE(tap.writeGranularity() == 256);
+
+    tap.clear();
+    REQUIRE(tap.writeGranularity() == 0);
 }

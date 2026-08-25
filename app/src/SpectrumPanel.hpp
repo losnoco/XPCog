@@ -17,17 +17,16 @@
 #pragma once
 
 #include "xpcog/core/Settings.hpp"
+// For TapCursor, which is held by value. The tap itself is still only borrowed.
+#include "xpcog/core/audio/AudioTap.hpp"
 #include "xpcog/core/audio/SpectrumAnalyzer.hpp"
 
 #include <wx/colour.h>
 #include <wx/timer.h>
 #include <wx/window.h>
 
+#include <chrono>
 #include <vector>
-
-namespace xpcog {
-class AudioTap;
-}
 
 namespace xpcog::app {
 
@@ -43,7 +42,9 @@ public:
     ~SpectrumPanel() override;
 
     /// The rate the analysis window is taken at. Needed because the band table
-    /// depends on it and the widget has no other way to learn it.
+    /// depends on it, and because it is what turns a frame interval into a number
+    /// of samples to advance the read cursor by -- the widget has no other way to
+    /// learn either.
     void setSampleRate(double rate);
 
     /// Re-reads every spectrum setting: colours, band mode, floor, peak markers.
@@ -67,8 +68,29 @@ private:
     void updateFrequencyBandCount();
 
     AudioTap&        tap_;
+
+    /// Where in the tap this display has got to.
+    ///
+    /// The reason it is not simply "the newest window every repaint" is that the
+    /// playback chain does not hand the tap audio at anything like this widget's
+    /// frame rate. A device period of a few thousand frames arrives every eighty
+    /// or ninety milliseconds; five repaints in a row then see the same samples
+    /// and the sixth jumps a tenth of a second, which is a display running at
+    /// 60 Hz and moving at 11. This advances by the measured frame interval
+    /// instead, so the window slides at the rate the audio is being heard at
+    /// whatever size the chunks arriving behind it are. See TapCursor.
+    TapCursor        cursor_;
     SpectrumAnalyzer analyzer_;
     wxTimer          timer_;
+
+    /// When the last frame was drawn, for the interval the cursor advances by.
+    ///
+    /// Measured rather than assumed to be kFrameIntervalMs: a wxTimer is not a
+    /// display link and does not pretend to be, so the interval it actually
+    /// delivers wanders with the load on the UI thread. Advancing by the nominal
+    /// figure would make the spectrum drift steadily away from the music, which is
+    /// the fault this cursor exists to fix, arrived at from the other side.
+    std::chrono::steady_clock::time_point lastTick_{};
 
     /// The window handed to the analyser each frame. Held rather than allocated
     /// per tick: 4096 floats, sixty times a second, is a pointless amount of churn

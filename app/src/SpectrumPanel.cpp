@@ -15,7 +15,9 @@ namespace xpcog::app {
 namespace {
 
 /// 60 Hz. Cog redraws on a display link; a timer is the portable equivalent and
-/// the difference is not visible on a bar chart.
+/// the difference is not visible on a bar chart -- the cursor advances by the
+/// interval that was actually delivered, so a late timer costs a frame rather than
+/// putting the display out of step with the music.
 constexpr int kFrameIntervalMs = 16;
 
 /// Cog divides the space between bars by this (bar_gap_denominator = 3): a third
@@ -77,7 +79,12 @@ SpectrumPanel::SpectrumPanel(wxWindow* parent, AudioTap& tap)
 
 SpectrumPanel::~SpectrumPanel() { timer_.Stop(); }
 
-void SpectrumPanel::setSampleRate(double rate) { analyzer_.prepare(rate); }
+void SpectrumPanel::setSampleRate(double rate) {
+    analyzer_.prepare(rate);
+    // And the cursor, which counts in frames and therefore cannot convert a frame
+    // interval into one without knowing the rate.
+    cursor_.setSampleRate(rate);
+}
 
 void SpectrumPanel::applySettings(const Settings& settings) {
     // Invalid colour text keeps whatever was there, rather than falling back to a
@@ -125,6 +132,12 @@ void SpectrumPanel::setActive(bool active) {
     // Visible *and* playing, or the clock stops. Either condition alone is a reason
     // not to be running a 4096-point transform sixty times a second.
     if (active && IsShownOnScreen()) {
+        // The cursor starts again from wherever the audio has got to. Every path
+        // that reaches here -- a track starting, a pause ending, the pane being
+        // opened -- has a gap behind it that the display did not draw, and carrying
+        // a position across one would put the window somewhere the music is not.
+        cursor_.reset();
+        lastTick_ = std::chrono::steady_clock::now();
         timer_.Start(kFrameIntervalMs);
     } else {
         timer_.Stop();
@@ -132,8 +145,16 @@ void SpectrumPanel::setActive(bool active) {
 }
 
 void SpectrumPanel::tick() {
-    if (!tap_.readLatest(window_.data(), window_.size())) {
-        return;  // nothing has played yet
+    const auto   now     = std::chrono::steady_clock::now();
+    const double elapsed = std::chrono::duration<double>(now - lastTick_).count();
+    lastTick_            = now;
+
+    // Nothing has played yet, or the writer lapped the window between the cursor
+    // choosing it and the copy. Either way the last frame stays on screen, which is
+    // the right thing to show: there is no new audio to draw, and clearing to
+    // silence for one frame would be a flicker.
+    if (!cursor_.read(tap_, elapsed, window_.data(), window_.size())) {
+        return;
     }
     analyzer_.analyze(window_.data(), window_.size());
     Refresh(false);
