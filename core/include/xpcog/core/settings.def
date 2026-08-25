@@ -311,6 +311,26 @@ XPCOG_SETTING(GraphicEqTrackGenre, bool, "GraphicEQtrackgenre", false)
 
 // --- appearance -----------------------------------------------------------
 
+/// Which language the interface speaks. Empty follows the system.
+///
+/// A catalogue's code -- `es` -- or `en` for the language the strings are
+/// written in, which loads no catalogue at all. Empty is the default and is not
+/// the same as `en`: it means "whatever the desktop asks for", and it keeps
+/// meaning that when the desktop's answer changes.
+///
+/// A code this build has no catalogue for is treated as empty rather than
+/// honoured, so a settings file carried back from a build with more languages in
+/// it falls back to the system's choice instead of to a language nothing here
+/// can supply.
+///
+/// **No Cog counterpart.** Cog ships its own localisations and takes the
+/// language from macOS's per-application preference, which is a system-level
+/// setting rather than one of its own; there is no equivalent on Windows, so the
+/// choice has to live here. Read once, by app/src/Localization.cpp, before any
+/// window is built -- changing it relabels nothing that is already on screen,
+/// which is what the note beside the row in Preferences says.
+XPCOG_SETTING(Language, std::string, "language", "")
+
 /// **Dead, and kept deliberately.** The Qt build let the listener choose a widget
 /// style -- windows11, windowsvista, Fusion -- because Qt draws its own controls
 /// and can therefore draw them several ways. wx uses the platform's, which is the

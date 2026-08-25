@@ -11,7 +11,7 @@ xpcog_probe_system_deps()
 
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 0.1.2
+    VERSION 0.2.0
     DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
     LANGUAGES C CXX)
 
@@ -36,6 +36,7 @@ include(XPCogOptions)
 include(XPCogWarnings)
 include(XPCogCodec)
 include(XPCogResources)
+include(XPCogCatalogs)
 # The UI toolkit. An ordinary vcpkg dependency: no environment variable to set,
 # no separate installer, and no deploy step. See docs/WXPORT.md for what that
 # replaced.

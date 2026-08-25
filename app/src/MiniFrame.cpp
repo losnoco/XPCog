@@ -12,6 +12,7 @@
 #include <wx/sizer.h>
 #include <wx/slider.h>
 #include <wx/stattext.h>
+#include <wx/translation.h>
 
 #include <cmath>
 
@@ -81,7 +82,7 @@ MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& s
     volume_ = new wxSlider(panel, kMiniVolumeId,
                            static_cast<int>(playback_.volume() * 100.0), 0, 100,
                            wxDefaultPosition, FromDIP(wxSize(80, -1)));
-    volume_->SetToolTip("Volume");
+    volume_->SetToolTip(_("Volume"));
     row->Add(volume_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
 
     panel->SetSizer(row);

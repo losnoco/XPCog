@@ -9,6 +9,7 @@
 #include <wx/msgdlg.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
+#include <wx/translation.h>
 
 #include <algorithm>
 #include <cctype>
@@ -76,9 +77,9 @@ std::string joinUrlHistory(const std::vector<std::string>& history) {
 }
 
 OpenUrlDialog::OpenUrlDialog(wxWindow* parent, Settings& settings)
-    : wxDialog(parent, wxID_ANY, "Open URL"), settings_(settings) {
+    : wxDialog(parent, wxID_ANY, _("Open URL")), settings_(settings) {
     auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(new wxStaticText(this, wxID_ANY, "Address of a stream or file:"), 0,
+    layout->Add(new wxStaticText(this, wxID_ANY, _("Address of a stream or file:")), 0,
                 wxALL, FromDIP(8));
 
     wxArrayString history;
@@ -100,7 +101,7 @@ OpenUrlDialog::OpenUrlDialog(wxWindow* parent, Settings& settings)
     if (wxSizer* buttons = CreateStdDialogButtonSizer(wxOK | wxCANCEL);
         buttons != nullptr) {
         if (auto* ok = dynamic_cast<wxButton*>(FindWindow(wxID_OK)); ok != nullptr) {
-            ok->SetLabel("Open");
+            ok->SetLabel(_("Open"));
         }
         layout->Add(buttons, 0, wxEXPAND | wxALL, FromDIP(8));
     }
@@ -128,10 +129,11 @@ void OpenUrlDialog::onOk(wxCommandEvent& event) {
     // at.
     if (!Url::parse(text).has_value()) {
         wxMessageBox(
-            toWx("\xE2\x80\x9C" + text +
-                 "\xE2\x80\x9D is not an address XPCog can open. It needs a scheme, "
-                 "such as https:// or file://."),
-            "Invalid URL", wxOK | wxICON_WARNING, this);
+            wxString::Format(
+                trUtf8("\xE2\x80\x9C%s\xE2\x80\x9D is not an address XPCog can open. "
+                  "It needs a scheme, such as https:// or file://."),
+                toWx(text)),
+            _("Invalid URL"), wxOK | wxICON_WARNING, this);
         return;
     }
 

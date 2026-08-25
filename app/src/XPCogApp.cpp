@@ -1,6 +1,7 @@
 #include "XPCogApp.hpp"
 
 #include "AppIcon.hpp"
+#include "Localization.hpp"
 #include "MainFrame.hpp"
 #include "StatusPresence.hpp"
 #include "Text.hpp"
@@ -15,6 +16,7 @@
 #include <wx/textfile.h>
 #include <wx/image.h>
 #include <wx/msgdlg.h>
+#include <wx/translation.h>
 
 #include <span>
 #include <string>
@@ -28,13 +30,19 @@
 namespace xpcog::app {
 namespace {
 
+// The descriptions are marked rather than translated: this is a file-scope
+// table, and wx translates a wxCmdLineEntryDesc's help text itself when it
+// prints the usage message (wxCmdLineParser::Usage calls wxGetTranslation on
+// each one). The switch *names* are not translated and must not be -- a
+// documented option that changes spelling with the interface language is an
+// option no script can rely on.
 const wxCmdLineEntryDesc kCommandLine[] = {
     {wxCMD_LINE_SWITCH, nullptr, "register",
-     "offer XPCog for the audio file types this build understands", wxCMD_LINE_VAL_NONE,
-     wxCMD_LINE_PARAM_OPTIONAL},
-    {wxCMD_LINE_SWITCH, nullptr, "unregister", "undo --register", wxCMD_LINE_VAL_NONE,
-     wxCMD_LINE_PARAM_OPTIONAL},
-    {wxCMD_LINE_PARAM, nullptr, nullptr, "file", wxCMD_LINE_VAL_STRING,
+     wxTRANSLATE("offer XPCog for the audio file types this build understands"),
+     wxCMD_LINE_VAL_NONE, wxCMD_LINE_PARAM_OPTIONAL},
+    {wxCMD_LINE_SWITCH, nullptr, "unregister", wxTRANSLATE("undo --register"),
+     wxCMD_LINE_VAL_NONE, wxCMD_LINE_PARAM_OPTIONAL},
+    {wxCMD_LINE_PARAM, nullptr, nullptr, wxTRANSLATE("file"), wxCMD_LINE_VAL_STRING,
      wxCMD_LINE_PARAM_OPTIONAL | wxCMD_LINE_PARAM_MULTIPLE},
     {wxCMD_LINE_NONE, nullptr, nullptr, nullptr, wxCMD_LINE_VAL_NONE, 0},
 };
@@ -107,6 +115,14 @@ bool XPCogApp::OnInit() {
     store_    = platform::makeNativeSettingsStore();
     settings_ = std::make_unique<Settings>(*store_);
     settings_->applyMigrations();
+
+    // Before the first window, and before anything that can put a message box on
+    // screen. A catalogue installed later would leave whatever had already been
+    // built labelled in English -- and the two paths above this line, file
+    // registration and the handover to a running instance, both talk to the
+    // listener without ever reaching here, which is why neither is above the
+    // settings store any more than it has to be.
+    installTranslations(settings_->Language());
 
     // Crash reporting, if and only if the listener has already said yes.
     //
@@ -260,18 +276,19 @@ bool XPCogApp::performRegistration(bool unregister) {
     };
 
     if (!platform::fileAssociationsSupported()) {
-        complain("File associations are handled by the package on this platform, "
-                 "not by the application.");
+        complain(_("File associations are handled by the package on this platform, "
+                   "not by the application."));
         return false;
     }
 
     std::string error;
     if (unregister) {
         if (!platform::unregisterFileAssociations(&error)) {
-            complain("Could not remove the file associations: " + toWx(error));
+            complain(wxString::Format(_("Could not remove the file associations: %s"),
+                                      toWx(error)));
             return false;
         }
-        wxMessageBox("XPCog is no longer offered for audio files.", "XPCog",
+        wxMessageBox(_("XPCog is no longer offered for audio files."), "XPCog",
                      wxOK | wxICON_INFORMATION);
         return true;
     }
@@ -285,7 +302,8 @@ bool XPCogApp::performRegistration(bool unregister) {
 
     const std::span<const std::string> extensions = codecs.allExtensions();
     if (!platform::registerFileAssociations(extensions, &error)) {
-        complain("Could not register the file associations: " + toWx(error));
+        complain(wxString::Format(_("Could not register the file associations: %s"),
+                                  toWx(error)));
         return false;
     }
 
@@ -294,10 +312,11 @@ bool XPCogApp::performRegistration(bool unregister) {
     // double-click opens XPCog would be a promise the OS breaks.
     wxMessageBox(
         wxString::Format(
-            "XPCog is now offered for %zu audio file types.\n\n"
-            "Windows does not let an application make itself the default. To open "
-            "these files by double-clicking, choose Open with " "→" " Choose another "
-            "app " "→" " XPCog, and tick \"Always use this app\".",
+            trUtf8("XPCog is now offered for %zu audio file types.\n\n"
+                   "Windows does not let an application make itself the default. To "
+                   "open these files by double-clicking, choose Open with "
+                   "\xE2\x86\x92 Choose another app \xE2\x86\x92 XPCog, and tick "
+              "\"Always use this app\"."),
             extensions.size()),
         "XPCog", wxOK | wxICON_INFORMATION);
     return true;

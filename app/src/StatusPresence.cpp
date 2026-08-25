@@ -7,6 +7,7 @@
 
 #include <wx/menu.h>
 #include <wx/notifmsg.h>
+#include <wx/translation.h>
 
 namespace xpcog::app {
 namespace {
@@ -91,19 +92,19 @@ wxMenu* StatusPresence::CreatePopupMenu() {
         menu->AppendSeparator();
     }
 
-    menu->Append(PlaybackPlayPause, playing_ && !paused_ ? "Pause" : "Play");
-    menu->Append(PlaybackStop, "Stop");
+    menu->Append(PlaybackPlayPause, playing_ && !paused_ ? _("Pause") : _("Play"));
+    menu->Append(PlaybackStop, _("Stop"));
     menu->AppendSeparator();
-    menu->Append(PlaybackPrevious, "Previous");
-    menu->Append(PlaybackNext, "Next");
+    menu->Append(PlaybackPrevious, _("Previous"));
+    menu->Append(PlaybackNext, _("Next"));
 
 #ifndef __WXOSX__
     // Only where there is a tray. AppKit appends Quit and the window list to a
     // Dock menu itself, and clicking the Dock icon already raises the window --
     // adding these there would produce a menu with two Quits.
     menu->AppendSeparator();
-    menu->Append(kShowWindowId, "Show XPCog");
-    menu->Append(FileQuit, "Quit");
+    menu->Append(kShowWindowId, _("Show XPCog"));
+    menu->Append(FileQuit, _("Quit"));
 #endif
 
     // The transport ids are the frame's, so the commands run there and pick up
@@ -146,20 +147,20 @@ void StatusPresence::refreshTooltip() {
         return;
     }
 
-    std::string text = "XPCog";
+    wxString text = "XPCog";
     if (!title_.empty()) {
-        text += "\n" + elide(title_);
+        text += "\n" + toWx(elide(title_));
         if (!artist_.empty()) {
-            text += "\n" + elide(artist_);
+            text += "\n" + toWx(elide(artist_));
         }
     }
-    if (playing_) {
-        text += paused_ ? "\n(paused)" : "";
+    if (playing_ && paused_) {
+        text += "\n" + _("(paused)");
     }
 
     // The icon is passed again because wx has no tooltip-only setter; it is the
     // same bundle, so nothing is redrawn that was not already there.
-    SetIcon(applicationIconAt(16), toWx(text));
+    SetIcon(applicationIconAt(16), text);
 }
 
 void StatusPresence::notify(const std::string& title, const std::string& body,

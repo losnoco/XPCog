@@ -1,6 +1,7 @@
 #include "PreferencesDialog.hpp"
 
 #include "LastFmAccount.hpp"
+#include "Localization.hpp"
 
 #include "Text.hpp"
 
@@ -26,6 +27,7 @@
 #include <wx/stattext.h>
 #include <wx/taskbar.h>
 #include <wx/textctrl.h>
+#include <wx/translation.h>
 
 #include <algorithm>
 #include <array>
@@ -43,68 +45,70 @@ namespace xpcog::app {
 namespace {
 
 /// A setting whose values are a closed set, so it deserves a named list rather
-/// than a text box. The strings are Cog's stored values, unchanged.
+/// than a text box. The **values** are Cog's stored values, unchanged; only the
+/// labels beside them are language. Translating a value would write a Spanish
+/// word into a settings file Cog is expected to be able to read.
 struct Choice {
     const char* value;
-    const char* label;
+    const char* label;  ///< marked with wxTRANSLATE; looked up by choice()
 };
 
 constexpr std::array kVolumeScalingChoices = {
-    Choice{"none", "None"},
-    Choice{"volumeScale", "Volume tag"},
-    Choice{"soundcheck", "iTunes Sound Check"},
-    Choice{"trackGain", "Track gain"},
-    Choice{"trackGainWithPeak", "Track gain, peak-limited"},
-    Choice{"albumGain", "Album gain"},
-    Choice{"albumGainWithPeak", "Album gain, peak-limited"},
+    Choice{"none", wxTRANSLATE("None")},
+    Choice{"volumeScale", wxTRANSLATE("Volume tag")},
+    Choice{"soundcheck", wxTRANSLATE("iTunes Sound Check")},
+    Choice{"trackGain", wxTRANSLATE("Track gain")},
+    Choice{"trackGainWithPeak", wxTRANSLATE("Track gain, peak-limited")},
+    Choice{"albumGain", wxTRANSLATE("Album gain")},
+    Choice{"albumGainWithPeak", wxTRANSLATE("Album gain, peak-limited")},
 };
 
 constexpr std::array kResamplingChoices = {
-    Choice{"quick", "Quick"}, Choice{"low", "Low"},   Choice{"medium", "Medium"},
-    Choice{"high", "High"},   Choice{"best", "Best"},
+    Choice{"quick", wxTRANSLATE("Quick")}, Choice{"low", wxTRANSLATE("Low")},   Choice{"medium", wxTRANSLATE("Medium")},
+    Choice{"high", wxTRANSLATE("High")},   Choice{"best", wxTRANSLATE("Best")},
 };
 
 // The stretch engines and the Rubber Band option vocabularies, values and
 // defaults from Cog's Rubber Band pane (Preferences/Panes/RubberbandPaneView
 // .swift). `varispeed` is ours: Cog has no resampling speed control.
 constexpr std::array kStretchEngineChoices = {
-    Choice{"disabled", "Disabled"},
-    Choice{"varispeed", "Varispeed \xE2\x80\x94 resample, pitch follows tempo"},
-    Choice{"signalsmith", "Signalsmith Stretch"},
-    Choice{"faster", "Rubber Band \xE2\x80\x94 Faster"},
-    Choice{"finer", "Rubber Band \xE2\x80\x94 Finer"},
+    Choice{"disabled", wxTRANSLATE("Disabled")},
+    Choice{"varispeed", wxTRANSLATE("Varispeed \xE2\x80\x94 resample, pitch follows tempo")},
+    Choice{"signalsmith", wxTRANSLATE("Signalsmith Stretch")},
+    Choice{"faster", wxTRANSLATE("Rubber Band \xE2\x80\x94 Faster")},
+    Choice{"finer", wxTRANSLATE("Rubber Band \xE2\x80\x94 Finer")},
 };
 constexpr std::array kRubberTransientsChoices = {
-    Choice{"crisp", "Crisp"}, Choice{"mixed", "Mixed"}, Choice{"smooth", "Smooth"},
+    Choice{"crisp", wxTRANSLATE("Crisp")}, Choice{"mixed", wxTRANSLATE("Mixed")}, Choice{"smooth", wxTRANSLATE("Smooth")},
 };
 constexpr std::array kRubberDetectorChoices = {
-    Choice{"compound", "Compound"},
-    Choice{"percussive", "Percussive"},
-    Choice{"soft", "Soft"},
+    Choice{"compound", wxTRANSLATE("Compound")},
+    Choice{"percussive", wxTRANSLATE("Percussive")},
+    Choice{"soft", wxTRANSLATE("Soft")},
 };
 constexpr std::array kRubberPhaseChoices = {
-    Choice{"laminar", "Laminar"},
-    Choice{"independent", "Independent"},
+    Choice{"laminar", wxTRANSLATE("Laminar")},
+    Choice{"independent", wxTRANSLATE("Independent")},
 };
 constexpr std::array kRubberWindowChoices = {
-    Choice{"standard", "Standard"}, Choice{"short", "Short"}, Choice{"long", "Long"},
+    Choice{"standard", wxTRANSLATE("Standard")}, Choice{"short", wxTRANSLATE("Short")}, Choice{"long", wxTRANSLATE("Long")},
 };
 constexpr std::array kRubberSmoothingChoices = {
-    Choice{"off", "Off"},
-    Choice{"on", "On"},
+    Choice{"off", wxTRANSLATE("Off")},
+    Choice{"on", wxTRANSLATE("On")},
 };
 constexpr std::array kRubberFormantChoices = {
-    Choice{"shifted", "Shifted"},
-    Choice{"preserved", "Preserved"},
+    Choice{"shifted", wxTRANSLATE("Shifted")},
+    Choice{"preserved", wxTRANSLATE("Preserved")},
 };
 constexpr std::array kRubberPitchChoices = {
-    Choice{"highspeed", "High speed"},
-    Choice{"highquality", "High quality"},
-    Choice{"highconsistency", "High consistency"},
+    Choice{"highspeed", wxTRANSLATE("High speed")},
+    Choice{"highquality", wxTRANSLATE("High quality")},
+    Choice{"highconsistency", wxTRANSLATE("High consistency")},
 };
 constexpr std::array kRubberChannelsChoices = {
-    Choice{"apart", "Apart"},
-    Choice{"together", "Together"},
+    Choice{"apart", wxTRANSLATE("Apart")},
+    Choice{"together", wxTRANSLATE("Together")},
 };
 
 /// Cog's slider curve (PlaybackController.m speedScale): a slider position in
@@ -127,15 +131,15 @@ constexpr std::array kRubberChannelsChoices = {
 /// read back from them so the dialog does not have to construct a synthesiser to
 /// draw a list. See docs/MIDI.md.
 constexpr std::array kMidiSynthChoices = {
-    Choice{"DOOM0", "OPL3 \xE2\x80\x94 DMX default"},
-    Choice{"DOOM1", "OPL3 \xE2\x80\x94 DMX Doom"},
-    Choice{"DOOM2", "OPL3 \xE2\x80\x94 DMX Doom II"},
-    Choice{"DOOM3", "OPL3 \xE2\x80\x94 DMX Raptor"},
-    Choice{"DOOM4", "OPL3 \xE2\x80\x94 DMX Strife"},
-    Choice{"DOOM5", "OPL3 \xE2\x80\x94 DMXOPL"},
-    Choice{"OPL3W0", "OPL3 \xE2\x80\x94 General MIDI"},
-    Choice{"Spessa", "SoundFont \xE2\x80\x94 SpessaSynth"},
-    Choice{"NukeSc55", "Roland SC-55"},
+    Choice{"DOOM0", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX default")},
+    Choice{"DOOM1", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX Doom")},
+    Choice{"DOOM2", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX Doom II")},
+    Choice{"DOOM3", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX Raptor")},
+    Choice{"DOOM4", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX Strife")},
+    Choice{"DOOM5", wxTRANSLATE("OPL3 \xE2\x80\x94 DMXOPL")},
+    Choice{"OPL3W0", wxTRANSLATE("OPL3 \xE2\x80\x94 General MIDI")},
+    Choice{"Spessa", wxTRANSLATE("SoundFont \xE2\x80\x94 SpessaSynth")},
+    Choice{"NukeSc55", wxTRANSLATE("Roland SC-55")},
 };
 
 [[nodiscard]] bool isTrue(const std::string& text) {
@@ -194,6 +198,10 @@ constexpr std::array kCuratedKeys = {
     // the platform and widgetStyle is dead, and neither belongs in Advanced,
     // where a raw editable row would offer control that does not exist.
     "widgetStyle", "closeToTray",
+    // General. `language` has a picker there, and Advanced must not offer a
+    // second one: its generated row would be a free-text box for a value that
+    // has exactly three valid answers, one of which is the empty string.
+    "language",
     // Spectrum
     "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode", "spectrumFloorDb",
     "spectrumShowPeaks",
@@ -301,11 +309,12 @@ public:
     /// disappear under another row's value; binding a second handler on the
     /// control from outside would work only by accident of wx's dispatch
     /// order, so the hook is part of the row instead.
-    FormRow choice(const char* label, const char* key, std::span<const Choice> choices,
+    FormRow choice(const wxString& label, const char* key,
+                   std::span<const Choice> choices,
                    std::function<void(const std::string&)> onChange = {}) const {
         wxArrayString items;
         for (const Choice& option : choices) {
-            items.Add(wxString::FromUTF8(option.label));
+            items.Add(trUtf8(option.label));
         }
         auto* box = new wxChoice(pane_, wxID_ANY, wxDefaultPosition, wxDefaultSize, items);
 
@@ -347,12 +356,12 @@ public:
 
     /// The row's control is the checkbox, for the callers that grey it out or
     /// hide its row.
-    FormRow toggle(const char* label, const char* key,
-                   const char* hint = nullptr) const {
-        auto* box = new wxCheckBox(pane_, wxID_ANY, wxString::FromUTF8(label));
+    FormRow toggle(const wxString& label, const char* key,
+                   const wxString& hint = wxString{}) const {
+        auto* box = new wxCheckBox(pane_, wxID_ANY, label);
         box->SetValue(isTrue(settings_->rawValue(key)));
-        if (hint != nullptr) {
-            box->SetToolTip(wxString::FromUTF8(hint));
+        if (!hint.IsEmpty()) {
+            box->SetToolTip(hint);
         }
         box->Bind(wxEVT_CHECKBOX,
                   [settings = settings_, announce = announce_, key](wxCommandEvent& event) {
@@ -368,14 +377,15 @@ public:
     /// switch -- and it is worth a method rather than a hand-built control there
     /// because "here is what you are agreeing to" is not something to leave as
     /// text somebody has to retype into a browser.
-    void link(const char* label, std::string_view url) const {
-        auto* control = new wxHyperlinkCtrl(pane_, wxID_ANY, wxString::FromUTF8(label),
+    void link(const wxString& label, std::string_view url) const {
+        auto* control = new wxHyperlinkCtrl(pane_, wxID_ANY, label,
                                             wxString::FromUTF8(std::string{url}));
         form_->AddSpacer(0);
         form_->Add(control, 0, wxTOP, pane_->FromDIP(2));
     }
 
-    void number(const char* label, const char* key, int minimum, int maximum) const {
+    void number(const wxString& label, const char* key, int minimum,
+                int maximum) const {
         auto* box = new wxSpinCtrl(pane_, wxID_ANY, wxEmptyString, wxDefaultPosition,
                                    wxDefaultSize, wxSP_ARROW_KEYS, minimum, maximum,
                                    toInt(settings_->rawValue(key)));
@@ -387,7 +397,7 @@ public:
         add(label, box);
     }
 
-    void seconds(const char* label, const char* key, double maximum) const {
+    void seconds(const wxString& label, const char* key, double maximum) const {
         auto* box = new wxSpinCtrlDouble(pane_, wxID_ANY, wxEmptyString,
                                          wxDefaultPosition, wxDefaultSize,
                                          wxSP_ARROW_KEYS, 0.0, maximum,
@@ -404,16 +414,15 @@ public:
     /// One file, chosen or typed. For a setting that names a single file and
     /// nothing else -- a SoundFont bank -- where the folder button a path() row
     /// carries would only offer something that cannot be right.
-    FormRow file(const char* label, const char* key, const char* filter) const {
+    FormRow file(const wxString& label, const char* key,
+                 const wxString& filter) const {
         auto* edit = makeEdit(key);
 
-        auto* browse = new wxButton(pane_, wxID_ANY, "Choose...");
+        auto* browse = new wxButton(pane_, wxID_ANY, _("Choose..."));
         browse->Bind(wxEVT_BUTTON, [this, edit, key, label, filter](wxCommandEvent&) {
             apply(edit, key,
-                  wxFileSelector(wxString::FromUTF8(label), wxEmptyString,
-                                 wxEmptyString, wxEmptyString,
-                                 wxString::FromUTF8(filter),
-                                 wxFD_OPEN | wxFD_FILE_MUST_EXIST, pane_));
+                  wxFileSelector(label, wxEmptyString, wxEmptyString, wxEmptyString,
+                                 filter, wxFD_OPEN | wxFD_FILE_MUST_EXIST, pane_));
         });
 
         return addWithButtons(label, edit, {browse});
@@ -424,23 +433,23 @@ public:
     /// Two buttons rather than one because the thing being named may be either a
     /// folder or a file, and no file dialog on any platform offers both at once.
     /// The text box accepts a typed or pasted path either way.
-    FormRow path(const char* label, const char* key, const char* archiveFilter) const {
+    FormRow path(const wxString& label, const char* key,
+                 const wxString& archiveFilter) const {
         auto* edit = makeEdit(key);
 
-        auto* folder = new wxButton(pane_, wxID_ANY, "Folder...");
+        auto* folder = new wxButton(pane_, wxID_ANY, _("Folder..."));
         folder->Bind(wxEVT_BUTTON, [this, edit, key, label](wxCommandEvent&) {
             apply(edit, key,
-                  wxDirSelector(wxString::FromUTF8(label), wxEmptyString,
-                                wxDD_DEFAULT_STYLE, wxDefaultPosition, pane_));
+                  wxDirSelector(label, wxEmptyString, wxDD_DEFAULT_STYLE,
+                                wxDefaultPosition, pane_));
         });
 
-        auto* archive = new wxButton(pane_, wxID_ANY, "Archive...");
+        auto* archive = new wxButton(pane_, wxID_ANY, _("Archive..."));
         archive->Bind(wxEVT_BUTTON,
                       [this, edit, key, label, archiveFilter](wxCommandEvent&) {
                           apply(edit, key,
-                                wxFileSelector(wxString::FromUTF8(label), wxEmptyString,
-                                               wxEmptyString, wxEmptyString,
-                                               wxString::FromUTF8(archiveFilter),
+                                wxFileSelector(label, wxEmptyString, wxEmptyString,
+                                               wxEmptyString, archiveFilter,
                                                wxFD_OPEN | wxFD_FILE_MUST_EXIST,
                                                pane_));
                       });
@@ -448,8 +457,8 @@ public:
         return addWithButtons(label, edit, {folder, archive});
     }
 
-    FormRow note(const char* text) const {
-        auto* label = new wxStaticText(pane_, wxID_ANY, wxString::FromUTF8(text));
+    FormRow note(const wxString& text) const {
+        auto* label = new wxStaticText(pane_, wxID_ANY, text);
         label->Wrap(pane_->FromDIP(440));
         label->Enable(false);
         // An empty label rather than a spacer in the first cell: a spacer item
@@ -461,8 +470,8 @@ public:
         return FormRow{pad, label, nullptr};
     }
 
-    FormRow add(const char* label, wxWindow* control) const {
-        auto* text = new wxStaticText(pane_, wxID_ANY, wxString::FromUTF8(label));
+    FormRow add(const wxString& label, wxWindow* control) const {
+        auto* text = new wxStaticText(pane_, wxID_ANY, label);
         form_->Add(text, 0, wxALIGN_CENTER_VERTICAL);
         form_->Add(control, 1, wxEXPAND);
         return FormRow{text, control, nullptr};
@@ -505,14 +514,14 @@ private:
         announce_(key);
     }
 
-    FormRow addWithButtons(const char* label, wxTextCtrl* edit,
+    FormRow addWithButtons(const wxString& label, wxTextCtrl* edit,
                            std::initializer_list<wxButton*> buttons) const {
         auto* row = new wxBoxSizer(wxHORIZONTAL);
         row->Add(edit, 1, wxALIGN_CENTER_VERTICAL);
         for (wxButton* button : buttons) {
             row->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, pane_->FromDIP(4));
         }
-        auto* text = new wxStaticText(pane_, wxID_ANY, wxString::FromUTF8(label));
+        auto* text = new wxStaticText(pane_, wxID_ANY, label);
         form_->Add(text, 0, wxALIGN_CENTER_VERTICAL);
         form_->Add(row, 1, wxEXPAND);
         return FormRow{text, nullptr, row};
@@ -532,7 +541,7 @@ private:
 
 PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
                                      LastFmAccount* account, Scrobbler* scrobbler)
-    : wxDialog(parent, wxID_ANY, "Preferences", wxDefaultPosition, wxDefaultSize,
+    : wxDialog(parent, wxID_ANY, _("Preferences"), wxDefaultPosition, wxDefaultSize,
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
       settings_(settings),
       account_(account),
@@ -562,19 +571,19 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     // Cog's order, with its unported panes taken out rather than reshuffled.
     // General sits after Output because that is where Cog has it -- fourth, after
     // Playlist, Hot Keys and Output -- rather than first, where the name suggests.
-    page(buildPlaylistPane(book), "Playlist");
-    page(buildOutputPane(book), "Output");
+    page(buildPlaylistPane(book), _("Playlist"));
+    page(buildOutputPane(book), _("Output"));
     // Plain "&": the name lands in a wxListBox, which draws text verbatim
     // rather than eating ampersands the way menus and buttons do.
-    page(buildPitchTempoPane(book), "Pitch & Tempo");
-    page(buildGeneralPane(book), "General");
-    page(buildNotificationsPane(book), "Notifications");
+    page(buildPitchTempoPane(book), _("Pitch & Tempo"));
+    page(buildGeneralPane(book), _("General"));
+    page(buildNotificationsPane(book), _("Notifications"));
     // Cog has a Last.fm pane of its own and puts it last, after Appearance and
     // MIDI. It goes beside Notifications here because that is what it is: the
     // other place this program reports what it is playing to something outside
     // itself. Skipped entirely when the application did not pass one in.
     if (account_ != nullptr && scrobbler_ != nullptr) {
-        page(buildLastFmPane(book), "Last.fm");
+        page(buildLastFmPane(book), "Last.fm");  // a proper noun
     }
     // Absent on macOS. Its only control is the close-to-tray checkbox, which is
     // already Windows and Linux only -- macOS closes to the Dock unconditionally,
@@ -584,11 +593,11 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     // telling: following the system appearance is what every application on the
     // platform does.
 #ifndef __WXOSX__
-    page(buildAppearancePane(book), "Appearance");
+    page(buildAppearancePane(book), _("Appearance"));
 #endif
-    page(buildMidiPane(book), "MIDI");
-    page(buildSpectrumPane(book), "Spectrum");
-    page(buildAdvancedPane(book), "Advanced");
+    page(buildMidiPane(book), "MIDI");  // an acronym, the same in every language
+    page(buildSpectrumPane(book), _("Spectrum"));
+    page(buildAdvancedPane(book), _("Advanced"));
 
     categories->SetSelection(0);
     book->ChangeSelection(0);
@@ -632,17 +641,18 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
 
-    row->toggle("Stop after every track", "alwaysStopAfterCurrent");
-    row->toggle("Follow the playing track in the playlist", "selectionFollowsPlayback",
-                "Move the selection to each track as it starts.");
-    row->toggle("Resume playback on startup", "resumePlaybackOnStartup",
-                "Continue the last track from where it stopped. The track is "
-                "selected either way.");
+    row->toggle(_("Stop after every track"), "alwaysStopAfterCurrent");
+    row->toggle(_("Follow the playing track in the playlist"),
+                "selectionFollowsPlayback",
+                _("Move the selection to each track as it starts."));
+    row->toggle(_("Resume playback on startup"), "resumePlaybackOnStartup",
+                _("Continue the last track from where it stopped. The track is "
+                  "selected either way."));
     // Both off by default, as in Cog, and for the reason Cog has: a folder
     // holding album.cue or its own .m3u beside the audio otherwise adds every
     // track twice -- once through the container and once as the file under it.
-    row->toggle("Read cue sheets when adding folders", "readCueSheetsInFolders");
-    row->toggle("Read playlists when adding folders", "readPlaylistsInFolders");
+    row->toggle(_("Read cue sheets when adding folders"), "readCueSheetsInFolders");
+    row->toggle(_("Read playlists when adding folders"), "readPlaylistsInFolders");
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -656,23 +666,65 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
 
+    // The language, first, and on General rather than Appearance -- Appearance
+    // is not built on macOS at all, and this is the one row on it that every
+    // platform needs. Cog has no equivalent: macOS carries a per-application
+    // language preference of its own, and Windows does not.
+    //
+    // By hand rather than through RowBuilder::choice: the rows come from what
+    // the build compiled in rather than from a constexpr table, and the first of
+    // them is not a language.
+    wxArrayString            languageNames;
+    std::vector<std::string> languageCodes;
+    for (const LanguageOption& option : availableLanguages()) {
+        languageNames.Add(option.code.empty() ? _("Follow the system")
+                                              : toWx(option.name));
+        languageCodes.push_back(option.code);
+    }
+
+    auto* languageBox =
+        new wxChoice(pane, wxID_ANY, wxDefaultPosition, wxDefaultSize, languageNames);
+    const std::string chosenLanguage = settings_.Language();
+    languageBox->SetSelection(0);
+    for (std::size_t i = 0; i < languageCodes.size(); ++i) {
+        if (languageCodes[i] == chosenLanguage) {
+            languageBox->SetSelection(static_cast<int>(i));
+            break;
+        }
+    }
+    languageBox->Bind(wxEVT_CHOICE, [this, languageCodes](wxCommandEvent& event) {
+        const auto index = static_cast<std::size_t>(event.GetSelection());
+        if (index >= languageCodes.size()) {
+            return;
+        }
+        settings_.setLanguage(languageCodes[index]);
+        settingChanged.publish("language");
+        // Flushed now rather than at quit. This is a setting whose only effect
+        // is on the *next* launch, and somebody who changes it is quite likely
+        // to restart the player rather than close the window tidily first.
+        settings_.sync();
+    });
+    row->add(_("Language"), languageBox);
+    row->note(_("Takes effect the next time XPCog starts. Windows and menus "
+                "already on screen keep the language they were built in."));
+
     // Cog keeps the streaming buffer on General too, under a Network heading
     // (GeneralPaneView.swift:120-131). One row does not need a heading.
-    row->number("Streaming buffer (bytes)", "httpStreamingBufferSize", 65536,
+    row->number(_("Streaming buffer (bytes)"), "httpStreamingBufferSize", 65536,
                 134217728);
-    row->note("How much of an internet radio stream is read ahead. Raise it for a "
-              "slow or distant station.");
+    row->note(_("How much of an internet radio stream is read ahead. Raise it for "
+                "a slow or distant station."));
 
     // Cog's label, word for word (Preferences/Panes/GeneralPaneView.swift:133).
     // "Usage data" is not padding: session tracking is on, so a launch and a
     // clean exit are reported as well as a crash, and a label saying only "crash
     // reports" would be describing less than what is sent.
     auto* box = static_cast<wxCheckBox*>(
-        row->toggle("Send crash reports and usage data", "sentryConsented").control);
+        row->toggle(_("Send crash reports and usage data"), "sentryConsented").control);
 
     if (platform::crashReportingAvailable()) {
-        row->note("Nothing is collected or sent while this is off.");
-        row->link("Privacy policy", platform::kPrivacyPolicyUrl);
+        row->note(_("Nothing is collected or sent while this is off."));
+        row->link(_("Privacy policy"), platform::kPrivacyPolicyUrl);
     } else {
         // Shown rather than hidden, and greyed rather than lying. A build
         // configured without XPCOG_WITH_SENTRY has no reporter to start, and a
@@ -681,7 +733,7 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
         // runs in the direction of sending more.
         box->Enable(false);
         box->SetValue(false);
-        row->note("Crash reporting is not included in this build.");
+        row->note(_("Crash reporting is not included in this build."));
     }
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
@@ -697,10 +749,10 @@ wxWindow* PreferencesDialog::buildNotificationsPane(wxWindow* parent) {
     pane->SetClientObject(row);
 
     // Cog's two, with Cog's labels and Cog's defaults -- both on.
-    row->toggle("Enable notifications", "notifications.enable");
-    row->toggle("Show album art", "notifications.show-album-art");
-    row->note("Shown as each track starts. Focus Assist or Do Not Disturb can "
-              "hold notifications back.");
+    row->toggle(_("Enable notifications"), "notifications.enable");
+    row->toggle(_("Show album art"), "notifications.show-album-art");
+    row->note(_("Shown as each track starts. Focus Assist or Do Not Disturb can "
+                "hold notifications back."));
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -719,7 +771,7 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
     // would do that while the listener is dragging a slider next to it.
     wxArrayString            names;
     std::vector<std::string> ids;
-    names.Add("System default");
+    names.Add(_("System default"));
     ids.emplace_back();
 
     const std::string chosenId = settings_.rawValue("outputDeviceId");
@@ -727,8 +779,9 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
         // Named rather than left to be guessed at: "System default" and the
         // device it currently resolves to are different rows, and which one is
         // chosen matters when headphones are plugged in later.
-        names.Add(toWx(device.isDefault ? device.name + " (current default)"
-                                        : device.name));
+        names.Add(device.isDefault
+                      ? wxString::Format(_("%s (current default)"), toWx(device.name))
+                      : toWx(device.name));
         ids.push_back(device.id);
     }
 
@@ -744,7 +797,8 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
     }
     if (chosenRow == 0 && !chosenId.empty()) {
         const std::string name = settings_.rawValue("outputDeviceName");
-        names.Add(toWx((name.empty() ? chosenId : name) + " (not connected)"));
+        names.Add(wxString::Format(_("%s (not connected)"),
+                                   toWx(name.empty() ? chosenId : name)));
         ids.push_back(chosenId);
         chosenRow = static_cast<int>(ids.size()) - 1;
     }
@@ -765,35 +819,36 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
                                                  : toUtf8(names[index]));
         settingChanged.publish("outputDeviceId");
     });
-    row->add("Output device", deviceBox);
+    row->add(_("Output device"), deviceBox);
 
-    row->toggle("Play exclusively", "exclusiveOutput",
-                "Use the file's own rate and format instead of the system mixer's. "
-                "Other applications cannot play while this is active. Falls back to "
-                "sharing if the device is unavailable.");
+    row->toggle(_("Play exclusively"), "exclusiveOutput",
+                _("Use the file's own rate and format instead of the system "
+                  "mixer's. Other applications cannot play while this is active. "
+                  "Falls back to sharing if the device is unavailable."));
 
-    row->choice("Volume scaling", "volumeScaling", kVolumeScalingChoices);
-    row->choice("Resampler quality", "resampling", kResamplingChoices);
+    row->choice(_("Volume scaling"), "volumeScaling", kVolumeScalingChoices);
+    row->choice(_("Resampler quality"), "resampling", kResamplingChoices);
 
-    row->toggle("Decode HDCD", "enableHDCD",
-                "Applies to 16-bit 44.1 kHz stereo only. Files without HDCD codes "
-                "are unaffected.");
-    row->toggle("Halve DSD volume", "halveDSDVolume",
-                "DSD is converted with a filter whose gain puts half modulation "
-                "\xE2\x80\x94 as loud as most SACDs go \xE2\x80\x94 at full scale. "
-                "Turn on if a loud SACD rip clips.");
-    row->toggle("Upmix stereo to surround", "enableFSurround",
-                "Uses FreeSurround. Takes effect when the device is next opened.");
-    row->toggle("Fade on seek and stop", "enableFading");
+    row->toggle(_("Decode HDCD"), "enableHDCD",
+                _("Applies to 16-bit 44.1 kHz stereo only. Files without HDCD "
+                  "codes are unaffected."));
+    row->toggle(_("Halve DSD volume"), "halveDSDVolume",
+                trUtf8("DSD is converted with a filter whose gain puts half modulation "
+                       "\xE2\x80\x94 as loud as most SACDs go \xE2\x80\x94 at full "
+                  "scale. Turn on if a loud SACD rip clips."));
+    row->toggle(_("Upmix stereo to surround"), "enableFSurround",
+                _("Uses FreeSurround. Takes effect when the device is next "
+                  "opened."));
+    row->toggle(_("Fade on seek and stop"), "enableFading");
     // On, the device is handed back while paused; off, it is held open and fed
     // silence. Off is what someone chooses when reacquiring costs more than it
     // saves -- an exclusive device another application may take in the gap.
-    row->toggle("Release the device while paused", "suspendOutputOnPause",
-                "Let other applications use the device while playback is paused. "
-                "Turn off to keep an exclusive device reserved.");
+    row->toggle(_("Release the device while paused"), "suspendOutputOnPause",
+                _("Let other applications use the device while playback is paused. "
+                  "Turn off to keep an exclusive device reserved."));
 
-    row->note("Volume scaling and resampler quality apply from the next track. "
-              "Changing the device moves playback across with a brief gap.");
+    row->note(_("Volume scaling and resampler quality apply from the next track. "
+                "Changing the device moves playback across with a brief gap."));
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -841,7 +896,7 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
             if (current == option.value) {
                 selected = static_cast<int>(rows->windowValues.size());
             }
-            rows->windowBox->Append(wxString::FromUTF8(option.label));
+            rows->windowBox->Append(trUtf8(option.label));
             rows->windowValues.emplace_back(option.value);
         }
         rows->windowBox->SetSelection(selected);
@@ -879,7 +934,7 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
         pane->Layout();
     };
 
-    row->choice("Engine", "rubberbandEngine", kStretchEngineChoices, refresh);
+    row->choice(_("Engine"), "rubberbandEngine", kStretchEngineChoices, refresh);
 
     // The two speed sliders, on the pane beside the engine that obeys them
     // rather than in the transport bar where Cog keeps its pair -- the bar
@@ -936,9 +991,9 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
         applySpeed("tempo", tempoSlider, tempoValue, "pitch", pitchSlider, pitchValue);
     });
 
-    const auto speedRow = [&](const char* label, wxSlider* slider,
+    const auto speedRow = [&](const wxString& label, wxSlider* slider,
                               wxStaticText* value) {
-        auto* text = new wxStaticText(pane, wxID_ANY, wxString::FromUTF8(label));
+        auto* text = new wxStaticText(pane, wxID_ANY, label);
         form->Add(text, 0, wxALIGN_CENTER_VERTICAL);
         auto* holder = new wxBoxSizer(wxHORIZONTAL);
         holder->Add(slider, 1, wxALIGN_CENTER_VERTICAL);
@@ -946,14 +1001,14 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
         form->Add(holder, 1, wxEXPAND);
         return FormRow{text, nullptr, holder};
     };
-    rows->pitch = speedRow("Pitch", pitchSlider, pitchValue);
-    rows->tempo = speedRow("Tempo", tempoSlider, tempoValue);
+    rows->pitch = speedRow(_("Pitch"), pitchSlider, pitchValue);
+    rows->tempo = speedRow(_("Tempo"), tempoSlider, tempoValue);
 
-    rows->lock = row->toggle("Lock pitch and tempo together", "speedLock",
-                             "Moving either slider moves both, which is what a "
-                             "record player's speed control does.");
+    rows->lock = row->toggle(_("Lock pitch and tempo together"), "speedLock",
+                             _("Moving either slider moves both, which is what a "
+                               "record player's speed control does."));
 
-    auto* reset = new wxButton(pane, wxID_ANY, wxString::FromUTF8("Reset to 1.00\xC3\x97"));
+    auto* reset = new wxButton(pane, wxID_ANY, trUtf8("Reset to 1.00\xC3\x97"));
     reset->Bind(wxEVT_BUTTON, [=, this](wxCommandEvent&) {
         pitchSlider->SetValue(sliderFromSpeed(1.0));
         tempoSlider->SetValue(sliderFromSpeed(1.0));
@@ -968,10 +1023,11 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
 
     // Rubber Band's own knobs, labels and vocabulary from Cog's pane -- shown
     // only while a Rubber Band engine is chosen, see refresh() above.
-    rows->transients = row->choice("Transients", "rubberbandTransients",
+    rows->transients = row->choice(_("Transients"), "rubberbandTransients",
                                    kRubberTransientsChoices);
-    rows->detector = row->choice("Detector", "rubberbandDetector", kRubberDetectorChoices);
-    rows->phase    = row->choice("Phase", "rubberbandPhase", kRubberPhaseChoices);
+    rows->detector =
+        row->choice(_("Detector"), "rubberbandDetector", kRubberDetectorChoices);
+    rows->phase = row->choice(_("Phase"), "rubberbandPhase", kRubberPhaseChoices);
 
     // By hand rather than through RowBuilder: its items change with the
     // engine, which rebuildWindow() above owns.
@@ -983,17 +1039,19 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
             settingChanged.publish("rubberbandWindow");
         }
     });
-    rows->window = row->add("Window", rows->windowBox);
+    rows->window = row->add(_("Window"), rows->windowBox);
 
-    rows->smoothing = row->choice("Smoothing", "rubberbandSmoothing",
-                                  kRubberSmoothingChoices);
-    rows->formant   = row->choice("Formant", "rubberbandFormant", kRubberFormantChoices);
-    rows->pitchMode = row->choice("Pitch mode", "rubberbandPitch", kRubberPitchChoices);
-    rows->channels  = row->choice("Channels", "rubberbandChannels",
-                                  kRubberChannelsChoices);
+    rows->smoothing =
+        row->choice(_("Smoothing"), "rubberbandSmoothing", kRubberSmoothingChoices);
+    rows->formant =
+        row->choice(_("Formant"), "rubberbandFormant", kRubberFormantChoices);
+    rows->pitchMode =
+        row->choice(_("Pitch mode"), "rubberbandPitch", kRubberPitchChoices);
+    rows->channels =
+        row->choice(_("Channels"), "rubberbandChannels", kRubberChannelsChoices);
 
-    rows->note = row->note("Varispeed resamples, as a record player would: one "
-                           "tempo slider, and the pitch follows it.");
+    rows->note = row->note(_("Varispeed resamples, as a record player would: one "
+                             "tempo slider, and the pitch follows it."));
 
     refresh(settings_.RubberbandEngine());
 
@@ -1028,31 +1086,33 @@ wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
         pane->Layout();
     };
 
-    row->choice("Synthesiser", "midiPlugin", kMidiSynthChoices, refresh);
+    row->choice(_("Synthesiser"), "midiPlugin", kMidiSynthChoices, refresh);
     rows->soundFont = row->file(
-        "SoundFont", "soundFontPath",
-        "SoundFont banks|*.sf2;*.sf3;*.sf2pack;*.dls;*.sflist;*.json|All files|*.*");
-    rows->roms = row->path("SC-55 ROMs", "midiRomPath",
-                           "Archives|*.zip;*.rar;*.7z|All files|*.*");
+        _("SoundFont"), "soundFontPath",
+        _("SoundFont banks") + "|*.sf2;*.sf3;*.sf2pack;*.dls;*.sflist;*.json|" +
+            _("All Files") + "|*.*");
+    rows->roms = row->path(_("SC-55 ROMs"), "midiRomPath",
+                           _("Archives") + "|*.zip;*.rar;*.7z|" + _("All Files") +
+                               "|*.*");
 
     // Cog's clamps, and its labels. The sample rate is the rate a synthesiser
     // renders at rather than the rate the file plays at -- there is no such thing
     // as the second one for a score.
-    row->number("Sample rate (Hz)", "synthSampleRate", 8000, 192000);
-    row->seconds("Default play time (s)", "synthDefaultSeconds", 3600.0);
-    row->seconds("Default fade time (s)", "synthDefaultFadeSeconds", 60.0);
-    row->number("Default loop count", "synthDefaultLoopCount", 0, 10);
+    row->number(_("Sample rate (Hz)"), "synthSampleRate", 8000, 192000);
+    row->seconds(_("Default play time (s)"), "synthDefaultSeconds", 3600.0);
+    row->seconds(_("Default fade time (s)"), "synthDefaultFadeSeconds", 60.0);
+    row->number(_("Default loop count"), "synthDefaultLoopCount", 0, 10);
 
     rows->spessaNote =
-        row->note("SpessaSynth needs a bank: any .sf2, .sf3 or .dls. Files that "
-                  "carry their own bank use that instead.");
+        row->note(_("SpessaSynth needs a bank: any .sf2, .sf3 or .dls. Files that "
+                    "carry their own bank use that instead."));
     rows->sc55Note =
-        row->note("The SC-55 needs its five ROM files, which are not supplied. "
-                  "Choose the folder or the archive they came in; they are "
-                  "recognised by content, so nothing needs renaming. Without "
-                  "them, MIDI plays on the OPL3. It also ignores the sample rate "
-                  "and always renders at its own.");
-    row->note("These apply to every synthesised format, not only MIDI.");
+        row->note(_("The SC-55 needs its five ROM files, which are not supplied. "
+                    "Choose the folder or the archive they came in; they are "
+                    "recognised by content, so nothing needs renaming. Without "
+                    "them, MIDI plays on the OPL3. It also ignores the sample "
+                    "rate and always renders at its own."));
+    row->note(_("These apply to every synthesised format, not only MIDI."));
 
     refresh(settings_.MidiPlugin());
 
@@ -1086,7 +1146,7 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     // offering to choose something already chosen is the same fault as one that
     // does nothing.
     auto* closeToTray =
-        new wxCheckBox(pane, wxID_ANY, "Closing the window keeps XPCog running");
+        new wxCheckBox(pane, wxID_ANY, _("Closing the window keeps XPCog running"));
     closeToTray->SetValue(settings_.CloseToTray());
     // Offered only where there is somewhere to hide to. Without a notification
     // area this would hide the window with no way to bring it back, so the
@@ -1094,8 +1154,8 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     // does nothing is worse than an absent one, and this at least says why.
     if (!wxTaskBarIcon::IsAvailable()) {
         closeToTray->Enable(false);
-        closeToTray->SetToolTip("This session has no notification area to keep "
-                                "XPCog in.");
+        closeToTray->SetToolTip(_("This session has no notification area to keep "
+                                  "XPCog in."));
     }
     closeToTray->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent& event) {
         settings_.setCloseToTray(event.IsChecked());
@@ -1105,7 +1165,7 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
 
     // The mini player's own control is a button on the mini player, which is only
     // reachable once you are in it. Here as well, so it can be set beforehand.
-    row->toggle("Keep the mini player on top", "floatingMiniWindow");
+    row->toggle(_("Keep the mini player on top"), "floatingMiniWindow");
 
     // No note about following the system appearance. It said that XPCog has no
     // theme of its own, which is an answer to a question nobody standing in front
@@ -1129,15 +1189,15 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
     // scale, true the even spacing. A list rather than a checkbox because
     // "Frequency mode: off" says nothing about what you get instead.
     wxArrayString bandModes;
-    bandModes.Add("Musical notes (one bar per semitone)");
-    bandModes.Add("Even frequency spacing");
+    bandModes.Add(_("Musical notes (one bar per semitone)"));
+    bandModes.Add(_("Even frequency spacing"));
     auto* bands = new wxChoice(pane, wxID_ANY, wxDefaultPosition, wxDefaultSize, bandModes);
     bands->SetSelection(settings_.SpectrumFreqMode() ? 1 : 0);
     bands->Bind(wxEVT_CHOICE, [this](wxCommandEvent& event) {
         settings_.setSpectrumFreqMode(event.GetSelection() == 1);
         settingChanged.publish("spectrumFreqMode");
     });
-    row->add("Bands", bands);
+    row->add(_("Bands"), bands);
 
     // wxColourPickerCtrl is a real colour button -- what the Qt version built
     // from a QPushButton, a generated swatch pixmap and QColorDialog.
@@ -1146,7 +1206,7 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
     // archived NSColor rather than a string -- shows as the setting's own default
     // rather than as black. A black bar on a near-black background looks like the
     // display is broken.
-    const auto colourRow = [&](const char* label, const std::string& stored,
+    const auto colourRow = [&](const wxString& label, const std::string& stored,
                                std::function<void(const std::string&)> store) {
         wxColour initial;
         if (!initial.Set(toWx(stored))) {
@@ -1168,16 +1228,16 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
         row->add(label, picker);
     };
 
-    colourRow("Bar colour", settings_.SpectrumBarColor(), [this](const std::string& hex) {
+    colourRow(_("Bar colour"), settings_.SpectrumBarColor(), [this](const std::string& hex) {
         settings_.setSpectrumBarColor(hex);
         settingChanged.publish("spectrumBarColor");
     });
-    colourRow("Peak colour", settings_.SpectrumDotColor(), [this](const std::string& hex) {
+    colourRow(_("Peak colour"), settings_.SpectrumDotColor(), [this](const std::string& hex) {
         settings_.setSpectrumDotColor(hex);
         settingChanged.publish("spectrumDotColor");
     });
 
-    auto* peaks = new wxCheckBox(pane, wxID_ANY, "Show peak markers");
+    auto* peaks = new wxCheckBox(pane, wxID_ANY, _("Show peak markers"));
     peaks->SetValue(settings_.SpectrumShowPeaks());
     peaks->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent& event) {
         settings_.setSpectrumShowPeaks(event.IsChecked());
@@ -1194,13 +1254,13 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
         settings_.setSpectrumFloorDb(static_cast<double>(event.GetPosition()));
         settingChanged.publish("spectrumFloorDb");
     });
-    row->add("Quietest level shown (dB)", floorDb);
+    row->add(_("Quietest level shown (dB)"), floorDb);
 
     // One sentence, and only because it says what the display *means*. The
     // sentence that followed it explained why the lowest bars move together,
     // which is defending the analysis to someone who was choosing a colour.
-    row->note("Bars sit on semitones from C0, so the display lines up with the "
-              "notes being played.");
+    row->note(_("Bars sit on semitones from C0, so the display lines up with the "
+                "notes being played."));
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -1278,13 +1338,17 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
 
         if (contains(kInternalKeys, descriptor.key)) {
             editor->Enable(false);
-            editor->SetToolTip("Maintained automatically, and not meant to be edited.");
+            editor->SetToolTip(
+                _("Maintained automatically, and not meant to be edited."));
         }
-        row->add(label.c_str(), editor);
+        // The setting's C++ identifier, deliberately untranslated: this pane
+        // exists so that nothing is unreachable, and the name it shows has to be
+        // the one settings.def uses or a bug report naming it means nothing.
+        row->add(toWx(label), editor);
     }
 
-    row->note("The greyed rows are what XPCog remembers about the last session, "
-              "not settings.");
+    row->note(_("The greyed rows are what XPCog remembers about the last session, "
+                "not settings."));
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
     layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
@@ -1302,15 +1366,15 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
     pane->SetClientObject(row);
 
     auto* enable = static_cast<wxCheckBox*>(
-        row->toggle("Scrobble to Last.fm", "enableAudioScrobbler").control);
+        row->toggle(_("Scrobble to Last.fm"), "enableAudioScrobbler").control);
 
     // The status line and the buttons are rebuilt rather than recreated, so the
     // pane has one place that decides what state it is in. Everything below is a
     // closure over these three.
     auto* status  = new wxStaticText(pane, wxID_ANY, wxEmptyString);
-    auto* connect = new wxButton(pane, wxID_ANY, "Connect...");
-    auto* cancel  = new wxButton(pane, wxID_ANY, "Cancel");
-    auto* forget  = new wxButton(pane, wxID_ANY, "Disconnect");
+    auto* connect = new wxButton(pane, wxID_ANY, _("Connect..."));
+    auto* cancel  = new wxButton(pane, wxID_ANY, _("Cancel"));
+    auto* forget  = new wxButton(pane, wxID_ANY, _("Disconnect"));
     status->Wrap(pane->FromDIP(440));
 
     auto* buttons = new wxBoxSizer(wxHORIZONTAL);
@@ -1362,28 +1426,31 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
             enable->SetValue(false);
             status->SetLabel(account_->unavailableReason());
         } else if (!store) {
-            status->SetLabel(storeProblem.empty()
-                                 ? wxString("The system password store is not available, "
-                                            "so a Last.fm session cannot be kept.")
-                                 : storeProblem);
-        } else if (working) {
-            status->SetLabel("Waiting for you to allow access in your browser...");
-        } else if (session.connected()) {
             status->SetLabel(
-                wxString::Format("Connected as %s.",
-                                 wxString::FromUTF8(session.username)));
+                storeProblem.empty()
+                    ? wxString(_("The system password store is not available, so a "
+                                 "Last.fm session cannot be kept."))
+                    : storeProblem);
+        } else if (working) {
+            status->SetLabel(_("Waiting for you to allow access in your browser..."));
+        } else if (session.connected()) {
+            status->SetLabel(wxString::Format(
+                _("Connected as %s."), wxString::FromUTF8(session.username)));
         } else {
-            status->SetLabel("Not connected. Connecting opens Last.fm in your "
-                             "browser; XPCog never sees your password.");
+            status->SetLabel(_("Not connected. Connecting opens Last.fm in your "
+                               "browser; XPCog never sees your password."));
         }
 
         const std::size_t waiting = scrobbler_->pending();
         if (waiting > 0) {
             // Worth saying, because the alternative is a listener concluding
             // that the plays were lost. They were not; they are on disk.
-            status->SetLabel(status->GetLabel() +
-                             wxString::Format("\n%zu play%s waiting to be sent.",
-                                              waiting, waiting == 1 ? "" : "s"));
+            status->SetLabel(
+                status->GetLabel() + "\n" +
+                wxString::Format(wxPLURAL("%zu play waiting to be sent.",
+                                          "%zu plays waiting to be sent.",
+                                          static_cast<unsigned>(waiting)),
+                                 waiting));
         }
 
         status->Wrap(FromDIP(440));
@@ -1439,12 +1506,13 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
         refresh();
     });
 
-    row->note("Plays are sent once you have heard half a track, or four minutes "
-              "of it, whichever comes first. Tracks under 30 seconds are never "
-              "scrobbled.");
-    row->link("Your Last.fm applications", "https://www.last.fm/settings/applications");
-    row->note("Revoking access there stops scrobbling immediately, whatever this "
-              "pane says.");
+    row->note(_("Plays are sent once you have heard half a track, or four "
+                "minutes of it, whichever comes first. Tracks under 30 seconds "
+                "are never scrobbled."));
+    row->link(_("Your Last.fm applications"),
+              "https://www.last.fm/settings/applications");
+    row->note(_("Revoking access there stops scrobbling immediately, whatever "
+                "this pane says."));
 
     refresh();
 

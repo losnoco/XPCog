@@ -8,6 +8,7 @@
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/translation.h>
 
 #include <utility>
 
@@ -21,9 +22,9 @@ namespace {
 /// and can only be about the one thing, while a pane sits in the layout all the
 /// time and an empty one reads as "still loading" or "broken" rather than as an
 /// answer. Saying it costs one line and removes the question.
-constexpr const char* kNoLyrics = "This file carries no lyrics.";
+constexpr const char* kNoLyrics = wxTRANSLATE("This file carries no lyrics.");
 
-constexpr const char* kNoTrack = "Nothing selected or playing.";
+constexpr const char* kNoTrack = wxTRANSLATE("Nothing selected or playing.");
 
 }  // namespace
 
@@ -92,16 +93,20 @@ LyricsPanel::LyricsPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY) {
 
 void LyricsPanel::showEntry(const PlaylistEntry* entry) {
     std::string heading;
-    std::string body;
+    // A wxString rather than a std::string, because two of the three things it
+    // can hold come out of the catalogue. normaliseLyrics() stays on
+    // std::string: it is the part with a test on it, and what a tagger wrote is
+    // not language this program chose.
+    wxString body;
 
     if (entry == nullptr) {
-        body = kNoTrack;
+        body = trUtf8(kNoTrack);
     } else {
         heading = entry->artist.empty() ? entry->title()
                                         : entry->artist.str() + " \xE2\x80\x94 " + entry->title();
-        body    = normaliseLyrics(entry->unsyncedLyrics);
-        if (body.empty()) {
-            body = kNoLyrics;
+        body    = toWx(normaliseLyrics(entry->unsyncedLyrics));
+        if (body.IsEmpty()) {
+            body = trUtf8(kNoLyrics);
         }
     }
 
@@ -109,14 +114,14 @@ void LyricsPanel::showEntry(const PlaylistEntry* entry) {
     // it back to the top, and this is called on every selection and track change.
     // Keyed on both halves, because the same lyrics under a different heading is a
     // different track -- two rips of one song, or a file appearing twice.
-    std::string key = heading + '\n' + body;
+    std::string key = heading + '\n' + toUtf8(body);
     if (key == shownKey_) {
         return;
     }
     shownKey_ = std::move(key);
 
     heading_->SetLabel(toWx(heading));
-    text_->SetValue(toWx(body));
+    text_->SetValue(body);
     // SetValue leaves the insertion point at the end on some platforms, and the
     // control scrolls to wherever that is. Asking for the top explicitly is the
     // difference between opening a song at its first line and at its last.

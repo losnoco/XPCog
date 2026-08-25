@@ -1,5 +1,7 @@
 #include "Sc55Panel.hpp"
 
+#include "Text.hpp"
+
 #include "sc55_resources.hpp"
 
 #include "xpcog/core/audio/PanelFeed.hpp"
@@ -10,6 +12,7 @@
 #include <wx/dcbuffer.h>
 #include <wx/image.h>
 #include <wx/settings.h>
+#include <wx/translation.h>
 
 #include <algorithm>
 #include <cstring>
@@ -135,10 +138,10 @@ void Sc55Panel::onPaint(wxPaintEvent&) {
         dc.SetTextForeground(wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
         const wxString message =
             PanelFeed::instance().producing()
-                ? "Waiting for the panel\xE2\x80\xA6"
-                : "Nothing is playing on the SC-55.\n\nChoose it under "
-                  "Preferences \xE2\x86\x92 MIDI; the OPL3 synthesisers have no "
-                  "display.";
+                ? trUtf8("Waiting for the panel\xE2\x80\xA6")
+                : trUtf8("Nothing is playing on the SC-55.\n\nChoose it under "
+                         "Preferences \xE2\x86\x92 MIDI; the OPL3 synthesisers have no "
+                    "display.");
         const wxRect box(FromDIP(12), FromDIP(12), size.GetWidth() - FromDIP(24),
                          size.GetHeight() - FromDIP(24));
         dc.DrawLabel(message, box, wxALIGN_CENTER);

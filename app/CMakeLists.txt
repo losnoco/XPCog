@@ -20,6 +20,8 @@ set(XPCOG_APP_SOURCES
     src/InfoPanel.hpp
     src/LastFmAccount.cpp
     src/LastFmAccount.hpp
+    src/Localization.cpp
+    src/Localization.hpp
     src/LucideIcon.cpp
     src/LucideIcon.hpp
     src/LyricsPanel.cpp
@@ -153,6 +155,20 @@ xpcog_embed_resources(
         icons/lucide/panel-left.svg
         icons/lucide/folder-open.svg
         icons/lucide/x.svg
+)
+
+# The translations. See cmake/XPCogCatalogs.cmake for why they are compiled in
+# rather than installed as .mo files beside the executable, and app/locale/README
+# for how a language is added.
+#
+# Attached to the library rather than to the executable for the reason the icons
+# are: the code that reads them is here, and the tests link the library -- which
+# is what lets a test assert that the catalogue really does assemble to something
+# wxMsgCatalog will accept, rather than only that the .po parsed.
+xpcog_add_catalogs(
+    TARGET xpcog-appcore
+    NAME   catalogs
+    FILES  locale/es.po
 )
 
 # The SC-55's front panel, and the photograph of the hardware it is drawn onto.

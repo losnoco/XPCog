@@ -260,9 +260,21 @@ private:
     /// setting not working at all.
     void rememberGeometry();
 
-    [[nodiscard]] std::string statusSummary() const;
+    [[nodiscard]] wxString statusSummary() const;
 
-    void setStatusText(const std::string& text);
+    void setStatusText(const wxString& text);
+
+    /// Re-labels every wxAUI pane from the catalogue.
+    ///
+    /// Not merely a tidy-up of buildUi(). A saved perspective stores each pane's
+    /// *caption* alongside its position -- wxAuiManager::SavePaneInfo writes it
+    /// and LoadPaneInfo assigns it straight back -- so a layout saved by an
+    /// English session puts "Spectrum" back over the pane after the language has
+    /// been changed to Spanish, and it stays that way for good because the next
+    /// save records what was restored. Calling this after LoadPerspective is
+    /// what stops the layout from being a second, silent store of interface
+    /// text.
+    void applyPaneCaptions();
 
     const PluginRegistry& registry_;
     Settings&             settings_;

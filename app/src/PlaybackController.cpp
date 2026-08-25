@@ -1,5 +1,9 @@
 #include "PlaybackController.hpp"
 
+#include "Text.hpp"
+
+#include <wx/translation.h>
+
 #include "xpcog/core/audio/PanelFeed.hpp"
 #include "xpcog/platform/CrashReporter.hpp"
 
@@ -270,7 +274,7 @@ void PlaybackController::finishStart(TrackId id, bool opened,
     }
 
     resumeAt_ = 0.0;
-    playbackFailed.publish(id, "No decoder could open this file");
+    playbackFailed.publish(id, toUtf8(_("No decoder could open this file")));
     failedStarts_.push_back(id);
 
     // Cog does not stall the playlist on one bad file, and neither does this: ask
@@ -499,7 +503,9 @@ void PlaybackController::stoppedNaturally() {
 void PlaybackController::trackFailed(const Url& url) {
     const std::string name = url.toString();
     dispatch_([this, name] {
-        playbackFailed.publish(kInvalidTrackId, "Could not play " + name);
+        playbackFailed.publish(
+            kInvalidTrackId,
+            toUtf8(wxString::Format(_("Could not play %s"), toWx(name))));
     });
 }
 

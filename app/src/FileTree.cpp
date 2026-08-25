@@ -12,6 +12,7 @@
 #include <wx/menu.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
+#include <wx/translation.h>
 #include <wx/treectrl.h>
 
 #include <filesystem>
@@ -41,10 +42,14 @@ enum : int {
         }
         patterns += "*." + extension;
     }
+    // The two descriptions are translated and the patterns are not, which is
+    // the split every file dialog on every platform wants: `*.flac` is not
+    // language, and a translator handed the whole string could break the filter
+    // by tidying a semicolon.
     if (patterns.empty()) {
-        return "All Files|*.*";
+        return _("All Files") + "|*.*";
     }
-    return "Audio Files|" + toWx(patterns) + "|All Files|*.*";
+    return _("Audio Files") + "|" + toWx(patterns) + "|" + _("All Files") + "|*.*";
 }
 
 }  // namespace
@@ -52,7 +57,7 @@ enum : int {
 FileTree::FileTree(wxWindow* parent, const PluginRegistry& registry)
     : wxPanel(parent, wxID_ANY), registry_(registry) {
     root_ = new wxBitmapButton(this, kRootButtonId, lucideIcon("folder-open"));
-    root_->SetToolTip("Choose the folder to browse");
+    root_->SetToolTip(_("Choose the folder to browse"));
 
     rootLabel_ = new wxStaticText(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
                                   wxDefaultSize, wxST_ELLIPSIZE_MIDDLE);
@@ -84,9 +89,9 @@ FileTree::FileTree(wxWindow* parent, const PluginRegistry& registry)
 
     tree_->GetTreeCtrl()->Bind(wxEVT_TREE_ITEM_MENU, [this](wxTreeEvent& event) {
         wxMenu menu;
-        menu.Append(kAddToPlaylistId, "&Add to Playlist");
+        menu.Append(kAddToPlaylistId, _("&Add to Playlist"));
         menu.AppendSeparator();
-        menu.Append(kChooseRootId, "Choose &Root Folder...");
+        menu.Append(kChooseRootId, _("Choose &Root Folder..."));
         menu.Bind(wxEVT_MENU, [this](wxCommandEvent& command) {
             if (command.GetId() == kChooseRootId) {
                 chooseRootPath();
@@ -121,7 +126,7 @@ void FileTree::setRootPath(const std::string& path) {
 std::string FileTree::rootPath() const { return toUtf8(tree_->GetPath()); }
 
 void FileTree::chooseRootPath() {
-    const wxString chosen = wxDirSelector("Choose the folder to browse", tree_->GetPath(),
+    const wxString chosen = wxDirSelector(_("Choose the folder to browse"), tree_->GetPath(),
                                           wxDD_DEFAULT_STYLE, wxDefaultPosition, this);
     if (chosen.IsEmpty()) {
         return;

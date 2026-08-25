@@ -6,6 +6,7 @@
 #include "xpcog/core/scrobble/LastFmClient.hpp"
 
 #include <wx/secretstore.h>
+#include <wx/translation.h>
 #include <wx/utils.h>
 
 #include <chrono>
@@ -101,12 +102,12 @@ bool LastFmAccount::usable() const {
 
 wxString LastFmAccount::unavailableReason() const {
     if (!httpClientAvailable()) {
-        return "This build was configured without HTTP support, so it cannot "
-               "reach Last.fm.";
+        return _("This build was configured without HTTP support, so it cannot "
+                 "reach Last.fm.");
     }
     if (!client_->configured()) {
-        return "This build carries no Last.fm API key. See "
-               "app/src/LastFmSecrets.hpp.in for how to build with one.";
+        return _("This build carries no Last.fm API key. See "
+                 "app/src/LastFmSecrets.hpp.in for how to build with one.");
     }
     return {};
 }
@@ -119,8 +120,8 @@ bool LastFmAccount::storeAvailable(wxString* why) {
     if (why != nullptr) {
         // Reached when wx itself was built without the feature -- vcpkg's port
         // defaults to exactly that, which is why vcpkg.json asks for it by name.
-        *why = "This build of wxWidgets has no secret store, so a Last.fm "
-               "session could not be kept safely.";
+        *why = _("This build of wxWidgets has no secret store, so a Last.fm "
+                 "session could not be kept safely.");
     }
     return false;
 #endif
@@ -218,8 +219,8 @@ void LastFmAccount::connect(std::function<void(std::function<void()>)> dispatch,
         if (!token) {
             connecting_.store(false);
             fail(error.kind == LastFmError::Kind::Transport
-                     ? wxString("Could not reach Last.fm. Check your "
-                                "connection and try again.")
+                     ? wxString(_("Could not reach Last.fm. Check your "
+                                  "connection and try again."))
                      : wxString::FromUTF8(error.message));
             return;
         }
@@ -241,7 +242,7 @@ void LastFmAccount::connect(std::function<void(std::function<void()>)> dispatch,
                                     std::chrono::duration_cast<std::chrono::milliseconds>(
                                         kPollInterval))) {
                 connecting_.store(false);
-                fail("Cancelled.");
+                fail(_("Cancelled."));
                 return;
             }
 
@@ -258,8 +259,8 @@ void LastFmAccount::connect(std::function<void(std::function<void()>)> dispatch,
                     if (!save(granted)) {
                         if (handlers.failed) {
                             handlers.failed(
-                                "Connected to Last.fm, but the session could not "
-                                "be saved, so it would be lost on restart.");
+                                _("Connected to Last.fm, but the session could not "
+                                  "be saved, so it would be lost on restart."));
                         }
                         return;
                     }
@@ -275,14 +276,14 @@ void LastFmAccount::connect(std::function<void(std::function<void()>)> dispatch,
             if (pollError.kind != LastFmError::Kind::NotAuthorized) {
                 connecting_.store(false);
                 fail(pollError.kind == LastFmError::Kind::Transport
-                         ? wxString("Lost contact with Last.fm.")
+                         ? wxString(_("Lost contact with Last.fm."))
                          : wxString::FromUTF8(pollError.message));
                 return;
             }
         }
 
         connecting_.store(false);
-        fail("Timed out waiting for authorisation in your browser.");
+        fail(_("Timed out waiting for authorisation in your browser."));
     });
 }
 

@@ -158,7 +158,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-0.1.2-x64-setup.exe
+:: -> build\windows-release\XPCog-0.2.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -179,7 +179,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-0.1.2-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-0.2.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -546,6 +546,31 @@ The switch itself is `enableAudioScrobbler`, which is Cog's key — but it is th
 one setting a Cog import deliberately does **not** carry across, because the
 credential cannot come with it and the switch alone would claim a connection that
 does not exist.
+
+## Languages
+
+The interface speaks **English** and **Spanish**, and follows the system by
+default. Preferences → General has the picker; it applies the next time XPCog
+starts, because a catalogue is chosen once, before the first window is built.
+
+The translations live in [`app/locale`](app/locale) as ordinary gettext `.po`
+files and are compiled into the binary — there is nothing to install beside the
+executable and nothing that can go missing on one machine and not another. Adding
+a language is one `.po`, one line of CMake and one row of a table;
+[`app/locale/README.md`](app/locale/README.md) is the whole procedure, including
+what is deliberately *not* translated and why.
+
+Two conventional tools are replaced by two small ones, for the same reason:
+gettext is not a dependency this project has anywhere else, and Windows is the
+platform least likely to have it. `tools/extract-messages.py` stands in for
+`xgettext`, and `cmake/CompileCatalog.cmake` for `msgfmt`. Neither is on the
+build's critical path except the second, which is a CMake script.
+
+`core`, `codecs` and `platform` are not translated and cannot be: they link no
+toolkit, and so have no catalogue to consult. The handful of strings they produce
+that a listener reads — the playlist's column headings — are mapped in the app
+layer, which is what `PluginRegistry` and `PlaylistView` were already written to
+allow.
 
 ## Status
 

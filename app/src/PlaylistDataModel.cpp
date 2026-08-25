@@ -2,6 +2,10 @@
 
 #include "Text.hpp"
 
+#include <wx/translation.h>
+
+#include <string_view>
+
 namespace xpcog::app {
 namespace {
 
@@ -53,7 +57,21 @@ PlaylistDataModel::PlaylistDataModel(PlaylistView& view) : view_(view) {
 
 void PlaylistDataModel::appendColumnsTo(wxDataViewCtrl* control) const {
     for (const ColumnLayout& layout : kColumns) {
-        const wxString heading = toWx(PlaylistView::heading(layout.column));
+        // Translated here, which is what PlaylistView::heading()'s "a front end
+        // that wants them localised should map them" means in practice: core
+        // links no toolkit and so has no catalogue to consult. The msgids are
+        // core's own spellings -- "#", "Title", "Artist", "Album", "Length" --
+        // and app/locale/xpcog.pot carries them with a comment saying where
+        // they come from, because nothing in this directory declares them.
+        //
+        // The empty one is not looked up, and that is not defensiveness: msgid
+        // "" is the catalogue's *header*, so asking for it returns the charset
+        // and plural-rule block rather than nothing. The status column's
+        // heading is deliberately blank -- it is a glyph column -- and would
+        // otherwise draw several lines of metadata.
+        const std::string_view english = PlaylistView::heading(layout.column);
+        const wxString         heading =
+            english.empty() ? wxString{} : wxGetTranslation(toWx(english));
         // Sortable for the header affordance -- the arrow and the click target.
         // The sorting itself is PlaylistView's, and the frame drives it from the
         // header-click event. The flag does not merely decorate, though: it also

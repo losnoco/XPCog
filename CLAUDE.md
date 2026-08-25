@@ -163,6 +163,19 @@ several times with the macro defined differently. Keys are deliberately identica
 to Cog's `NSUserDefaults` keys so an existing Cog plist imports verbatim. Add a
 setting there, not in `Settings.hpp`.
 
+**The interface is translated; nothing below it is.** User-visible strings are
+marked in `app/src` with `_()`, `wxPLURAL()` or `wxTRANSLATE()`, compiled from
+`app/locale/*.po` into the binary by `cmake/CompileCatalog.cmake`, and installed
+by `app/src/Localization.cpp` before the first window. There is one trap and it
+is silent: `_()` converts its literal to a `wxString` *implicitly*, which on
+Windows goes through the current 8-bit locale — so **a message whose English is
+not pure ASCII must use `trUtf8()`** (see `app/src/Text.hpp`). Regenerating the
+template with `python tools/extract-messages.py` refuses to run when that rule is
+broken. `core`, `codecs` and `platform` have no catalogue and never will; the few
+strings of theirs a listener reads are mapped in the app layer, which is what
+`PlaylistView::heading()`'s comment is about. `app/locale/README.md` covers
+adding a language and what is deliberately left untranslated.
+
 **The audio path**: a feeder thread decodes into a lock-free SPSC ring
 (`RingBuffer`), and the output callback only reads from the ring, applies an
 atomic gain, and zeroes any tail — no lock, no allocation, no `std::function`,

@@ -419,6 +419,7 @@ if(XPCOG_BUILD_APP)
         app/test_embedded_icons.cpp
         app/test_helpers.cpp
         app/test_infopanel.cpp
+        app/test_localization.cpp
         app/test_lyricspanel.cpp
         app/test_playlistmodel.cpp
     )

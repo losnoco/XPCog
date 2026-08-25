@@ -1,6 +1,9 @@
 #include "Commands.hpp"
 
+#include "Text.hpp"
+
 #include <wx/menu.h>
+#include <wx/translation.h>
 
 #include <map>
 
@@ -21,30 +24,30 @@ namespace {
 //   playlist, where it cannot steal from a text field.
 const std::vector<MenuItem>& layout() {
     static const std::vector<MenuItem> table = {
-        {"&File", FileOpen, "&Open Files...", "Ctrl+O"},
-        {nullptr, FileOpenFolder, "Open &Folder...", "Ctrl+Shift+O"},
-        {nullptr, FileOpenUrl, "Open &URL...", "Ctrl+L"},
+        {wxTRANSLATE("&File"), FileOpen, wxTRANSLATE("&Open Files..."), "Ctrl+O"},
+        {nullptr, FileOpenFolder, wxTRANSLATE("Open &Folder..."), "Ctrl+Shift+O"},
+        {nullptr, FileOpenUrl, wxTRANSLATE("Open &URL..."), "Ctrl+L"},
         // No accelerator, deliberately: this is a thing somebody does once, when
         // they move over from Cog, and a shortcut for it would be occupying a
         // key for the rest of the installation's life.
-        {nullptr, FileImportCog, "&Import from Cog...", "", ItemKind::Normal, true},
-        {nullptr, FileSavePlaylist, "&Save Playlist...", "Ctrl+S", ItemKind::Normal, true},
-        {nullptr, FilePreferences, "&Preferences...", "Ctrl+,", ItemKind::Normal, true},
-        {nullptr, FileQuit, "&Quit", "Ctrl+Q", ItemKind::Normal, true},
+        {nullptr, FileImportCog, wxTRANSLATE("&Import from Cog..."), "", ItemKind::Normal, true},
+        {nullptr, FileSavePlaylist, wxTRANSLATE("&Save Playlist..."), "Ctrl+S", ItemKind::Normal, true},
+        {nullptr, FilePreferences, wxTRANSLATE("&Preferences..."), "Ctrl+,", ItemKind::Normal, true},
+        {nullptr, FileQuit, wxTRANSLATE("&Quit"), "Ctrl+Q", ItemKind::Normal, true},
 
-        {"&View", ViewFileTree, "&File Browser", "Ctrl+B", ItemKind::Check},
+        {wxTRANSLATE("&View"), ViewFileTree, wxTRANSLATE("&File Browser"), "Ctrl+B", ItemKind::Check},
         // Not checkable: it opens a dialog rather than showing or hiding
         // anything. Directly under the browser it belongs to, because a root you
         // cannot find is a browser stuck wherever it was left.
-        {nullptr, ViewFileTreeRoot, "Choose &Root Folder...", ""},
+        {nullptr, ViewFileTreeRoot, wxTRANSLATE("Choose &Root Folder..."), ""},
         // Cog's Info Inspector, on Cog's shortcut.
-        {nullptr, ViewInfo, "&Info", "Ctrl+I", ItemKind::Check, true},
+        {nullptr, ViewInfo, wxTRANSLATE("&Info"), "Ctrl+I", ItemKind::Check, true},
         // Cog's Lyrics window, on Cog's shortcut and directly under Info, which
         // is where Cog groups it too. Cog labels it "Show Lyrics"; the items in
         // this menu are checkable toggles that say what they show rather than
         // what they do, so it is "&Lyrics" here. Ctrl+L is Open URL, so the
         // shifted form is not a second choice -- it is Cog's own (Cmd+Shift+L).
-        {nullptr, ViewLyrics, "&Lyrics", "Ctrl+Shift+L", ItemKind::Check},
+        {nullptr, ViewLyrics, wxTRANSLATE("&Lyrics"), "Ctrl+Shift+L", ItemKind::Check},
         // Which track those two describe. A radio pair rather than one checkable
         // item, because "Follow Playback" unticked does not say what it does
         // instead -- and what it does instead is not "nothing", it is the other
@@ -59,31 +62,31 @@ const std::vector<MenuItem>& layout() {
         // Consecutive radio items form one exclusive group and anything between
         // them breaks it -- including a separator -- so nothing may be inserted
         // between these two.
-        {nullptr, ViewFollowSelection, "Panels Follow &Selection", "", ItemKind::Radio},
-        {nullptr, ViewFollowPlayback, "Panels Follow Play&back", "", ItemKind::Radio},
-        {nullptr, ViewSpectrum, "&Spectrum", "Ctrl+U", ItemKind::Check, true},
+        {nullptr, ViewFollowSelection, wxTRANSLATE("Panels Follow &Selection"), "", ItemKind::Radio},
+        {nullptr, ViewFollowPlayback, wxTRANSLATE("Panels Follow Play&back"), "", ItemKind::Radio},
+        {nullptr, ViewSpectrum, wxTRANSLATE("&Spectrum"), "Ctrl+U", ItemKind::Check, true},
         // Cog keeps its equaliser in a window of its own rather than in
         // preferences, and so does this. Ctrl-E, which nothing else claims.
-        {nullptr, ViewEqualizer, "&Equalizer", "Ctrl+E", ItemKind::Check},
+        {nullptr, ViewEqualizer, wxTRANSLATE("&Equalizer"), "Ctrl+E", ItemKind::Check},
         // The SC-55's front panel. No shortcut: it is worth having and it is not
         // worth a key -- one synthesiser of three, for one format. Present even
         // in a build without MIDI, where it simply never finds a pane to toggle;
         // a command that appears and disappears with a compile flag is worse
         // than one that is occasionally inert.
-        {nullptr, ViewSc55Panel, "SC-55 &Panel", "", ItemKind::Check},
-        {nullptr, ViewMiniPlayer, "&Mini Player", "Ctrl+M", ItemKind::Check, true},
+        {nullptr, ViewSc55Panel, wxTRANSLATE("SC-55 &Panel"), "", ItemKind::Check},
+        {nullptr, ViewMiniPlayer, wxTRANSLATE("&Mini Player"), "Ctrl+M", ItemKind::Check, true},
 
-        {"&Edit", EditUndo, "&Undo", "Ctrl+Z"},
-        {nullptr, EditRedo, "&Redo", "Ctrl+Y"},
-        {nullptr, EditSelectAll, "Select &All", "Ctrl+A", ItemKind::Normal, true},
-        {nullptr, EditRemove, "&Remove from Playlist", "Del"},
-        {nullptr, EditRandomize, "Randomi&ze Playlist", "", ItemKind::Normal, true},
+        {wxTRANSLATE("&Edit"), EditUndo, wxTRANSLATE("&Undo"), "Ctrl+Z"},
+        {nullptr, EditRedo, wxTRANSLATE("&Redo"), "Ctrl+Y"},
+        {nullptr, EditSelectAll, wxTRANSLATE("Select &All"), "Ctrl+A", ItemKind::Normal, true},
+        {nullptr, EditRemove, wxTRANSLATE("&Remove from Playlist"), "Del"},
+        {nullptr, EditRandomize, wxTRANSLATE("Randomi&ze Playlist"), "", ItemKind::Normal, true},
 
-        {"&Playback", PlaybackPlayPause, "&Play/Pause", ""},
-        {nullptr, PlaybackStop, "&Stop", "Ctrl+."},
-        {nullptr, PlaybackPrevious, "Pre&vious", "Ctrl+Left", ItemKind::Normal, true},
-        {nullptr, PlaybackNext, "&Next", "Ctrl+Right"},
-        {nullptr, PlaybackEnqueue, "Add to &Queue", "Q", ItemKind::Normal, true},
+        {wxTRANSLATE("&Playback"), PlaybackPlayPause, wxTRANSLATE("&Play/Pause"), ""},
+        {nullptr, PlaybackStop, wxTRANSLATE("&Stop"), "Ctrl+."},
+        {nullptr, PlaybackPrevious, wxTRANSLATE("Pre&vious"), "Ctrl+Left", ItemKind::Normal, true},
+        {nullptr, PlaybackNext, wxTRANSLATE("&Next"), "Ctrl+Right"},
+        {nullptr, PlaybackEnqueue, wxTRANSLATE("Add to &Queue"), "Q", ItemKind::Normal, true},
 
         // Two exclusive sets. Cog drives these from an NSPopUpButton plus four
         // NSValueTransformers; consecutive radio items are the same idea with
@@ -92,17 +95,17 @@ const std::vector<MenuItem>& layout() {
         // The separator between the Repeat four and the Shuffle three is
         // load-bearing and must not be removed: a separator breaks a radio run,
         // which is exactly what keeps these two groups from becoming one.
-        {"&Order", OrderRepeatNone, "Repeat: &Off", "", ItemKind::Radio},
-        {nullptr, OrderRepeatOne, "Repeat: &One", "", ItemKind::Radio},
-        {nullptr, OrderRepeatAlbum, "Repeat: &Album", "", ItemKind::Radio},
-        {nullptr, OrderRepeatAll, "Repeat: A&ll", "", ItemKind::Radio},
-        {nullptr, OrderShuffleOff, "Shuffle: O&ff", "", ItemKind::Radio, true},
-        {nullptr, OrderShuffleAlbums, "Shuffle: Al&bums", "", ItemKind::Radio},
-        {nullptr, OrderShuffleAll, "Shuffle: A&ll Tracks", "", ItemKind::Radio},
+        {wxTRANSLATE("&Order"), OrderRepeatNone, wxTRANSLATE("Repeat: &Off"), "", ItemKind::Radio},
+        {nullptr, OrderRepeatOne, wxTRANSLATE("Repeat: &One"), "", ItemKind::Radio},
+        {nullptr, OrderRepeatAlbum, wxTRANSLATE("Repeat: &Album"), "", ItemKind::Radio},
+        {nullptr, OrderRepeatAll, wxTRANSLATE("Repeat: A&ll"), "", ItemKind::Radio},
+        {nullptr, OrderShuffleOff, wxTRANSLATE("Shuffle: O&ff"), "", ItemKind::Radio, true},
+        {nullptr, OrderShuffleAlbums, wxTRANSLATE("Shuffle: Al&bums"), "", ItemKind::Radio},
+        {nullptr, OrderShuffleAll, wxTRANSLATE("Shuffle: A&ll Tracks"), "", ItemKind::Radio},
 
         // No "About Qt" any more, and nothing replaces it: the toolkit's version
         // is a row in the About box's component list, which is where it belongs.
-        {"&Help", HelpAbout, "&About XPCog", ""},
+        {wxTRANSLATE("&Help"), HelpAbout, wxTRANSLATE("&About XPCog"), ""},
     };
     return table;
 }
@@ -173,7 +176,11 @@ wxMenuBar* buildMenuBar() {
         if (item.menu != nullptr) {
             flush();
             current = new wxMenu;
-            title   = wxString::FromAscii(item.menu);
+            // Translated here rather than in the table: wxTRANSLATE only marks
+            // a literal, so the catalogue is consulted at the moment the menu is
+            // built -- which is what lets the same table be read for a tray menu
+            // or a context menu without each of them remembering to translate.
+            title   = trUtf8(item.menu);
         }
         if (current == nullptr) {
             continue;
@@ -182,7 +189,7 @@ wxMenuBar* buildMenuBar() {
             current->AppendSeparator();
         }
 
-        wxString label = wxString::FromAscii(item.label);
+        wxString label = trUtf8(item.label);
         if (*item.accelerator != '\0') {
             label += "\t";
             label += wxString::FromAscii(item.accelerator);

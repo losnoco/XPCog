@@ -12,6 +12,7 @@
 #include <wx/slider.h>
 #include <wx/statline.h>
 #include <wx/stattext.h>
+#include <wx/translation.h>
 
 #include <cmath>
 #include <cstdio>
@@ -27,7 +28,14 @@ constexpr int kEqScale = 10;
 
 /// The row at the end of the selector that stands for "this curve is not a
 /// preset". Cog spells it this way and puts it last, after every preset.
-constexpr const char* kCustomLabel = "Custom";
+/// The row that stands for "the curve is not one of the presets".
+///
+/// A wxTRANSLATE rather than a `_()`: it is a file-scope constant, so it has to
+/// be a literal, and the lookup happens where it is appended to the list. The
+/// preset *names* beside it are not translated -- they are the shipped library's
+/// own, matched by name against a track's genre tag, and a translated "Rock"
+/// would stop matching the tag that chose it.
+constexpr const char* kCustomLabel = wxTRANSLATE("Custom");
 
 /// "20", "31.5", "1k", "20k" -- short enough to sit under a narrow slider.
 [[nodiscard]] std::string frequencyLabel(double hertz) {
@@ -73,7 +81,11 @@ EqualizerPanel::EqualizerPanel(wxWindow* parent, Settings& settings)
     // pan to reach 20 kHz -- makes a curve impossible to see as a curve.
     auto* columns = new wxBoxSizer(wxHORIZONTAL);
 
-    sliders_.push_back(addBand(columns, "Pre", "eqPreamp"));
+    // "Pre" is a caption under a slider and has room for about four
+    // characters, which is why it is abbreviated in English too. The
+    // translator's note in the .po says so; a language that cannot fit it
+    // shortens rather than wraps.
+    sliders_.push_back(addBand(columns, toUtf8(_("Pre")), "eqPreamp"));
     columns->Add(new wxStaticLine(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                                  wxLI_VERTICAL),
                  0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(3));
@@ -86,15 +98,19 @@ EqualizerPanel::EqualizerPanel(wxWindow* parent, Settings& settings)
 
     layout->Add(columns, 1, wxEXPAND | wxALL, FromDIP(4));
 
-    auto* flat = new wxButton(this, wxID_ANY, "Flat");
-    flat->SetToolTip("Selects the Flat preset: every band and the preamp back to "
-                     "0 dB, which makes the equaliser bit-transparent again.");
+    // The button's label, not the preset's name. The preset is called "Flat"
+    // in the shipped library and is matched by that name in flatten() below, so
+    // the two are deliberately different strings even though they read the same
+    // in English -- translating the label must not stop the lookup working.
+    auto* flat = new wxButton(this, wxID_ANY, _("Flat"));
+    flat->SetToolTip(_("Selects the Flat preset: every band and the preamp back to "
+                       "0 dB, which makes the equaliser bit-transparent again."));
     flat->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { flatten(); });
 
     auto* note = new wxStaticText(
         this, wxID_ANY,
-        "31 bands, \xC2\xB1""20 dB. Changes apply to the track already playing. "
-        "A boost can clip; the preamp is the headroom for it.");
+        trUtf8("31 bands, \xC2\xB1""20 dB. Changes apply to the track already playing. "
+          "A boost can clip; the preamp is the headroom for it."));
     note->Wrap(FromDIP(420));
     note->Enable(false);
 
@@ -123,11 +139,11 @@ void EqualizerPanel::buildPresetRow(wxBoxSizer* layout) {
         return;
     }
 
-    enabled_ = new wxCheckBox(this, wxID_ANY, "Enable");
+    enabled_ = new wxCheckBox(this, wxID_ANY, _("Enable"));
     enabled_->SetToolTip(
-        "Bypasses the equaliser without disturbing the curve, which is what "
-        "comparing one against the original needs. A flat equaliser is skipped "
-        "either way, so this costs nothing until a band is moved.");
+        _("Bypasses the equaliser without disturbing the curve, which is what "
+          "comparing one against the original needs. A flat equaliser is skipped "
+          "either way, so this costs nothing until a band is moved."));
     enabled_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent& event) {
         settings_.setGraphicEqEnable(event.IsChecked());
         settingChanged.publish("GraphicEQenable");
@@ -137,21 +153,21 @@ void EqualizerPanel::buildPresetRow(wxBoxSizer* layout) {
     for (const EqualizerPreset& preset : presets_.presets()) {
         presetChoice_->Append(toWx(preset.name));
     }
-    presetChoice_->Append(kCustomLabel);
+    presetChoice_->Append(trUtf8(kCustomLabel));
     presetChoice_->SetToolTip(
-        "Presets store ten points; the 31 bands are interpolated from them. "
-        "Moving any slider afterwards leaves the curve alone and changes this "
-        "to Custom.");
+        _("Presets store ten points; the 31 bands are interpolated from them. "
+          "Moving any slider afterwards leaves the curve alone and changes this "
+          "to Custom."));
     presetChoice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent& event) {
         selectPreset(event.GetSelection());
     });
 
-    trackGenre_ = new wxCheckBox(this, wxID_ANY, "Follow the track's genre");
+    trackGenre_ = new wxCheckBox(this, wxID_ANY, _("Follow the track's genre"));
     trackGenre_->SetToolTip(
-        "Chooses the preset whose name matches each track's genre tag as it "
-        "starts. A track with no genre, or one nothing matches, gets Flat -- so "
-        "this rewrites the equaliser at every track boundary rather than only "
-        "when it has something to say.");
+        _("Chooses the preset whose name matches each track's genre tag as it "
+          "starts. A track with no genre, or one nothing matches, gets Flat -- so "
+          "this rewrites the equaliser at every track boundary rather than only "
+          "when it has something to say."));
     trackGenre_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent& event) {
         settings_.setGraphicEqTrackGenre(event.IsChecked());
         // Published so the frame can apply the playing track's genre at once.
@@ -162,7 +178,7 @@ void EqualizerPanel::buildPresetRow(wxBoxSizer* layout) {
 
     auto* row = new wxBoxSizer(wxHORIZONTAL);
     row->Add(enabled_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(12));
-    row->Add(new wxStaticText(this, wxID_ANY, "Preset"), 0,
+    row->Add(new wxStaticText(this, wxID_ANY, _("Preset")), 0,
              wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(6));
     row->Add(presetChoice_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(12));
     row->Add(trackGenre_, 0, wxALIGN_CENTER_VERTICAL);

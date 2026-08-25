@@ -1,0 +1,1591 @@
+# XPCog, the wxWidgets port of Cog.
+# Copyright (C) 2026 the XPCog authors.
+# This file is distributed under the same licence as XPCog.
+#
+# Regenerated with tools/extract-messages.py; see app/locale/README.md.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: XPCog\n"
+"Report-Msgid-Bugs-To: https://github.com/losnoco/XPCog/issues\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#. The playlist's track-number column heading. A symbol rather than a
+#. word, and it has to stay short: the column is 44 dialog units wide.
+#: core/src/library/PlaylistView.cpp
+msgid "#"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:41
+msgid "user interface"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:42
+msgid "library database"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:43
+msgid "audio output"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:44
+msgid "decompression, throughout"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:45
+msgid "HTTP and internet radio"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:46
+msgid "reading Last.fm's replies"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:47
+msgid "sample-rate conversion"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:48 app/src/AboutDialog.cpp:49
+msgid "pitch and tempo"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:50
+msgid "upmixing stereo to surround"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:51
+msgid "DSD to PCM conversion"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:52
+msgid "HDCD decoding"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:53
+msgid "gapless edges"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:54
+msgid "drawing the interface icons"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:55
+msgid "the interface icons themselves"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:56
+msgid "opt-in crash reporting"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:60
+msgid "FLAC"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:61
+msgid "Ogg Vorbis"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:62
+msgid "Opus"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:63
+msgid "MP3"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:64
+msgid "WavPack"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:65
+msgid "Musepack"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:66
+msgid "AAC, ALAC, WMA and more"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:67
+msgid "tag reading"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:68
+msgid "tracker modules"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:69
+msgid "console chiptunes"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:70
+msgid "archives, and the SC-55 ROMs"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:71
+msgid "game streaming formats"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:72
+msgid "Commodore 64 SID"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:73
+msgid "AdLib and OPL2 formats"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:74
+msgid "AdPlug's file reading"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:75
+msgid "VGM, S98, DRO and GYM"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:76
+msgid "AHX and Hively modules"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:77
+msgid "Syntrax modules"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:78
+msgid "SoundFont synthesis"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:79
+msgid "OPL3 synthesis"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:80
+msgid "Roland SC-55 emulation"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:81
+msgid "the PSF container"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:82
+msgid "PSF and PSF2 (PlayStation)"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:83
+msgid "QSF (Capcom QSound)"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:84
+msgid "DSF and SSF (Sega)"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:85
+msgid "USF (Nintendo 64)"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:86
+msgid "GSF (Game Boy Advance)"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:87
+msgid "SNSF (Super Nintendo)"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:88
+msgid "2SF (Nintendo DS)"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:89
+msgid "NCSF (Nintendo DS)"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:150
+msgid ""
+"%zu decoder is compiled in. A file goes to the first row below that claims its extension:"
+msgid_plural ""
+"%zu decoders are compiled in. A file goes to the first row below that claims its extension:"
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/src/AboutDialog.cpp:175
+msgid "chosen by scheme or MIME type"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:188
+msgid ""
+"An extension marked * is claimed by more than one decoder. The first row that claims it wins — which is what keeps FFmpeg, deliberately registered below the rest, from taking files a dedicated decoder handles better."
+msgstr ""
+
+#: app/src/AboutDialog.cpp:214
+msgid "About XPCog"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:228
+msgid "Version %s · %s"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:237
+msgid "An audio player for Windows, macOS and Linux."
+msgstr ""
+
+#: app/src/AboutDialog.cpp:239
+msgid "Copyright © 2026 the XPCog authors."
+msgstr ""
+
+#: app/src/AboutDialog.cpp:240
+msgid ""
+"Copyright © 2005–2026 Vincent Spader, Christopher Snowhill and the Cog authors."
+msgstr ""
+
+#: app/src/AboutDialog.cpp:243
+msgid ""
+"XPCog is free software, licensed under the <b>GNU General Public License, version 2 or later</b>. It comes with absolutely no warranty."
+msgstr ""
+
+#: app/src/AboutDialog.cpp:246
+msgid "Cog:"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:246
+msgid "Source:"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:248
+msgid "About"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:250
+msgid "Formats"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:254
+msgid ""
+"XPCog is built from the following third-party components. Which decoder libraries a given build actually contains depends on how it was configured — the Formats tab lists what <i>this</i> build can play. Each library's own licence text ships with its sources."
+msgstr ""
+
+#: app/src/AboutDialog.cpp:259
+msgid "The player"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:260
+msgid "Decoding and tags"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:261
+msgid "Licences"
+msgstr ""
+
+#: app/src/Commands.cpp:27
+msgid "&File"
+msgstr ""
+
+#: app/src/Commands.cpp:27
+msgid "&Open Files..."
+msgstr ""
+
+#: app/src/Commands.cpp:28
+msgid "Open &Folder..."
+msgstr ""
+
+#: app/src/Commands.cpp:29
+msgid "Open &URL..."
+msgstr ""
+
+#: app/src/Commands.cpp:33
+msgid "&Import from Cog..."
+msgstr ""
+
+#: app/src/Commands.cpp:34
+msgid "&Save Playlist..."
+msgstr ""
+
+#: app/src/Commands.cpp:35
+msgid "&Preferences..."
+msgstr ""
+
+#: app/src/Commands.cpp:36
+msgid "&Quit"
+msgstr ""
+
+#: app/src/Commands.cpp:38
+msgid "&View"
+msgstr ""
+
+#: app/src/Commands.cpp:38
+msgid "&File Browser"
+msgstr ""
+
+#: app/src/Commands.cpp:42 app/src/FileTree.cpp:94
+msgid "Choose &Root Folder..."
+msgstr ""
+
+#: app/src/Commands.cpp:44
+msgid "&Info"
+msgstr ""
+
+#: app/src/Commands.cpp:50
+msgid "&Lyrics"
+msgstr ""
+
+#: app/src/Commands.cpp:65
+msgid "Panels Follow &Selection"
+msgstr ""
+
+#: app/src/Commands.cpp:66
+msgid "Panels Follow Play&back"
+msgstr ""
+
+#: app/src/Commands.cpp:67
+msgid "&Spectrum"
+msgstr ""
+
+#: app/src/Commands.cpp:70
+msgid "&Equalizer"
+msgstr ""
+
+#: app/src/Commands.cpp:76
+msgid "SC-55 &Panel"
+msgstr ""
+
+#: app/src/Commands.cpp:77
+msgid "&Mini Player"
+msgstr ""
+
+#: app/src/Commands.cpp:79
+msgid "&Edit"
+msgstr ""
+
+#: app/src/Commands.cpp:79 app/src/MainFrame.cpp:1355
+msgid "&Undo"
+msgstr ""
+
+#: app/src/Commands.cpp:80 app/src/MainFrame.cpp:1362
+msgid "&Redo"
+msgstr ""
+
+#: app/src/Commands.cpp:81
+msgid "Select &All"
+msgstr ""
+
+#: app/src/Commands.cpp:82
+msgid "&Remove from Playlist"
+msgstr ""
+
+#: app/src/Commands.cpp:83
+msgid "Randomi&ze Playlist"
+msgstr ""
+
+#: app/src/Commands.cpp:85
+msgid "&Playback"
+msgstr ""
+
+#: app/src/Commands.cpp:85
+msgid "&Play/Pause"
+msgstr ""
+
+#: app/src/Commands.cpp:86
+msgid "&Stop"
+msgstr ""
+
+#: app/src/Commands.cpp:87
+msgid "Pre&vious"
+msgstr ""
+
+#: app/src/Commands.cpp:88
+msgid "&Next"
+msgstr ""
+
+#: app/src/Commands.cpp:89
+msgid "Add to &Queue"
+msgstr ""
+
+#: app/src/Commands.cpp:98
+msgid "&Order"
+msgstr ""
+
+#: app/src/Commands.cpp:98
+msgid "Repeat: &Off"
+msgstr ""
+
+#: app/src/Commands.cpp:99
+msgid "Repeat: &One"
+msgstr ""
+
+#: app/src/Commands.cpp:100
+msgid "Repeat: &Album"
+msgstr ""
+
+#: app/src/Commands.cpp:101
+msgid "Repeat: A&ll"
+msgstr ""
+
+#: app/src/Commands.cpp:102
+msgid "Shuffle: O&ff"
+msgstr ""
+
+#: app/src/Commands.cpp:103
+msgid "Shuffle: Al&bums"
+msgstr ""
+
+#: app/src/Commands.cpp:104
+msgid "Shuffle: A&ll Tracks"
+msgstr ""
+
+#: app/src/Commands.cpp:108
+msgid "&Help"
+msgstr ""
+
+#: app/src/Commands.cpp:108
+msgid "&About XPCog"
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:38
+msgid "Custom"
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:88
+msgid "Pre"
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:105
+msgid "Flat"
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:106
+msgid ""
+"Selects the Flat preset: every band and the preamp back to 0 dB, which makes the equaliser bit-transparent again."
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:112
+msgid ""
+"31 bands, ±20 dB. Changes apply to the track already playing. A boost can clip; the preamp is the headroom for it."
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:142
+msgid "Enable"
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:144
+msgid ""
+"Bypasses the equaliser without disturbing the curve, which is what comparing one against the original needs. A flat equaliser is skipped either way, so this costs nothing until a band is moved."
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:158
+msgid ""
+"Presets store ten points; the 31 bands are interpolated from them. Moving any slider afterwards leaves the curve alone and changes this to Custom."
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:165
+msgid "Follow the track's genre"
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:167
+msgid ""
+"Chooses the preset whose name matches each track's genre tag as it starts. A track with no genre, or one nothing matches, gets Flat -- so this rewrites the equaliser at every track boundary rather than only when it has something to say."
+msgstr ""
+
+#: app/src/EqualizerPanel.cpp:181
+msgid "Preset"
+msgstr ""
+
+#: app/src/FileTree.cpp:50 app/src/FileTree.cpp:52 app/src/MainFrame.cpp:1457 app/src/MainFrame.cpp:1593 app/src/PreferencesDialog.cpp:1089 app/src/PreferencesDialog.cpp:1091
+msgid "All Files"
+msgstr ""
+
+#: app/src/FileTree.cpp:52 app/src/MainFrame.cpp:1457
+msgid "Audio Files"
+msgstr ""
+
+#: app/src/FileTree.cpp:60 app/src/FileTree.cpp:129
+msgid "Choose the folder to browse"
+msgstr ""
+
+#: app/src/FileTree.cpp:92
+msgid "&Add to Playlist"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:85
+msgid "Album Gain: %s"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:89
+msgid "Album Peak: %s"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:93
+msgid "Track Gain: %s"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:97
+msgid "Track Peak: %s"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:101
+msgid "SoundCheck: %s"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:107
+msgid "Volume Scale: %s×"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:124
+msgid "First seen: %s"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:128
+msgid "Last played: %s"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:147
+msgid "Album Artist"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:147
+msgid "Artist"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:148
+msgid "Composer"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:148
+msgid "Album"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:149
+msgid "Title"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:149
+msgid "Track"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:150
+msgid "Length"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:150
+msgid "Date"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:151
+msgid "Genre"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:151
+msgid "Filename"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:152
+msgid "Sample Rate"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:152 app/src/PreferencesDialog.cpp:1047
+msgid "Channels"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:153
+msgid "Bitrate"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:153
+msgid "Bits"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:154
+msgid "Codec"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:154
+msgid "Encoding"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:155
+msgid "Cuesheet"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:155
+msgid "Replay Gain"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:156
+msgid "Play Count"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:156
+msgid "Comment"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:379
+msgid "yes"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:380
+msgid "no"
+msgstr ""
+
+#: app/src/LastFmAccount.cpp:105
+msgid ""
+"This build was configured without HTTP support, so it cannot reach Last.fm."
+msgstr ""
+
+#: app/src/LastFmAccount.cpp:109
+msgid ""
+"This build carries no Last.fm API key. See app/src/LastFmSecrets.hpp.in for how to build with one."
+msgstr ""
+
+#: app/src/LastFmAccount.cpp:123
+msgid ""
+"This build of wxWidgets has no secret store, so a Last.fm session could not be kept safely."
+msgstr ""
+
+#: app/src/LastFmAccount.cpp:222
+msgid "Could not reach Last.fm. Check your connection and try again."
+msgstr ""
+
+#: app/src/LastFmAccount.cpp:245
+msgid "Cancelled."
+msgstr ""
+
+#: app/src/LastFmAccount.cpp:262
+msgid ""
+"Connected to Last.fm, but the session could not be saved, so it would be lost on restart."
+msgstr ""
+
+#: app/src/LastFmAccount.cpp:279
+msgid "Lost contact with Last.fm."
+msgstr ""
+
+#: app/src/LastFmAccount.cpp:286
+msgid "Timed out waiting for authorisation in your browser."
+msgstr ""
+
+#: app/src/LyricsPanel.cpp:25
+msgid "This file carries no lyrics."
+msgstr ""
+
+#: app/src/LyricsPanel.cpp:27
+msgid "Nothing selected or playing."
+msgstr ""
+
+#: app/src/MainFrame.cpp:129
+msgid "Crash reporting"
+msgstr ""
+
+#: app/src/MainFrame.cpp:133
+msgid ""
+"Would you like to allow Sentry to submit crash reports?\n"
+"\n"
+"You may turn this off again in Preferences. We won't ask you again."
+msgstr ""
+
+#: app/src/MainFrame.cpp:138 app/src/PreferencesDialog.cpp:723
+msgid "Privacy policy"
+msgstr ""
+
+#: app/src/MainFrame.cpp:189
+msgid "Library unavailable: %s"
+msgstr ""
+
+#: app/src/MainFrame.cpp:454
+msgid "Stop reading files"
+msgstr ""
+
+#: app/src/MainFrame.cpp:503 app/src/MiniFrame.cpp:85
+msgid "Volume"
+msgstr ""
+
+#: app/src/MainFrame.cpp:509
+msgid "Filter"
+msgstr ""
+
+#: app/src/MainFrame.cpp:531
+msgid "Connecting to %s..."
+msgstr ""
+
+#: app/src/MainFrame.cpp:533
+msgid "Connecting..."
+msgstr ""
+
+#: app/src/MainFrame.cpp:717
+msgid "XPCog is still running"
+msgstr ""
+
+#: app/src/MainFrame.cpp:718
+msgid ""
+"Playback continues. Use the tray icon to bring the window back or to quit."
+msgstr ""
+
+#: app/src/MainFrame.cpp:1100
+msgid "Now Playing"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1213 app/src/StatusPresence.cpp:95
+msgid "Pause"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1213 app/src/StatusPresence.cpp:95
+msgid "Play"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1252
+msgid "Randomize"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1354
+msgid "&Undo %s"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1361
+msgid "&Redo %s"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1381
+msgid "&Pause"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1381
+msgid "&Play"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1459
+msgid "Open Files"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1478
+msgid "Open Folder"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1491
+msgid "Save Playlist"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1492
+msgid "M3U Playlist (*.m3u8)"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1493
+msgid "PLS Playlist (*.pls)"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1494
+msgid "XSPF Playlist (*.xspf)"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1554
+msgid "Could not write the playlist."
+msgstr ""
+
+#: app/src/MainFrame.cpp:1565
+msgid "Playlist saved: %zu of %zu tracks, the rest hidden by the filter."
+msgstr ""
+
+#: app/src/MainFrame.cpp:1568
+msgid "Playlist saved."
+msgstr ""
+
+#: app/src/MainFrame.cpp:1589
+msgid "Open a Cog library"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1591
+msgid "Cog library (DataModel.sqlite)"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1592
+msgid "SQLite databases (*.sqlite)"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1603
+msgid ""
+"That file could not be read as a Cog library.\n"
+"\n"
+"Cog's is DataModel.sqlite, under Application Support/Cog. If Cog is running, copy it along with its -wal and -shm files, or the most recent tracks will be missing."
+msgstr ""
+
+#: app/src/MainFrame.cpp:1607 app/src/MainFrame.cpp:1614
+msgid "Import from Cog"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1613
+msgid "That Cog library has no playlist entries in it."
+msgstr ""
+
+#: app/src/MainFrame.cpp:1664
+msgid "Importing %zu track from Cog..."
+msgid_plural "Importing %zu tracks from Cog..."
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/src/MainFrame.cpp:1676
+msgid "(%zu row Cog would not have shown either)"
+msgid_plural "(%zu rows Cog would not have shown either)"
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/src/MainFrame.cpp:1764
+msgid "Nothing was added."
+msgstr ""
+
+#: app/src/MainFrame.cpp:1765
+msgid "Nothing playable was found."
+msgstr ""
+
+#: app/src/MainFrame.cpp:1794
+msgid "Add %zu Track"
+msgid_plural "Add %zu Tracks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/src/MainFrame.cpp:1802
+msgid "Imported %zu track from Cog"
+msgid_plural "Imported %zu tracks from Cog"
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/src/MainFrame.cpp:1806
+msgid ", %zu with play counts"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1810
+msgid "; %zu could not be resolved off a Mac"
+msgstr ""
+
+#: app/src/MainFrame.cpp:1880
+msgid "Remove %zu Track"
+msgid_plural "Remove %zu Tracks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/src/MainFrame.cpp:1949
+msgid "Last.fm access was withdrawn. Reconnect in Preferences."
+msgstr ""
+
+#: app/src/MainFrame.cpp:2127
+msgid "%zu track — %s"
+msgid_plural "%zu tracks — %s"
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/src/MainFrame.cpp:2140 app/src/PreferencesDialog.cpp:595
+msgid "Spectrum"
+msgstr ""
+
+#: app/src/MainFrame.cpp:2141
+msgid "Equalizer"
+msgstr ""
+
+#: app/src/MainFrame.cpp:2142
+msgid "Info"
+msgstr ""
+
+#: app/src/MainFrame.cpp:2143
+msgid "Lyrics"
+msgstr ""
+
+#: app/src/MainFrame.cpp:2145
+msgid "SC-55 Panel"
+msgstr ""
+
+#: app/src/MainFrame.cpp:2268
+msgid "Could not save the playlist: %s"
+msgstr ""
+
+#: app/src/OpenUrlDialog.cpp:80
+msgid "Open URL"
+msgstr ""
+
+#: app/src/OpenUrlDialog.cpp:82
+msgid "Address of a stream or file:"
+msgstr ""
+
+#: app/src/OpenUrlDialog.cpp:104
+msgid "Open"
+msgstr ""
+
+#: app/src/OpenUrlDialog.cpp:133
+msgid ""
+"“%s” is not an address XPCog can open. It needs a scheme, such as https:// or file://."
+msgstr ""
+
+#: app/src/OpenUrlDialog.cpp:136
+msgid "Invalid URL"
+msgstr ""
+
+#: app/src/PlaybackController.cpp:277
+msgid "No decoder could open this file"
+msgstr ""
+
+#: app/src/PlaybackController.cpp:508
+msgid "Could not play %s"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:57
+msgid "None"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:58
+msgid "Volume tag"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:59
+msgid "iTunes Sound Check"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:60
+msgid "Track gain"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:61
+msgid "Track gain, peak-limited"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:62
+msgid "Album gain"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:63
+msgid "Album gain, peak-limited"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:67
+msgid "Quick"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:67
+msgid "Low"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:67
+msgid "Medium"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:68
+msgid "High"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:68
+msgid "Best"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:75
+msgid "Disabled"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:76
+msgid "Varispeed — resample, pitch follows tempo"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:77
+msgid "Signalsmith Stretch"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:78
+msgid "Rubber Band — Faster"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:79
+msgid "Rubber Band — Finer"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:82
+msgid "Crisp"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:82
+msgid "Mixed"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:82
+msgid "Smooth"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:85
+msgid "Compound"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:86
+msgid "Percussive"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:87
+msgid "Soft"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:90
+msgid "Laminar"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:91
+msgid "Independent"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:94
+msgid "Standard"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:94
+msgid "Short"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:94
+msgid "Long"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:97
+msgid "Off"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:98
+msgid "On"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:101
+msgid "Shifted"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:102
+msgid "Preserved"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:105
+msgid "High speed"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:106
+msgid "High quality"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:107
+msgid "High consistency"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:110
+msgid "Apart"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:111
+msgid "Together"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:134
+msgid "OPL3 — DMX default"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:135
+msgid "OPL3 — DMX Doom"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:136
+msgid "OPL3 — DMX Doom II"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:137
+msgid "OPL3 — DMX Raptor"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:138
+msgid "OPL3 — DMX Strife"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:139
+msgid "OPL3 — DMXOPL"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:140
+msgid "OPL3 — General MIDI"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:141
+msgid "SoundFont — SpessaSynth"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:142
+msgid "Roland SC-55"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:417
+msgid "Choose..."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:436
+msgid "Folder..."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:443
+msgid "Archive..."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:540
+msgid "Preferences"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:570
+msgid "Playlist"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:571
+msgid "Output"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:574
+msgid "Pitch & Tempo"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:575
+msgid "General"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:576
+msgid "Notifications"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:592
+msgid "Appearance"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:596
+msgid "Advanced"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:640
+msgid "Stop after every track"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:641
+msgid "Follow the playing track in the playlist"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:643
+msgid "Move the selection to each track as it starts."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:644
+msgid "Resume playback on startup"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:645
+msgid ""
+"Continue the last track from where it stopped. The track is selected either way."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:650
+msgid "Read cue sheets when adding folders"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:651
+msgid "Read playlists when adding folders"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:676
+msgid "Follow the system"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:703
+msgid "Language"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:704
+msgid ""
+"Takes effect the next time XPCog starts. Windows and menus already on screen keep the language they were built in."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:709
+msgid "Streaming buffer (bytes)"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:711
+msgid ""
+"How much of an internet radio stream is read ahead. Raise it for a slow or distant station."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:719
+msgid "Send crash reports and usage data"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:722
+msgid "Nothing is collected or sent while this is off."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:732
+msgid "Crash reporting is not included in this build."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:748
+msgid "Enable notifications"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:749
+msgid "Show album art"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:750
+msgid ""
+"Shown as each track starts. Focus Assist or Do Not Disturb can hold notifications back."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:770
+msgid "System default"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:779
+msgid "%s (current default)"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:796
+msgid "%s (not connected)"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:818
+msgid "Output device"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:820
+msgid "Play exclusively"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:821
+msgid ""
+"Use the file's own rate and format instead of the system mixer's. Other applications cannot play while this is active. Falls back to sharing if the device is unavailable."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:825
+msgid "Volume scaling"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:826
+msgid "Resampler quality"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:828
+msgid "Decode HDCD"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:829
+msgid ""
+"Applies to 16-bit 44.1 kHz stereo only. Files without HDCD codes are unaffected."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:831
+msgid "Halve DSD volume"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:832
+msgid ""
+"DSD is converted with a filter whose gain puts half modulation — as loud as most SACDs go — at full scale. Turn on if a loud SACD rip clips."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:835
+msgid "Upmix stereo to surround"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:836
+msgid "Uses FreeSurround. Takes effect when the device is next opened."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:838
+msgid "Fade on seek and stop"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:842
+msgid "Release the device while paused"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:843
+msgid ""
+"Let other applications use the device while playback is paused. Turn off to keep an exclusive device reserved."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:846
+msgid ""
+"Volume scaling and resampler quality apply from the next track. Changing the device moves playback across with a brief gap."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:933
+msgid "Engine"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1000
+msgid "Pitch"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1001
+msgid "Tempo"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1003
+msgid "Lock pitch and tempo together"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1004
+msgid ""
+"Moving either slider moves both, which is what a record player's speed control does."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1007
+msgid "Reset to 1.00×"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1022
+msgid "Transients"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1025
+msgid "Detector"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1026
+msgid "Phase"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1038
+msgid "Window"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1041
+msgid "Smoothing"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1043
+msgid "Formant"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1045
+msgid "Pitch mode"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1049
+msgid ""
+"Varispeed resamples, as a record player would: one tempo slider, and the pitch follows it."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1085
+msgid "Synthesiser"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1087
+msgid "SoundFont"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1088
+msgid "SoundFont banks"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1090
+msgid "SC-55 ROMs"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1091
+msgid "Archives"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1097
+msgid "Sample rate (Hz)"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1098
+msgid "Default play time (s)"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1099
+msgid "Default fade time (s)"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1100
+msgid "Default loop count"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1103
+msgid ""
+"SpessaSynth needs a bank: any .sf2, .sf3 or .dls. Files that carry their own bank use that instead."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1106
+msgid ""
+"The SC-55 needs its five ROM files, which are not supplied. Choose the folder or the archive they came in; they are recognised by content, so nothing needs renaming. Without them, MIDI plays on the OPL3. It also ignores the sample rate and always renders at its own."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1111
+msgid "These apply to every synthesised format, not only MIDI."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1145
+msgid "Closing the window keeps XPCog running"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1153
+msgid "This session has no notification area to keep XPCog in."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1164
+msgid "Keep the mini player on top"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1188
+msgid "Musical notes (one bar per semitone)"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1189
+msgid "Even frequency spacing"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1196
+msgid "Bands"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1227
+msgid "Bar colour"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1231
+msgid "Peak colour"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1236
+msgid "Show peak markers"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1253
+msgid "Quietest level shown (dB)"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1258
+msgid ""
+"Bars sit on semitones from C0, so the display lines up with the notes being played."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1338
+msgid "Maintained automatically, and not meant to be edited."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1346
+msgid ""
+"The greyed rows are what XPCog remembers about the last session, not settings."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1365
+msgid "Scrobble to Last.fm"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1371
+msgid "Connect..."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1372
+msgid "Cancel"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1373
+msgid "Disconnect"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1427
+msgid ""
+"The system password store is not available, so a Last.fm session cannot be kept."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1431
+msgid "Waiting for you to allow access in your browser..."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1434
+msgid "Connected as %s."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1436
+msgid ""
+"Not connected. Connecting opens Last.fm in your browser; XPCog never sees your password."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1446
+msgid "%zu play waiting to be sent."
+msgid_plural "%zu plays waiting to be sent."
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/src/PreferencesDialog.cpp:1505
+msgid ""
+"Plays are sent once you have heard half a track, or four minutes of it, whichever comes first. Tracks under 30 seconds are never scrobbled."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1508
+msgid "Your Last.fm applications"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1510
+msgid ""
+"Revoking access there stops scrobbling immediately, whatever this pane says."
+msgstr ""
+
+#: app/src/Sc55Panel.cpp:141
+msgid "Waiting for the panel…"
+msgstr ""
+
+#: app/src/Sc55Panel.cpp:142
+msgid ""
+"Nothing is playing on the SC-55.\n"
+"\n"
+"Choose it under Preferences → MIDI; the OPL3 synthesisers have no display."
+msgstr ""
+
+#: app/src/StatusPresence.cpp:96
+msgid "Stop"
+msgstr ""
+
+#: app/src/StatusPresence.cpp:98
+msgid "Previous"
+msgstr ""
+
+#: app/src/StatusPresence.cpp:99
+msgid "Next"
+msgstr ""
+
+#: app/src/StatusPresence.cpp:106
+msgid "Show XPCog"
+msgstr ""
+
+#: app/src/StatusPresence.cpp:107
+msgid "Quit"
+msgstr ""
+
+#: app/src/StatusPresence.cpp:158
+msgid "(paused)"
+msgstr ""
+
+#: app/src/XPCogApp.cpp:41
+msgid "offer XPCog for the audio file types this build understands"
+msgstr ""
+
+#: app/src/XPCogApp.cpp:43
+msgid "undo --register"
+msgstr ""
+
+#: app/src/XPCogApp.cpp:45
+msgid "file"
+msgstr ""
+
+#: app/src/XPCogApp.cpp:279
+msgid ""
+"File associations are handled by the package on this platform, not by the application."
+msgstr ""
+
+#: app/src/XPCogApp.cpp:287
+msgid "Could not remove the file associations: %s"
+msgstr ""
+
+#: app/src/XPCogApp.cpp:291
+msgid "XPCog is no longer offered for audio files."
+msgstr ""
+
+#: app/src/XPCogApp.cpp:305
+msgid "Could not register the file associations: %s"
+msgstr ""
+
+#: app/src/XPCogApp.cpp:315
+msgid ""
+"XPCog is now offered for %zu audio file types.\n"
+"\n"
+"Windows does not let an application make itself the default. To open these files by double-clicking, choose Open with → Choose another app → XPCog, and tick \"Always use this app\"."
+msgstr ""
+

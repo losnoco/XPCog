@@ -11,6 +11,7 @@
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/translation.h>
 
 #include <algorithm>
 #include <array>
@@ -81,24 +82,30 @@ std::string replayGainText(const ReplayGainInfo& gain) {
     const auto peak = [](float value) { return fixed(static_cast<double>(value), 6); };
 
     if (gain.albumGain) {
-        lines.push_back("Album Gain: " + decibels(*gain.albumGain));
+        lines.push_back(toUtf8(wxString::Format(_("Album Gain: %s"),
+                                               toWx(decibels(*gain.albumGain)))));
     }
     if (gain.albumPeak) {
-        lines.push_back("Album Peak: " + peak(*gain.albumPeak));
+        lines.push_back(toUtf8(wxString::Format(_("Album Peak: %s"),
+                                               toWx(peak(*gain.albumPeak)))));
     }
     if (gain.trackGain) {
-        lines.push_back("Track Gain: " + decibels(*gain.trackGain));
+        lines.push_back(toUtf8(wxString::Format(_("Track Gain: %s"),
+                                               toWx(decibels(*gain.trackGain)))));
     }
     if (gain.trackPeak) {
-        lines.push_back("Track Peak: " + peak(*gain.trackPeak));
+        lines.push_back(toUtf8(wxString::Format(_("Track Peak: %s"),
+                                               toWx(peak(*gain.trackPeak)))));
     }
     if (gain.soundcheck && !gain.soundcheck->empty()) {
-        lines.push_back("SoundCheck: " + *gain.soundcheck);
+        lines.push_back(toUtf8(wxString::Format(_("SoundCheck: %s"),
+                                               toWx(*gain.soundcheck))));
     }
     // Cog's condition exactly: a volume of 1.0 is no scaling and says nothing.
     if (gain.volume && *gain.volume != 1.0F) {
-        lines.push_back("Volume Scale: " + fixed(static_cast<double>(*gain.volume), 2) +
-                        "\xC3\x97");
+        lines.push_back(toUtf8(wxString::Format(
+            trUtf8("Volume Scale: %s\xC3\x97"),
+            toWx(fixed(static_cast<double>(*gain.volume), 2)))));
     }
     return join(lines);
 }
@@ -113,10 +120,12 @@ std::string playCountText(std::int64_t count, std::int64_t firstSeen,
     std::vector<std::string> lines;
     lines.push_back(std::to_string(count));
     if (firstSeen != 0) {
-        lines.push_back("First seen: " + stamp(firstSeen));
+        lines.push_back(toUtf8(
+            wxString::Format(_("First seen: %s"), toWx(stamp(firstSeen)))));
     }
     if (lastPlayed != 0) {
-        lines.push_back("Last played: " + stamp(lastPlayed));
+        lines.push_back(toUtf8(
+            wxString::Format(_("Last played: %s"), toWx(stamp(lastPlayed)))));
     }
     return join(lines);
 }
@@ -129,11 +138,22 @@ namespace {
 constexpr int kArtHeight = 180;
 
 /// Cog's labels, in Cog's order.
+///
+/// Marked rather than translated: this is a file-scope table, so the lookup
+/// happens where the captions are built. Several of them are also playlist
+/// column headings -- Title, Artist, Album -- and share a msgid with those on
+/// purpose: one word, one translation, whichever surface shows it.
 constexpr std::array<const char*, 20> kLabels = {
-    "Album Artist", "Artist",  "Composer",       "Album",     "Title",
-    "Track",        "Length",  "Date",           "Genre",     "Filename",
-    "Sample Rate",  "Channels", "Bitrate",       "Bits",      "Codec",
-    "Encoding",     "Cuesheet", "Replay Gain",   "Play Count", "Comment",
+    wxTRANSLATE("Album Artist"), wxTRANSLATE("Artist"),
+    wxTRANSLATE("Composer"),     wxTRANSLATE("Album"),
+    wxTRANSLATE("Title"),        wxTRANSLATE("Track"),
+    wxTRANSLATE("Length"),       wxTRANSLATE("Date"),
+    wxTRANSLATE("Genre"),        wxTRANSLATE("Filename"),
+    wxTRANSLATE("Sample Rate"),  wxTRANSLATE("Channels"),
+    wxTRANSLATE("Bitrate"),      wxTRANSLATE("Bits"),
+    wxTRANSLATE("Codec"),        wxTRANSLATE("Encoding"),
+    wxTRANSLATE("Cuesheet"),     wxTRANSLATE("Replay Gain"),
+    wxTRANSLATE("Play Count"),   wxTRANSLATE("Comment"),
 };
 
 }  // namespace
@@ -265,7 +285,8 @@ InfoPanel::InfoPanel(wxWindow* parent, const Library* library) : library_(librar
 
     values_.reserve(FieldCount);
     for (std::size_t field = 0; field < kLabels.size(); ++field) {
-        auto* caption = new wxStaticText(this, wxID_ANY, wxString::FromAscii(kLabels[field]));
+        auto* caption =
+            new wxStaticText(this, wxID_ANY, trUtf8(kLabels[field]));
         wxFont bold = caption->GetFont();
         bold.SetWeight(wxFONTWEIGHT_BOLD);
         caption->SetFont(bold);
@@ -354,7 +375,9 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
     set(Codec, properties.codec);
     set(Encoding, properties.encoding);
 
-    set(Cuesheet, properties.cuesheet && !properties.cuesheet->empty() ? "yes" : "no");
+    set(Cuesheet, toUtf8(properties.cuesheet && !properties.cuesheet->empty()
+                             ? _("yes")
+                             : _("no")));
     set(ReplayGain, info::replayGainText(properties.replayGain));
 
     // The count on the entry is what the playlist carries; the dates only exist

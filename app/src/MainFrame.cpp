@@ -46,6 +46,7 @@
 #include <wx/statline.h>
 #include <wx/stattext.h>
 #include <wx/statusbr.h>
+#include <wx/translation.h>
 
 #include <algorithm>
 #include <cmath>
@@ -125,16 +126,16 @@ private:
 /// Returns true only for a deliberate yes. Closing the window is a no, which is
 /// the right default for the direction this decision runs in.
 [[nodiscard]] bool askConsent(wxWindow* parent) {
-    wxDialog dialog(parent, wxID_ANY, "Crash reporting");
+    wxDialog dialog(parent, wxID_ANY, _("Crash reporting"));
 
     auto* text = new wxStaticText(
         &dialog, wxID_ANY,
-        "Would you like to allow Sentry to submit crash reports?\n\n"
-        "You may turn this off again in Preferences. We won't ask you again.");
+        _("Would you like to allow Sentry to submit crash reports?\n\n"
+          "You may turn this off again in Preferences. We won't ask you again."));
     text->Wrap(dialog.FromDIP(400));
 
     auto* policy = new wxHyperlinkCtrl(
-        &dialog, wxID_ANY, "Privacy policy",
+        &dialog, wxID_ANY, _("Privacy policy"),
         wxString::FromUTF8(std::string{platform::kPrivacyPolicyUrl}));
 
     auto* layout = new wxBoxSizer(wxVERTICAL);
@@ -185,7 +186,8 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
         // A library that will not open is not fatal: the player still plays, it
         // just will not remember the playlist. Saying so once beats failing to
         // launch.
-        setStatusText("Library unavailable: " + library_->lastError());
+        setStatusText(wxString::Format(_("Library unavailable: %s"),
+                                       toWx(library_->lastError())));
         // And reported, when there is consent to report it. This is the shape
         // Cog's captureMessage calls have -- a thing that should have worked and
         // did not, on a path that then carries on regardless, which is exactly
@@ -378,9 +380,11 @@ void MainFrame::buildUi() {
     // load-bearing as the object names QMainWindow::saveState() needed.
     auiManager_.AddPane(splitter_, wxAuiPaneInfo().Name("playlist").CenterPane());
 
+    // The captions here are placeholders: applyPaneCaptions() below writes the
+    // translated ones, and is also what puts them back after a saved
+    // perspective has restored whatever language the layout was stored in.
     auiManager_.AddPane(spectrum_, wxAuiPaneInfo()
                                        .Name("spectrum")
-                                       .Caption("Spectrum")
                                        .Bottom()
                                        .BestSize(FromDIP(wxSize(400, 140)))
                                        .MinSize(FromDIP(wxSize(120, 60)))
@@ -397,7 +401,6 @@ void MainFrame::buildUi() {
     const wxSize equalizerBest = equalizer_->GetBestSize();
     auiManager_.AddPane(equalizer_, wxAuiPaneInfo()
                                         .Name("equalizer")
-                                        .Caption("Equalizer")
                                         .Bottom()
                                         .BestSize(equalizerBest)
                                         .MinSize(FromDIP(240), equalizerBest.GetHeight())
@@ -405,7 +408,6 @@ void MainFrame::buildUi() {
 
     auiManager_.AddPane(info_, wxAuiPaneInfo()
                                    .Name("info")
-                                   .Caption("Info")
                                    .Right()
                                    .BestSize(FromDIP(wxSize(300, 400)))
                                    .MinSize(FromDIP(wxSize(220, 200)))
@@ -419,7 +421,6 @@ void MainFrame::buildUi() {
     // 200-pixel column is unreadable in a way a truncated tag field is not.
     auiManager_.AddPane(lyrics_, wxAuiPaneInfo()
                                      .Name("lyrics")
-                                     .Caption("Lyrics")
                                      .Right()
                                      .BestSize(FromDIP(wxSize(320, 480)))
                                      .MinSize(FromDIP(wxSize(240, 160)))
@@ -428,13 +429,13 @@ void MainFrame::buildUi() {
 #ifdef XPCOG_HAVE_SC55_PANEL
     auiManager_.AddPane(sc55_, wxAuiPaneInfo()
                                    .Name("sc55")
-                                   .Caption("SC-55 Panel")
                                    .Bottom()
                                    .BestSize(FromDIP(wxSize(420, 200)))
                                    .MinSize(FromDIP(wxSize(200, 100)))
                                    .Hide());
 #endif
 
+    applyPaneCaptions();
     auiManager_.Update();
 
     // Two fields: the summary, and the now-playing text with the scan widgets
@@ -450,7 +451,7 @@ void MainFrame::buildUi() {
     // that is not quitting.
     scanCancel_ = new wxBitmapButton(GetStatusBar(), kScanCancelId, lucideIcon("x"),
                                      wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    scanCancel_->SetToolTip("Stop reading files");
+    scanCancel_->SetToolTip(_("Stop reading files"));
     scanCancel_->Hide();
 
     // wxStatusBar has no addPermanentWidget, so its children are positioned by
@@ -499,13 +500,13 @@ void MainFrame::buildTransport(wxWindow* parent) {
     volume_ = new wxSlider(parent, kVolumeId,
                            static_cast<int>(settings_.Volume() * 100.0), 0, 100,
                            wxDefaultPosition, FromDIP(wxSize(110, -1)));
-    volume_->SetToolTip("Volume");
+    volume_->SetToolTip(_("Volume"));
     sizer->Add(volume_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
 
     filter_ = new wxSearchCtrl(parent, kFilterId, wxEmptyString, wxDefaultPosition,
                                FromDIP(wxSize(200, -1)));
     filter_->ShowCancelButton(true);
-    filter_->SetDescriptiveText("Filter");
+    filter_->SetDescriptiveText(_("Filter"));
     sizer->Add(filter_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
 
     parent->SetSizer(sizer);
@@ -526,11 +527,17 @@ void MainFrame::wireUp() {
             [this](bool playing, bool paused) { onPlaybackStateChanged(playing, paused); });
     observe(playback_->startPending, [this](TrackId id) {
         const PlaylistEntry* entry = playlist_.find(id);
-        setStatusText(entry != nullptr ? "Connecting to " + entry->title() + "..."
-                                       : std::string{"Connecting..."});
+        setStatusText(entry != nullptr
+                          ? wxString::Format(_("Connecting to %s..."),
+                                             toWx(entry->title()))
+                          : wxString(_("Connecting...")));
     });
     observe(playback_->playbackFailed,
-            [this](TrackId, const std::string& reason) { setStatusText(reason); });
+            [this](TrackId, const std::string& reason) {
+                // Already translated: PlaybackController is app-layer and
+                // publishes the sentence it wants shown, not a code.
+                setStatusText(toWx(reason));
+            });
     observe(playback_->trackMetadataChanged, [this](TrackId id) {
         // A stream renamed itself. The row redraws from the view's own
         // notification; what has to happen here is the title bar, the status
@@ -706,9 +713,10 @@ void MainFrame::wireUp() {
             Hide();
             if (!trayHintShown_) {
                 trayHintShown_ = true;
-                presence_->notify("XPCog is still running",
-                                  "Playback continues. Use the tray icon to bring "
-                                  "the window back or to quit.");
+                presence_->notify(
+                    toUtf8(_("XPCog is still running")),
+                    toUtf8(_("Playback continues. Use the tray icon to bring the "
+                             "window back or to quit.")));
             }
             return;
         }
@@ -1089,7 +1097,7 @@ void MainFrame::notifyTrack(const PlaylistEntry* entry) {
         }
     }
 
-    presence_->notify("Now Playing", body, cover);
+    presence_->notify(toUtf8(_("Now Playing")), body, cover);
 }
 
 void MainFrame::setMiniMode(bool mini) {
@@ -1202,7 +1210,7 @@ void MainFrame::refreshTransportIcons() {
         const char* glyph  = playing ? "pause" : "play";
         playPauseButton_->SetBitmap(lucideIcon(glyph));
         playPauseButton_->SetBitmapDisabled(lucideIconDisabled(glyph));
-        playPauseButton_->SetToolTip(playing ? "Pause" : "Play");
+        playPauseButton_->SetToolTip(playing ? _("Pause") : _("Play"));
     }
 }
 
@@ -1240,7 +1248,8 @@ void MainFrame::bindCommands() {
     on(EditSelectAll, [this] { list_->SelectAll(); });
     on(EditRandomize, [this] {
         if (playlist_.size() > 1) {
-            undo_.push(std::make_unique<RandomizeCommand>(playlist_, "Randomize"));
+            undo_.push(std::make_unique<RandomizeCommand>(
+                playlist_, toUtf8(_("Randomize"))));
         }
     });
 
@@ -1339,13 +1348,19 @@ void MainFrame::bindUpdateUi() {
         event.Enable(undo_.canUndo());
         // Relabelled from the stack every idle, which is what makes the old
         // refreshUndoActions() unnecessary rather than merely shorter.
-        const std::string label = undo_.canUndo() ? "&Undo " + undo_.undoText() : "&Undo";
-        event.SetText(toWx(label) + "\tCtrl+Z");
+        // The command's own text is already translated -- it is written by
+        // whichever handler pushed the command -- so this only has to place it.
+        const wxString label =
+            undo_.canUndo() ? wxString::Format(_("&Undo %s"), toWx(undo_.undoText()))
+                            : wxString(_("&Undo"));
+        event.SetText(label + "\tCtrl+Z");
     });
     update(EditRedo, [this](wxUpdateUIEvent& event) {
         event.Enable(undo_.canRedo());
-        const std::string label = undo_.canRedo() ? "&Redo " + undo_.redoText() : "&Redo";
-        event.SetText(toWx(label) + "\tCtrl+Y");
+        const wxString label =
+            undo_.canRedo() ? wxString::Format(_("&Redo %s"), toWx(undo_.redoText()))
+                            : wxString(_("&Redo"));
+        event.SetText(label + "\tCtrl+Y");
     });
 
     update(EditRemove, [this](wxUpdateUIEvent& event) {
@@ -1363,7 +1378,7 @@ void MainFrame::bindUpdateUi() {
 
     update(PlaybackPlayPause, [this](wxUpdateUIEvent& event) {
         const bool playing = playback_->playing() && !playback_->paused();
-        event.SetText(playing ? "&Pause" : "&Play");
+        event.SetText(playing ? _("&Pause") : _("&Play"));
         event.Enable(!playlist_.empty());
     });
     update(PlaybackStop,
@@ -1439,9 +1454,9 @@ void MainFrame::openFiles() {
         patterns += "*." + extension;
     }
     const wxString wildcard =
-        "Audio Files|" + toWx(patterns) + "|All Files|*.*";
+        _("Audio Files") + "|" + toWx(patterns) + "|" + _("All Files") + "|*.*";
 
-    wxFileDialog dialog(this, "Open Files", wxEmptyString, wxEmptyString, wildcard,
+    wxFileDialog dialog(this, _("Open Files"), wxEmptyString, wxEmptyString, wildcard,
                         wxFD_OPEN | wxFD_MULTIPLE | wxFD_FILE_MUST_EXIST);
     if (dialog.ShowModal() != wxID_OK) {
         return;
@@ -1460,7 +1475,7 @@ void MainFrame::openFiles() {
 
 void MainFrame::openFolder() {
     const wxString chosen =
-        wxDirSelector("Open Folder", wxEmptyString, wxDD_DEFAULT_STYLE,
+        wxDirSelector(_("Open Folder"), wxEmptyString, wxDD_DEFAULT_STYLE,
                       wxDefaultPosition, this);
     if (chosen.IsEmpty()) {
         return;
@@ -1469,9 +1484,14 @@ void MainFrame::openFolder() {
 }
 
 void MainFrame::savePlaylistAs() {
-    wxFileDialog dialog(this, "Save Playlist", wxEmptyString, "playlist.m3u8",
-                        "M3U Playlist (*.m3u8)|*.m3u8|PLS Playlist (*.pls)|*.pls|"
-                        "XSPF Playlist (*.xspf)|*.xspf",
+    // The extensions stay inside the descriptions rather than being formatted
+    // in: a translator moving "(*.m3u8)" is harmless, and building the string
+    // from parts to keep it out of their hands would make the row unreadable in
+    // the .po for no gain.
+    wxFileDialog dialog(this, _("Save Playlist"), wxEmptyString, "playlist.m3u8",
+                        _("M3U Playlist (*.m3u8)") + "|*.m3u8|" +
+                            _("PLS Playlist (*.pls)") + "|*.pls|" +
+                            _("XSPF Playlist (*.xspf)") + "|*.xspf",
                         wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
     if (dialog.ShowModal() != wxID_OK) {
         return;
@@ -1531,8 +1551,8 @@ void MainFrame::savePlaylistAs() {
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out || !out.write(text.data(), static_cast<std::streamsize>(text.size()))) {
-        wxMessageBox("Could not write the playlist.", "XPCog", wxOK | wxICON_WARNING,
-                     this);
+        wxMessageBox(_("Could not write the playlist."), "XPCog",
+                     wxOK | wxICON_WARNING, this);
         return;
     }
     // Saying so when the filter left tracks out. Writing what is shown is the
@@ -1541,10 +1561,11 @@ void MainFrame::savePlaylistAs() {
     // and a status line is cheaper than a dialog they would learn to dismiss.
     const std::size_t total = playlist_.size();
     if (entries.size() < total) {
-        setStatusText("Playlist saved: " + std::to_string(entries.size()) + " of " +
-                      std::to_string(total) + " tracks, the rest hidden by the filter.");
+        setStatusText(wxString::Format(
+            _("Playlist saved: %zu of %zu tracks, the rest hidden by the filter."),
+            entries.size(), total));
     } else {
-        setStatusText("Playlist saved.");
+        setStatusText(_("Playlist saved."));
     }
 }
 
@@ -1565,10 +1586,11 @@ void MainFrame::importFromCog() {
     // there the store arrived by being copied across. Finding it automatically is
     // a convenience for the one platform Cog runs on, and belongs on top of this
     // rather than in place of it.
-    wxFileDialog picker(this, "Open a Cog library", wxEmptyString, "DataModel.sqlite",
-                        "Cog library (DataModel.sqlite)|DataModel.sqlite|"
-                        "SQLite databases (*.sqlite)|*.sqlite|"
-                        "All files (*.*)|*.*",
+    wxFileDialog picker(this, _("Open a Cog library"), wxEmptyString,
+                        "DataModel.sqlite",
+                        _("Cog library (DataModel.sqlite)") + "|DataModel.sqlite|" +
+                            _("SQLite databases (*.sqlite)") + "|*.sqlite|" +
+                            _("All Files") + "|*.*",
                         wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (picker.ShowModal() != wxID_OK) {
         return;
@@ -1578,18 +1600,18 @@ void MainFrame::importFromCog() {
 
     const std::optional<CogLibrary> library = readCogLibrary(store);
     if (!library) {
-        wxMessageBox("That file could not be read as a Cog library.\n\n"
-                     "Cog's is DataModel.sqlite, under Application Support/Cog. "
-                     "If Cog is running, copy it along with its -wal and -shm "
-                     "files, or the most recent tracks will be missing.",
-                     "Import from Cog", wxOK | wxICON_WARNING, this);
+        wxMessageBox(_("That file could not be read as a Cog library.\n\n"
+                       "Cog's is DataModel.sqlite, under Application Support/Cog. "
+                       "If Cog is running, copy it along with its -wal and -shm "
+                       "files, or the most recent tracks will be missing."),
+                     _("Import from Cog"), wxOK | wxICON_WARNING, this);
         return;
     }
 
     if (library->entries.empty()) {
         // A valid answer, and a different one from the file not opening.
-        wxMessageBox("That Cog library has no playlist entries in it.",
-                     "Import from Cog", wxOK | wxICON_INFORMATION, this);
+        wxMessageBox(_("That Cog library has no playlist entries in it."),
+                     _("Import from Cog"), wxOK | wxICON_INFORMATION, this);
         return;
     }
 
@@ -1638,17 +1660,23 @@ void MainFrame::importFromCog() {
 
     // Said before the scan starts, because the scan is the slow part and a
     // window that does nothing for a minute has not told anybody it is working.
-    std::string opening = "Importing " + std::to_string(imported.entries.size()) +
-                          " track" + (imported.entries.size() == 1 ? "" : "s") +
-                          " from Cog...";
+    wxString opening = wxString::Format(
+        wxPLURAL("Importing %zu track from Cog...",
+                 "Importing %zu tracks from Cog...",
+                 static_cast<unsigned>(imported.entries.size())),
+        imported.entries.size());
     if (library->prunedDeleted > 0 || library->prunedEmptyUrl > 0 ||
         library->prunedUnparseable > 0) {
         // Cog's own prunes, reported rather than hidden: "900 tracks and this
         // imported 847" is a question somebody will ask.
         const std::size_t dropped = library->prunedDeleted + library->prunedEmptyUrl +
                                     library->prunedUnparseable;
-        opening += " (" + std::to_string(dropped) + " row" +
-                   (dropped == 1 ? "" : "s") + " Cog would not have shown either)";
+        opening += " ";
+        opening += wxString::Format(
+            wxPLURAL("(%zu row Cog would not have shown either)",
+                     "(%zu rows Cog would not have shown either)",
+                     static_cast<unsigned>(dropped)),
+            dropped);
     }
     setStatusText(opening);
 
@@ -1733,7 +1761,8 @@ void MainFrame::pumpScanQueue() {
 void MainFrame::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow,
                                   bool cancelled) {
     if (entries.empty()) {
-        setStatusText(cancelled ? "Nothing was added." : "Nothing playable was found.");
+        setStatusText(cancelled ? _("Nothing was added.")
+                                : _("Nothing playable was found."));
         return;
     }
 
@@ -1762,20 +1791,24 @@ void MainFrame::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow,
 
     undo_.push(std::make_unique<InsertTracksCommand>(
         playlist_, where, std::move(entries),
-        "Add " + std::to_string(count) + (count == 1 ? " Track" : " Tracks")));
+        toUtf8(wxString::Format(wxPLURAL("Add %zu Track", "Add %zu Tracks",
+                                         static_cast<unsigned>(count)),
+                                count))));
 
     if (cogImportSummary_) {
         // Said instead of the ordinary summary, because after an import the
         // interesting number is not how long the playlist is now.
-        std::string text = "Imported " + std::to_string(count) + " track" +
-                           (count == 1 ? "" : "s") + " from Cog";
+        wxString text = wxString::Format(
+            wxPLURAL("Imported %zu track from Cog", "Imported %zu tracks from Cog",
+                     static_cast<unsigned>(count)),
+            count);
         if (cogImportSummary_->matched > 0) {
-            text += ", " + std::to_string(cogImportSummary_->matched) +
-                    " with play counts";
+            text += wxString::Format(_(", %zu with play counts"),
+                                     cogImportSummary_->matched);
         }
         if (cogImportFileReferences_ > 0) {
-            text += "; " + std::to_string(cogImportFileReferences_) +
-                    " could not be resolved off a Mac";
+            text += wxString::Format(_("; %zu could not be resolved off a Mac"),
+                                     cogImportFileReferences_);
         }
         text += ".";
         setStatusText(text);
@@ -1844,7 +1877,9 @@ void MainFrame::removeSelected() {
     const std::size_t count = ids.size();
     undo_.push(std::make_unique<RemoveTracksCommand>(
         playlist_, std::move(ids),
-        "Remove " + std::to_string(count) + (count == 1 ? " Track" : " Tracks")));
+        toUtf8(wxString::Format(wxPLURAL("Remove %zu Track", "Remove %zu Tracks",
+                                         static_cast<unsigned>(count)),
+                                count))));
     setStatusText(statusSummary());
 }
 
@@ -1910,7 +1945,8 @@ void MainFrame::wireScrobbling() {
     scrobbler_->onSessionInvalidated([this] {
         dispatch_([this] {
             lastFm_->forget();
-            setStatusText("Last.fm access was withdrawn. Reconnect in Preferences.");
+            setStatusText(
+                _("Last.fm access was withdrawn. Reconnect in Preferences."));
         });
     });
 
@@ -2005,7 +2041,14 @@ void MainFrame::onCurrentTrackChanged(TrackId id) {
 
     // Both arms have to be the same type, so the literal is wrapped rather
     // than left for the conditional operator to guess at.
-    SetTitle(text.empty() ? wxString("XPCog") : toWx(text + " — XPCog"));
+    //
+    // Not translated, and the dash is not decoration: "%s \xE2\x80\x94 XPCog"
+    // as a message would invite a translator to reorder it, and a window title
+    // that does not start with the track is a taskbar button that says "XPCog"
+    // forty times. The separator is a formatting convention rather than
+    // language, which is exactly the kind of string a catalogue should not
+    // carry.
+    SetTitle(text.empty() ? wxString("XPCog") : toWx(text + " \xE2\x80\x94 XPCog"));
     SetStatusText(toWx(text), 1);
 
     const std::string title  = entry != nullptr ? entry->title() : std::string{};
@@ -2075,18 +2118,42 @@ void MainFrame::publishNowPlaying(TrackId id) {
 
 // --- state --------------------------------------------------------------
 
-std::string MainFrame::statusSummary() const {
+wxString MainFrame::statusSummary() const {
     double total = 0.0;
     for (const PlaylistEntry& entry : playlist_.entries()) {
         total += entry.duration();
     }
     const std::size_t count = playlist_.size();
-    return std::to_string(count) + (count == 1 ? " track" : " tracks") + " — " +
-           formatClock(total);
+    return wxString::Format(trUtf8("%zu track \xE2\x80\x94 %s",
+                                     "%zu tracks \xE2\x80\x94 %s",
+                                     static_cast<unsigned>(count)),
+                            count, toWx(formatClock(total)));
 }
 
-void MainFrame::setStatusText(const std::string& text) {
-    SetStatusText(toWx(text), 0);
+void MainFrame::setStatusText(const wxString& text) { SetStatusText(text, 0); }
+
+void MainFrame::applyPaneCaptions() {
+    // A table rather than a call beside each AddPane, for the reason the icon
+    // table in Commands.cpp gives: this has to be re-applied, so a sweep that
+    // walks a list cannot forget a pane where scattered calls will.
+    const std::pair<wxWindow*, wxString> captions[] = {
+        {spectrum_, _("Spectrum")},
+        {equalizer_, _("Equalizer")},
+        {info_, _("Info")},
+        {lyrics_, _("Lyrics")},
+#ifdef XPCOG_HAVE_SC55_PANEL
+        {sc55_, _("SC-55 Panel")},
+#endif
+    };
+
+    for (const auto& [window, caption] : captions) {
+        if (window == nullptr) {
+            continue;
+        }
+        if (wxAuiPaneInfo& info = auiManager_.GetPane(window); info.IsOk()) {
+            info.Caption(caption);
+        }
+    }
 }
 
 void MainFrame::rememberGeometry() {
@@ -2146,6 +2213,10 @@ void MainFrame::restoreState() {
     if (const std::string layout = settings_.rawValue("xpcog.window.layout");
         !layout.empty()) {
         auiManager_.LoadPerspective(toWx(layout), true);
+        // The captions came back with it, in whatever language they were saved
+        // in. See applyPaneCaptions() for why that is not a cosmetic problem.
+        applyPaneCaptions();
+        auiManager_.Update();
     }
 
     // Nothing here forces the transport back on screen any more, and nothing needs
@@ -2194,7 +2265,8 @@ void MainFrame::persistState() {
 
     if (library_ && !library_->savePlaylist(playlist_)) {
         // Worth saying, but not worth refusing to close over.
-        setStatusText("Could not save the playlist: " + library_->lastError());
+        setStatusText(wxString::Format(_("Could not save the playlist: %s"),
+                                       toWx(library_->lastError())));
     }
     settings_.sync();
 }

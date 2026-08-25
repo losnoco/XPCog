@@ -219,6 +219,17 @@ public:
     /// format-specific reader can supplement TagLib rather than replace it.
     [[nodiscard]] MetadataMap readMetadata(const Url& url) const;
 
+    /// Every registered decoder, in the order candidates are tried.
+    ///
+    /// Valid only after freeze(), which is what drops the ones that declined to
+    /// load and puts the rest in descending priority order -- so this is not
+    /// merely "what was registered", it is what a file will actually be offered
+    /// to and in what sequence. The About box lists it: which decoder claims
+    /// which extension, and where two claim the same one, which of them wins.
+    [[nodiscard]] std::span<const DecoderDescriptor> decoders() const noexcept {
+        return decoders_;
+    }
+
     /// Every extension claimed by a registered decoder, lowercase and deduplicated.
     /// Drives the app's file-open filter, replacing Cog's generated
     /// CFBundleDocumentTypes (Audio/PluginController.mm -printPluginInfo).
