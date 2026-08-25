@@ -28,8 +28,15 @@ in the world does and what the catalogue compiler wants: it copies the msgid int
 a C++ string literal verbatim, and app/src is compiled with /utf-8.
 
 **It does not merge.** The output is a fresh template; app/locale/*.po are
-updated against it by hand or with msgmerge if you have one. Diffing the new
-template against the committed one is how you find what a change added.
+updated against it by hand or with msgmerge if you have one.
+
+It does, however, *report* what each catalogue is missing and what it still
+carries that the sources no longer say. That report is the whole reason the
+"it does not merge" limitation is survivable: a message whose English is
+reworded is a new msgid, the old translation goes on sitting in the .po
+answering a question nobody asks any more, and the new one falls back to
+English -- in one row of one pane, which is exactly the kind of thing that
+ships. Rewording three labels is how this got written.
 """
 import io
 import os
@@ -186,6 +193,71 @@ def scan(path, complaints):
     return found
 
 
+PO_FIELD = re.compile(r'^(msgid_plural|msgid|msgstr(?:\[\d+\])?) "(.*)"$')
+
+
+def unescape(text):
+    out, i = [], 0
+    while i < len(text):
+        if text[i] == '\\':
+            out.append(SIMPLE[text[i + 1]])
+            i += 2
+        else:
+            out.append(text[i])
+            i += 1
+    return ''.join(out)
+
+
+def catalogue_msgids(path):
+    """Every msgid in a .po, header and obsolete entries excluded."""
+    found, msgid, keyword = set(), None, None
+    for line in io.open(path, encoding='utf-8'):
+        line = line.rstrip('\n')
+        if not line:
+            if msgid:
+                found.add(msgid)
+            msgid, keyword = None, None
+        elif line.startswith('#'):
+            continue
+        elif PO_FIELD.match(line):
+            match = PO_FIELD.match(line)
+            keyword = match.group(1)
+            if keyword == 'msgid':
+                msgid = unescape(match.group(2))
+        elif line.startswith('"') and keyword == 'msgid':
+            msgid += unescape(line[1:-1])
+    if msgid:
+        found.add(msgid)
+    return found
+
+
+def report_drift(wanted):
+    """What each catalogue lacks, and what it is still carrying pointlessly.
+
+    `wanted` is every msgid the template ended up with -- the scanned ones and
+    the EXTERNAL and STOCK rows alike, or those ten would be reported obsolete
+    on every run.
+    """
+    directory = os.path.dirname(OUT)
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith('.po'):
+            continue
+        path = os.path.join(directory, name)
+        have = catalogue_msgids(path)
+        missing = sorted(m for m in wanted if m not in have)
+        obsolete = sorted(m for m in have if m not in wanted)
+
+        if not missing and not obsolete:
+            print('%s: up to date' % name, file=sys.stderr)
+            continue
+        print('\n%s: %d missing, %d obsolete'
+              % (name, len(missing), len(obsolete)), file=sys.stderr)
+        for msgid in missing:
+            print('  missing  %r' % msgid, file=sys.stderr)
+        for msgid in obsolete:
+            print('  obsolete %r' % msgid, file=sys.stderr)
+
+
 def main():
     entries = {}
     order = []
@@ -243,6 +315,7 @@ def main():
                 out.write('msgstr[0] ""\nmsgstr[1] ""\n\n')
 
     print('%d messages -> %s' % (len(marked), OUT), file=sys.stderr)
+    report_drift(marked)
 
 
 main()

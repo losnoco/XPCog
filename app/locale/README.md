@@ -36,6 +36,22 @@ it. `extract-messages.py` does **not** merge: it writes a fresh template, and th
 diff against the committed one is how you see what a change added. If you do have
 gettext, `msgmerge --update es.po xpcog.pot` does the merging properly.
 
+It does **report** the drift, though, and that report is the part to read:
+
+```
+es.po: 2 missing, 1 obsolete
+  missing  'Close to tray'
+  missing  'Closing the window leaves XPCog running in the notification area...'
+  obsolete 'Closing the window keeps XPCog running'
+```
+
+Rewording an English label is the case to watch. It is a **new msgid**: the old
+translation goes on sitting in the `.po` answering a question nothing asks any
+more, and the reworded label falls back to English -- in one row of one pane,
+which is exactly the kind of thing that ships unnoticed. Nothing else catches
+it; the build is happy and so are the tests, because a catalogue with a message
+missing is a perfectly valid catalogue.
+
 ## What is not translated
 
 - **Setting values.** `settings.def` keys and the strings stored under them are
