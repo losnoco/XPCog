@@ -20,6 +20,7 @@
 #include <wx/listbox.h>
 #include <wx/panel.h>
 #include <wx/scrolwin.h>
+#include <wx/settings.h>
 #include <wx/simplebook.h>
 #include <wx/sizer.h>
 #include <wx/slider.h>
@@ -263,6 +264,106 @@ constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsK
     return form;
 }
 
+/// Every pane scrolls vertically.
+///
+/// Only Advanced used to, because only Advanced was obviously growing. The
+/// others were fixed panels inside a fixed-height dialog, so a pane whose rows
+/// and notes came to more than the dialog's height simply lost the bottom of
+/// itself -- silently, and worse in a language whose sentences run longer than
+/// the English they were sized against, which is most of them. Output and MIDI
+/// were already close.
+///
+/// Horizontally it does not scroll: the rate of zero makes the virtual width the
+/// client width, so the form has to fit the width it is given and the notes wrap
+/// into it rather than running off the side with a scrollbar to chase them.
+using Pane = wxScrolled<wxPanel>;
+
+[[nodiscard]] Pane* makePane(wxWindow* parent) {
+    auto* pane = new Pane(parent, wxID_ANY);
+    pane->SetScrollRate(0, pane->FromDIP(8));
+    return pane;
+}
+
+/// How wide a paragraph in `pane` may be.
+///
+/// The vertical scrollbar's width is subtracted whether or not it is showing,
+/// and that is the whole trick: text that wrapped to the full client width would
+/// grow tall enough to need a scrollbar, which narrows the client, which wraps
+/// it taller still. Reserving the space unconditionally means the wrap width
+/// does not move when the scrollbar appears, so it cannot oscillate.
+[[nodiscard]] wxWindow* finishPane(Pane* pane, wxSizer* form) {
+    auto* layout = new wxBoxSizer(wxVERTICAL);
+    // Proportion zero, not one. A growable item is stretched to the window's
+    // height, which for a scrolled window is the *visible* height -- so the form
+    // would be squashed back into the pane it is meant to be able to overflow,
+    // and FitInside() would then compute a virtual size that never exceeded the
+    // client one. Nothing would ever scroll.
+    layout->Add(form, 0, wxEXPAND | wxALL, pane->FromDIP(10));
+    pane->SetSizer(layout);
+    pane->FitInside();
+    return pane;
+}
+
+[[nodiscard]] int paragraphWidth(wxWindow* pane) {
+    return pane->GetClientSize().GetWidth() -
+           wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, pane) - pane->FromDIP(28);
+}
+
+/// A paragraph of explanation that re-wraps as the dialog changes width.
+///
+/// wxStaticText::Wrap() inserts the breaks into the label itself, so it cannot
+/// simply be called again -- a second call wraps the already-wrapped text and
+/// the paragraph creeps narrower with every resize until it is one word per
+/// line. Keeping the original and re-setting it before each wrap is what makes
+/// it repeatable, and repeatable is what lets a note be as long as it needs to
+/// be instead of as long as one fixed width allowed.
+class NoteText : public wxStaticText {
+public:
+    NoteText(Pane* pane, const wxString& text)
+        : wxStaticText(pane, wxID_ANY, text), original_(text) {
+        // Greyed: this is the pane explaining itself, not a control.
+        Enable(false);
+        // Bound to its *own* size event rather than to the pane's. The pane
+        // outlives nothing here -- it destroys this window on its way out -- but
+        // a handler registered on the parent is not removed when the child dies,
+        // and a size event arriving in that window is a call through a destroyed
+        // object. Self-binding cannot get that wrong, and the sizer resizes this
+        // window whenever the pane changes width, which is the same signal.
+        Bind(wxEVT_SIZE, &NoteText::onResized, this);
+    }
+
+private:
+    void onResized(wxSizeEvent& event) {
+        event.Skip();
+        rewrap();
+    }
+
+    void rewrap() {
+        auto* pane = static_cast<Pane*>(GetParent());
+        // Measured from the pane rather than from this window's own new width,
+        // which is what stops the two from chasing each other: wrapping changes
+        // this window's best size, the sizer answers with another size event,
+        // and a width derived from that event would be a different number every
+        // time round.
+        const int room = paragraphWidth(pane);
+        // A pane mid-construction reports nonsense, and a width that has not
+        // moved is work with nothing to show for it.
+        if (room < pane->FromDIP(120) || room == wrappedAt_) {
+            return;
+        }
+        wrappedAt_ = room;
+        SetLabel(original_);
+        Wrap(room);
+        pane->Layout();
+        // The virtual size follows the form's new height, or a paragraph that
+        // grew from two lines to five would be as clipped as it was before.
+        pane->FitInside();
+    }
+
+    wxString original_;
+    int      wrappedAt_ = -1;
+};
+
 /// Adds curated rows to one pane's form.
 ///
 /// A struct rather than a lambda per pane because there are four panes wanting
@@ -300,7 +401,7 @@ class RowBuilder : public wxClientData {
 public:
     using Announce = std::function<void(const char*)>;
 
-    RowBuilder(Settings& settings, wxWindow* pane, wxFlexGridSizer* form,
+    RowBuilder(Settings& settings, Pane* pane, wxFlexGridSizer* form,
                Announce announce)
         : settings_(&settings), pane_(pane), form_(form), announce_(std::move(announce)) {}
 
@@ -458,9 +559,7 @@ public:
     }
 
     FormRow note(const wxString& text) const {
-        auto* label = new wxStaticText(pane_, wxID_ANY, text);
-        label->Wrap(pane_->FromDIP(440));
-        label->Enable(false);
+        auto* label = new NoteText(pane_, text);
         // An empty label rather than a spacer in the first cell: a spacer item
         // counts as shown whatever the text beside it does, and a "hidden"
         // note would otherwise leave its grid row open by a gap's height.
@@ -532,7 +631,7 @@ private:
     // the time anyone clicks anything, while the settings object and the callback
     // both outlive the dialog.
     Settings*        settings_;
-    wxWindow*        pane_;
+    Pane*            pane_;
     wxFlexGridSizer* form_;
     Announce         announce_;
 };
@@ -547,6 +646,12 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
       account_(account),
       scrobbler_(scrobbler) {
     SetSize(FromDIP(wxSize(660, 480)));
+    // A floor, now that the panes scroll. Without one, "it fits because it
+    // scrolls" is true all the way down to a dialog with room for half a row --
+    // scrolling is there so a long pane is reachable, not so the window can be
+    // made useless. The width is the narrowest the two-column form reads at with
+    // the category list beside it; the height is about six rows.
+    SetMinSize(FromDIP(wxSize(520, 320)));
 
     // A list beside a stack of pages, which is exactly what the Qt version built
     // from a QListWidget and a QStackedWidget.
@@ -636,7 +741,7 @@ std::function<void(const char*)> PreferencesDialog::changeNotifier() {
 }
 
 wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -654,14 +759,11 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
     row->toggle(_("Read cue sheets when adding folders"), "readCueSheetsInFolders");
     row->toggle(_("Read playlists when adding folders"), "readPlaylistsInFolders");
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 
 wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -736,14 +838,11 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
         row->note(_("Crash reporting is not included in this build."));
     }
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 
 wxWindow* PreferencesDialog::buildNotificationsPane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -754,14 +853,11 @@ wxWindow* PreferencesDialog::buildNotificationsPane(wxWindow* parent) {
     row->note(_("Shown as each track starts. Focus Assist or Do Not Disturb can "
                 "hold notifications back."));
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 
 wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -850,14 +946,11 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
     row->note(_("Volume scaling and resampler quality apply from the next track. "
                 "Changing the device moves playback across with a brief gap."));
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 
 wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -932,6 +1025,11 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
             rebuildWindow(finer);
         }
         pane->Layout();
+        // Rows arriving and leaving changes how tall the form is, and on a
+        // scrolled pane the scrollbar only knows about it if the virtual size
+        // is recomputed. Without this, switching to a Rubber Band engine adds
+        // eight rows that cannot be scrolled to.
+        pane->FitInside();
     };
 
     row->choice(_("Engine"), "rubberbandEngine", kStretchEngineChoices, refresh);
@@ -1055,14 +1153,11 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
 
     refresh(settings_.RubberbandEngine());
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 
 wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -1084,6 +1179,7 @@ wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
         rows->roms.show(sc55);
         rows->sc55Note.show(sc55);
         pane->Layout();
+        pane->FitInside();
     };
 
     row->choice(_("Synthesiser"), "midiPlugin", kMidiSynthChoices, refresh);
@@ -1116,10 +1212,7 @@ wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
 
     refresh(settings_.MidiPlugin());
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 
 // Not built on macOS at all -- see the page list in the constructor. The guard is
@@ -1127,7 +1220,7 @@ wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
 // single `#ifndef`, instead of an empty function surviving for no one to call.
 #ifndef __WXOSX__
 wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -1172,15 +1265,12 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     // of two checkboxes has asked -- and it read as an apology for a pane that
     // does not need one.
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 #endif  // !__WXOSX__
 
 wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -1262,18 +1352,13 @@ wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
     row->note(_("Bars sit on semitones from C0, so the display lines up with the "
                 "notes being played."));
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 
 wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
     // Scrolled, because the list grows with every milestone and a fixed pane
     // would quietly start clipping.
-    auto* pane = new wxScrolled<wxPanel>(parent, wxID_ANY);
-    pane->SetScrollRate(0, pane->FromDIP(8));
-
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(4));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -1350,17 +1435,13 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
     row->note(_("The greyed rows are what XPCog remembers about the last session, "
                 "not settings."));
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    pane->FitInside();
-    return pane;
+    return finishPane(pane, form);
 }
 
 // --- Last.fm --------------------------------------------------------------
 
 wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
-    auto* pane = new wxPanel(parent, wxID_ANY);
+    auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
@@ -1375,7 +1456,7 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
     auto* connect = new wxButton(pane, wxID_ANY, _("Connect..."));
     auto* cancel  = new wxButton(pane, wxID_ANY, _("Cancel"));
     auto* forget  = new wxButton(pane, wxID_ANY, _("Disconnect"));
-    status->Wrap(pane->FromDIP(440));
+    status->Wrap(paragraphWidth(pane));
 
     auto* buttons = new wxBoxSizer(wxHORIZONTAL);
     buttons->Add(connect, 0, wxRIGHT, pane->FromDIP(6));
@@ -1403,7 +1484,7 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
 
     // Captured by the handlers below. `refresh` is the only thing that decides
     // what is shown, so there is no way for two paths to disagree about it.
-    const auto refresh = [this, token, status, connect, cancel, forget, enable] {
+    const auto refresh = [this, token, status, connect, cancel, forget, enable, pane] {
         if (token.expired()) {
             return;
         }
@@ -1453,8 +1534,9 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
                                  waiting));
         }
 
-        status->Wrap(FromDIP(440));
-        Layout();
+        status->Wrap(paragraphWidth(pane));
+        pane->Layout();
+        pane->FitInside();
     };
 
     connect->Bind(wxEVT_BUTTON, [this, refresh, token, status](wxCommandEvent&) {
@@ -1516,10 +1598,7 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
 
     refresh();
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
-    layout->Add(form, 1, wxEXPAND | wxALL, pane->FromDIP(10));
-    pane->SetSizer(layout);
-    return pane;
+    return finishPane(pane, form);
 }
 
 }  // namespace xpcog::app
