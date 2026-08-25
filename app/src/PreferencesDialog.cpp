@@ -295,13 +295,7 @@ using Pane = wxScrolled<wxPanel>;
     return pane;
 }
 
-/// How wide a paragraph in `pane` may be.
-///
-/// The vertical scrollbar's width is subtracted whether or not it is showing,
-/// and that is the whole trick: text that wrapped to the full client width would
-/// grow tall enough to need a scrollbar, which narrows the client, which wraps
-/// it taller still. Reserving the space unconditionally means the wrap width
-/// does not move when the scrollbar appears, so it cannot oscillate.
+/// Puts `form` in `pane` with a margin around it, and sizes what scrolls.
 [[nodiscard]] wxWindow* finishPane(Pane* pane, wxSizer* form) {
     auto* layout = new wxBoxSizer(wxVERTICAL);
     // Proportion zero, not one. A growable item is stretched to the window's
@@ -336,12 +330,18 @@ using Pane = wxScrolled<wxPanel>;
 ///
 /// So the width comes from this window's own size event, which is the width the
 /// sizer just handed it. The obvious objection is that wrapping changes this
-/// window's best size and would therefore change the width it is next given --
-/// a loop. `SetMinSize` is what breaks it: a note contributes almost nothing to
-/// its column's minimum width, so the column is sized by the controls above it
-/// and the number arriving in the size event does not move when the text
-/// re-wraps. It converges in one extra event, and the guard below stops even
-/// that from doing any work.
+/// window's size and would therefore change the width it is next given -- a
+/// loop, and one that recurses rather than iterating, because a size event
+/// raised by `Wrap()` is delivered before `Wrap()` returns. Three things
+/// between them close it: `SetMinSize` keeps a note from contributing to its
+/// column's minimum width, so the column is sized by the controls above it and
+/// the number arriving here does not move when the text re-wraps; the wrap
+/// width reserves the vertical scrollbar whether or not it is showing, so a
+/// paragraph growing tall enough to summon one cannot narrow the width that
+/// made it tall; and `wrapping_` drops the events this handler raises itself,
+/// which is what the other two cannot help with, since the pane's relayout
+/// legitimately gives this window a different width from the wrap that
+/// prompted it.
 class NoteText : public wxStaticText {
 public:
     /// `quiet` greys the text, which is right for a pane explaining itself and
@@ -364,12 +364,7 @@ public:
     /// Replaces the text, keeping the wrap. For a note whose words change.
     void setText(const wxString& text) {
         original_ = text;
-        SetLabel(original_);
-        if (wrappedAt_ > 0) {
-            Wrap(wrappedAt_);
-        }
-        pinMinimumWidth();
-        relayout();
+        rewrap(wrappedAt_);
     }
 
 private:
@@ -384,6 +379,19 @@ private:
 
     void onResized(wxSizeEvent& event) {
         event.Skip();
+
+        // Every size event this handler causes itself is one it has to ignore,
+        // and it causes two of them. Wrapping resizes this window to the
+        // wrapped text; laying the pane out afterwards resizes it back to its
+        // cell. Both happen synchronously, inside `Wrap()` and inside
+        // `relayout()`, and both come straight back here -- with two different
+        // widths, neither of which settles the other, so the pair of them ping-
+        // pongs until the stack runs out. That was the Output pane's crash: it
+        // is the pane whose form overflows, so it is the pane where the cell and
+        // the visible width -- the two ends of the ping-pong -- differ.
+        if (wrapping_) {
+            return;
+        }
 
         const int cell = event.GetSize().GetWidth();
         // A window that has not been laid out yet reports nonsense.
@@ -400,9 +408,16 @@ private:
         //
         // The offset is the unscrolled one, so how far the pane happens to be
         // scrolled cannot change where the text wraps.
+        //
+        // The vertical scrollbar's width comes off whether or not it is showing,
+        // which is the other half of not oscillating: text wrapped into the full
+        // client width can grow tall enough to summon a scrollbar, which narrows
+        // the client, which wraps it taller still. Space reserved unconditionally
+        // does not move when the bar appears.
         auto*     pane    = static_cast<Pane*>(GetParent());
         const int left    = pane->CalcUnscrolledPosition(GetPosition()).x;
-        const int visible = pane->GetClientSize().GetWidth() - left - FromDIP(8);
+        const int bar     = wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, pane);
+        const int visible = pane->GetClientSize().GetWidth() - left - bar - FromDIP(8);
         const int room    = std::max(FromDIP(80), std::min(cell, visible));
 
         // A width that has not moved is work with nothing to show for it.
@@ -410,10 +425,25 @@ private:
             return;
         }
         wrappedAt_ = room;
+        rewrap(room);
+    }
+
+    /// Puts the original text back and breaks it again at `width`, then lets the
+    /// pane take account of the height that came out. A width of zero or less --
+    /// a note whose words changed before it was ever laid out -- just restores
+    /// the text.
+    ///
+    /// Everything here resizes something, so it all runs with `wrapping_` set
+    /// and the size events it raises are dropped on the way back in.
+    void rewrap(int width) {
+        wrapping_ = true;
         SetLabel(original_);
-        Wrap(room);
+        if (width > 0) {
+            Wrap(width);
+        }
         pinMinimumWidth();
         relayout();
+        wrapping_ = false;
     }
 
     void relayout() {
@@ -427,6 +457,7 @@ private:
 
     wxString original_;
     int      wrappedAt_ = -1;
+    bool     wrapping_  = false;
 };
 
 /// Adds curated rows to one pane's form.
