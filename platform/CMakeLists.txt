@@ -7,7 +7,7 @@
 # std::string, xpcog::Url, std::vector<std::byte> and xpcog::Signal.
 #
 # What that buys is substitutability. app/ can be rewritten in a different toolkit
-# -- which is exactly what is happening -- without this directory changing at all,
+# -- which is what happened, Qt to wx, without this directory changing at all --
 # and the tests can link it without starting an application object.
 #
 # The one thing a toolkit was doing invisibly is thread marshalling: SMTC calls

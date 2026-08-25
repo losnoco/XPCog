@@ -1,7 +1,8 @@
 // A thin RAII layer over the sqlite3 C API. Internal to the library code.
 //
-// Core talks to sqlite3 directly rather than through QtSql, because the scanner,
-// the CLI and the tests all need the library without a QCoreApplication. Cog has
+// Core talks to sqlite3 directly rather than through a toolkit's database layer,
+// because the scanner, the CLI and the tests all need the library without an
+// application object or an event loop behind it. Cog has
 // the same precedent: Utils/SQLiteStore.m is 2,247 lines of hand-rolled sqlite3
 // alongside Core Data.
 //

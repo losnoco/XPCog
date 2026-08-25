@@ -1,11 +1,13 @@
 // Human-friendly string ordering, so "track 9" sorts before "track 10".
 //
 // Cog uses -finderCompare: (Utils/NSString+FinderCompare.m), which delegates to
-// NSString's localizedStandardCompare -- Unicode-aware and locale-sensitive. The
-// app layer gets that behaviour back from QCollator with numeric mode on.
+// NSString's localizedStandardCompare -- Unicode-aware and locale-sensitive.
+// Nothing here has that: the Qt build borrowed QCollator for it in the app layer,
+// and wx offers no equivalent to borrow.
 //
-// This is the Qt-free stand-in that core needs for one job: the order files come
-// out of a directory scan. Getting that wrong puts track 10 second in the
+// So this is what orders strings for the whole player, not a stand-in for one
+// corner of it: the order files come out of a directory scan, and the order rows
+// sit in when a playlist column is sorted (PlaylistView::sort). Getting that wrong puts track 10 second in the
 // playlist, which is immediately visible. It is ASCII case-folding and digit-run
 // comparison, not collation -- deliberately, because guessing at locale rules
 // without a collation library produces orderings that are wrong in a subtler way

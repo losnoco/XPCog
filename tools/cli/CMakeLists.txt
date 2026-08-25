@@ -1,6 +1,8 @@
-# xpcog-cli deliberately links no Qt. That is not incidental: it is the structural
-# enforcement of the Qt-free core rule. If QtCore ever leaks into xpcog-core, this
-# target stops linking and CI goes red.
+# xpcog-cli deliberately links no UI toolkit. That is not incidental: it is the
+# structural enforcement of the toolkit-free core rule. If wx -- or anything else
+# a display needs -- ever leaks into xpcog-core, this target stops linking and CI
+# goes red. cmake/CheckNoToolkit.cmake says the same thing earlier and with a
+# better message; this is the one that cannot be forgotten to run.
 
 add_executable(xpcog-cli main.cpp)
 target_link_libraries(xpcog-cli PRIVATE xpcog-core xpcog-codecs XPCog::warnings)

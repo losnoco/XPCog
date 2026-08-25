@@ -311,15 +311,19 @@ XPCOG_SETTING(GraphicEqTrackGenre, bool, "GraphicEQtrackgenre", false)
 
 // --- appearance -----------------------------------------------------------
 
-/// Which Qt widget style to use. Empty means whatever the platform picks for
-/// itself, which is the right default everywhere: windows11 on Windows 11, the
-/// macOS style on macOS, Fusion on Linux where Qt ships no native style.
+/// **Dead, and kept deliberately.** The Qt build let the listener choose a widget
+/// style -- windows11, windowsvista, Fusion -- because Qt draws its own controls
+/// and can therefore draw them several ways. wx uses the platform's, which is the
+/// point of the move, and has no equivalent to offer; nothing reads this any more
+/// and no pane draws a row for it.
+///
+/// It stays here so a settings file that travelled from a Qt build keeps its
+/// value rather than having it dropped on the first save, and
+/// PreferencesDialog's kCuratedKeys keeps it out of Advanced, where a key that
+/// does nothing would be worse than no key at all. See docs/WXPORT.md.
 ///
 /// The one setting here with **no Cog counterpart** -- Cog is macOS-only and has
-/// exactly one look, so there was nothing to key against. Stored as the style
-/// name QStyleFactory uses ("windows11", "windowsvista", "Fusion", ...) rather
-/// than an enum, so a name this build does not have is simply ignored instead of
-/// mapping onto the wrong style.
+/// exactly one look, so there was nothing to key against.
 XPCOG_SETTING(WidgetStyle, std::string, "widgetStyle", "")
 
 /// Closing the window leaves XPCog running in the notification area instead of

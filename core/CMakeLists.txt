@@ -111,9 +111,10 @@ if(RUBBERBAND_SLEEFDFT_LIBRARY)
     endif()
 endif()
 
-# SQLite replaces Core Data. Core talks to the C API directly rather than to
-# QtSql, so the scanner, the CLI and the tests reach the library without needing
-# a QCoreApplication -- and Cog sets the precedent with SQLiteStore.m.
+# SQLite replaces Core Data. Core talks to the C API directly rather than through
+# any toolkit's database layer, so the scanner, the CLI and the tests reach the
+# library without an application object or an event loop -- and Cog sets the
+# precedent with SQLiteStore.m.
 find_package(unofficial-sqlite3 CONFIG QUIET)
 if(unofficial-sqlite3_FOUND)
     set(XPCOG_SQLITE unofficial::sqlite3::sqlite3)

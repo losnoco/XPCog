@@ -8,7 +8,7 @@
 // reporting, Sentry spans and sandbox handles with the actual work, and none of
 // those belong in a library.
 //
-// Qt-free, so the CLI and the tests scan without an event loop.
+// Toolkit-free, so the CLI and the tests scan without an event loop.
 
 #pragma once
 

@@ -29,7 +29,7 @@
 // So the -80 dB floor really is 80 dB below full scale, and there is a test that
 // pins it.
 //
-// Qt-free, like everything in core, and it holds no audio of its own -- analyze()
+// Toolkit-free, like everything in core, and it holds no audio of its own -- analyze()
 // is handed a window by whoever is drawing.
 
 #pragma once

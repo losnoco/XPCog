@@ -13,7 +13,7 @@
 #
 # Every line is a job reaching a terminal state, or the run itself finishing:
 #
-#   Headless (no Qt): success
+#   Headless (no toolkit): success
 #   macOS: success
 #   Linux: failure (Test)
 #   Windows: success

@@ -1,7 +1,7 @@
 // xpcog-cli -- the headless face of xpcog-core.
 //
-// This is the project's real test harness: it links no Qt, so it runs anywhere and
-// exercises the engine without a display.
+// This is the project's real test harness: it links no UI toolkit, so it runs
+// anywhere and exercises the engine without a display.
 
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"

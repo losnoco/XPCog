@@ -8,7 +8,7 @@ tools/ci-watch/ci-watch.sh 32260674631     # a run by id
 ```
 
 ```
-Headless (no Qt): success
+Headless (no toolkit): success
 macOS: success
 Linux: failure (Test)
 Windows: success

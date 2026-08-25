@@ -1,18 +1,21 @@
-// Observation without Qt or KVO.
+// Observation without a toolkit, and without KVO.
 //
 // Cog uses KVO and NSNotificationCenter, neither of which exists here and both of
 // which are unowned: an observer that outlives its subject crashes, and one that
 // forgets to deregister leaks. `Subscription` is an RAII token instead -- holding
 // it is what keeps the connection alive, and dropping it disconnects.
 //
-// Deliberately small. This is not a signal/slot framework; the app layer has Qt's
-// for that. It exists so core can notify without depending on one.
+// Deliberately small. This is not a signal/slot framework; the app layer has
+// wxWidgets' event system for that. It exists so core can notify without
+// depending on one.
 //
-// One consequence of coexisting with Qt: `emit`, `slots`, `signals` and
-// `foreach` are all Qt *macros*. Core does not include Qt, but the application
-// includes both, so a member named after any of them fails to compile the
-// moment the two headers meet. Hence `publish()` and `handlers` below, where
-// `emit()` and `slots` would read more naturally.
+// `publish()` and `handlers` are named as they are because of Qt, which defined
+// `emit`, `slots`, `signals` and `foreach` as *macros*: core never included Qt,
+// but the application included both, and a member named after a function-like
+// macro fails to compile the moment the two headers meet. wx defines none of
+// them and the constraint is gone, but the names stay -- they are on every
+// signal in core and in every call site, and `emit` reading more naturally is
+// not worth that.
 
 #pragma once
 
@@ -100,10 +103,10 @@ public:
 
     /// Delivers to every connected slot.
     ///
-    /// Named `publish` rather than the obvious `emit` because Qt defines `emit`
-    /// as a macro. Core does not depend on Qt and never will, but the
-    /// application includes both, and a member function named after a
-    /// function-like macro fails to compile the moment they meet.
+    /// Named `publish` rather than the obvious `emit` for a reason that has
+    /// since expired: Qt defined `emit` as a macro, and the application included
+    /// both headers. See the note at the top of this file for why the name did
+    /// not follow Qt out of the tree.
     ///
     /// Slots may connect or disconnect from inside a slot, so the list is copied
     /// before dispatch. Emission is not reentrant-safe beyond that -- a slot that

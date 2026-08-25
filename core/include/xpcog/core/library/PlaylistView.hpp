@@ -119,7 +119,8 @@ public:
     /// The mapping changed: row count, order, or which rows are shown. Whatever
     /// is displaying this must reload from scratch.
     ///
-    /// Coarser than Qt's begin/endInsertRows, and deliberately. With a sort and a
+    /// Coarser than a per-row notification (wxDataViewVirtualListModel's
+    /// RowInserted), and deliberately. With a sort and a
     /// filter in the way, an insertion at playlist index 3 can land anywhere or
     /// nowhere, so computing a precise row delta means diffing the old mapping
     /// against the new one -- real work, to save a redraw of a list that is

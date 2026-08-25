@@ -1,6 +1,6 @@
 // Port of Cog Plugins/HTTPSource/HTTPSource.m, on libcurl rather than
-// NSURLSession -- so that sources stay Qt-free and identical on all three
-// platforms, which QNetworkAccessManager would not be.
+// NSURLSession -- so that sources stay toolkit-free and identical on all three
+// platforms, which a toolkit's own network stack would not be.
 //
 // The shape is Cog's: a worker thread owns the transfer and fills a ring, the
 // decoder's thread drains it, and a seek that the ring cannot satisfy restarts

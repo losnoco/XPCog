@@ -2,7 +2,7 @@
 //
 // Replaces the QThread-plus-bare-QObject pair PlaybackController used to own,
 // whose only purpose was to have an event loop something could be queued onto.
-// Without Qt that idiom has no spelling, and it was always more machinery than
+// With no toolkit in core that idiom has no spelling, and it was always more machinery than
 // the job needed: what is wanted is "run this off the calling thread, in order,
 // one at a time".
 //
