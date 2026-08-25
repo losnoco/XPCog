@@ -457,3 +457,55 @@ if(XPCOG_BUILD_APP)
     # applocal post-build step has already copied its DLLs beside the binary.
     catch_discover_tests(xpcog-app-tests)
 endif()
+
+# ---------------------------------------------------------------------------
+# The one suite that wants a screen.
+#
+# Everything above is deliberately free of an application object, and this is
+# what could not be: a note in the preferences form re-wraps from its own size
+# event, and the loop that had it recursing until the stack ran out only exists
+# once a toolkit is handing real windows real sizes. Nothing short of opening
+# the dialog reproduces it.
+#
+# Linux only, and not because the fault was. It is where a display can be
+# conjured: Xvfb is a package away on any distribution and there is no
+# equivalent on the other two -- a Windows or macOS runner either has a session
+# or it does not, and gating a test on that is how a suite grows a case nobody
+# ever sees run. The code under test is the same everywhere, so once is enough.
+if(XPCOG_BUILD_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(xpcog-gui-tests app/test_preferencespanes.cpp)
+
+    target_link_libraries(xpcog-gui-tests PRIVATE
+        xpcog-appcore
+        Catch2::Catch2WithMain
+        XPCog::warnings)
+
+    set_target_properties(xpcog-gui-tests PROPERTIES FOLDER tests)
+
+    # Registered by hand rather than with catch_discover_tests(), which is the
+    # one place this suite departs from the other two. Discovery generates its
+    # own add_test() calls and has nowhere to put a launcher, so a discovered
+    # test would run bare -- passing on a developer's desktop and skipping in
+    # every headless CI job, which is the shape of a test that quietly stops
+    # covering anything. One entry, run under Xvfb where there is one.
+    find_program(XPCOG_XVFB_RUN NAMES xvfb-run)
+
+    if(XPCOG_XVFB_RUN)
+        # -a picks a free server number, so parallel ctest jobs do not collide
+        # over :99.
+        add_test(NAME "every preference pane can be opened and resized"
+                 COMMAND "${XPCOG_XVFB_RUN}" -a "$<TARGET_FILE:xpcog-gui-tests>")
+        message(STATUS "GUI tests: under ${XPCOG_XVFB_RUN}")
+    else()
+        # Whatever display the session has, and the test skips if there is none.
+        add_test(NAME "every preference pane can be opened and resized"
+                 COMMAND "$<TARGET_FILE:xpcog-gui-tests>")
+        message(STATUS "GUI tests: no xvfb-run, using the session's display")
+    endif()
+
+    # What Catch.cmake registers for the discovered tests, for the same reason:
+    # a binary whose every case skipped exits 4, and without this ctest reads
+    # that as a failure.
+    set_tests_properties("every preference pane can be opened and resized"
+                         PROPERTIES SKIP_RETURN_CODE 4)
+endif()

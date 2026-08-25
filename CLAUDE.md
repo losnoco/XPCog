@@ -97,6 +97,14 @@ Two test binaries, both Catch2 v3 and both registered with ctest through
 `catch_discover_tests`: `xpcog-tests` (core and codecs) and `xpcog-app-tests`
 (app-layer, built as `xpcog-appcore`).
 
+On Linux there is a third, `xpcog-gui-tests`, and it is the one that needs a
+screen: it opens the preferences dialog and walks its panes, which is the only
+way to catch a layout handler that recurses until the stack runs out. It is
+registered as a single `add_test()` rather than discovered, so it can be run
+under `xvfb-run` where CMake found one; without a display it skips. Linux only
+because that is where a display can be conjured — the code under test is the
+same on all three.
+
 ```sh
 ctest --preset macos-debug -R Gapless          # by ctest test name
 ./build/macos-debug/bin/xpcog-tests "[gapless]"  # by Catch2 tag — the usual way
