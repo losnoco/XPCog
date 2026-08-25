@@ -1861,9 +1861,19 @@ void MainFrame::showSortIndicator() {
         wxDataViewColumn* column = list_->GetColumn(i);
         if (static_cast<Column>(column->GetModelColumn()) == view_.sortColumn()) {
             column->SetSortOrder(view_.sortAscending());
-        } else {
+        } else if (column->IsSortKey()) {
             // kNoSort is Column::Count, which no column carries, so the
             // no-sort state falls out of this as every column being unset.
+            //
+            // Guarded, and not defensively: wxDataViewCtrl keeps a list of the
+            // columns it is sorting by, and UnsetAsSortKey() on a column that is
+            // not in it is a wxFAIL_MSG -- "Column is not used for sorting", a
+            // debug alert on top of the playlist. The branch above is what makes
+            // that the *normal* path: SetSortOrder() on a single-sort control
+            // calls ResetAllSortColumns() first, so by the time this loop reaches
+            // the other columns they have already been unset, and every one of
+            // them would assert. A release build never noticed, which is why this
+            // survived until somebody clicked a header in a debug build.
             column->UnsetAsSortKey();
         }
     }
