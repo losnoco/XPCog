@@ -496,6 +496,16 @@ if(XPCOG_BUILD_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_test(NAME "every preference pane can be opened and resized"
                  COMMAND "${XPCOG_XVFB_RUN}" -a "$<TARGET_FILE:xpcog-gui-tests>")
         message(STATUS "GUI tests: under ${XPCOG_XVFB_RUN}")
+    elseif(DEFINED ENV{CI})
+        # A developer without Xvfb has a desktop; a runner without it has
+        # nothing, and the case would skip in a job that stayed green -- which
+        # is the shape of coverage quietly going away, and the reason the
+        # encoder downloads above fail the job rather than degrade. So this is
+        # the one configuration where a missing tool is an error: install the
+        # `xvfb` package, as .github/workflows/ci.yml does.
+        message(FATAL_ERROR
+            "xvfb-run not found, and CI is set: the GUI tests would skip rather "
+            "than run. Install xvfb.")
     else()
         # Whatever display the session has, and the test skips if there is none.
         add_test(NAME "every preference pane can be opened and resized"

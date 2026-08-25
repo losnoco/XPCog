@@ -99,13 +99,22 @@ jobs:
       # vcpkg -- 3.2 here, 3.3 on macOS and Windows. Nothing in the source uses an
       # API newer than 3.1.6, so the gap is theoretical today, and this job is what
       # keeps it that way.
+      #
+      # xvfb is the fourth group, and it is one package for one test:
+      # xpcog-gui-tests opens the preferences dialog and walks its panes, which
+      # is the only way to catch a layout handler recursing until the stack runs
+      # out, and a dialog needs a display. tests/CMakeLists.txt looks for
+      # xvfb-run at *configure* time, so this has to be installed before the
+      # configure step rather than before the test one -- and it refuses to
+      # configure without it here, so the wiring cannot silently come undone and
+      # leave the case skipping in a green job.
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
-            libwxgtk3.2-dev libglib2.0-dev \
+            libwxgtk3.2-dev libglib2.0-dev xvfb \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
 
       - name: Install macOS build dependencies
@@ -345,12 +354,16 @@ jobs:
       # The third is what this job is about: the -dev packages the substitution
       # is offered. libtag1-dev is in that list deliberately even though it is
       # too old to be used -- being installed and rejected is the case under test.
+      #
+      # xvfb for the same reason as the matrix job: this one builds the
+      # application too, so it registers xpcog-gui-tests and needs a display to
+      # run it under.
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
-            libwxgtk3.2-dev libglib2.0-dev \
+            libwxgtk3.2-dev libglib2.0-dev xvfb \
             flac vorbis-tools opus-tools lame wavpack ffmpeg musepack-tools \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
             libcurl4-openssl-dev libarchive-dev libsqlite3-dev libsoxr-dev \
