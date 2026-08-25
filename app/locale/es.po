@@ -1192,7 +1192,7 @@ msgstr "Carpeta…"
 
 #: app/src/PreferencesDialog.cpp:584
 msgid "Archive..."
-msgstr "Archivo comprimido…"
+msgstr "Comprimido…"
 
 #: app/src/PreferencesDialog.cpp:679
 msgid "Preferences"
@@ -1483,7 +1483,7 @@ msgstr "Fundido predeterminado (s)"
 
 #: app/src/PreferencesDialog.cpp:1236
 msgid "Default loop count"
-msgstr "Número de repeticiones predeterminado"
+msgstr "Repeticiones predeterminadas"
 
 #: app/src/PreferencesDialog.cpp:1239
 msgid ""

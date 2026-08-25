@@ -264,23 +264,34 @@ constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsK
     return form;
 }
 
-/// Every pane scrolls vertically.
+/// Every pane scrolls, in both directions.
 ///
-/// Only Advanced used to, because only Advanced was obviously growing. The
-/// others were fixed panels inside a fixed-height dialog, so a pane whose rows
-/// and notes came to more than the dialog's height simply lost the bottom of
-/// itself -- silently, and worse in a language whose sentences run longer than
-/// the English they were sized against, which is most of them. Output and MIDI
-/// were already close.
+/// Only Advanced used to, and only vertically. The others were fixed panels
+/// inside a fixed dialog, so a pane whose rows came to more than the dialog
+/// simply lost the far side of itself -- silently, and worse in a language whose
+/// sentences run longer than the English they were sized against, which is most
+/// of them. MIDI's form wants 437 DIP in English and 581 in Spanish with the
+/// SC-55's ROM row showing; the pane it is given is about 470.
 ///
-/// Horizontally it does not scroll: the rate of zero makes the virtual width the
-/// client width, so the form has to fit the width it is given and the notes wrap
-/// into it rather than running off the side with a scrollbar to chase them.
+/// Horizontally matters as much as vertically and for a reason worth writing
+/// down, because it is not what the scroll rate appears to say.
+/// wxScrollHelperBase::ScrollLayout lays the sizer out at the *virtual* size --
+/// except in a direction where no scrollbar is shown, where it substitutes the
+/// client size. So with horizontal scrolling off, a form whose minimum is wider
+/// than the pane is handed the pane's width, lays its rows out at their own
+/// minimums anyway, and runs off the right edge with nothing to reach it. A
+/// scrollbar is not a nicety here: it is the difference between overflow being
+/// visible and being cut.
+///
+/// It stays out of the way when it is not needed. FitInside() sets the virtual
+/// size to the form's minimum, so a form that fits shows no horizontal bar --
+/// and with no bar shown, ScrollLayout goes back to the client width and the
+/// controls stretch to fill the pane exactly as before.
 using Pane = wxScrolled<wxPanel>;
 
 [[nodiscard]] Pane* makePane(wxWindow* parent) {
     auto* pane = new Pane(parent, wxID_ANY);
-    pane->SetScrollRate(0, pane->FromDIP(8));
+    pane->SetScrollRate(pane->FromDIP(8), pane->FromDIP(8));
     return pane;
 }
 
@@ -374,10 +385,28 @@ private:
     void onResized(wxSizeEvent& event) {
         event.Skip();
 
-        const int room = event.GetSize().GetWidth();
-        // A window that has not been laid out yet reports nonsense, and a width
-        // that has not moved is work with nothing to show for it.
-        if (room < FromDIP(80) || room == wrappedAt_) {
+        const int cell = event.GetSize().GetWidth();
+        // A window that has not been laid out yet reports nonsense.
+        if (cell < FromDIP(80)) {
+            return;
+        }
+
+        // Capped at what is actually on screen, not just at the cell. The pane
+        // scrolls horizontally when a *control* row is wider than it, and the
+        // form is then laid out at that wider size -- so a paragraph filling its
+        // cell would be a paragraph you have to scroll sideways to read, which
+        // is not what a paragraph is for. It wraps into the visible width
+        // instead and the scrollbar stays the controls' problem.
+        //
+        // The offset is the unscrolled one, so how far the pane happens to be
+        // scrolled cannot change where the text wraps.
+        auto*     pane    = static_cast<Pane*>(GetParent());
+        const int left    = pane->CalcUnscrolledPosition(GetPosition()).x;
+        const int visible = pane->GetClientSize().GetWidth() - left - FromDIP(8);
+        const int room    = std::max(FromDIP(80), std::min(cell, visible));
+
+        // A width that has not moved is work with nothing to show for it.
+        if (room == wrappedAt_) {
             return;
         }
         wrappedAt_ = room;
@@ -618,6 +647,12 @@ private:
         auto* edit = new wxTextCtrl(pane_, wxID_ANY, toWx(settings_->rawValue(key)),
                                     wxDefaultPosition, wxDefaultSize,
                                     wxTE_PROCESS_ENTER);
+        // A path box takes every spare pixel in its row -- it is the item with
+        // the proportion -- so its *minimum* has no business deciding how wide
+        // the form is. wxTextCtrl's default best width is around 140 DIP, and
+        // between that and two buttons whose labels grow with the language, the
+        // MIDI pane's minimum came to 581 DIP against a pane of 470.
+        edit->SetMinSize(wxSize(pane_->FromDIP(60), -1));
         auto* settings = settings_;
         auto  announce = announce_;
 
@@ -681,7 +716,7 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
       settings_(settings),
       account_(account),
       scrobbler_(scrobbler) {
-    SetSize(FromDIP(wxSize(660, 480)));
+    SetSize(FromDIP(wxSize(700, 480)));
     // A floor, now that the panes scroll. Without one, "it fits because it
     // scrolls" is true all the way down to a dialog with room for half a row --
     // scrolling is there so a long pane is reachable, not so the window can be
@@ -843,8 +878,7 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
         settings_.sync();
     });
     row->add(_("Language"), languageBox);
-    row->note(_("Takes effect the next time XPCog starts. Windows and menus "
-                "already on screen keep the language they were built in."));
+    row->note(_("Restart XPCog to apply."));
 
     // Cog keeps the streaming buffer on General too, under a Network heading
     // (GeneralPaneView.swift:120-131). One row does not need a heading.
@@ -1274,9 +1308,17 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     // preference -- and there is no tray icon to hide to in any case. A checkbox
     // offering to choose something already chosen is the same fault as one that
     // does nothing.
-    auto* closeToTray =
-        new wxCheckBox(pane, wxID_ANY, _("Closing the window keeps XPCog running"));
+    //
+    // Named for the thing rather than described. "Closing the window keeps
+    // XPCog running" was a sentence about a consequence, which reads as an
+    // explanation and is therefore worse at being a label: close-to-tray is what
+    // this behaviour is called, it is what somebody arrives looking for, and it
+    // is what the tooltip and the notice both already say.
+    auto* closeToTray = new wxCheckBox(pane, wxID_ANY, _("Close to tray"));
     closeToTray->SetValue(settings_.CloseToTray());
+    closeToTray->SetToolTip(
+        _("Closing the window leaves XPCog running in the notification area "
+          "instead of quitting."));
     // Offered only where there is somewhere to hide to. Without a notification
     // area this would hide the window with no way to bring it back, so the
     // setting is ignored at the call site *and* disabled here -- a checkbox that
