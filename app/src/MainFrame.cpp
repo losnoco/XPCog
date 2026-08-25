@@ -406,24 +406,36 @@ void MainFrame::buildUi() {
                                         .MinSize(FromDIP(240), equalizerBest.GetHeight())
                                         .Hide());
 
+    // The minimum is a floor, not a recommendation. It used to be set at the
+    // width the panel reads *well* at, which conflated two different jobs: the
+    // best size is what the pane opens at and is the opinion about how wide this
+    // wants to be, while the minimum is only the point past which dragging
+    // stops. Setting the second to the first means somebody who wants the
+    // playlist wide and the panels narrow is refused for their own good.
+    //
+    // Both are now half what they were. Worth knowing where the real floor is:
+    // the form inside Info measures 143 DIP wide -- caption column plus the 48
+    // its value controls ask for -- so between 110 and there the captions clip
+    // before the pane stops shrinking.
     auiManager_.AddPane(info_, wxAuiPaneInfo()
                                    .Name("info")
                                    .Right()
                                    .BestSize(FromDIP(wxSize(300, 400)))
-                                   .MinSize(FromDIP(wxSize(220, 200)))
+                                   .MinSize(FromDIP(wxSize(110, 100)))
                                    .Hide());
 
     // Beside Info rather than under the playlist, which is where Cog puts its
     // lyrics window too -- both are "about the track you are looking at", and on
     // the right they tab together instead of competing for the same edge.
     //
-    // Taller than it is wide, and the minimum says so: a verse wrapped into a
-    // 200-pixel column is unreadable in a way a truncated tag field is not.
+    // Taller than it is wide, and the *best* size is what says so: a verse
+    // wrapped into a narrow column is hard to read, which is an argument about
+    // what this should open at rather than about what it may be dragged to.
     auiManager_.AddPane(lyrics_, wxAuiPaneInfo()
                                      .Name("lyrics")
                                      .Right()
                                      .BestSize(FromDIP(wxSize(320, 480)))
-                                     .MinSize(FromDIP(wxSize(240, 160)))
+                                     .MinSize(FromDIP(wxSize(120, 80)))
                                      .Hide());
 
 #ifdef XPCOG_HAVE_SC55_PANEL
