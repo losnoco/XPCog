@@ -24,13 +24,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <wx/arrstr.h>
 #include <wx/buffer.h>
 #include <wx/translation.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -76,14 +76,71 @@ namespace {
     return *found;
 }
 
-/// The catalogue, through wx's own parser.
-[[nodiscard]] std::unique_ptr<wxMsgCatalog> load(const Catalog& catalog) {
-    const std::string image = assembleCatalog(catalog);
-    wxCharBuffer      bytes(image.size());
-    std::memcpy(bytes.data(), image.data(), image.size());
-    return std::unique_ptr<wxMsgCatalog>(
-        wxMsgCatalog::CreateFromData(bytes, "xpcog-test"));
-}
+constexpr const char* kDomain = "xpcog-test";
+
+/// Hands wxTranslations the one catalogue under test.
+class OneCatalog : public wxTranslationsLoader {
+public:
+    explicit OneCatalog(const Catalog& catalog) : catalog_(&catalog) {}
+
+    wxMsgCatalog* LoadCatalog(const wxString& domain, const wxString&) override {
+        const std::string image = assembleCatalog(*catalog_);
+        wxCharBuffer      bytes(image.size());
+        std::memcpy(bytes.data(), image.data(), image.size());
+        return wxMsgCatalog::CreateFromData(bytes, domain);
+    }
+
+    wxArrayString GetAvailableTranslations(const wxString&) const override {
+        wxArrayString languages;
+        languages.Add(wxString::FromAscii(catalog_->language));
+        return languages;
+    }
+
+private:
+    const Catalog* catalog_;
+};
+
+/// The catalogue, parsed by wx and queried the way the application queries it.
+///
+/// **wx owns the wxMsgCatalog**, and that is not tidiness -- it is what makes
+/// this link. wxWidgets 3.2 does not declare `~wxMsgCatalog` at all in a Unicode
+/// build, so the implicit one is inline, and it destroys a
+/// `wxPluralFormsCalculatorPtr` whose own destructor lives only inside the
+/// library. Deleting a catalogue from outside wx is therefore an undefined
+/// reference at link time. 3.3 moved the destructor out of line, which is why a
+/// `std::unique_ptr<wxMsgCatalog>` here linked on Windows and macOS and broke
+/// the Linux job, which builds against the distribution's 3.2. Routing through
+/// wxTranslations is also what the application does, so this now exercises the
+/// loader as well as the image.
+///
+/// A *local* wxTranslations rather than wxTranslations::Set(), which would
+/// install a Spanish catalogue for the whole binary -- test_infopanel asserts on
+/// "Album Gain: ..." and would start reading its own labels in Spanish.
+class Loaded {
+public:
+    explicit Loaded(const Catalog& catalog) {
+        translations_.SetLoader(new OneCatalog(catalog));
+        // Set explicitly, so the lookup never consults the machine's own
+        // preferred languages -- this has to give the same answer on a Spanish
+        // desktop and an English one.
+        translations_.SetLanguage(wxString::FromAscii(catalog.language));
+        translations_.AddCatalog(wxString::FromAscii(kDomain));
+    }
+
+    [[nodiscard]] const wxString* find(const wxString& msgid) const {
+        return translations_.GetTranslatedString(msgid,
+                                                 wxString::FromAscii(kDomain));
+    }
+
+    /// The plural form for `count`, chosen by the rule in the catalogue header.
+    [[nodiscard]] const wxString* find(const wxString& msgid, unsigned count) const {
+        return translations_.GetTranslatedString(msgid, count,
+                                                 wxString::FromAscii(kDomain));
+    }
+
+private:
+    wxTranslations translations_;
+};
 
 }  // namespace
 
@@ -157,20 +214,19 @@ TEST_CASE("the entries are sorted, and each key appears once", "[wx][locale]") {
 }
 
 TEST_CASE("wxWidgets reads back what the build compiled in", "[wx][locale]") {
-    const std::unique_ptr<wxMsgCatalog> catalog = load(spanish());
-    REQUIRE(catalog);
+    const Loaded catalog{spanish()};
 
     // A message from each of the three ways one reaches the catalogue: `_()`,
     // wxTRANSLATE through a table, and a heading that belongs to core.
-    const wxString* preferences = catalog->GetString("Preferences");
+    const wxString* preferences = catalog.find("Preferences");
     REQUIRE(preferences != nullptr);
     CHECK(*preferences == wxString::FromUTF8("Preferencias"));
 
-    const wxString* file = catalog->GetString("&File");
+    const wxString* file = catalog.find("&File");
     REQUIRE(file != nullptr);
     CHECK(*file == wxString::FromUTF8("&Archivo"));
 
-    const wxString* length = catalog->GetString("Length");
+    const wxString* length = catalog.find("Length");
     REQUIRE(length != nullptr);
     CHECK(*length == wxString::FromUTF8("Duraci\xC3\xB3n"));
 }
@@ -185,16 +241,15 @@ TEST_CASE("a msgid that is not ASCII is still found", "[wx][locale]") {
     // The key here is built with FromUTF8 exactly as trUtf8() builds it, so this
     // asserts the whole path: the .po's bytes, the generated table, the
     // assembled image, and the lookup.
-    const std::unique_ptr<wxMsgCatalog> catalog = load(spanish());
-    REQUIRE(catalog);
+    const Loaded catalog{spanish()};
 
     const wxString* reset =
-        catalog->GetString(wxString::FromUTF8("Reset to 1.00\xC3\x97"));
+        catalog.find(wxString::FromUTF8("Reset to 1.00\xC3\x97"));
     REQUIRE(reset != nullptr);
     CHECK(*reset == wxString::FromUTF8("Volver a 1,00\xC3\x97"));
 
     const wxString* dash =
-        catalog->GetString(wxString::FromUTF8("Rubber Band \xE2\x80\x94 Finer"));
+        catalog.find(wxString::FromUTF8("Rubber Band \xE2\x80\x94 Finer"));
     REQUIRE(dash != nullptr);
     CHECK(*dash == wxString::FromUTF8("Rubber Band: m\xC3\xA1s fino"));
 
@@ -204,30 +259,29 @@ TEST_CASE("a msgid that is not ASCII is still found", "[wx][locale]") {
     // which asserts on a non-ASCII byte in a debug build -- the very check that
     // would have caught this had the broken path gone through it. The implicit
     // conversion `_()` uses does not.
-    CHECK(catalog->GetString(wxString("Reset to 1.00\xC3\x97", wxConvISO8859_1)) ==
+    CHECK(catalog.find(wxString("Reset to 1.00\xC3\x97", wxConvISO8859_1)) ==
           nullptr);
 }
 
 TEST_CASE("a plural message keeps both of its forms", "[wx][locale]") {
-    const std::unique_ptr<wxMsgCatalog> catalog = load(spanish());
-    REQUIRE(catalog);
+    const Loaded catalog{spanish()};
 
     // Keyed on the singular msgid, with the form chosen by the rule in the
     // header. This is the case the NUL-joined value exists for, and the one an
     // off-by-one in the length would break while leaving every ordinary message
     // working.
-    const wxString* one = catalog->GetString("Add %zu Track", 1);
+    const wxString* one = catalog.find("Add %zu Track", 1);
     REQUIRE(one != nullptr);
     CHECK(*one == wxString::FromUTF8("a\xC3\xB1"
                                      "adir %zu pista"));
 
-    const wxString* many = catalog->GetString("Add %zu Track", 3);
+    const wxString* many = catalog.find("Add %zu Track", 3);
     REQUIRE(many != nullptr);
     CHECK(*many == wxString::FromUTF8("a\xC3\xB1"
                                       "adir %zu pistas"));
 
     // Zero is plural in Spanish, as it is in English.
-    const wxString* none = catalog->GetString("Add %zu Track", 0);
+    const wxString* none = catalog.find("Add %zu Track", 0);
     REQUIRE(none != nullptr);
     CHECK(*none == *many);
 }
