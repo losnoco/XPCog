@@ -52,6 +52,19 @@ breaking change goes in the minor, and the major stays at 0 until releasing 1.0.
 is a decision someone makes deliberately. So in practice, today, only PATCH and
 MINOR move.
 
+## Commit messages
+
+The headline says what changed, in the plainest words that fit. It is one line in
+`git log`, not an announcement: no "comprehensive", no "robust", no "complete
+overhaul", no "significantly improved", no superlatives, no emoji. Do not claim a
+fix is total or final — say what the code now does. A small change gets a small
+headline, and that is not a failure to sell it.
+
+Prefer the concrete over the grand, and the specific subject over the abstract
+one — "Wrap a preference note to its column, not to the pane" rather than
+"Overhaul the preferences layout system". Present tense, about 72 characters, and
+whatever does not fit goes in the body.
+
 ## Build and test
 
 Requires CMake 3.24+, Ninja, a C++20 compiler, and vcpkg with `VCPKG_ROOT` set.
