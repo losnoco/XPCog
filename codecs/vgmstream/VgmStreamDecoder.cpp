@@ -393,7 +393,7 @@ std::vector<Url> expandVgmStream(const Url& url, ISource& source,
         return {url};
     }
 
-    const int subsongs = (lib->format != nullptr) ? lib->format->subsong_count : 0;
+    const int subsongs = (lib->format != nullptr) ? ((lib->format->subsong_index > 0) ? 1 : lib->format->subsong_count) : 0;
     libvgmstream_free(lib);
 
     if (subsongs <= 1) {
