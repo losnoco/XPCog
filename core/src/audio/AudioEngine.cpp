@@ -89,6 +89,10 @@ bool AudioEngine::openTrack(const Url& url) {
     // them with a second opinion every time the track started.
     const TrackProperties properties = track->decoder->properties();
     decoderTagsDirty_.store(properties.totalFrames <= 0, std::memory_order_release);
+    // Nothing of the outgoing track's shape is left to compare against: the seam
+    // drains the converter before this runs, and at the first track there is no
+    // previous shape at all.
+    inputFormat_ = AudioFormat{};
 
     // What this decoder counts frames in. Everything the engine tracks is in
     // device frames; the decoder's own units only appear at the two ends of a
@@ -581,6 +585,33 @@ bool AudioEngine::writeToRing(const AudioChunk& chunk) {
     if (chunk.frameCount() == 0) {
         return true;
     }
+
+    // The decoder changed shape without the track changing. AudioConverter
+    // reconfigures itself for whatever each chunk declares, so the audio after
+    // the seam is already right -- but reconfiguring *disposes* of the
+    // resampler, and what goes with it is the delay line holding the last few
+    // milliseconds of the format that just ended. Drained here for exactly the
+    // reason the track seam in pumpTrack() drains it, and necessarily before
+    // process() sees the new format and rebuilds underneath it.
+    //
+    // Counted into framesWritten_, unlike the seam's drain: there the tail is
+    // followed by a Seam marker taken at this same number, and moving one
+    // without the other would name the wrong frame as where the next track
+    // begins. Nothing marks anything here, so the honest count is the one that
+    // includes what was written.
+    if (inputFormat_.valid() &&
+        (chunk.format().sampleRate != inputFormat_.sampleRate ||
+         chunk.format().channels != inputFormat_.channels)) {
+        converted_.clear();
+        converter_.drain(converted_);
+        if (!converted_.empty()) {
+            if (!writeSamples(converted_.data(), converted_.size())) {
+                return false;
+            }
+            framesWritten_ += converted_.size() / format_.channels;
+        }
+    }
+    inputFormat_ = chunk.format();
 
     converted_.clear();
     if (!converter_.process(chunk, converted_)) {
@@ -1305,6 +1336,11 @@ void AudioEngine::dropQueuedAudio(std::uint64_t trackFrame) {
     // listening for the jump to land.
     converter_.reset();
     converted_.clear();
+    // And with the resampler's state gone there is nothing left of the previous
+    // shape to compare the next chunk against. Left set, a seek that lands in a
+    // differently-shaped part of the same track would ask writeToRing() to drain
+    // a converter that has just been emptied.
+    inputFormat_ = AudioFormat{};
 
     // The chain's own state is the DSP thread's to drop -- a biquad holding two
     // samples from the old position rings them into the new one, which is the

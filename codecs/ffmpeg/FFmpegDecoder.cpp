@@ -198,16 +198,12 @@ public:
             return false;
         }
 
-        const int channels = codec_ctx_->ch_layout.nb_channels;
-        audioFormat_.channels      = static_cast<std::uint32_t>(channels);
-        audioFormat_.sampleRate    = static_cast<double>(codec_ctx_->sample_rate);
-        audioFormat_.format        = SampleFormat::F32;
-        audioFormat_.bitsPerSample = 32;
-        audioFormat_.channelConfig = channelConfigFrom(codec_ctx_->ch_layout);
-
         // Everything is normalised to interleaved float32 here rather than
         // carrying FFmpeg's many planar and integer layouts through the chain.
-        if (!setupResampler()) {
+        // What the stream opened as, which is not necessarily what it stays as:
+        // see adoptFormat() and the check in readAudio().
+        if (!adoptFormat(codec_ctx_->sample_rate, codec_ctx_->sample_fmt,
+                         codec_ctx_->ch_layout)) {
             return false;
         }
 
@@ -267,9 +263,58 @@ public:
                 : 0.0;
 
         for (;;) {
-            int status = avcodec_receive_frame(codec_ctx_, frame_);
+            // A frame the previous call received and could not use: the stream
+            // changed format under it, and what the resampler still held had to
+            // leave under the old one first. Nothing has touched frame_ since,
+            // so it is picked up here rather than asked for again.
+            int status = heldFrame_ ? 0 : avcodec_receive_frame(codec_ctx_, frame_);
+            heldFrame_ = false;
 
             if (status == 0) {
+                // The stream may change shape between frames, and FFmpeg reports
+                // that on the frame rather than announcing it: ADTS AAC is the
+                // case that turns up in the wild -- a station or a concatenation
+                // switching sample rate mid-file -- but a channel layout or a
+                // sample format can move the same way. The resampler and the
+                // format this decoder publishes were both built for what came
+                // before, so converting through them would read the new audio as
+                // if it were the old: the wrong pitch where the rate moved, and
+                // a read past the end of a plane where the layout grew.
+                //
+                // Checked before the seek resolution below rather than after, so
+                // that a frame held back arrives at the next call with its seek
+                // bookkeeping still to do rather than already done.
+                if (formatMoved(frame_)) {
+                    // Whatever is still inside the resampler was decoded under
+                    // the old format and belongs to it, so it goes out under
+                    // that format first and the frame in hand waits. Equal input
+                    // and output rates leave nothing buffered, which is the
+                    // ordinary case; a layout change is not obliged to.
+                    switch (drainResampler(out, timestamp)) {
+                        case Staged::Emitted:
+                            heldFrame_ = true;
+                            return true;
+                        case Staged::Ended:
+                            return false;
+                        case Staged::Skipped:
+                            break;  // all of it was a seek's pre-roll
+                    }
+                    if (!adoptFormat(frameRate(frame_),
+                                     static_cast<AVSampleFormat>(frame_->format),
+                                     frame_->ch_layout)) {
+                        return false;
+                    }
+                    // properties() answers differently from here on, so this is
+                    // the properties half of the change callback and not the
+                    // metadata half -- a rate change renames nothing. Announced
+                    // after the audio in front of it has already gone out, which
+                    // is why the drain above returns rather than falling
+                    // through: a listener that re-reads properties() would
+                    // otherwise attribute the tail of the old format to the new
+                    // one.
+                    notifyChanged(true, false);
+                }
+
                 // av_seek_frame lands on a packet boundary at or before the
                 // target, so the first frames after a seek belong to an earlier
                 // position. Work out how many to drop for a sample-accurate seek.
@@ -313,34 +358,14 @@ public:
                     continue;
                 }
 
-                std::size_t offset = 0;
-                if (skipFrames_ > 0) {
-                    if (skipFrames_ >= frames) {
-                        // The whole frame precedes the target; fetch another.
-                        skipFrames_ -= frames;
-                        continue;
-                    }
-                    offset = static_cast<std::size_t>(skipFrames_) * channels;
-                    frames -= static_cast<int>(skipFrames_);
-                    skipFrames_ = 0;
-                }
-
-                if (endFrames_ && framePos_ + frames > endFrames_) {
-                    frames = endFrames_ - framePos_;
-                    if (frames <= 0) {
+                switch (stage(out, frames, timestamp)) {
+                    case Staged::Emitted:
+                        return true;
+                    case Staged::Ended:
                         return false;
-                    }
+                    case Staged::Skipped:
+                        continue;  // the whole block preceded a seek target
                 }
-
-                out.clear();
-                out.setFormat(audioFormat_);
-                out.lossless        = lossless_;
-                out.streamTimestamp = timestamp;
-                out.streamTimeRatio = 1.0;
-                out.assign(converted_.data() + offset, static_cast<std::size_t>(frames));
-
-                framePos_ += frames;
-                return true;
             }
 
             if (status == AVERROR_EOF) {
@@ -403,6 +428,10 @@ public:
         }
         avcodec_flush_buffers(codec_ctx_);
         drained_     = false;
+        // The flush threw away everything the decoder had, and a frame held back
+        // for the next call is from before it -- so it describes a position that
+        // is no longer being played towards.
+        heldFrame_   = false;
         seekTarget_  = frame;
         resolveSeek_ = true;
         skipFrames_  = 0;
@@ -431,9 +460,14 @@ public:
             av_freep(&io_->buffer);
             avio_context_free(&io_);
         }
+        av_channel_layout_uninit(&srcLayout_);
+        srcRate_   = 0;
+        srcFormat_ = AV_SAMPLE_FMT_NONE;
+
         source_      = nullptr;
         streamIndex_ = -1;
         drained_     = false;
+        heldFrame_   = false;
         timedId3Streams_.clear();
     }
 
@@ -489,17 +523,130 @@ private:
         return guessChannelConfig(static_cast<std::uint32_t>(layout.nb_channels));
     }
 
-    bool setupResampler() {
-        AVChannelLayout outLayout{};
-        av_channel_layout_copy(&outLayout, &codec_ctx_->ch_layout);
+    /// What a frame says its rate is, falling back to the context's.
+    ///
+    /// A decoder is not obliged to stamp every frame -- most do, and the ones
+    /// that matter here always do -- but a zero would be read as a format change
+    /// on every frame and then refused by adoptFormat(), which is a decoder that
+    /// stops working rather than one that misses a change.
+    [[nodiscard]] int frameRate(const AVFrame* frame) const {
+        return frame->sample_rate > 0 ? frame->sample_rate : codec_ctx_->sample_rate;
+    }
 
-        const int status = swr_alloc_set_opts2(
-            &swr_, &outLayout, AV_SAMPLE_FMT_FLT, codec_ctx_->sample_rate,
-            &codec_ctx_->ch_layout, codec_ctx_->sample_fmt, codec_ctx_->sample_rate, 0,
-            nullptr);
-        av_channel_layout_uninit(&outLayout);
+    /// Whether `frame` is something other than what the resampler was built for.
+    [[nodiscard]] bool formatMoved(const AVFrame* frame) const {
+        return frameRate(frame) != srcRate_ ||
+               static_cast<AVSampleFormat>(frame->format) != srcFormat_ ||
+               av_channel_layout_compare(&frame->ch_layout, &srcLayout_) != 0;
+    }
 
-        return status >= 0 && swr_ != nullptr && swr_init(swr_) >= 0;
+    /// Points the resampler and the published format at what the stream is
+    /// producing now. Also how the first one is set up, so there is one
+    /// description of what this decoder emits rather than two that can drift.
+    ///
+    /// Interleaved float32 at the source's own rate: no resampling happens here,
+    /// which is why the seam costs nothing. Whoever consumes the chunk reads the
+    /// rate off it -- AudioConverter reconfigures per chunk -- so a change is
+    /// carried rather than announced.
+    bool adoptFormat(int rate, AVSampleFormat sampleFormat,
+                     const AVChannelLayout& layout) {
+        if (rate <= 0 || layout.nb_channels <= 0) {
+            return false;
+        }
+
+        if (swr_ != nullptr) {
+            swr_free(&swr_);
+        }
+        const int status =
+            swr_alloc_set_opts2(&swr_, &layout, AV_SAMPLE_FMT_FLT, rate, &layout,
+                                sampleFormat, rate, 0, nullptr);
+        if (status < 0 || swr_ == nullptr || swr_init(swr_) < 0) {
+            return false;
+        }
+
+        av_channel_layout_uninit(&srcLayout_);
+        if (av_channel_layout_copy(&srcLayout_, &layout) < 0) {
+            return false;
+        }
+        srcRate_   = rate;
+        srcFormat_ = sampleFormat;
+
+        audioFormat_.channels      = static_cast<std::uint32_t>(layout.nb_channels);
+        audioFormat_.sampleRate    = static_cast<double>(rate);
+        audioFormat_.format        = SampleFormat::F32;
+        audioFormat_.bitsPerSample = 32;
+        audioFormat_.channelConfig = channelConfigFrom(layout);
+        return true;
+    }
+
+    /// What became of a block that has just been converted into converted_.
+    enum class Staged {
+        Emitted,  ///< it is in `out` and the caller should return it
+        Skipped,  ///< all of it preceded a seek target; decode on
+        Ended,    ///< the chapter ended inside it
+    };
+
+    /// Puts `frames` of converted_ into `out` under the format they were decoded
+    /// at, minus anything a seek is still dropping and anything past a chapter's
+    /// end.
+    ///
+    /// Shared with the resampler drain rather than written twice, because the
+    /// two differ only in where the samples came from -- and a tail emitted
+    /// without the seek's skip applied would put pre-roll on the far side of a
+    /// format change, where nothing is left to recognise it.
+    Staged stage(AudioChunk& out, int frames, double timestamp) {
+        const auto  channels = static_cast<int>(audioFormat_.channels);
+        std::size_t offset   = 0;
+
+        if (skipFrames_ > 0) {
+            if (skipFrames_ >= frames) {
+                // The whole block precedes the target; fetch another.
+                skipFrames_ -= frames;
+                return Staged::Skipped;
+            }
+            offset = static_cast<std::size_t>(skipFrames_) * channels;
+            frames -= static_cast<int>(skipFrames_);
+            skipFrames_ = 0;
+        }
+
+        if (endFrames_ && framePos_ + frames > endFrames_) {
+            frames = static_cast<int>(endFrames_ - framePos_);
+            if (frames <= 0) {
+                return Staged::Ended;
+            }
+        }
+
+        out.clear();
+        out.setFormat(audioFormat_);
+        out.lossless        = lossless_;
+        out.streamTimestamp = timestamp;
+        out.streamTimeRatio = 1.0;
+        out.assign(converted_.data() + offset, static_cast<std::size_t>(frames));
+
+        framePos_ += frames;
+        return Staged::Emitted;
+    }
+
+    /// Empties the resampler of anything it is still holding, under the format
+    /// it was built for. Skipped when it holds nothing, which is the usual
+    /// answer here: input and output rates are equal, so there is no delay line.
+    Staged drainResampler(AudioChunk& out, double timestamp) {
+        if (swr_ == nullptr) {
+            return Staged::Skipped;
+        }
+        const auto pending = static_cast<int>(swr_get_out_samples(swr_, 0));
+        if (pending <= 0) {
+            return Staged::Skipped;
+        }
+
+        const auto channels = static_cast<int>(audioFormat_.channels);
+        converted_.resize(static_cast<std::size_t>(pending) * channels);
+        auto*     destination = reinterpret_cast<std::uint8_t*>(converted_.data());
+        const int frames = swr_convert(swr_, &destination, pending, nullptr, 0);
+        if (frames <= 0) {
+            return Staged::Skipped;
+        }
+        return stage(out, frames, timestamp);
     }
 
     /// Mid-stream tag updates, which arrive as ID3v2 chunks spliced between
@@ -664,6 +811,18 @@ private:
     int              streamIndex_ = -1;
     bool             drained_     = false;
     std::vector<int> timedId3Streams_;
+
+    /// What swr_ and audioFormat_ were built for, compared against every frame
+    /// the decoder hands back. Held here rather than read from codec_ctx_
+    /// because the context has already moved on by the time the frame that
+    /// moved it arrives.
+    int             srcRate_   = 0;
+    AVSampleFormat  srcFormat_ = AV_SAMPLE_FMT_NONE;
+    AVChannelLayout srcLayout_{};
+
+    /// A frame received but not yet converted, because the format changed and
+    /// there was audio in front of it that had to leave under the old one.
+    bool heldFrame_ = false;
 
     // Chapter bookkeeping, also used for gaplessness in some containers
     std::int64_t startFrames_  = 0;

@@ -334,6 +334,13 @@ private:
     AudioConverter converter_;
     std::vector<float> converted_;
 
+    /// The format of the last chunk handed to the converter, or invalid before
+    /// the first. What it is compared against is the next chunk: a decoder is
+    /// allowed to change shape mid-track, and the converter has to be emptied
+    /// before it follows. Reset at a track seam and at a seek, where the tail it
+    /// holds is being discarded anyway. Feeder thread only.
+    AudioFormat inputFormat_{};
+
     RingBuffer& ring_;
     /// The format the device is running and everything upstream is converted
     /// into. Written by play() before any thread exists, and thereafter only by

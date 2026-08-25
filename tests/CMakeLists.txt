@@ -178,7 +178,8 @@ if(XPCOG_WITH_FFMPEG)
     if(NOT _ffmpeg_from_system)
         find_package(FFMPEG REQUIRED)
     endif()
-    target_sources(xpcog-tests PRIVATE codecs/test_ffmpeg_stream_tags.cpp)
+    target_sources(xpcog-tests PRIVATE codecs/test_ffmpeg_stream_tags.cpp
+                                       codecs/test_ffmpeg_format_change.cpp)
     target_include_directories(xpcog-tests SYSTEM PRIVATE ${FFMPEG_INCLUDE_DIRS})
 endif()
 
