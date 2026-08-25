@@ -2,46 +2,62 @@
 
 [![CI](https://github.com/losnoco/XPCog/actions/workflows/ci.yml/badge.svg)](https://github.com/losnoco/XPCog/actions/workflows/ci.yml)
 
-A cross-platform port of [Cog](https://cog.losno.co/), the macOS audio player by
-Vincent Spader and Christopher Snowhill, built on wxWidgets. XPCog targets
-**Windows, macOS and Linux** from a single codebase.
+XPCog is an audio player for **Windows, macOS and Linux**, built on wxWidgets from a
+single codebase. It plays **842 extensions across 23 decoders**, gaplessly and across
+sample rates, and that list runs well past the usual lossless and lossy files:
+tracker modules, game music rips, the whole PSF family, Commodore 64 tunes, MIDI
+rendered on a SoundFont bank or an emulated Roland SC-55, archives played without
+unpacking first, and internet radio.
 
-> **Status: milestone 6 — breadth.**
-> A window with a playlist, transport, seek bar, file browser, preferences,
-> undo, drag-and-drop and a persistent library. Gapless across formats *and*
-> sample rates, ReplayGain, cue sheets, HDCD. A 31-band equaliser at Cog's
-> frequencies, transport fades, matrix downmix/upmix and FreeSurround stereo-to-5.1.
-> Media keys and Now
-> Playing on all three platforms — MediaPlayer.framework, SMTC and MPRIS — plus a
-> tray icon on Windows and Linux, the Dock menu on macOS, one instance per user,
-> a spectrum analyser on Cog's own band frequencies, a mini player, and a taskbar
-> badge and progress bar. Now playing over HTTP too — File → Open URL, internet
-> radio included, with SHOUTcast stream titles live in the window as the
-> station announces them, HLS for the stations that use it, and chained Ogg so a
-> stream survives its own track changes. Breadth since: archives played in
-> place, tracker modules, game music rips, vgmstream's console formats, the
-> whole PSF family on all eight of its emulator cores, Commodore 64 tunes,
-> Musepack, Monkey's Audio Link files, and MIDI on a SoundFont bank — one ships
-> with it — a Sound Blaster's OPL3, or an emulated Roland SC-55 with its front
-> panel.
-> **842 extensions** across 23 decoders.
-> The interface is wxWidgets, and there is no Qt anywhere in the tree — which is
-> also why there is no dependency outside vcpkg, no environment variable pointing
-> at a toolkit, and no deploy step.
-> See [the roadmap](#roadmap), or [`docs/PORTING.md`](docs/PORTING.md) for the
-> full plan and the reasoning behind the structure.
+> **What is there today.**
+> A window with a playlist, transport, seek bar, file browser, preferences, undo,
+> drag-and-drop and a persistent library. Gapless across formats *and* sample
+> rates, ReplayGain, cue sheets, HDCD. A 31-band equaliser, transport fades,
+> matrix downmix/upmix, FreeSurround stereo-to-5.1 and time-stretching that moves
+> pitch and tempo independently. Media keys and Now Playing on all three
+> platforms — MediaPlayer.framework, SMTC and MPRIS — plus a tray icon on Windows
+> and Linux, the Dock menu on macOS, one instance per user, a spectrum analyser, a
+> mini player, and a taskbar badge and progress bar. Now playing over HTTP too —
+> File → Open URL, internet radio included, with SHOUTcast stream titles live in
+> the window as the station announces them, HLS for the stations that use it, and
+> chained Ogg so a stream survives its own track changes. Archives played in
+> place, tracker modules, game music rips, vgmstream's console formats, the whole
+> PSF family on all eight of its emulator cores, Commodore 64 tunes, Musepack,
+> Monkey's Audio Link files, and MIDI on a SoundFont bank — one ships with it — a
+> Sound Blaster's OPL3, or an emulated Roland SC-55 with its front panel.
+> Last.fm scrobbling, with a queue that survives an evening offline.
+> Every dependency comes from vcpkg, which is why there is nothing to install
+> separately, no environment variable pointing at a toolkit, and no deploy step.
+> See [Status](#status) for what is not there.
 
-## Why a port rather than a fork
+XPCog began as a port of [Cog](https://cog.losno.co/), the macOS player by Vincent
+Spader and Christopher Snowhill, and still follows it wherever its behaviour is worth
+keeping — see [Relationship to Cog](#relationship-to-cog).
+[`docs/PORTING.md`](docs/PORTING.md) has the full plan and the reasoning behind the
+structure.
 
-Cog is excellent and thoroughly macOS-shaped. Its UI is 12 Cocoa XIBs driven by 190
+## Design
+
+The player is arranged around one narrow contract, and everything else is built
+outward from it. A *source* opens a URL, a *decoder* turns its bytes into PCM, a
+*container* expands one URL into the several it holds — a cue sheet, a playlist, an
+archive — a *metadata reader* answers with tags, and a *source wrapper* slips between
+a source and a decoder when a file's bytes are not the bytes the decoder wants. Each
+is a small abstract base class with a descriptor beside it; adding a format means
+adding one of those, never a refactor.
+
+The rest follows from keeping that contract clean: a lock-free audio engine, a SQLite
+library, a DSP chain and an interface, all in portable C++ with no platform
+assumptions baked in below the top layer.
+
+That contract is inherited rather than invented. Cog's `Audio/Plugin.h` is a
+six-protocol interface that maps almost one-to-one onto C++ abstract base classes,
+and the bulk of the format support beneath it is portable C and C++ libraries in
+both players. The rest of Cog does not travel: its UI is 12 Cocoa XIBs driven by 190
 bindings, persistence is Core Data, audio output is AUHAL, every DSP kernel is
 Accelerate/vDSP, and decoders are Objective-C bundles discovered at runtime. None of
-that survives a move off Apple platforms.
-
-What *does* survive is the part that matters: Cog's decoder contract
-(`Audio/Plugin.h`) is a narrow six-protocol interface that maps almost one-to-one onto
-C++ abstract base classes, and the bulk of its format support lives in portable C/C++
-libraries. XPCog keeps that contract and rebuilds everything around it.
+that survives a move off Apple platforms, so all of it is rebuilt here — which is why
+this is a port and not a fork.
 
 ## Architecture
 
@@ -142,7 +158,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-0.1.0-x64-setup.exe
+:: -> build\windows-release\XPCog-0.1.1-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -163,7 +179,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-0.1.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-0.1.1-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -352,13 +368,13 @@ the referenced audio file, seeks to that track's `INDEX 01`, and stops at the ne
 track's start, so each track reports its own duration and metadata and seeks
 relative to itself.
 
-Two bugs in Cog's parser are fixed rather than reproduced, both of which corrupt
-real albums:
+Two parser bugs that corrupt real albums are fixed here rather than reproduced from
+upstream:
 
-- Cog keeps one `artist` variable for the whole sheet and never resets it per
+- Upstream keeps one `artist` variable for the whole sheet and never resets it per
   track, so a single track-level `PERFORMER` mis-credits every following track.
   Track-level fields here fall back to the album value instead.
-- A non-`AUDIO` `TRACK` is skipped, but Cog still lets its `INDEX` create an
+- A non-`AUDIO` `TRACK` is skipped, but upstream still lets its `INDEX` create an
   entry, so a mixed-mode disc gains a bogus track that decodes to noise.
 
 ### Formats
@@ -379,9 +395,8 @@ different drivers), or a Roland SC-55mkII running its own firmware, if you have
 the ROMs.
 
 **A bank ships with it**, so MIDI plays on real instruments out of the box
-rather than on an FM chip: `GeneralUserXG-SFeTest.sf3`, which is what Cog
-bundles, together with the `tg300b` map that XPCog selects instead when a
-sequence announces itself as GS or GM2. Point `soundFontPath` at your own bank
+rather than on an FM chip: `GeneralUserXG-SFeTest.sf3`, together with the `tg300b`
+map that XPCog selects instead when a sequence announces itself as GS or GM2. Point `soundFontPath` at your own bank
 to replace it, or drop one beside a file — `song.sf2`, or `Album/Album.sf2` for
 a folder — to override it for that music alone. An RMID that carries its own
 bank inside it beats all of those, since that bank is part of the music.
@@ -392,10 +407,10 @@ so a `.zip` of FLAC plays without being unpacked first, and a Monkey's Audio Lin
 how a single-file CD rip becomes an album.
 
 `xpcog-cli codecs` prints what a given build claims; a default one is 23 decoders
-and 842 extensions. Cog recognises around 900 across ~35 decoders.
+and 842 extensions.
 
-Selection follows Cog's rules: extension first, then MIME type, with several
-claimants tried in descending priority. FFmpeg registers *below* default priority,
+Selection is by extension first, then MIME type, with several claimants tried in
+descending priority. FFmpeg registers *below* default priority,
 so a dedicated decoder always wins for formats that have one, while FFmpeg still
 picks up files those decoders reject.
 
@@ -412,8 +427,8 @@ is how the decoder is regression-tested.
 When a decoder reaches end of stream the engine opens the next track immediately,
 while the audio already buffered is still playing, and keeps writing into the same
 ring — so a same-format handoff needs no device reconfiguration and produces no gap.
-This is the shape of Cog's `-endOfInputReached:`. Track changes are announced when
-the seam becomes *audible*, not when it is decoded.
+Track changes are announced when the seam becomes *audible*, not when it is
+decoded.
 
 The seam is covered by tests that run the real engine against a capturing output,
 so they are deterministic and need no audio device: sample-exactness against
@@ -423,7 +438,7 @@ than cancels. The tests were confirmed to fail when a chunk is deliberately drop
 at each seam.
 
 A track at a **different sample rate** joins gaplessly too. The device stays at the
-first track's format and later tracks are resampled into it (libsoxr, as in Cog),
+first track's format and later tracks are resampled into it (libsoxr),
 because reconfiguring the device mid-stream cannot be seamless. The outgoing
 resampler is flushed before it is reconfigured, so the few milliseconds held in its
 delay line — exactly the samples that meet the seam — are not lost.
@@ -446,7 +461,7 @@ zeroes any tail it could not fill. That is the whole callback: no lock, no
 allocation, no `std::function`, no logging. A feeder thread does the decoding and
 writes into the ring.
 
-This is deliberately stricter than Cog, whose callback
+That is deliberately stricter than upstream Cog, whose callback
 (`Audio/Output/OutputCoreAudio.m:877`) takes an `NSLock` and enters an
 `@autoreleasepool` on the real-time thread. `xpcog-cli play` reports underruns
 separately for playback and for the post-stream drain, so a genuine dropout is
@@ -454,8 +469,8 @@ never confused with the expected tail.
 
 ### Crash reporting
 
-**Off unless you turn it on.** XPCog carries the same arrangement Cog does: on
-the first launch it asks, once, whether it may send crash reports and usage data
+**Off unless you turn it on.** On
+the first launch XPCog asks, once, whether it may send crash reports and usage data
 to <https://cog-analytics.losno.co>, and it never asks again whatever the answer
 was. Preferences → General is where it is changed afterwards, and the switch takes
 effect immediately in both directions — unticking it shuts the reporter down for
@@ -532,31 +547,30 @@ one setting a Cog import deliberately does **not** carry across, because the
 credential cannot come with it and the switch alone would claim a connection that
 does not exist.
 
-## Roadmap
+## Status
 
-| | Milestone | Scope |
-|---|---|---|
-| ✅ | **M0** | Toolchain, module layout, codec registration, Qt shell |
-| ✅ | **M1a** | Walking skeleton: FLAC decode → miniaudio output |
-| ✅ | **M1b** | Transport, gapless, seven decoders, M3U/PLS playlists and cue sheets |
-| ✅ | **M1c** | ReplayGain, resampling, settings, HDCD |
-| ✅ | **M2** | SQLite library, playlist model, shuffle/repeat/queue, scanner, tag reading |
-| ✅ | **M3** | The Qt application: playlist view, preferences, undo, media keys |
-| ✅ | **M4** | DSP chain: equalizer, fader, downmix/upmix, FreeSurround. Time-stretch dropped by decision |
-| ✅ | **M5** | SMTC, MPRIS, tray icon / Dock menu, single instance, app icon, spectrum, mini player, taskbar badge. NSDockTile dropped by decision |
-| 🚧 | **M6** | Breadth. HTTP and internet radio, HLS, chained Ogg, archive sources, tracker modules, game music rips, vgmstream, the eight PSF cores, SID, Musepack, APL, DSD, `.dsf`/`.dff`, output device selection and exclusive mode, the 31-band equaliser with Cog's preset library, and MIDI on OPL3, SpessaSynth and an emulated SC-55 with its front panel all done, and the decoder list closed, and Last.fm scrobbling done with an offline queue Cog does not have; and `cogimport` reads a Cog library, its playlist order, its ReplayGain and its play counts through File > Import from Cog -- what is left there is finding the installation without being pointed at it, which only matters on a Mac. DoP output waits on a DAC to verify against; HRTF is deferred; global hotkeys are not coming, because the media keys they bind are already delivered by SMTC, MPRIS and MediaPlayer.framework |
-| ✅ | **M7** | The interface moved from Qt 6 to wxWidgets. `core/` and `codecs/` unchanged; `platform/` de-Qt'd and now links no toolkit either. Qt was the last dependency outside vcpkg, and the deploy step went with it. See [`docs/WXPORT.md`](docs/WXPORT.md) |
+Everything above works today: the engine and its 23 decoders, the SQLite library and
+playlist model, the wxWidgets interface with its preferences, file browser and undo
+stack, the DSP chain, Last.fm scrobbling, and the per-platform integration — Now
+Playing, media keys, tray icon, Dock menu, single instance, taskbar badge. Windows
+gets an installer, macOS a signed bundle.
 
-Picking this up on another machine? [`docs/PORTING.md`](docs/PORTING.md) ends with
-**Where to pick up next** — the remaining work itemised, in order, each with where
-Cog does it and what the trap is.
+What is outstanding is short and named:
 
-Milestone 1's formats were FLAC, MP3, Vorbis, Opus, AAC/ALAC and WavPack, with APE
-and Musepack arriving through FFmpeg rather than their own decoders; Musepack has
-its own now, and APE still does not, because Cog has none either. M6 has taken the
-recognised extension count from 30-odd to **842**, against the roughly 900 Cog
-recognises across ~35 decoders. Getting the rest is the remainder of M6 and beyond,
-and the architecture is sized for it — each additional decoder is one
+- **Adopting an existing Cog installation** is most of the way there. File →
+  Import from Cog reads its library, playlist order, ReplayGain and play counts;
+  what is left is finding that installation without being pointed at it, which only
+  matters on a Mac.
+- **DoP output** waits on a DAC to verify it against, and **HRTF** is deferred.
+- **Global hotkeys** are not coming: the media keys they would bind are already
+  delivered by SMTC, MPRIS and MediaPlayer.framework.
+- **NSDockTile** was dropped by decision.
+
+The decoder list is closed at 842 extensions across 23 decoders, up from the 30-odd
+the first working build recognised. FLAC, MP3, Vorbis, Opus, AAC/ALAC and WavPack
+came first, with APE and Musepack arriving through FFmpeg rather than decoders of
+their own; Musepack has its own now, and APE still does not, because Cog has none
+either. Reopening the list is cheap by design — an additional decoder is one
 `xpcog_add_codec()` call, never a refactor, and every one added so far has cost
 exactly that.
 
@@ -571,20 +585,22 @@ AudioUnit hosting is one of Cog's four MIDI backends, not MIDI itself — `.mid`
 its dozen relatives play here through the other three, all of which have landed:
 SpessaSynth, Nuked OPL3 and Nuked SC-55. See [`docs/MIDI.md`](docs/MIDI.md).
 
-## Relationship to upstream Cog
+## Relationship to Cog
 
-XPCog is a derivative work and tracks Cog's behaviour closely, including quirks worth
-preserving. Where it deliberately differs, the difference is documented — for example,
-Cog's shuffle and next/previous operate on the *sorted* playlist order, whereas XPCog
-keeps playback order canonical and treats sorting as display-only.
+XPCog is a derivative work of [Cog](https://github.com/losnoco/Cog) and tracks its
+behaviour closely, including quirks worth preserving. Cog recognises around 900
+extensions across ~35 decoders, against 842 across 23 here. Where XPCog deliberately
+differs, the difference is documented — for example, Cog's shuffle and
+next/previous operate on the *sorted* playlist order, whereas XPCog keeps playback
+order canonical and treats sorting as display-only.
 
-The full porting plan, milestone-by-milestone progress, and the complete list of
-deliberate behaviour differences live in [`docs/PORTING.md`](docs/PORTING.md).
-Work that spans several commits gets its own plan beside it —
+The full porting plan, the progress against it, and the complete list of deliberate
+behaviour differences live in [`docs/PORTING.md`](docs/PORTING.md), which ends with
+**Where to pick up next** — the remaining work itemised, in order, each with where
+Cog does it and what the trap is. Work that spans several commits gets its own plan
+beside it —
 [`docs/HIGHLYCOMPLETE.md`](docs/HIGHLYCOMPLETE.md) staged the eight emulator
 cores behind the PSF formats, one at a time, and is now the record of all eight.
-
-Upstream Cog: <https://github.com/losnoco/Cog>
 
 ## License
 
