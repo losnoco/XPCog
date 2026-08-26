@@ -87,6 +87,20 @@
 // pasted onto whatever is behind it.
 AAAA_XPCOG ICON "@XPCOG_RC_ICON@"
 
+// UTF-8 from here down, and the pragma is what makes that true.
+//
+// rc.exe reads a script in the system's ANSI code page unless told otherwise,
+// and CMake writes this file as UTF-8. The copyright string below holds a
+// copyright sign and an en dash, which in UTF-8 are two bytes each; read as
+// CP1252 they come out as the usual pair of mojibake characters, and the string
+// lands in the binary that way with nothing warning about it. The rest of the
+// file is ASCII and reads the same under either.
+//
+// After the wx.rc include on purpose. wx's own script is ASCII, and leaving it
+// to be parsed under whatever was in force before this line keeps the change to
+// the part of the file that needs it.
+#pragma code_page(65001)
+
 VS_VERSION_INFO VERSIONINFO
     FILEVERSION    @XPCOG_RC_VERSION@
     PRODUCTVERSION @XPCOG_RC_VERSION@
@@ -108,6 +122,10 @@ BEGIN
             VALUE "FileDescription",  "XPCog"
             VALUE "FileVersion",      "@PROJECT_VERSION@"
             VALUE "InternalName",     "XPCog"
+            // The Details tab of the file's properties, and the macOS
+            // counterpart is NSHumanReadableCopyright in the bundle's plist.
+            // Both come from XPCOG_COPYRIGHT in app/CMakeLists.txt.
+            VALUE "LegalCopyright",   "@XPCOG_COPYRIGHT@"
             VALUE "OriginalFilename", "XPCog.exe"
             VALUE "ProductName",      "XPCog"
             VALUE "ProductVersion",   "@PROJECT_VERSION@"

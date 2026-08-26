@@ -5,7 +5,7 @@
 
     This began as Qt's own Info.plist.app.in plus CFBundleIconName, because Qt
     supplied a template unless one was named here. Nothing supplies one now, so it
-    is simply the file this application wants -- but it is left as it stands
+    is simply the file this application wants, but it is left as it stands
     rather than trimmed, because every key below has been through a real bundle
     and pruning a plist by guesswork is how a bundle stops launching.
 
@@ -57,5 +57,81 @@
 
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+
+	<!--
+	    Privacy usage descriptions, in two groups, and the second group is the
+	    interesting one.
+
+	    macOS shows the matching string inside the permission alert. A key that
+	    is missing is not a permission that is skipped: for the folder ones the
+	    alert appears anyway with no explanation, and for several other TCC
+	    classes the process is killed outright the moment it touches the API.
+	    So the string is not a courtesy. It is the only part of that dialog
+	    written by somebody who knows what the program was doing.
+
+	    Group one is what XPCog genuinely reaches for. It never asks for any of
+	    these up front; macOS asks the first time a file in that location is
+	    opened, which for a player means the moment somebody adds music that
+	    happens to live there.
+
+	    Group two is Cog's idea and it is a good one. None of those permissions
+	    is anything an audio player has any business holding, and XPCog asks for
+	    none of them, so a prompt naming one of them is evidence that something
+	    is wrong. The string is there to say so to the person being asked, who
+	    is the only one in a position to refuse. Cog phrases them as
+	    rhetorical questions ("Why are you trying to open your Calendar with an
+	    audio player?"); these say the same thing flatter and end with what to do
+	    about it.
+
+	    Three keys Cog carries that are deliberately not here:
+
+	      NSAppTransportSecurity with NSAllowsArbitraryLoads, which Cog needs
+	      because it streams over plain HTTP through CFNetwork. ATS polices
+	      NSURLSession and nothing else; XPCog's HTTP source is libcurl, which it
+	      never sees, so the key would grant an exemption from a policy that does
+	      not apply and claim a behaviour this build does not have.
+
+	      NSMotionUsageDescription, for the head-tracking headphones Cog's
+	      spatial audio supports. Nothing here reads a motion sensor.
+
+	      NSAppleEventsUsageDescription, and NSAppleScriptEnabled with it.
+	      AppleScript is one of the things docs/PORTING.md lists as deliberately
+	      not ported, so XPCog neither sends Apple events nor answers them.
+
+	    These strings are English only. Everything a listener reads in the
+	    interface goes through the wx catalogue compiled into the binary, and a
+	    plist is read by launchd and TCC long before any of that is loaded.
+	    Localising it needs InfoPlist.strings files in each .lproj, which is
+	    machinery this build does not have. Cog localises its through
+	    InfoPlist.xcstrings, which is Xcode's.
+	-->
+
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>XPCog opens the audio files you add to it and scans the folders you add to its library. Allow this if your music, or a playlist that points at it, lives on the Desktop. XPCog reads nothing else there and writes nothing.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>XPCog opens the audio files you add to it and scans the folders you add to its library. Allow this if your music, or a playlist that points at it, lives in Documents. XPCog reads nothing else there and writes nothing.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>XPCog opens the audio files you add to it and scans the folders you add to its library. Allow this if your music, or a playlist that points at it, lives in Downloads. XPCog reads nothing else there and writes nothing.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>XPCog opens the audio files you add to it and scans the folders you add to its library. Allow this to play from a USB drive, an external disc or a memory card. XPCog reads nothing else on the volume and writes nothing.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>XPCog opens the audio files you add to it and scans the folders you add to its library. Allow this if your collection lives on a NAS or another shared volume. XPCog reads nothing else on the share and writes nothing.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>XPCog asks for this only when you play a stream whose address is on your own network, such as a server at home. Playing from the internet at large does not need it, and XPCog looks for nothing on your network by itself.</string>
+
+	<key>NSMicrophoneUsageDescription</key>
+	<string>XPCog plays audio and never records any, so it does not ask for a microphone. If you are reading this in a permission alert, deny it: something is asking on XPCog's behalf that should not be.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>An audio player has no use for a camera, and XPCog does not ask for one. If you are reading this in a permission alert, deny it: something is asking on XPCog's behalf that should not be.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>XPCog has no use for your contacts and does not ask for them. If you are reading this in a permission alert, deny it: something is asking on XPCog's behalf that should not be.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>XPCog has no use for your calendar and does not ask for it. If you are reading this in a permission alert, deny it: something is asking on XPCog's behalf that should not be.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>XPCog has no use for your reminders and does not ask for them. If you are reading this in a permission alert, deny it: something is asking on XPCog's behalf that should not be.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>XPCog has no use for your photo library and does not ask for it. Album art comes from the audio files themselves. If you are reading this in a permission alert, deny it.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>XPCog has no use for your location and does not ask for it. If you are reading this in a permission alert, deny it: something is asking on XPCog's behalf that should not be.</string>
 </dict>
 </plist>

@@ -246,6 +246,28 @@ endif()
 # to wxWidgets untouched: it is CMake, `xcrun` and a resource script, none of
 # which ever knew what drew the windows.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# The copyright line, in one place because two platforms show it and a third
+# already had its own.
+#
+# macOS reads NSHumanReadableCopyright in Get Info and in the About panel a
+# bundle gets for free; Windows reads LegalCopyright on the Details tab of the
+# file's properties. Both were blank. The plist has carried
+# ${MACOSX_BUNDLE_COPYRIGHT} since it was Qt's template and nothing ever set it,
+# so it configured to an empty string; the version resource had no such field at
+# all.
+#
+# The wording follows app/src/AboutDialog.cpp, which is the third place a
+# listener can read it, and it names Cog for the reason the About box does: this
+# is a port, and most of what is under the interface is still theirs.
+#
+# CMake has no \uXXXX escape, so the sign and the dash below are the characters
+# themselves. This file is UTF-8 and so is the plist; the resource script has to
+# be told, which is what the code page pragma in XPCog.rc.in is for.
+# ---------------------------------------------------------------------------
+set(XPCOG_COPYRIGHT "Copyright © 2026 the XPCog authors. Copyright © 2005–2026 Vincent Spader, Christopher Snowhill and the Cog authors.")
+
 if(WIN32)
     # Identity, so the OS can say what this program is called. The version
     # resource is the Windows counterpart of the MACOSX_BUNDLE_* properties below;
@@ -417,6 +439,7 @@ set_target_properties(xpcog-app PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_ICON_FILE "xpcog"
+    MACOSX_BUNDLE_COPYRIGHT "${XPCOG_COPYRIGHT}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
     FOLDER app)
 
