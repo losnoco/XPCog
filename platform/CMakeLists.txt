@@ -21,6 +21,7 @@
 #   MediaIntegration  MPNowPlayingInfoCenter / SMTC / MPRIS
 #   TaskbarIntegration ITaskbarList3 done; NSDockTile outstanding
 #   FileAssociations   Windows only, by design
+#   FileManager    revealing a file and moving it to the trash
 #   Foreground     AllowSetForegroundWindow, Windows only
 #   CrashReporter  sentry-native, and only once the listener has said yes
 
@@ -57,6 +58,7 @@ if(WIN32)
         src/windows/Foreground.cpp
         src/windows/FileAssociations.cpp
         src/windows/WindowsSettings.cpp
+        src/windows/WindowsFileManager.cpp
         src/common/CommonPropertyList.cpp
         src/windows/WindowsTaskbarIntegration.cpp
         src/windows/WindowsMediaIntegration.cpp)
@@ -81,10 +83,11 @@ elseif(APPLE)
         src/common/NullTaskbarIntegration.cpp
         src/mac/MacSettings.cpp
         src/mac/MacPropertyList.cpp
+        src/mac/MacFileManager.mm
         src/mac/MacMediaIntegration.mm)
     # ARC, so the Objective-C objects there need no manual retain or release.
-    set_source_files_properties(src/mac/MacMediaIntegration.mm PROPERTIES
-        COMPILE_OPTIONS "-fobjc-arc")
+    set_source_files_properties(src/mac/MacMediaIntegration.mm src/mac/MacFileManager.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     # CoreFoundation is for the settings store, which talks to CFPreferences
     # directly rather than through any config library -- see MacSettings.cpp for
     # why reading a real plist is the requirement.
@@ -98,6 +101,7 @@ elseif(UNIX)
         src/common/NullTaskbarIntegration.cpp
         src/common/CommonSettings.cpp
         src/common/CommonPropertyList.cpp
+        src/linux/GioFileManager.cpp
         src/linux/GDbusMediaIntegration.cpp)
 
     # MPRIS is D-Bus, and GDBus is the binding. REQUIRED rather than optional: a
@@ -124,6 +128,7 @@ else()
         src/common/FileAssociations.cpp
         src/common/NullTaskbarIntegration.cpp
         src/common/NullMediaIntegration.cpp
+        src/common/NullFileManager.cpp
         src/common/CommonSettings.cpp)
 endif()
 

@@ -48,12 +48,14 @@
 
 #include <functional>
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <memory>
 #include <string>
 #include <vector>
 
 class wxDataViewCtrl;
+class wxDataViewItem;
 class wxGauge;
 class wxBitmapButton;
 class wxPanel;
@@ -107,7 +109,11 @@ private:
     void openFiles();
     void openFolder();
     void openUrl();
-    void savePlaylistAs();
+    /// Writes a playlist file. `selectionOnly` is Cog's "Save Selection As
+    /// Playlist...", which is the same command over fewer rows -- so it is a
+    /// parameter rather than a second function that would have to be kept in
+    /// step with this one's queue translation and its filter warning.
+    void savePlaylistAs(bool selectionOnly);
     void showPreferences();
     void showAbout();
 
@@ -211,6 +217,10 @@ private:
     /// Shows or hides one of the dockable panes.
     void togglePane(wxWindow* pane, bool show);
 
+    /// Shows or hides the folder browser, which is the splitter's left pane
+    /// rather than a dockable one. Hidden on a first launch; see buildUi().
+    void showFileTree(bool show);
+
     /// Whether a pane is currently on screen -- which is not the same as
     /// wxWindow::IsShown(): a floating pane's window is shown while the pane
     /// itself may be closed, and a docked one in a hidden notebook tab is the
@@ -234,6 +244,68 @@ private:
     void removeSelected();
     void enqueueSelected();
     void activateRow(unsigned int row);
+
+    // --- the playlist's context menu -------------------------------------
+    //
+    // Cog's ContextualMenu, one function per item. Every one of them acts on the
+    // selection and does nothing when there is none, which is also what their
+    // EVT_UPDATE_UI handlers say -- the guard is repeated because a command can
+    // arrive from an accelerator that no menu ever disabled.
+
+    /// Pops the menu up over the row that was right-clicked.
+    ///
+    /// Selects that row first when it was not already selected, and leaves a
+    /// multiple selection alone when it was. That is Cog's rule
+    /// (PlaylistView.m:274) and it is the one that matches what people expect:
+    /// right-clicking one of five selected rows acts on the five, and
+    /// right-clicking a sixth acts on the sixth.
+    void showPlaylistMenu(const wxDataViewItem& item);
+
+    /// Queues the selection, or takes it out of the queue.
+    ///
+    /// Per entry, as Cog's -toggleQueuedForEntries: is: a mixed selection flips
+    /// each row rather than deciding one way for all of them.
+    void toggleQueuedSelected();
+
+    /// Flips `stopAfter` on each selected entry, so playback stops when that
+    /// track ends. Cleared for free when the track is left -- see
+    /// Playlist::moveCurrent().
+    void toggleStopAfterSelected();
+
+    /// Puts the selected track's artist or album in the filter box.
+    ///
+    /// Cog opens its Spotlight window here; the filter is what replaced that
+    /// window, so this fills it in. Reads the first selected row, as Cog does --
+    /// there is one search field and it can hold one answer.
+    void searchForSelected(bool byAlbum);
+
+    /// Re-reads the tags of the selected tracks, in place.
+    void reloadSelectedInfo();
+
+    /// Merges a reload's results back onto the entries they came from.
+    ///
+    /// By URL, never by position: the scan drops what it cannot open and expands
+    /// a container into several, so the two sequences are different lengths --
+    /// the same rule the Cog import follows and for the same reason.
+    void applyReloadedEntries(std::vector<PlaylistEntry> entries);
+
+    void resetPlayCountSelected();
+    void removeRatingSelected();
+
+    /// Shows the first selected track in the desktop's file manager.
+    void revealSelected();
+
+    /// Moves the selected files to the trash and takes them out of the playlist.
+    /// Asks first, once, unless the listener has said not to.
+    void trashSelected();
+
+    /// The selection in the order it is displayed, which is not the order
+    /// wxDataViewCtrl reports it in.
+    [[nodiscard]] std::vector<TrackId> selectedTracksInOrder() const;
+
+    /// The local files among the selection. Empty for a selection of streams,
+    /// which is what disables the two commands that need a path.
+    [[nodiscard]] std::vector<std::filesystem::path> selectedPaths() const;
 
     /// Points the header arrow at whatever PlaylistView is actually sorted by,
     /// and takes it away when that is nothing. The control has its own idea,
@@ -331,6 +403,9 @@ private:
 
     wxSplitterWindow* splitter_ = nullptr;
     FileTree*         tree_     = nullptr;
+    /// How wide the folder browser was when it was last open, so closing and
+    /// reopening it does not reset the width. See showFileTree().
+    int fileTreeSash_ = 0;
     wxDataViewCtrl*   list_     = nullptr;
     /// Reference-counted by the control, so this is a borrowed pointer and must
     /// not be deleted here.
@@ -399,6 +474,12 @@ private:
     struct ScanRequest {
         std::vector<Url> inputs;
         int              atRow = -1;
+
+        /// A reload rather than an addition: the results are merged onto the
+        /// entries that are already there instead of being inserted. Both go
+        /// through the same queue because they contend for the same PluginCache,
+        /// and a reload starting mid-scan is the race that queue exists to stop.
+        bool reload = false;
 
         /// Applied to the scan's results just before they are inserted.
         ///

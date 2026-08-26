@@ -40,7 +40,12 @@ public:
     /// header button, the context menu, and the View menu, since a button
     /// labelled with the folder you are in answers "where am I" at the same time
     /// as offering to change it.
-    void chooseRootPath();
+    ///
+    /// Answers whether a folder was actually chosen, which is what lets the
+    /// window open the browser when it was closed -- picking a folder to browse
+    /// and then not being shown it is the one outcome nobody wants -- without
+    /// opening it on a cancelled dialog.
+    bool chooseRootPath();
 
     /// Re-strokes the root button's glyph. Called when the system appearance
     /// changes; the icon is stroked in a colour read at the moment it is built.

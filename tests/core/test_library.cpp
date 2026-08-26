@@ -476,6 +476,47 @@ TEST_CASE("ratings attach to the play count row", "[library]") {
     REQUIRE(record->count == 1);  // rating first, then a play: neither clobbers
 }
 
+TEST_CASE("resetting a play count clears the tally and keeps the dates",
+          "[library]") {
+    Library library = openMemoryLibrary();
+
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath("/music/pigs.flac");
+    entry.artist   = "Pink Floyd";
+    entry.album    = "Animals";
+    entry.rawTitle = "Pigs";
+
+    REQUIRE(library.recordPlay(entry, 1000));
+    REQUIRE(library.recordPlay(entry, 2000));
+    REQUIRE(library.setRating(entry, 3.0F));
+
+    REQUIRE(library.resetPlayCount(entry));
+
+    const auto record = library.playCount("Pink Floyd", "Animals", "Pigs");
+    REQUIRE(record.has_value());
+    CHECK(record->count == 0);
+    // The dates record something that happened, and the rating is a separate
+    // command. Clearing the tally is not a claim that the listening never was.
+    CHECK(record->firstSeen == 1000);
+    CHECK(record->lastPlayed == 2000);
+    CHECK(record->rating == 3.0F);
+}
+
+TEST_CASE("resetting a play count no track has invents no row", "[library]") {
+    Library library = openMemoryLibrary();
+
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath("/music/dogs.flac");
+    entry.artist   = "Pink Floyd";
+    entry.album    = "Animals";
+    entry.rawTitle = "Dogs";
+
+    // Cog's -resetPlayCountForTrack: does nothing when the object is missing.
+    // Succeeding without writing is the same answer.
+    REQUIRE(library.resetPlayCount(entry));
+    CHECK_FALSE(library.playCount("Pink Floyd", "Animals", "Dogs").has_value());
+}
+
 TEST_CASE("a large playlist saves in one transaction", "[library]") {
     Library library = openMemoryLibrary();
 

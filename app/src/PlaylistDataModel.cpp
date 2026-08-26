@@ -16,19 +16,36 @@ constexpr unsigned int kColumnCount = static_cast<unsigned int>(Column::Count);
 /// Widths in dialog units rather than pixels, so they mean the same thing at
 /// every DPI. The status column is exactly wide enough for a glyph or a
 /// two-digit queue position.
+///
+/// **The status column is deliberately not resizable**, and that is what keeps
+/// it visible on macOS rather than a matter of taste. `wxDATAVIEW_COL_RESIZABLE`
+/// gives the NSTableColumn `NSTableColumnAutoresizingMask`, and AppKit then
+/// redistributes the widths across the columns whenever the control is resized
+/// -- which first happens while the control is still at its default size, before
+/// the splitter has given it any. Every column is squeezed proportionally, a
+/// minimum width of zero lets the narrowest one go all the way, and the growth
+/// afterwards is proportional too, so a column that reached 2 points stays at 2
+/// points for the rest of the session. Measured, not guessed: the column came
+/// back 2 wide with a cell rectangle of 2x17, against a glyph 11 wide.
+///
+/// A glyph column has no business being resized or autoresized anyway, and
+/// `NSTableColumnNoResizing` takes it out of that arithmetic entirely. The
+/// minimum width set alongside it is the same statement made a second way, for
+/// the ports that have no such flag.
 struct ColumnLayout {
     Column      column;
     int         width;
     wxAlignment alignment;
+    bool        resizable;
 };
 
 constexpr ColumnLayout kColumns[] = {
-    {Column::Status, 28, wxALIGN_CENTER},
-    {Column::Track, 44, wxALIGN_RIGHT},
-    {Column::Title, 280, wxALIGN_LEFT},
-    {Column::Artist, 180, wxALIGN_LEFT},
-    {Column::Album, 180, wxALIGN_LEFT},
-    {Column::Length, 64, wxALIGN_RIGHT},
+    {Column::Status, 28, wxALIGN_CENTER, false},
+    {Column::Track, 44, wxALIGN_RIGHT, true},
+    {Column::Title, 280, wxALIGN_LEFT, true},
+    {Column::Artist, 180, wxALIGN_LEFT, true},
+    {Column::Album, 180, wxALIGN_LEFT, true},
+    {Column::Length, 64, wxALIGN_RIGHT, true},
 };
 
 }  // namespace
@@ -77,10 +94,18 @@ void PlaylistDataModel::appendColumnsTo(wxDataViewCtrl* control) const {
         // header-click event. The flag does not merely decorate, though: it also
         // licenses the control to reorder the rows on its own, which is what
         // Compare() below is there to make a no-op.
-        control->AppendTextColumn(heading, static_cast<unsigned int>(layout.column),
-                                  wxDATAVIEW_CELL_INERT,
-                                  control->FromDIP(layout.width), layout.alignment,
-                                  wxDATAVIEW_COL_RESIZABLE | wxDATAVIEW_COL_SORTABLE);
+        const int width = control->FromDIP(layout.width);
+        wxDataViewColumn* added = control->AppendTextColumn(
+            heading, static_cast<unsigned int>(layout.column), wxDATAVIEW_CELL_INERT,
+            width, layout.alignment,
+            (layout.resizable ? wxDATAVIEW_COL_RESIZABLE : 0) |
+                wxDATAVIEW_COL_SORTABLE);
+        if (added != nullptr && !layout.resizable) {
+            // A floor as well as a fixed width. Only for the fixed column: on a
+            // resizable one this would be a promise the listener cannot narrow
+            // past, which is not what a minimum is for here.
+            added->SetMinWidth(width);
+        }
     }
 }
 

@@ -439,7 +439,10 @@ So `wxAuiManager` manages the frame, and the spectrum, equaliser, info panel and
 SC-55 panel are panes: draggable to any edge, tabbable with each other, floatable
 into real windows, closable by their own button. The file browser stays a splitter
 pane rather than a dock, which is the Qt build's own choice and Cog's shape — its
-tree is a fixed part of the window.
+tree is a fixed part of the window. It is closed on a first launch, though, where
+Cog's cannot be closed at all; whether it was open is saved beside the sash, and
+the sash is remembered while it is closed so reopening does not reset the width.
+See "Deliberate differences from Cog" in `PORTING.md`.
 
 Two things are deliberately not dockable. The transport is not a pane at all --
 `wxAuiManager` manages a host panel below it and the frame's own sizer stacks the
@@ -494,6 +497,29 @@ as it changes rather than read at save time -- a maximised window reports the
 maximised rectangle and wx offers no way to ask what it would restore to -- and it
 is only restored if some display still contains it. A rectangle saved on a monitor
 that is no longer attached would put the window where nobody can reach it.
+
+**The playlist's status column drew nothing on macOS**, and had a width of two
+points. Every column was appended `wxDATAVIEW_COL_RESIZABLE`, which on macOS puts
+`NSTableColumnAutoresizingMask` on the `NSTableColumn`; AppKit then redistributes
+the widths across the columns on every resize, and the first of those happens
+while the control is still at its default size, before the splitter has given it
+any. All six are squeezed proportionally, a minimum width of zero lets the
+narrowest go all the way down, and the growth afterwards is proportional too — so
+the column that reached two points stays at two points for the rest of the
+session. The play marker is eleven points wide, so nothing was ever drawn.
+
+Nothing is wrong on GTK or MSW, which do not autoresize columns, and **no test in
+this repository can catch it**: the one suite that builds real windows is
+`xpcog-gui-tests`, and it is Linux-only because Linux is where a display can be
+conjured. It was found by building a throwaway wx program that appends the same
+columns to the same model and prints `GetWidth()` and `GetItemRect()` — worth
+remembering as the technique, because reading the wxWidgets sources for an hour
+produced three plausible culprits and none of them was this one.
+
+The fix is to stop the status column being resizable at all, plus a minimum width
+saying the same thing a second way for the ports with no such flag. A glyph column
+has no business being dragged or autoresized; `NSTableColumnNoResizing` takes it
+out of the arithmetic entirely.
 
 **The transport stopped filling the width.** `Resizable(false)` is `Fixed()`, and
 `framemanager.cpp` sets a fixed pane's proportion to 0: it gets exactly its best

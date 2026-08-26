@@ -10,6 +10,26 @@
 namespace xpcog::app {
 namespace {
 
+// Two labels that name something the platform names differently. One string
+// serving all three would have to be generic enough to be wrong everywhere --
+// nobody on macOS looks for a "file manager" -- so the literal is chosen at
+// compile time. All three spellings still reach the catalogue: the extractor
+// reads the source rather than the preprocessor's output, so a translator sees
+// every branch whichever platform they are on.
+#if defined(__WXOSX__)
+constexpr const char* kRevealLabel = wxTRANSLATE("Show in &Finder");
+#elif defined(__WXMSW__)
+constexpr const char* kRevealLabel = wxTRANSLATE("Show in &Explorer");
+#else
+constexpr const char* kRevealLabel = wxTRANSLATE("Show in &File Manager");
+#endif
+
+#if defined(__WXMSW__)
+constexpr const char* kTrashLabel = wxTRANSLATE("Move to the Recycle &Bin");
+#else
+constexpr const char* kTrashLabel = wxTRANSLATE("Move to &Trash");
+#endif
+
 // The accelerators, and where they differ from Cog:
 //
 //   Open URL is Ctrl-L rather than Cog's Cmd-Shift-O. Cog has no separate Open
@@ -22,6 +42,7 @@ namespace {
 //   before the playlist's filter box ever saw it -- which is a latent problem in
 //   the Qt build and a loud one here. The frame handles Space itself, on the
 //   playlist, where it cannot steal from a text field.
+
 const std::vector<MenuItem>& layout() {
     static const std::vector<MenuItem> table = {
         {wxTRANSLATE("&File"), FileOpen, wxTRANSLATE("&Open Files..."), "Ctrl+O"},
@@ -110,6 +131,46 @@ const std::vector<MenuItem>& layout() {
     return table;
 }
 
+// The playlist's context menu: Cog's ContextualMenu (MainMenu.xib:2606), row for
+// row and in its order, with three deliberate differences.
+//
+//   * "Information" is dropped. It is hidden in Cog's own XIB and connected to
+//     nothing.
+//   * "Properties" is the Info pane rather than a window of its own, so it is
+//     ViewInfo -- the same id the View menu carries, checkable, ticked while the
+//     pane is open. Cog's item opens its Info Inspector; a second command that
+//     only ever showed the pane the View menu toggles would be two ways to say
+//     one thing, and the tick answers "is it already open" which Cog's does not.
+//   * Remove keeps the Edit menu's label and its Del accelerator, rather than
+//     Cog's bare "Remove". The accelerator is displayed here, not created --
+//     wx builds an accelerator table from the menu *bar*, and a popup only draws
+//     what it is given.
+const std::vector<MenuItem>& playlistLayout() {
+    static const std::vector<MenuItem> table = {
+        // Relabelled from the selection: "Add to Queue", "Remove from Queue", or
+        // "Toggle Queued" when the selection is mixed. Cog does this with an
+        // NSValueTransformer bound to selection.queued; here it is three lines in
+        // the EVT_UPDATE_UI handler.
+        {nullptr, PlaylistToggleQueued, wxTRANSLATE("Add to &Queue"), ""},
+        {nullptr, PlaylistStopAfter, wxTRANSLATE("Stop after &Selection"), ""},
+        {nullptr, PlaylistSaveSelection, wxTRANSLATE("Save Selection as &Playlist..."),
+         "", ItemKind::Normal, true},
+        {nullptr, PlaylistSearchArtist, wxTRANSLATE("Search for &Artist"), "",
+         ItemKind::Normal, true},
+        {nullptr, PlaylistSearchAlbum, wxTRANSLATE("Search for Al&bum"), ""},
+        {nullptr, PlaylistReloadInfo, wxTRANSLATE("Re&load Info"), "", ItemKind::Normal,
+         true},
+        {nullptr, PlaylistResetPlayCount, wxTRANSLATE("Reset Play &Count"), ""},
+        {nullptr, PlaylistRemoveRating, wxTRANSLATE("Remove Ra&ting"), ""},
+        {nullptr, PlaylistReveal, kRevealLabel, ""},
+        {nullptr, EditRemove, wxTRANSLATE("&Remove from Playlist"), "Del",
+         ItemKind::Normal, true},
+        {nullptr, PlaylistTrash, kTrashLabel, ""},
+        {nullptr, ViewInfo, wxTRANSLATE("&Info"), "", ItemKind::Check, true},
+    };
+    return table;
+}
+
 /// A table rather than a call beside each command, because these have to be
 /// re-applied whenever the system appearance changes -- and a refresh that walks
 /// a list cannot forget one, where a refresh repeating scattered calls will.
@@ -142,9 +203,25 @@ const std::map<CommandId, std::string>& icons() {
     return wxITEM_NORMAL;
 }
 
+/// One row, onto whichever menu is being built.
+void appendItem(wxMenu& menu, const MenuItem& item) {
+    if (item.separatorBefore) {
+        menu.AppendSeparator();
+    }
+
+    wxString label = trUtf8(item.label);
+    if (*item.accelerator != '\0') {
+        label += "\t";
+        label += wxString::FromAscii(item.accelerator);
+    }
+    menu.Append(item.id, label, wxEmptyString, toWx(item.kind));
+}
+
 }  // namespace
 
 const std::vector<MenuItem>& menuLayout() { return layout(); }
+
+const std::vector<MenuItem>& playlistMenuLayout() { return playlistLayout(); }
 
 std::string commandIcon(CommandId id) {
     const auto found = icons().find(id);
@@ -185,20 +262,19 @@ wxMenuBar* buildMenuBar() {
         if (current == nullptr) {
             continue;
         }
-        if (item.separatorBefore) {
-            current->AppendSeparator();
-        }
-
-        wxString label = trUtf8(item.label);
-        if (*item.accelerator != '\0') {
-            label += "\t";
-            label += wxString::FromAscii(item.accelerator);
-        }
-        current->Append(item.id, label, wxEmptyString, toWx(item.kind));
+        appendItem(*current, item);
     }
     flush();
 
     return bar;
+}
+
+wxMenu* buildMenu(const std::vector<MenuItem>& items) {
+    auto* menu = new wxMenu;
+    for (const MenuItem& item : items) {
+        appendItem(*menu, item);
+    }
+    return menu;
 }
 
 }  // namespace xpcog::app

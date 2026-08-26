@@ -3470,6 +3470,64 @@ All of these are also documented at the call site.
   single track, which is what `RepeatMode::One` is for.
 - Undo exists. Cog has none: `-delete:` removes the managed objects and the only way
   back is to re-add the files.
+- **The folder browser is closed on a first launch; Cog's is a fixed part of its
+  window.** Cog's FileTree is always there, on the left of the playlist, and there
+  is no way to hide it. XPCog's is the same pane behind the same commands, and it
+  starts closed: a music player opens onto the music somebody has already added,
+  and a folder tree pointing at the home directory is a filing cabinet standing
+  where the playlist should be. Ctrl+B, **View > File Browser** and **Choose Root
+  Folder...** all open it, whether it was open is remembered from then on, and the
+  width it was dragged to survives closing it — so the difference costs one
+  keystroke, once, for the listeners who want it.
+
+- **The playlist's context menu is Cog's, minus one item and with one changed.**
+  Every row of Cog's ContextualMenu (`MainMenu.xib:2606`) is here in Cog's order:
+  the queue toggle that relabels itself, Stop after Selection, Save Selection as
+  Playlist, the two searches, Reload Info, Reset Play Count, Remove Rating, Show
+  in Finder, Remove, Move to Trash. Two do not carry over as they are:
+
+  - "Information" is dropped. It is hidden in Cog's own XIB and connected to
+    nothing.
+  - "Properties" is the **Info pane**, on the View menu's own `ViewInfo` command,
+    rather than a window of its own. It is checkable, so it says whether the pane
+    is already open, which Cog's does not; a second command that only ever showed
+    the pane the View menu toggles would be two ways to say one thing.
+
+  Two of the items are also worth knowing about individually. **Search for
+  Artist** and **Search for Album** fill in the filter box rather than opening a
+  Spotlight window: the filter is what replaced that window, and it searches the
+  playlist, which is where the track came from. **Remove Rating** clears something
+  XPCog never displays — there is no rating column and no star control — so it
+  says in the status line how many tracks it acted on. The ratings are real: they
+  arrive with a Cog library through **Import from Cog**, and this is the command
+  that clears them.
+
+- **Move to Trash asks with a checkbox rather than with a third button.** Cog's
+  consent alert has No / Yes / Always and writes `trashAskedConsent` only on the
+  third (`PlaylistController.m:1341`). XPCog asks the same question with the same
+  three outcomes as a `wxRichMessageDialog` with a "Do not ask again" checkbox,
+  under the same key, so an imported Cog plist carries the answer across. What it
+  does afterwards is Cog's too: the files go to the desktop's trash and the rows
+  leave the playlist — through the undo stack, so Undo puts the rows back. It does
+  not bring the files back, and the dialog says so.
+
+  Trashing is reversible deletion and nothing else. `platform::moveToTrash()`
+  returns false where the volume has no trash rather than falling back to
+  `unlink()`; a command labelled "Move to Trash" that silently destroys the file
+  instead is the worst possible way to be helpful, so the row stays and the status
+  line says how many could not be moved.
+
+- **Reload Info goes through the scan queue.** Cog hands the selected entries to
+  `PlaylistLoader -loadInfoForEntries:` on a background thread of its own. XPCog
+  queues the same URLs behind whatever folder scan may be running, because the
+  scans share one `PluginCache` and that is not synchronised — a reload starting
+  mid-scan is a real race, not a theoretical one. The results are merged back **by
+  URL, never by position**: a scan drops what it cannot open and expands a
+  container into several, so the two sequences are different lengths. What the
+  file can answer for is replaced; the play count, the queue position, the shuffle
+  index and the stop-after mark are kept, because getting that backwards would be
+  a reload that silently reset them and still looked like it had worked.
+
 - **No custom Dock tile.** Cog's `DockIconController` draws playback state onto the
   icon through `NSDockTile`; XPCog does not, and macOS keeps the do-nothing
   `TaskbarIntegration`. The badge and progress bar stay a Windows feature, where the

@@ -36,6 +36,7 @@
 #include <vector>
 
 class wxAcceleratorTable;
+class wxMenu;
 class wxMenuBar;
 class wxWindow;
 
@@ -91,6 +92,22 @@ enum CommandId : int {
     ViewSc55Panel,
     ViewMiniPlayer,
 
+    // The playlist's context menu. Cog reaches most of these from its Playlist
+    // menu as well; here they live on the selection they act on, because that is
+    // where the question "what about *these* tracks" is asked. EditRemove and
+    // ViewInfo appear on the same menu and are not repeated -- one command, one
+    // id, however many surfaces carry it.
+    PlaylistToggleQueued,
+    PlaylistStopAfter,
+    PlaylistSaveSelection,
+    PlaylistSearchArtist,
+    PlaylistSearchAlbum,
+    PlaylistReloadInfo,
+    PlaylistResetPlayCount,
+    PlaylistRemoveRating,
+    PlaylistReveal,
+    PlaylistTrash,
+
     /// Not a command: the first id a widget in this application may use for
     /// itself, so nothing invents one that collides with the list above.
     FirstWidgetId,
@@ -117,6 +134,14 @@ struct MenuItem {
 /// Bind, rather than an edit to a XIB whose diff is unreadable.
 [[nodiscard]] const std::vector<MenuItem>& menuLayout();
 
+/// The playlist's context menu, in Cog's order.
+///
+/// The same table shape, and deliberately: these rows carry the same ids the
+/// menu bar does, so the enabled state, the ticks and the two labels that
+/// rewrite themselves all arrive from the one EVT_UPDATE_UI handler each command
+/// already has. `menu` is unused here -- a popup has no title.
+[[nodiscard]] const std::vector<MenuItem>& playlistMenuLayout();
+
 /// Which Lucide glyph each command wears, for the surfaces that draw one.
 [[nodiscard]] std::string commandIcon(CommandId id);
 
@@ -125,5 +150,9 @@ struct MenuItem {
 
 /// Builds the whole menu bar from the table above.
 [[nodiscard]] wxMenuBar* buildMenuBar();
+
+/// Builds one standalone menu from a table -- a popup, which has no bar to hang
+/// off. The caller owns it; pop it up and let it go out of scope.
+[[nodiscard]] wxMenu* buildMenu(const std::vector<MenuItem>& items);
 
 }  // namespace xpcog::app

@@ -23,6 +23,7 @@
 #include "xpcog/core/library/PlaylistCommands.hpp"
 #include "xpcog/core/library/PlaylistFile.hpp"
 #include "xpcog/platform/CrashReporter.hpp"
+#include "xpcog/platform/FileManager.hpp"
 #include "xpcog/platform/SettingsStore.hpp"
 
 #include <wx/bmpbuttn.h>
@@ -38,6 +39,7 @@
 #include <wx/mstream.h>
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
+#include <wx/richmsgdlg.h>
 #include <wx/settings.h>
 #include <wx/sizer.h>
 #include <wx/slider.h>
@@ -54,6 +56,8 @@
 #include <filesystem>
 #include <map>
 #include <fstream>
+#include <set>
+#include <unordered_map>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -361,7 +365,20 @@ void MainFrame::buildUi() {
     model_->DecRef();
     model_->appendColumnsTo(list_);
 
-    splitter_->SplitVertically(tree_, list_, FromDIP(260));
+    // Closed, and closed on a first launch rather than only after somebody has
+    // shut it: a music player opens onto the music somebody has already added,
+    // and a folder tree pointing at the home directory is a filing cabinet
+    // standing where the playlist should be. Cog's is a fixed part of its window
+    // and this is a deliberate difference from it -- Ctrl+B, the View menu and
+    // the restored layout all bring it straight back, and whether it was open is
+    // remembered from then on.
+    //
+    // Initialize() rather than splitting and unsplitting: an unsplit splitter has
+    // one window, and it is the playlist. The tree is hidden by hand first
+    // because a child that the splitter is not managing would otherwise be drawn
+    // over the top of it.
+    tree_->Hide();
+    splitter_->Initialize(list_);
 
     // The optional panes, in the places the Qt build docked them: the wide, short
     // ones along the bottom and the tall column of fields at the right.
@@ -650,6 +667,10 @@ void MainFrame::wireUp() {
         activateRow(model_->GetRow(event.GetItem()));
     });
 
+    list_->Bind(wxEVT_DATAVIEW_ITEM_CONTEXT_MENU, [this](wxDataViewEvent& event) {
+        showPlaylistMenu(event.GetItem());
+    });
+
     list_->Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, [this](wxDataViewEvent& event) {
         const auto column = static_cast<Column>(event.GetColumn());
         // Three states rather than two, and the third is the point: ascending,
@@ -914,6 +935,23 @@ void MainFrame::togglePane(wxWindow* pane, bool show) {
     // *placement* is the manager's, so showing the window without this leaves it
     // sized zero and invisible.
     auiManager_.Update();
+}
+
+void MainFrame::showFileTree(bool show) {
+    if (show == splitter_->IsSplit()) {
+        return;
+    }
+    if (show) {
+        splitter_->SplitVertically(tree_, list_,
+                                   fileTreeSash_ > 0 ? fileTreeSash_ : FromDIP(260));
+    } else {
+        // Kept here rather than left to the splitter. wxSplitterWindow sets its
+        // sash position to zero on Unsplit, so asking it afterwards answers with
+        // the left edge -- and the browser would come back at the default width
+        // every time instead of at the width it was dragged to.
+        fileTreeSash_ = splitter_->GetSashPosition();
+        splitter_->Unsplit(tree_);
+    }
 }
 
 bool MainFrame::paneShown(wxWindow* pane) const {
@@ -1250,7 +1288,7 @@ void MainFrame::bindCommands() {
     on(FileOpenFolder, [this] { openFolder(); });
     on(FileOpenUrl, [this] { openUrl(); });
     on(FileImportCog, [this] { importFromCog(); });
-    on(FileSavePlaylist, [this] { savePlaylistAs(); });
+    on(FileSavePlaylist, [this] { savePlaylistAs(/*selectionOnly=*/false); });
     on(FilePreferences, [this] { showPreferences(); });
     on(HelpAbout, [this] { showAbout(); });
     on(FileQuit, [this] {
@@ -1275,7 +1313,14 @@ void MainFrame::bindCommands() {
     on(PlaybackPrevious, [this] { playback_->previous(); });
     on(PlaybackEnqueue, [this] { enqueueSelected(); });
 
-    on(ViewFileTreeRoot, [this] { tree_->chooseRootPath(); });
+    on(ViewFileTreeRoot, [this] {
+        // And open the browser if it was closed. Choosing what to look at and
+        // then not being shown it would read as the dialog having done nothing;
+        // only on a folder actually chosen, so cancelling opens nothing.
+        if (tree_->chooseRootPath()) {
+            showFileTree(true);
+        }
+    });
     on(ViewEqualizer, [this] { togglePane(equalizer_, !paneShown(equalizer_)); });
     on(ViewInfo, [this] {
         const bool showing = !paneShown(info_);
@@ -1324,13 +1369,19 @@ void MainFrame::bindCommands() {
         sc55_->setActive(showing);
     });
 #endif
-    on(ViewFileTree, [this] {
-        if (splitter_->IsSplit()) {
-            splitter_->Unsplit(tree_);
-        } else {
-            splitter_->SplitVertically(tree_, list_, FromDIP(260));
-        }
-    });
+    on(ViewFileTree, [this] { showFileTree(!splitter_->IsSplit()); });
+
+    // --- the playlist's context menu -------------------------------------
+    on(PlaylistToggleQueued, [this] { toggleQueuedSelected(); });
+    on(PlaylistStopAfter, [this] { toggleStopAfterSelected(); });
+    on(PlaylistSaveSelection, [this] { savePlaylistAs(/*selectionOnly=*/true); });
+    on(PlaylistSearchArtist, [this] { searchForSelected(/*byAlbum=*/false); });
+    on(PlaylistSearchAlbum, [this] { searchForSelected(/*byAlbum=*/true); });
+    on(PlaylistReloadInfo, [this] { reloadSelectedInfo(); });
+    on(PlaylistResetPlayCount, [this] { resetPlayCountSelected(); });
+    on(PlaylistRemoveRating, [this] { removeRatingSelected(); });
+    on(PlaylistReveal, [this] { revealSelected(); });
+    on(PlaylistTrash, [this] { trashSelected(); });
 
     // The repeat and shuffle groups. Both write through to the settings, so the
     // choice survives a restart as Cog's does.
@@ -1455,6 +1506,68 @@ void MainFrame::bindUpdateUi() {
     update(OrderShuffleOff, shuffleIs(ShuffleMode::Off));
     update(OrderShuffleAlbums, shuffleIs(ShuffleMode::Albums));
     update(OrderShuffleAll, shuffleIs(ShuffleMode::All));
+
+    // --- the playlist's context menu -------------------------------------
+    //
+    // Cog disables the whole menu when nothing is selected
+    // (PlaylistView.m:294-300, by walking it and switching every item off).
+    // Here each command answers for itself, which is the same result reached
+    // from the id -- and it survives the menu being rebuilt, which Cog's does
+    // not.
+    const auto needsSelection = [this](wxUpdateUIEvent& event) {
+        event.Enable(list_->GetSelectedItemsCount() > 0);
+    };
+    update(PlaylistStopAfter, needsSelection);
+    update(PlaylistSaveSelection, needsSelection);
+    update(PlaylistReloadInfo, needsSelection);
+    update(PlaylistResetPlayCount, needsSelection);
+    update(PlaylistRemoveRating, needsSelection);
+
+    update(PlaylistToggleQueued, [this](wxUpdateUIEvent& event) {
+        const std::vector<TrackId> ids = selectedTracks();
+        event.Enable(!ids.empty());
+
+        // Cog's ToggleQueueTitleTransformer, without the transformer: the label
+        // says what the command will do, and says "toggle" when the selection is
+        // mixed because that is the honest answer -- each row flips on its own.
+        std::size_t queued = 0;
+        for (const TrackId id : ids) {
+            const PlaylistEntry* entry = playlist_.find(id);
+            if (entry != nullptr && entry->queued()) {
+                ++queued;
+            }
+        }
+        if (ids.empty() || queued == 0) {
+            event.SetText(_("Add to &Queue"));
+        } else if (queued == ids.size()) {
+            event.SetText(_("Remove from &Queue"));
+        } else {
+            event.SetText(_("&Toggle Queued"));
+        }
+    });
+
+    // Cog binds these two to selection.artist and selection.album being non-nil.
+    // A track with no artist tag has nothing to search for, and an item that
+    // filters the list down to the empty string is worse than one that is greyed.
+    const auto searchable = [this](bool byAlbum) {
+        return [this, byAlbum](wxUpdateUIEvent& event) {
+            const std::vector<TrackId> ids = selectedTracksInOrder();
+            const PlaylistEntry* entry = ids.empty() ? nullptr : playlist_.find(ids.front());
+            event.Enable(entry != nullptr &&
+                         !(byAlbum ? entry->album : entry->artist).empty());
+        };
+    };
+    update(PlaylistSearchArtist, searchable(/*byAlbum=*/false));
+    update(PlaylistSearchAlbum, searchable(/*byAlbum=*/true));
+
+    // Both need a file. A selection of internet streams has no folder to open
+    // and nothing to move to a trash, and greying them says so before the click
+    // rather than in the status line after it.
+    const auto needsFiles = [this](wxUpdateUIEvent& event) {
+        event.Enable(!selectedPaths().empty());
+    };
+    update(PlaylistReveal, needsFiles);
+    update(PlaylistTrash, needsFiles);
 }
 
 // --- opening ------------------------------------------------------------
@@ -1499,12 +1612,40 @@ void MainFrame::openFolder() {
     addUrls({Url::fromLocalPath(std::filesystem::path{chosen.ToStdWstring()})});
 }
 
-void MainFrame::savePlaylistAs() {
+void MainFrame::savePlaylistAs(bool selectionOnly) {
+    // What is written, decided before the dialog opens: there is no point asking
+    // for a filename for an empty selection.
+    //
+    // Either way the order is the view's rather than the playlist's -- the sort
+    // the listener applied, and only the rows the filter leaves. Sorting here is
+    // display-only and never reaches Playlist, so playlist_.entries() is still in
+    // the order the tracks were added. A listener who sorts by album and saves
+    // wants the file in album order; before this, they got the file in the order
+    // they had happened to drop folders onto the window.
+    std::vector<PlaylistEntry> entries;
+    if (selectionOnly) {
+        const std::vector<TrackId> ids = selectedTracksInOrder();
+        entries.reserve(ids.size());
+        for (const TrackId id : ids) {
+            if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
+                entries.push_back(*entry);
+            }
+        }
+        if (entries.empty()) {
+            return;
+        }
+    } else {
+        entries = view_.visibleEntries();
+    }
+
     // The extensions stay inside the descriptions rather than being formatted
     // in: a translator moving "(*.m3u8)" is harmless, and building the string
     // from parts to keep it out of their hands would make the row unreadable in
     // the .po for no gain.
-    wxFileDialog dialog(this, _("Save Playlist"), wxEmptyString, "playlist.m3u8",
+    // A different default name for a selection, so two saves in a row do not
+    // offer to overwrite each other by accident.
+    wxFileDialog dialog(this, _("Save Playlist"), wxEmptyString,
+                        selectionOnly ? "selection.m3u8" : "playlist.m3u8",
                         _("M3U Playlist (*.m3u8)") + "|*.m3u8|" +
                             _("PLS Playlist (*.pls)") + "|*.pls|" +
                             _("XSPF Playlist (*.xspf)") + "|*.xspf",
@@ -1523,16 +1664,7 @@ void MainFrame::savePlaylistAs() {
         format = PlaylistFormat::Xspf;
     }
 
-    // What is saved is what is on screen: the sort the listener applied, and
-    // only the rows the filter leaves. The order has to be read back from the
-    // view because this is the one place the two disagree -- sorting here is
-    // display-only and never reaches Playlist, so playlist_.entries() is still
-    // in the order the tracks were added. A listener who sorts by album and
-    // saves wants the file in album order; before this, they got the file in
-    // the order they had happened to drop folders onto the window.
-    const std::vector<PlaylistEntry> entries = view_.visibleEntries();
-
-    // The queue is translated from ids to row numbers, and that is a real
+    // The queue is translated from ids to positions, and that is a real
     // conversion rather than a cast to satisfy a signature. Playlist::queue()
     // holds TrackIds, which are opaque and permanent; writePlaylist wants
     // indices into the entries it is being handed, because that is what Cog's
@@ -1546,15 +1678,21 @@ void MainFrame::savePlaylistAs() {
     // different type -- and the first compiler that was not MSVC rejected it
     // immediately. An overload that took either would have hidden this for good.
     //
-    // Rows rather than playlist indices, now that the entries being written are
-    // the visible ones: the file's queue points into the list the file itself
-    // holds. A queued track the filter has hidden is not in that list, so it is
-    // dropped rather than left naming some other row.
+    // Positions in the list being written, not rows of the playlist: the file's
+    // queue points into the list the file itself holds. A queued track the filter
+    // hid, or that the selection left out, is not in that list, so it is dropped
+    // rather than left naming some other row.
+    std::unordered_map<TrackId, std::size_t> written;
+    written.reserve(entries.size());
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        written.emplace(entries[i].id, i);
+    }
+
     std::vector<std::size_t> queuePositions;
     queuePositions.reserve(playlist_.queue().size());
     for (const TrackId id : playlist_.queue()) {
-        if (const std::optional<std::size_t> row = view_.rowForTrack(id); row) {
-            queuePositions.push_back(*row);
+        if (const auto found = written.find(id); found != written.end()) {
+            queuePositions.push_back(found->second);
         }
     }
 
@@ -1571,12 +1709,20 @@ void MainFrame::savePlaylistAs() {
                      wxOK | wxICON_WARNING, this);
         return;
     }
-    // Saying so when the filter left tracks out. Writing what is shown is the
-    // point of the ordering above, but a filtered save is also the one way this
-    // command can quietly write fewer tracks than the listener thinks it has --
-    // and a status line is cheaper than a dialog they would learn to dismiss.
+    // A selection save says how many it wrote, because that is the number the
+    // listener is checking. A whole-playlist save says so only when the filter
+    // left tracks out -- writing what is shown is the point of the ordering
+    // above, but it is also the one way this command can quietly write fewer
+    // tracks than the listener thinks it has, and a status line is cheaper than
+    // a dialog they would learn to dismiss.
     const std::size_t total = playlist_.size();
-    if (entries.size() < total) {
+    if (selectionOnly) {
+        setStatusText(wxString::Format(
+            wxPLURAL("Playlist saved: %zu selected track.",
+                     "Playlist saved: %zu selected tracks.",
+                     static_cast<unsigned>(entries.size())),
+            entries.size()));
+    } else if (entries.size() < total) {
         setStatusText(wxString::Format(
             _("Playlist saved: %zu of %zu tracks, the rest hidden by the filter."),
             entries.size(), total));
@@ -1589,7 +1735,7 @@ void MainFrame::addUrls(const std::vector<Url>& urls, int atRow) {
     if (urls.empty()) {
         return;
     }
-    pendingScans_.push_back(ScanRequest{urls, atRow});
+    pendingScans_.push_back(ScanRequest{urls, atRow, /*reload=*/false, {}});
     pumpScanQueue();
 }
 
@@ -1743,11 +1889,12 @@ void MainFrame::pumpScanQueue() {
         }
     }));
 
-    const int atRow = request.atRow;
-    auto      decorate = std::move(request.decorate);
+    const int  atRow    = request.atRow;
+    const bool reload   = request.reload;
+    auto       decorate = std::move(request.decorate);
     subscriptions_.push_back(scan_->finished.connect(
-        [this, atRow, decorate](const std::vector<PlaylistEntry>& entries,
-                                bool cancelled) {
+        [this, atRow, reload, decorate](const std::vector<PlaylistEntry>& entries,
+                                        bool cancelled) {
             // The task owns the thread it is still returning from, so it cannot
             // be destroyed from inside its own callback. Handing it to the event
             // loop to drop is what deleteLater() was doing.
@@ -1764,7 +1911,11 @@ void MainFrame::pumpScanQueue() {
             if (decorate) {
                 decorate(decorated);
             }
-            addScannedEntries(std::move(decorated), atRow, cancelled);
+            if (reload) {
+                applyReloadedEntries(std::move(decorated));
+            } else {
+                addScannedEntries(std::move(decorated), atRow, cancelled);
+            }
             pumpScanQueue();
         }));
 
@@ -1912,6 +2063,336 @@ void MainFrame::removeSelected() {
 void MainFrame::enqueueSelected() {
     for (const TrackId id : selectedTracks()) {
         playlist_.enqueue(id);
+    }
+}
+
+// --- the playlist's context menu -----------------------------------------
+
+std::vector<TrackId> MainFrame::selectedTracksInOrder() const {
+    wxDataViewItemArray items;
+    list_->GetSelections(items);
+
+    // Through the row numbers rather than through the items, because the order
+    // the control reports a selection in is the order it was *made* -- shift-
+    // clicking upwards answers bottom to top. Everything on this menu that cares
+    // about order wants the order on screen: a playlist saved from a selection,
+    // and "the first selected track" for the two searches.
+    std::set<unsigned int> rows;
+    for (const wxDataViewItem& item : items) {
+        rows.insert(model_->GetRow(item));
+    }
+
+    std::vector<TrackId> ids;
+    ids.reserve(rows.size());
+    for (const unsigned int row : rows) {
+        if (const TrackId id = view_.trackAt(row); id != kInvalidTrackId) {
+            ids.push_back(id);
+        }
+    }
+    return ids;
+}
+
+std::vector<std::filesystem::path> MainFrame::selectedPaths() const {
+    std::vector<std::filesystem::path> paths;
+    for (const TrackId id : selectedTracksInOrder()) {
+        const PlaylistEntry* entry = playlist_.find(id);
+        if (entry == nullptr) {
+            continue;
+        }
+        // Local files only. localPath() answers nullopt for every other scheme,
+        // which is what leaves a selection of streams with nothing to act on.
+        if (const std::optional<std::filesystem::path> path = entry->url.localPath();
+            path.has_value()) {
+            paths.push_back(*path);
+        }
+    }
+    return paths;
+}
+
+void MainFrame::showPlaylistMenu(const wxDataViewItem& item) {
+    if (item.IsOk() && !list_->IsSelected(item)) {
+        // Cog's rule (PlaylistView.m:274): right-clicking inside a multiple
+        // selection acts on all of it, right-clicking outside one moves the
+        // selection to the row under the cursor first.
+        list_->UnselectAll();
+        list_->Select(item);
+        // wx sends no selection-changed event for a programmatic selection, so
+        // the two panes that follow it are told by hand. Without this, Info and
+        // Lyrics keep describing the row that was selected before the click --
+        // which is exactly the row the menu is now not acting on.
+        refreshInfo();
+        refreshLyrics();
+    }
+
+    // Built fresh each time rather than kept, so the labels and the ticks come
+    // from the EVT_UPDATE_UI pass PopupMenu() runs before it opens. Held in a
+    // unique_ptr because a popup menu belongs to whoever made it -- wx deletes a
+    // menu bar's menus and not this one.
+    const std::unique_ptr<wxMenu> menu{buildMenu(playlistMenuLayout())};
+    PopupMenu(menu.get());
+}
+
+void MainFrame::toggleQueuedSelected() {
+    // Per entry rather than one decision for the whole selection, which is Cog's
+    // -toggleQueuedForEntries: (PlaylistController.m:1909). A mixed selection
+    // ends up inverted rather than made uniform, and the menu label says so.
+    for (const TrackId id : selectedTracks()) {
+        const PlaylistEntry* entry = playlist_.find(id);
+        if (entry == nullptr) {
+            continue;
+        }
+        if (entry->queued()) {
+            playlist_.dequeue(id);
+        } else {
+            playlist_.enqueue(id);
+        }
+    }
+    setStatusText(statusSummary());
+}
+
+void MainFrame::toggleStopAfterSelected() {
+    for (const TrackId id : selectedTracks()) {
+        playlist_.update(id,
+                         [](PlaylistEntry& entry) { entry.stopAfter = !entry.stopAfter; });
+    }
+}
+
+void MainFrame::searchForSelected(bool byAlbum) {
+    const std::vector<TrackId> ids = selectedTracksInOrder();
+    if (ids.empty()) {
+        return;
+    }
+    const PlaylistEntry* entry = playlist_.find(ids.front());
+    if (entry == nullptr) {
+        return;
+    }
+
+    // Cog hands this to its Spotlight window, which is 965 lines of
+    // NSMetadataQuery searching the whole disk. The filter box replaced that
+    // window -- it searches the playlist, which is where the track came from --
+    // so the command fills it in.
+    const std::string& text = byAlbum ? entry->album.str() : entry->artist.str();
+    if (text.empty()) {
+        return;
+    }
+
+    // ChangeValue rather than SetValue: SetValue posts wxEVT_TEXT, and the
+    // handler on that would set the filter a second time from the string this
+    // one just wrote.
+    filter_->ChangeValue(toWx(text));
+    view_.setFilter(text);
+}
+
+void MainFrame::reloadSelectedInfo() {
+    std::vector<Url> urls;
+    for (const TrackId id : selectedTracksInOrder()) {
+        if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
+            urls.push_back(entry->url);
+        }
+    }
+    if (urls.empty()) {
+        return;
+    }
+
+    // Through the same queue an added folder goes through, and that is not
+    // incidental: the scans share one PluginCache, which is not synchronised, so
+    // a reload starting while a folder scan runs is the race the queue exists to
+    // prevent.
+    pendingScans_.push_back(ScanRequest{std::move(urls), -1, /*reload=*/true, {}});
+    pumpScanQueue();
+}
+
+void MainFrame::applyReloadedEntries(std::vector<PlaylistEntry> entries) {
+    if (entries.empty()) {
+        setStatusText(_("Nothing could be read."));
+        return;
+    }
+
+    std::unordered_map<std::string, TrackId> byUrl;
+    byUrl.reserve(playlist_.size());
+    for (const PlaylistEntry& entry : playlist_.entries()) {
+        byUrl.emplace(entry.url.toString(), entry.id);
+    }
+
+    std::size_t updated = 0;
+    for (PlaylistEntry& fresh : entries) {
+        const auto found = byUrl.find(fresh.url.toString());
+        if (found == byUrl.end()) {
+            // A cue sheet that has grown a track since it was added, or a file
+            // whose container now expands differently. Adding it here would be a
+            // reload that quietly lengthens the playlist, so it is dropped.
+            continue;
+        }
+
+        if (library_) {
+            static_cast<void>(library_->adoptArtwork(fresh));
+        }
+
+        playlist_.update(found->second, [&fresh](PlaylistEntry& entry) {
+            // Everything a file can answer for is replaced; everything the
+            // playlist knows and the file does not is kept. Getting this
+            // backwards is not visible -- a reload that reset the play count and
+            // dropped the track out of the queue would look like it had worked.
+            const std::int64_t playCount      = entry.playCount;
+            const double       position       = entry.currentPosition;
+            const bool         stopAfter      = entry.stopAfter;
+            const std::int64_t shuffleIndex   = entry.shuffleIndex;
+            const std::int32_t queuePosition  = entry.queuePosition;
+            const Url          url            = entry.url;
+
+            entry = fresh;
+
+            entry.url           = url;
+            entry.playCount     = playCount;
+            entry.currentPosition = position;
+            entry.stopAfter     = stopAfter;
+            entry.shuffleIndex  = shuffleIndex;
+            entry.queuePosition = queuePosition;
+        });
+
+        if (library_) {
+            if (const PlaylistEntry* entry = playlist_.find(found->second);
+                entry != nullptr) {
+                static_cast<void>(library_->saveEntry(*entry));
+            }
+        }
+        ++updated;
+    }
+
+    refreshInfo();
+    refreshLyrics();
+    setStatusText(wxString::Format(
+        wxPLURAL("Re-read %zu track.", "Re-read %zu tracks.",
+                 static_cast<unsigned>(updated)),
+        updated));
+}
+
+void MainFrame::resetPlayCountSelected() {
+    std::size_t count = 0;
+    for (const TrackId id : selectedTracks()) {
+        const PlaylistEntry* entry = playlist_.find(id);
+        if (entry == nullptr) {
+            continue;
+        }
+        if (library_) {
+            static_cast<void>(library_->resetPlayCount(*entry));
+        }
+        // And on the entry, which is the copy the Info pane reads. The database
+        // alone would leave the old number on screen until the next launch.
+        playlist_.update(id, [](PlaylistEntry& target) { target.playCount = 0; });
+        ++count;
+    }
+    refreshInfo();
+    setStatusText(wxString::Format(
+        wxPLURAL("Play count reset for %zu track.", "Play count reset for %zu tracks.",
+                 static_cast<unsigned>(count)),
+        count));
+}
+
+void MainFrame::removeRatingSelected() {
+    if (!library_) {
+        return;
+    }
+    std::size_t count = 0;
+    for (const TrackId id : selectedTracks()) {
+        if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
+            static_cast<void>(library_->setRating(*entry, 0.0F));
+            ++count;
+        }
+    }
+    // Said in the status line because there is nowhere else it could show: XPCog
+    // has no rating column and no star control, so a rating is something a Cog
+    // library brought with it and this is the command that clears it. Silence
+    // here would be indistinguishable from the command doing nothing.
+    setStatusText(wxString::Format(
+        wxPLURAL("Rating removed from %zu track.", "Rating removed from %zu tracks.",
+                 static_cast<unsigned>(count)),
+        count));
+}
+
+void MainFrame::revealSelected() {
+    const std::vector<std::filesystem::path> paths = selectedPaths();
+    if (paths.empty()) {
+        return;
+    }
+    // The first one, as Cog does (PlaylistController.m:1849). Revealing a
+    // multiple selection means a file manager window per folder, which is not
+    // what anybody means by "show me where this is".
+    if (!platform::revealInFileManager(paths.front())) {
+        setStatusText(_("Could not show the file."));
+    }
+}
+
+void MainFrame::trashSelected() {
+    std::vector<TrackId>               ids;
+    std::vector<std::filesystem::path> paths;
+    for (const TrackId id : selectedTracksInOrder()) {
+        const PlaylistEntry* entry = playlist_.find(id);
+        if (entry == nullptr) {
+            continue;
+        }
+        if (const std::optional<std::filesystem::path> path = entry->url.localPath();
+            path.has_value()) {
+            ids.push_back(id);
+            paths.push_back(*path);
+        }
+    }
+    if (ids.empty()) {
+        return;
+    }
+
+    if (!settings_.TrashAskedConsent()) {
+        const auto count = static_cast<unsigned>(paths.size());
+        wxRichMessageDialog dialog(
+            this,
+            _("Undo puts the rows back in the playlist. It does not bring the "
+              "files back -- restore those from the trash itself."),
+            wxString::Format(wxPLURAL("Move %u file to the trash?",
+                                      "Move %u files to the trash?", count),
+                             count),
+            wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+        // Cog's third button, as a checkbox: "yes, and stop asking". A plain yes
+        // trashes these files and leaves the question in place.
+        dialog.ShowCheckBox(_("Do not ask again"));
+        if (dialog.ShowModal() != wxID_YES) {
+            return;
+        }
+        if (dialog.IsCheckBoxChecked()) {
+            settings_.setTrashAskedConsent(true);
+        }
+    }
+
+    std::vector<TrackId> trashed;
+    trashed.reserve(ids.size());
+    std::size_t failed = 0;
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        if (platform::moveToTrash(paths[i])) {
+            trashed.push_back(ids[i]);
+        } else {
+            // A read-only volume, a network share with no trash, or a file
+            // already gone. The row stays, because the file did.
+            ++failed;
+        }
+    }
+
+    if (!trashed.empty()) {
+        const std::size_t count = trashed.size();
+        undo_.push(std::make_unique<RemoveTracksCommand>(
+            playlist_, std::move(trashed),
+            toUtf8(wxString::Format(wxPLURAL("Move %zu Track to the Trash",
+                                             "Move %zu Tracks to the Trash",
+                                             static_cast<unsigned>(count)),
+                                    count))));
+    }
+
+    if (failed > 0) {
+        setStatusText(wxString::Format(
+            wxPLURAL("%zu file could not be moved to the trash.",
+                     "%zu files could not be moved to the trash.",
+                     static_cast<unsigned>(failed)),
+            failed));
+    } else {
+        setStatusText(statusSummary());
     }
 }
 
@@ -2220,13 +2701,21 @@ void MainFrame::restoreState() {
         !root.empty()) {
         tree_->setRootPath(root);
     }
+    // The remembered width, read before the browser is opened so it opens at
+    // that width rather than at the default and then jumping.
     if (const std::string sash = settings_.rawValue("xpcog.window.sash");
         !sash.empty()) {
         try {
-            splitter_->SetSashPosition(std::stoi(sash));
+            fileTreeSash_ = std::stoi(sash);
         } catch (const std::exception&) {
             // A value someone edited by hand. The default is fine.
         }
+    }
+    // Absent means closed, which is what a first launch gets. Only an explicit
+    // "1" opens it -- see buildUi() for why that is the default rather than the
+    // other way round.
+    if (settings_.rawValue("xpcog.window.fileTree") == "1") {
+        showFileTree(true);
     }
 
     // The docking layout: where each pane sits, how big it is, whether it is
@@ -2271,9 +2760,13 @@ void MainFrame::persistState() {
                 std::to_string(normalRect_.GetHeight()) + "," +
                 (IsMaximized() ? "1" : "0"));
     }
-    if (splitter_->IsSplit()) {
-        settings_.setRawValue("xpcog.window.sash",
-                              std::to_string(splitter_->GetSashPosition()));
+    settings_.setRawValue("xpcog.window.fileTree",
+                          splitter_->IsSplit() ? "1" : "0");
+    // The live position while it is open, and the remembered one while it is
+    // not, so closing the browser does not throw away the width it had.
+    const int sash = splitter_->IsSplit() ? splitter_->GetSashPosition() : fileTreeSash_;
+    if (sash > 0) {
+        settings_.setRawValue("xpcog.window.sash", std::to_string(sash));
     }
 
     // Only while the window is actually on screen.

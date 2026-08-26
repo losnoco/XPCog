@@ -595,6 +595,19 @@ std::optional<TrackId> Playlist::nextEntry(TrackId from, bool ignoreRepeatOne) {
         if (stopAfterCurrent_) {
             return std::nullopt;
         }
+        // The same answer for one track rather than for every track. Cog checks
+        // this as the stream ends (PlaybackController.m:848) and nowhere else,
+        // which is why it is under the same guard as `stopAfterCurrent_` and not
+        // beside it: pressing Next is `ignoreRepeatOne`, and a Next that did
+        // nothing because a flag was set three tracks ago is a broken button.
+        //
+        // Read from `from`, which is the entry that was handed out last -- not
+        // the one being heard. Those differ across a gapless seam, and it is the
+        // decoded one whose successor is being asked for.
+        if (const PlaylistEntry* entry = find(from);
+            entry != nullptr && entry->stopAfter) {
+            return std::nullopt;
+        }
         if (repeat_ == RepeatMode::One && find(from) != nullptr) {
             return from;
         }

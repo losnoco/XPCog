@@ -1244,6 +1244,35 @@ bool Library::recordPlay(const PlaylistEntry& entry, std::int64_t whenUnixSecond
     return true;
 }
 
+bool Library::resetPlayCount(const PlaylistEntry& entry) {
+    if (!isOpen()) {
+        return impl_->fail("no database");
+    }
+
+    // UPDATE rather than the upsert recordPlay uses, and that is Cog's
+    // behaviour rather than a shortcut: -resetPlayCountForTrack: looks the
+    // PlayCount object up and does nothing when there is none
+    // (PlaylistController.m:345). A track that has never been played has nothing
+    // to reset, and inventing a row of zeros to say so is a row that then has to
+    // be read back and ignored everywhere else.
+    //
+    // The dates are left alone. `first_seen` is when the track entered the
+    // library rather than a play, and `last_played` records something that
+    // happened -- clearing the count is a decision about the tally, not a claim
+    // that the listening never occurred.
+    sql::Statement statement{
+        impl_->database,
+        "UPDATE play_count SET count = 0 WHERE artist = ? AND album = ? AND title = ?;"};
+    statement.bind(1, entry.artist);
+    statement.bind(2, entry.album);
+    statement.bind(3, entry.title());
+    if (!statement.run()) {
+        return impl_->fail("cannot reset the play count");
+    }
+    impl_->error.clear();
+    return true;
+}
+
 bool Library::setRating(const PlaylistEntry& entry, float rating) {
     if (!isOpen()) {
         return impl_->fail("no database");

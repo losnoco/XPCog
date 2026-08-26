@@ -273,6 +273,12 @@ std::string PlaylistView::text(std::size_t row, Column column) const {
 
     switch (column) {
         case Column::Status:
+            // Cog's order, which puts the stop mark above the play mark
+            // (PlaylistEntry.m:545): the track that is playing *and* set to stop
+            // after itself has one thing worth saying, and it is the second.
+            if (entry->stopAfter) {
+                return "\xE2\x96\xA0";  // U+25A0 BLACK SQUARE
+            }
             if (entry->id == current_) {
                 return "\xE2\x96\xB6";  // U+25B6 BLACK RIGHT-POINTING TRIANGLE
             }

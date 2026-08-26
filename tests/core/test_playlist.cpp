@@ -421,6 +421,48 @@ TEST_CASE("stop after current halts playback but not the buttons", "[playlist]")
     REQUIRE(playlist.find(*playlist.current())->rawTitle == "2");
 }
 
+TEST_CASE("stop after one track halts playback only after that track",
+          "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 3);
+    playlist.setCurrent(ids[0]);
+    playlist.update(ids[1], [](PlaylistEntry& entry) { entry.stopAfter = true; });
+
+    // Track 1 has nothing set, so it hands out track 2 as usual.
+    REQUIRE(playlist.nextForPlayback() == ids[1]);
+    // Track 2 is the one that was marked, and playback ends there.
+    REQUIRE_FALSE(playlist.nextForPlayback().has_value());
+}
+
+TEST_CASE("stop after a track does not stop the Next button", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 3);
+    playlist.setCurrent(ids[0]);
+    playlist.update(ids[0], [](PlaylistEntry& entry) { entry.stopAfter = true; });
+
+    REQUIRE_FALSE(playlist.nextForPlayback().has_value());
+    // Cog checks the flag as the stream ends and nowhere else. A Next that did
+    // nothing because a flag was set earlier is a broken button.
+    REQUIRE(playlist.next());
+    REQUIRE(playlist.find(*playlist.current())->rawTitle == "2");
+}
+
+TEST_CASE("leaving a track clears its stop-after mark", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 3);
+    playlist.setCurrent(ids[0]);
+    playlist.update(ids[0], [](PlaylistEntry& entry) { entry.stopAfter = true; });
+
+    playlist.setCurrent(ids[1]);
+    REQUIRE_FALSE(playlist.find(ids[0])->stopAfter);
+
+    // And the first track plays through the next time round rather than
+    // stopping again for a reason nobody can see. Cog clears it in
+    // -setCurrentEntry: for exactly this.
+    playlist.setCurrent(ids[0]);
+    REQUIRE(playlist.nextForPlayback() == ids[1]);
+}
+
 TEST_CASE("observers see structural changes", "[playlist]") {
     Playlist                       playlist;
     std::vector<Playlist::Change>  seen;

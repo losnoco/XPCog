@@ -94,7 +94,7 @@ FileTree::FileTree(wxWindow* parent, const PluginRegistry& registry)
         menu.Append(kChooseRootId, _("Choose &Root Folder..."));
         menu.Bind(wxEVT_MENU, [this](wxCommandEvent& command) {
             if (command.GetId() == kChooseRootId) {
-                chooseRootPath();
+                static_cast<void>(chooseRootPath());
                 return;
             }
             if (std::vector<Url> urls = selectedUrls(); !urls.empty()) {
@@ -125,14 +125,15 @@ void FileTree::setRootPath(const std::string& path) {
 
 std::string FileTree::rootPath() const { return toUtf8(tree_->GetPath()); }
 
-void FileTree::chooseRootPath() {
+bool FileTree::chooseRootPath() {
     const wxString chosen = wxDirSelector(_("Choose the folder to browse"), tree_->GetPath(),
                                           wxDD_DEFAULT_STYLE, wxDefaultPosition, this);
     if (chosen.IsEmpty()) {
-        return;
+        return false;
     }
     tree_->SetPath(chosen);
     updateRootLabel();
+    return true;
 }
 
 void FileTree::refreshIcons() {

@@ -133,6 +133,11 @@ public:
     [[nodiscard]] bool recordPlay(const PlaylistEntry& entry,
                                   std::int64_t         whenUnixSeconds);
 
+    /// Sets this entry's tally back to zero, leaving the dates alone. Does
+    /// nothing, successfully, when the track has no row -- see the definition.
+    /// Cog's -resetPlayCountForTrack:.
+    [[nodiscard]] bool resetPlayCount(const PlaylistEntry& entry);
+
     [[nodiscard]] bool setRating(const PlaylistEntry& entry, float rating);
 
 private:

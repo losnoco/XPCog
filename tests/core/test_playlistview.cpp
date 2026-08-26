@@ -214,6 +214,22 @@ TEST_CASE("a row is found by its track, and not when filtered away",
     CHECK_FALSE(view.rowForTrack(seventh).has_value());
 }
 
+TEST_CASE("a track set to stop after itself is marked, over the play marker",
+          "[core][playlist]") {
+    Playlist     playlist = makeAlbum();
+    PlaylistView view{playlist};
+
+    const TrackId third = playlist.at(2).id;
+    view.setCurrentTrack(third);
+    REQUIRE(view.text(2, Column::Status) == "\xE2\x96\xB6");
+
+    playlist.update(third, [](PlaylistEntry& entry) { entry.stopAfter = true; });
+
+    // Cog's order (PlaylistEntry.m:545): the track that is playing *and* set to
+    // stop after itself has one thing worth saying, and it is the second.
+    CHECK(view.text(2, Column::Status) == "\xE2\x96\xA0");
+}
+
 TEST_CASE("the current track is marked, and only the two affected rows are announced",
           "[core][playlist]") {
     Playlist     playlist = makeAlbum();

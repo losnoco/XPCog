@@ -194,6 +194,20 @@ XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", false)
 /// the audit was looking for.
 XPCOG_SETTING(ReadPlaylistsInFolders, bool, "readPlaylistsInFolders", false)
 
+/// Whether "Move to Trash" may go ahead without asking first.
+///
+/// Cog's key (`trashAskedConsent`, PlaylistController.m:1341-1366) and Cog's
+/// rule: the first time the command is used it asks, with a third button that
+/// means "yes, and stop asking", and only that third answer writes this. A plain
+/// yes moves the files and leaves the question in place for next time.
+///
+/// The asking is not politeness. Every other command on that menu edits the
+/// playlist, and this one reaches past it to the file -- so the surprise, if
+/// there is one, is not recoverable by Undo.
+///
+/// Nothing offers a control for it. Set it back to false to be asked again.
+XPCOG_SETTING(TrashAskedConsent, bool, "trashAskedConsent", false)
+
 // --- pitch and tempo --------------------------------------------------------
 //
 // Cog's Rubber Band pane and its two main-window sliders. Keys are Cog's, so an
