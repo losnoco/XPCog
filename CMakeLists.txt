@@ -11,7 +11,7 @@ xpcog_probe_system_deps()
 
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 0.3.0
+    VERSION 0.4.0
     DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
     LANGUAGES C CXX)
 
@@ -61,10 +61,13 @@ if(XPCOG_BUILD_APP)
     add_subdirectory(platform)
     add_subdirectory(app)
 
-    # Packaging, after the thing being packaged. Adds one target, `installer`,
-    # which is never built by ALL -- see packaging/windows/CMakeLists.txt.
+    # Packaging, after the thing being packaged. None of what these add is ever
+    # built by ALL: `installer` on Windows, and `sign`, `dmg` and `notarize` on
+    # macOS. See packaging/windows/CMakeLists.txt and packaging/macos/CMakeLists.txt.
     if(WIN32)
         add_subdirectory(packaging/windows)
+    elseif(APPLE)
+        add_subdirectory(packaging/macos)
     endif()
 endif()
 

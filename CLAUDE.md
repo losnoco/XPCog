@@ -118,8 +118,10 @@ Tags starting with a dot are hidden and only run when named: `[.lastfmlive]`
 hardware).
 
 Other targets: `xpcog-no-toolkit` (layering check, runs as part of `ALL`),
-`sign` on macOS (needs `XPCOG_CODESIGN_IDENTITY`), `installer` on Windows (needs
-NSIS; use a **release** tree).
+`installer` on Windows (needs NSIS; use a **release** tree), and on macOS `sign`,
+`dmg` and `notarize` (`packaging/macos/`; the identity comes from
+`XPCOG_CODESIGN_IDENTITY` and the notary credentials from the environment only —
+see the README section).
 
 ### Skips are the thing to watch
 
@@ -212,7 +214,8 @@ cannot exercise wall-clock timing.
 **Where things live**: `core/` (engine, plugin registry, SQLite library, playlist
 model, settings, HTTP, scrobbling), `codecs/` (one directory per decoder),
 `platform/` (per-OS integration behind toolkit-free headers), `app/` (wxWidgets
-UI), `tools/cli/`, `tests/`, `assets/`, `packaging/windows/`.
+UI), `tools/cli/`, `tests/`, `assets/`, `packaging/windows/`,
+`packaging/macos/`.
 
 **`vendor/` vs `ports/`**: `ports/` holds vcpkg overlay ports for dependencies
 with a real upstream release or pinned commit (vgmstream, libsidplayfp, mGBA,

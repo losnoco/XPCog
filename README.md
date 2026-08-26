@@ -117,10 +117,9 @@ FFmpeg's and TagLib's — so a freshly built binary starts from Explorer. On mac
 triplet is static and there is nothing to copy. The one thing the build stages
 itself is `crashpad_handler`, which is a second executable rather than a library
 and so is not something applocal knows about; it lands beside the binary as a
-post-build step. What remains is signing, and
-`cmake --build build/macos-debug --target sign` does that when
-`XPCOG_CODESIGN_IDENTITY` names a Developer ID identity. Packaging that folder
-into something a Windows user can double-click is a separate target, below.
+post-build step. What remains is signing and packaging, which are targets of
+their own on both platforms — a disk image on macOS, an installer on Windows,
+both below.
 
 wxWidgets is declared under a `gui` feature rather than as a plain dependency, so
 a headless configuration (`-D XPCOG_BUILD_APP=OFF`) builds no toolkit at all.
@@ -137,6 +136,102 @@ needs **wxWidgets 3.2 or newer** — the oldest release carrying `wxTaskBarIcon`
 `wxNotificationMessage` in `core` rather than in the since-merged `adv` library.
 To build the toolkit through vcpkg anyway, add the feature back:
 `cmake --preset linux-debug -D "VCPKG_MANIFEST_FEATURES=gui;sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"`.
+
+### macOS: the disk image
+
+Three targets in `packaging/macos/`, none of them built by `all` and each asked
+for by name after a build:
+
+```sh
+cmake --build build/macos-release --target sign      # signs XPCog.app in place
+cmake --build build/macos-release --target dmg       # signs, then packages
+cmake --build build/macos-release --target notarize  # submits, waits, staples
+```
+
+`dmg` produces `build/macos-release/XPCog-<version>-arm64.dmg`: the bundle, a
+symlink to `/Applications`, drag to install. It is compressed, read-only and
+plain — no background picture and no scripted Finder window, which would mean
+creating a writable image, mounting it, driving the Finder to arrange the icons
+and converting the result, on a machine with a logged-in window server. That is
+the most fragile machinery in a macOS release and it buys a prettier window.
+
+**Signing is inside out**, and the order is the substance of it. A nested
+signature is part of the bytes the enclosing one covers, so `libvgmstream.dylib`
+and `crashpad_handler` are signed first, then the bundle, then the image. This
+replaced a single `codesign --deep`, which Apple's own guidance calls unsuitable
+for nested code: it applies the outer bundle's identity and entitlements to
+everything it finds and silently skips whatever it does not recognise as code.
+
+There is **no entitlements file**, and that is the intended state. An entitlement
+is a hole in the hardened runtime, and this program wants none: not sandboxed, so
+no file-access entitlement; records nothing, so no microphone; nothing JITs; and
+every library in the bundle carries the same signature, so library validation has
+nothing to disable. `packaging/macos/SignBundle.cmake` names the three that would
+arrive if any of that changed.
+
+Set the identity in the cache or, better, in the environment:
+
+```sh
+export XPCOG_CODESIGN_IDENTITY="Developer ID Application: NAME (TEAMID)"
+```
+
+`security find-identity -v -p codesigning` lists what the machine holds. Without
+one, `dmg` packages an unsigned image and says so; `sign` refuses, because
+someone who typed that target name and got a zero exit status has been told
+nothing.
+
+**Notarisation** takes an App Store Connect API key, from the environment only —
+no cache variable and no `-D`, because a `.p8` is a private key that can notarise
+anything under the team's name and both of those land in files that get committed
+by accident:
+
+```sh
+export XPCOG_NOTARY_KEY=~/keys/AuthKey_XXXXXXXXXX.p8
+export XPCOG_NOTARY_KEY_ID=XXXXXXXXXX
+export XPCOG_NOTARY_ISSUER_ID=00000000-0000-0000-0000-000000000000
+cmake --build build/macos-release --target notarize
+```
+
+An API key rather than an Apple ID and an app-specific password, which
+`notarytool` also accepts: the password form ties releases to one person's Apple
+ID and unlocks a great deal more than notarisation, while a notary key does one
+thing and revokes without anyone losing anything else. The target waits for
+Apple's answer, prints Apple's log on a rejection rather than leaving you to fetch
+it by submission id, staples the ticket to the image and finishes by asking
+`spctl` the question the user's Mac will ask. Stapling is what makes the ticket
+travel with the download: without it Gatekeeper asks Apple over the network at
+first launch and fails closed on a machine that is offline.
+
+**CI builds one on every run**, and notarises on `main` and on tags. The `macOS
+disk image` job configures `macos-app-release`, imports the certificate into a
+keychain that exists for the length of that job, packages, and attaches
+`XPCog-<version>-arm64.dmg` to the run — so a pull request that breaks the
+bundle says so where it broke. Notarisation is drawn at a different line than
+packaging because the costs differ in kind: packaging is a minute of the runner's
+own time, notarisation is minutes of waiting on a service this project does not
+control, answering a question that only matters for an image somebody downloads.
+A pull request from a fork sees no secrets and produces an unsigned image, which
+is the correct outcome — packaging is what it is testing.
+
+Five repository secrets, under Settings → Secrets and variables → Actions:
+
+| Secret | What it is |
+| --- | --- |
+| `MACOS_CERTIFICATE_P12` | the Developer ID Application certificate *and its private key*, exported from Keychain Access as `.p12`, then `base64 -i cert.p12 \| pbcopy` |
+| `MACOS_CERTIFICATE_PASSWORD` | the password given to that export |
+| `MACOS_NOTARY_KEY_P8` | the App Store Connect `.p8`, base64 the same way |
+| `MACOS_NOTARY_KEY_ID` | the key's ten-character id |
+| `MACOS_NOTARY_ISSUER_ID` | the issuer UUID shown above the key list |
+
+The signing identity is *not* a sixth secret: the job reads it out of the
+imported certificate, which is one less thing to keep in step and makes "that
+`.p12` holds no Developer ID Application certificate" a message at import time
+rather than a `codesign` error twenty minutes later. It is not secret in any
+case — the team name and id are in every signature XPCog ships.
+
+**arm64 only.** The runner builds natively and an Intel Mac cannot run the
+result. A universal image means a second vcpkg tree, a second build and a `lipo`
+pass over the executable and `libvgmstream`, which is not what this does today.
 
 ### Windows: the installer
 
@@ -158,7 +253,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-0.3.0-x64-setup.exe
+:: -> build\windows-release\XPCog-0.4.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -179,7 +274,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-0.3.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-0.4.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -528,8 +623,9 @@ op run --env-file=lastfm.env -- cmake --preset windows-debug
 Configure prints `Last.fm: API key configured`, or says the feature will report
 itself unavailable. CI reads the same two values out of the
 `LASTFM_API_KEY` and `LASTFM_API_SECRET` repository secrets, by that same
-environment path, and only in the job that builds the Windows installer — no
-other job produces something a person downloads. That job fails when configure
+environment path, and only in the two jobs that package something — the Windows
+installer and the macOS disk image. No other job produces something a person
+downloads. That job fails when configure
 reports no key, because the alternative is shipping an installer whose Last.fm
 pane is greyed with nothing to say why. A pull request from a fork cannot see
 secrets and packages exactly such a build, deliberately. To check a key works before wiring anything up:

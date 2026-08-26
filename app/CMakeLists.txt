@@ -484,20 +484,9 @@ endif()
 # static, so the only thing to copy is libvgmstream, which the section above
 # does.
 #
-# What remains is signing, which was never the deploy tool's real job. Set this to
-# a "Developer ID Application: ... (TEAMID)" identity to produce a bundle that can
-# leave this machine; left empty, the bundle is unsigned, which is enough to run
-# locally and refused by Gatekeeper anywhere else.
+# What remains is signing, which was never the deploy tool's real job -- and
+# which lives in packaging/macos/ now, beside the disk image it is a step of.
+# `sign`, `dmg` and `notarize` are defined there; XPCOG_CODESIGN_IDENTITY is
+# declared there too. This file's business with the bundle ends at the bytes
+# going into it, which is what the two sections above are.
 # ---------------------------------------------------------------------------
-set(XPCOG_CODESIGN_IDENTITY "" CACHE STRING
-    "macOS code signing identity for the sign target")
-
-if(APPLE AND XPCOG_CODESIGN_IDENTITY)
-    add_custom_target(sign
-        COMMAND codesign --force --deep --options runtime --timestamp
-                --sign "${XPCOG_CODESIGN_IDENTITY}" "$<TARGET_BUNDLE_DIR:xpcog-app>"
-        DEPENDS xpcog-app
-        COMMENT "Signing XPCog.app"
-        VERBATIM)
-    set_target_properties(sign PROPERTIES FOLDER app)
-endif()

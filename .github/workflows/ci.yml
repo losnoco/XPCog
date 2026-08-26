@@ -762,3 +762,259 @@ jobs:
         with:
           path: .vcpkg-cache
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+  macos-package:
+    # The macOS disk image, built the way it would ship.
+    #
+    # A job of its own for the same reason the Windows installer is one, and the
+    # reason reads the same with the nouns changed: the matrix job builds a Debug
+    # tree because that is what runs the test suite, and a Debug tree is not what
+    # a person downloads. This one is RelWithDebInfo and app-only -- the CLI and
+    # the three test binaries never go into a bundle, so building them here would
+    # be link time spent on files nothing packages.
+    #
+    # It runs on pull requests too. Packaging breaks in ways compiling does not:
+    # a helper that stopped being staged into Contents/MacOS, a dylib whose
+    # install name went back to an absolute path, an asset directory that no
+    # longer lands in Resources. None of that is visible to any other job here.
+    #
+    # What a pull request does *not* get is a notarised image, and on a fork not
+    # a signed one either -- see the two steps at the end for where that line is
+    # drawn and why.
+    name: macOS disk image
+    runs-on: macos-26
+    # See the matrix job above for why an hour.
+    timeout-minutes: 60
+
+    # At the job level rather than on each step, because `if: env.FOO != ''` is
+    # the only way a step can ask whether a secret exists: the secrets context is
+    # not available to a step-level `if`, and a fork's pull request gets every
+    # one of these as an empty string.
+    env:
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+      MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+
+    # `bash` rather than the default shell, and it is load-bearing rather than a
+    # preference: GitHub runs the default with `-e` alone, and two steps below
+    # pipe cmake into `tee` so that a later step can assert on what it printed.
+    # Without pipefail the exit status of such a step is tee's, which is always
+    # zero -- so a configure or a packaging run that failed outright would carry
+    # on to the checks, which would then report the interesting thing rather
+    # than the actual one. The Windows installer job gets this from its
+    # per-step `shell: bash`; this says it once.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The build tools only. The matrix job's second brew line installs the
+      # command-line encoders, which exist for test fixtures, and this job runs
+      # no tests.
+      - name: Install build dependencies
+        run: brew install ninja pkg-config autoconf automake libtool nasm
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          runVcpkgInstall: false
+          # See the matrix job: an overlay port's manifest is also a vcpkg.json.
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
+
+      # Two restore keys, the second being the matrix job's -- the same argument
+      # the Windows installer job makes. `macos-app-release` asks vcpkg for
+      # exactly the package set `macos-debug` does; XPCOG_BUILD_CLI and
+      # XPCOG_BUILD_TESTS are ours rather than vcpkg features, so they change
+      # nothing about what gets installed.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-v3-macos-app-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          restore-keys: |
+            vcpkg-v3-macos-app-release-
+            vcpkg-v3-macos-debug-
+
+      # See the matrix job: vcpkg creates this, but not if configure dies first.
+      - name: Prepare the binary cache directory
+        run: mkdir -p .vcpkg-cache
+
+      # The certificate, into a keychain that exists for this job and no longer.
+      #
+      # Not the login keychain, which on a GitHub runner is unlocked with a known
+      # password and would leave the private key sitting in an image somebody
+      # else's job runs in next. A keychain created here, unlocked with a random
+      # password, added to the front of the search list and deleted at the end
+      # holds the key for the length of one build.
+      #
+      # Four details, each of which is a silent failure when it is missing.
+      # `-T /usr/bin/codesign` marks codesign as allowed to use the imported key.
+      # `set-key-partition-list` is what stops macOS prompting for permission the
+      # first time it does -- a prompt no one is there to answer, which appears
+      # in the log as codesign hanging until the job times out. `list-keychains
+      # -s` puts this keychain where codesign will look; without it the identity
+      # is present and not found. And `set-keychain-settings -lut` raises the
+      # auto-lock timeout past the length of a cold build, which otherwise locks
+      # the keychain somewhere in the middle of vcpkg and fails at the last step.
+      #
+      # The identity is then read out of the keychain rather than being a sixth
+      # secret. One less thing to keep in step with the certificate, and it makes
+      # "the certificate in the secret is not a Developer ID Application one" a
+      # message here instead of a codesign error twenty minutes later. It is not
+      # secret in any case: the team name and id are in every signature XPCog
+      # ships, which is what a Developer ID is for.
+      - name: Import the signing certificate
+        id: signing
+        if: env.MACOS_CERTIFICATE_P12 != ''
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/xpcog-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          P12="$RUNNER_TEMP/certificate.p12"
+          trap 'rm -f "$P12"' EXIT
+
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$P12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" \
+              -T /usr/bin/codesign -T /usr/bin/security -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+              -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" \
+              $(security list-keychains -d user | tr -d '"')
+
+          IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+              | grep "Developer ID Application" || true)
+          COUNT=$(printf '%s' "$IDENTITIES" | grep -c . || true)
+          if [ "$COUNT" -ne 1 ]; then
+              echo "::error::expected exactly one Developer ID Application identity in MACOS_CERTIFICATE_P12, found $COUNT. Export only the Developer ID Application certificate and its private key."
+              exit 1
+          fi
+          IDENTITY=$(printf '%s' "$IDENTITIES" | sed -E 's/.*"(.*)".*/\1/')
+
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+          echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
+          echo "Signing as $IDENTITY"
+
+      # Signing without a certificate is not an error here. A fork's pull request
+      # gets no secrets by design, and what it is testing is that the bundle
+      # still packages -- so it packages an unsigned image and says so.
+      - name: Note that this run will not be signed
+        if: env.MACOS_CERTIFICATE_P12 == ''
+        run: |
+          echo "::warning::no MACOS_CERTIFICATE_P12 secret -- packaging an unsigned disk image. Gatekeeper will refuse it."
+
+      # The Last.fm credentials, through the environment for the reason the
+      # Windows installer job sets out at length: a -D lands in CMakeCache.txt
+      # and outlives the run that supplied it. The identity rides along the same
+      # way -- packaging/macos/SignBundle.cmake reads it from the environment, so
+      # nothing here writes a certificate name into the build tree either.
+      - name: Configure
+        id: configure
+        env:
+          XPCOG_LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          XPCOG_LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: cmake --preset macos-app-release 2>&1 | tee configure.log
+
+      # See the Windows installer job for why this is asserted from the configure
+      # output rather than from the secret being non-empty, and why forks skip it.
+      - name: Check the Last.fm credentials were baked in
+        if: github.event.pull_request.head.repo.fork != true
+        run: |
+          if ! grep -q "Last.fm: API key configured" configure.log; then
+              echo "::error::configure reports no Last.fm API key. Set the LASTFM_API_KEY and LASTFM_API_SECRET repository secrets; see the Configure step for what they are."
+              exit 1
+          fi
+          echo "Last.fm credentials reached the build."
+
+      - name: Build
+        run: cmake --build --preset macos-app-release
+
+      # Named explicitly because `dmg` is deliberately not part of ALL. It signs
+      # the bundle on the way in -- nested code first, then the bundle, then the
+      # image -- which is why the identity is in this step's environment.
+      - name: Build the disk image
+        env:
+          XPCOG_CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: cmake --build --preset macos-app-release --target dmg 2>&1 | tee package.log
+
+      # Asserted, not assumed, and for the reason that runs through this whole
+      # file: an unsigned bundle packages perfectly well. Without this check a
+      # missing `-T /usr/bin/codesign`, a keychain that fell off the search list
+      # or an identity string that lost its team id all produce a green job and a
+      # disk image nobody can open.
+      #
+      # Skipped when there is no certificate, which is the fork case above.
+      - name: Check the bundle was signed
+        if: steps.signing.outputs.identity != ''
+        run: |
+          if ! grep -q "XPCog: signed XPCog.app as Developer ID Application" package.log; then
+              echo "::error::the bundle was not signed with a Developer ID. $(grep 'XPCog: signed' package.log || echo 'no signing line in the packaging log at all')"
+              exit 1
+          fi
+          grep "XPCog: signed" package.log
+
+      # Notarisation, on main and on tags only.
+      #
+      # The line is drawn here rather than at packaging because the two costs are
+      # different in kind. Packaging is a minute of the runner's own time and
+      # catches regressions, so every pull request gets it. Notarisation uploads
+      # to Apple and waits several minutes for a service this project does not
+      # control, and it answers a question -- will Gatekeeper open this -- that
+      # only matters for an image somebody is going to download. A pull request
+      # producing a signed but unnotarised image is the correct amount of proof
+      # that the signing works.
+      #
+      # The .p8 is written to a file because that is the only form notarytool
+      # accepts, into RUNNER_TEMP, and removed by a trap on the way out whether
+      # the submission succeeded or not.
+      - name: Notarise and staple
+        if: >-
+          steps.signing.outputs.identity != ''
+          && env.MACOS_NOTARY_KEY_P8 != ''
+          && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+        env:
+          XPCOG_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          XPCOG_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          export XPCOG_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
+          trap 'rm -f "$XPCOG_NOTARY_KEY"' EXIT
+          printf '%s' "$MACOS_NOTARY_KEY_P8" | base64 --decode > "$XPCOG_NOTARY_KEY"
+          cmake --build --preset macos-app-release --target notarize
+
+      # if-no-files-found: error, for the reason the Windows one gives -- a green
+      # job with no disk image in it is the one way this fails quietly.
+      #
+      # The name says arm64 because that is what the runner builds and what the
+      # bundle contains. An Intel Mac cannot run it; a universal image is a
+      # second vcpkg tree, a second build and a lipo pass, and it is not what
+      # this job does today.
+      - name: Upload the disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: XPCog-macos-arm64-dmg
+          path: build/macos-app-release/XPCog-*.dmg
+          if-no-files-found: error
+
+      # always(), because a keychain holding a Developer ID private key is not
+      # something to leave behind on a failure. The runner is thrown away either
+      # way; this is for the case where it is not, and it costs a line.
+      - name: Remove the signing keychain
+        if: always() && steps.signing.outputs.keychain != ''
+        run: security delete-keychain "${{ steps.signing.outputs.keychain }}" || true
+
+      # See the matrix job: gated on configure, not on the job as a whole.
+      - name: Save vcpkg binary cache
+        if: >-
+          always() && steps.configure.outcome == 'success'
+          && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
