@@ -191,6 +191,10 @@ struct PlaylistBackedDelegate final : AudioEngine::Delegate {
             }
         }
     }
+
+    void trackFailed(const Url& url) override { failed.push_back(url); }
+
+    std::vector<Url> failed;
 };
 
 std::vector<float> playThrough(const std::vector<std::filesystem::path>& paths,
@@ -424,4 +428,79 @@ TEST_CASE("three tracks join without accumulating drift", "[gapless]") {
 
     const std::vector<float> played = playThrough({*a, *b, *c});
     CHECK(played.size() == 30000 * kChannels);
+}
+
+TEST_CASE("an advance gives up after a few dead tracks in a row", "[gapless]") {
+    // The share went away. Every entry after the one playing is unopenable, and
+    // the advance used to step over all of them -- opens fail at decode speed,
+    // so a long playlist emptied itself in a second or two and playback ended
+    // somewhere nobody chose. It stops after a short run instead.
+    const auto good = writeWav("dead_run.wav", 0, 4410);
+
+    RingBuffer  ring(static_cast<std::size_t>(kSampleRate * 0.5) * kChannels);
+    auto        output = makeOfflineOutput(ring);
+    auto        store  = makeMemorySettingsStore();
+    Settings    settings(*store);
+    AudioEngine engine(registry(), *output, ring, settings);
+
+    PlaylistBackedDelegate     delegate;
+    std::vector<PlaylistEntry> entries;
+    PlaylistEntry              first;
+    first.url = Url::fromLocalPath(good);
+    entries.push_back(std::move(first));
+    // Distinct dead entries, so the "tried this one already" guard cannot be
+    // what ends the run -- only the count can.
+    for (int i = 0; i < 12; ++i) {
+        PlaylistEntry entry;
+        entry.url = Url::fromLocalPath(fixtureDir() /
+                                       ("dead_" + std::to_string(i) + ".wav"));
+        entries.push_back(std::move(entry));
+    }
+    const auto ids = delegate.playlist.insert(0, std::move(entries));
+    REQUIRE(ids.size() == 13);
+    delegate.playlist.setRepeat(RepeatMode::None);
+    delegate.playlist.setCurrent(ids.front());
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(Url::fromLocalPath(good)));
+    engine.waitUntilFinished();
+    engine.stop();
+
+    // Three asked for, three failed, and the remaining nine never touched.
+    CHECK(delegate.handedOut.size() == 3);
+    CHECK(delegate.failed.size() == 3);
+}
+
+TEST_CASE("repeat-one over an unopenable file stops rather than spinning",
+          "[gapless]") {
+    // The other half of the same rule, and the one a count alone answers only
+    // slowly: the playlist hands back the same dead URL for ever, so the engine
+    // stops the first time a candidate it has already tried comes round.
+    const auto good = writeWav("repeat_one.wav", 0, 4410);
+
+    RingBuffer  ring(static_cast<std::size_t>(kSampleRate * 0.5) * kChannels);
+    auto        output = makeOfflineOutput(ring);
+    auto        store  = makeMemorySettingsStore();
+    Settings    settings(*store);
+    AudioEngine engine(registry(), *output, ring, settings);
+
+    // One entry, and it is dead. The playing track is not in the playlist, which
+    // is what leaves the repeat rule with nothing to offer but the dead one.
+    PlaylistBackedDelegate     delegate;
+    std::vector<PlaylistEntry> entries;
+    PlaylistEntry              dead;
+    dead.url = Url::fromLocalPath(fixtureDir() / "repeat_one_missing.wav");
+    entries.push_back(std::move(dead));
+    const auto ids = delegate.playlist.insert(0, std::move(entries));
+    REQUIRE(ids.size() == 1);
+    delegate.playlist.setRepeat(RepeatMode::One);
+    delegate.playlist.setCurrent(ids.front());
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(Url::fromLocalPath(good)));
+    engine.waitUntilFinished();
+    engine.stop();
+
+    // Tried once. Asking again gets the same URL, and that is the stop.
+    CHECK(delegate.failed.size() == 1);
 }

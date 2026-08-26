@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <utility>
-#include <vector>
 
 namespace xpcog::app {
 namespace {
@@ -156,7 +155,6 @@ void PlaybackController::resumeTrack(TrackId id, double seconds, bool startPause
     // The same route restartForOutputChange() takes, and for the same reason:
     // resumeAt_ survives requestStart() and is applied by finishStart() at the
     // first moment a seek is allowed.
-    failedStarts_.clear();
     resumeAt_ = std::max(0.0, seconds);
     requestStart(id);
 
@@ -176,7 +174,6 @@ void PlaybackController::restartForOutputChange() {
     }
     // Not playTrack(): the resume position has to survive the start, and
     // playTrack() clears it because an ordinary gesture begins at the top.
-    failedStarts_.clear();
     resumeAt_ = position();
     requestStart(current);
 }
@@ -189,9 +186,8 @@ void PlaybackController::outputSwitchFailed() {
 }
 
 void PlaybackController::playTrack(TrackId id) {
-    // A fresh gesture, so the record of what has already failed starts empty and
-    // the track begins at its top rather than wherever the last one was.
-    failedStarts_.clear();
+    // A fresh gesture, so the track begins at its top rather than wherever the
+    // last one was.
     resumeAt_ = 0.0;
     requestStart(id);
 }
@@ -249,7 +245,7 @@ void PlaybackController::finishStart(TrackId id, bool opened,
     starting_.store(false);
 
     if (opened) {
-        failedStarts_.clear();
+        clearFailure(id);
         audible_ = id;
         currentTrackChanged.publish(audible_);
         publishState();
@@ -274,23 +270,22 @@ void PlaybackController::finishStart(TrackId id, bool opened,
     }
 
     resumeAt_ = 0.0;
+    markFailure(id);
     playbackFailed.publish(id, toUtf8(_("No decoder could open this file")));
-    failedStarts_.push_back(id);
 
-    // Cog does not stall the playlist on one bad file, and neither does this: ask
-    // for the next one exactly as an end-of-track would. But nextForPlayback()
-    // answers from the repeat rules, so with repeat on and nothing playable left
-    // it offers the same entry for ever -- hence the memory of what has already
-    // been tried this gesture.
-    const auto following = playlist_.nextForPlayback();
-    if (following.has_value() &&
-        std::find(failedStarts_.begin(), failedStarts_.end(), *following) ==
-            failedStarts_.end()) {
-        requestStart(*following);
-        return;
-    }
-
-    failedStarts_.clear();
+    // And that is where it ends. This start was asked for -- a double-click, the
+    // Next button, a session being resumed -- so the entry the listener named is
+    // the one they get an answer about, and the answer is that it would not
+    // open.
+    //
+    // It used to ask the playlist for the following entry and start that
+    // instead, on the grounds that Cog does not stall on one bad file. That is
+    // true of a track *ending* into a bad neighbour, which the engine's own
+    // advance still steps over (AudioEngine::pumpTrack, kMaxFailedAdvances). It
+    // is not true of a track being chosen: a share that has gone away makes
+    // every entry fail, and the chain then ran the length of the playlist as
+    // fast as the opens could fail, rewriting the status line each time and
+    // ending somewhere the listener never asked to be.
     audible_ = kInvalidTrackId;
     currentTrackChanged.publish(audible_);
     publishState();
@@ -345,7 +340,6 @@ void PlaybackController::stop() {
     // a track as current after the user asked for silence.
     ++startGeneration_;
     starting_.store(false);
-    failedStarts_.clear();
 
     // Posted, because stop() blocks: it plays out the fade and joins two threads.
     // Short, but it is the same thread that draws the window.
@@ -457,6 +451,9 @@ void PlaybackController::trackBegan(const Url& url) {
         for (std::size_t i = 0; i < playlist_.size(); ++i) {
             if (playlist_.at(i).url.toString() == text) {
                 audible_ = playlist_.at(i).id;
+                // The share came back, or the file did. A row marked unplayable
+                // by an earlier failure has just played, so the mark is stale.
+                clearFailure(audible_);
                 // setAudible, not setCurrent: this is the seam reaching the
                 // speaker, and the engine asked what follows this track a
                 // buffer's worth of audio ago. Resetting the read-ahead cursor
@@ -503,10 +500,54 @@ void PlaybackController::stoppedNaturally() {
 void PlaybackController::trackFailed(const Url& url) {
     const std::string name = url.toString();
     dispatch_([this, name] {
+        TrackId id = kInvalidTrackId;
+        for (std::size_t i = 0; i < playlist_.size(); ++i) {
+            if (playlist_.at(i).url.toString() == name) {
+                id = playlist_.at(i).id;
+                markFailure(id);
+                break;
+            }
+        }
         playbackFailed.publish(
-            kInvalidTrackId,
-            toUtf8(wxString::Format(_("Could not play %s"), toWx(name))));
+            id, toUtf8(wxString::Format(_("Could not play %s"), toWx(name))));
     });
+}
+
+// --- the unplayable mark ------------------------------------------------
+//
+// The same flag the library scanner sets, and it is read the same way: the model
+// greys the row and puts a warning glyph in the status column. Set from playback
+// as well as from scanning because the two find different things -- the scanner
+// says a file has no decoder, this says the file was not there when it was
+// wanted, which is what a share going away looks like.
+
+void PlaybackController::markFailure(TrackId id) {
+    if (playlist_.find(id) == nullptr) {
+        return;
+    }
+    // Through update() rather than by writing to the entry, so the playlist's
+    // own change notification fires and the row redraws.
+    //
+    // The stored sentence is English and stays English: the library persists this
+    // field, and what goes in a database is not what a window says. The
+    // translated sentence is the one published to the status line.
+    playlist_.update(id, [](PlaylistEntry& entry) {
+        entry.error        = true;
+        entry.errorMessage = "could not be opened for playback";
+    });
+    trackMetadataChanged.publish(id);
+}
+
+void PlaybackController::clearFailure(TrackId id) {
+    const PlaylistEntry* entry = playlist_.find(id);
+    if (entry == nullptr || !entry->error) {
+        return;
+    }
+    playlist_.update(id, [](PlaylistEntry& target) {
+        target.error = false;
+        target.errorMessage.clear();
+    });
+    trackMetadataChanged.publish(id);
 }
 
 }  // namespace xpcog::app

@@ -52,7 +52,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace xpcog::app {
 
@@ -166,8 +165,12 @@ public:
     /// this exists so it can say so rather than simply looking stuck.
     Signal<TrackId> startPending;
 
-    /// A file could not be opened. Playback carries on, matching Cog's
-    /// behaviour of not stalling on one bad file.
+    /// A file could not be opened, and the entry has been marked unplayable.
+    ///
+    /// A start that was asked for stops here; only a track *ending* into a bad
+    /// neighbour steps over it, and then over no more than a few in a row --
+    /// AudioEngine's kMaxFailedAdvances. `id` is kInvalidTrackId when the URL
+    /// that failed is not in the playlist any more.
     Signal<TrackId, std::string> playbackFailed;
 
 private:
@@ -190,6 +193,11 @@ private:
     /// fallback for an output change that could not be made under the running
     /// stream.
     void restartForOutputChange();
+
+    /// Marks `id` unplayable, or takes the mark off again once it plays. Both
+    /// on the interface's thread, and both redraw the row.
+    void markFailure(TrackId id);
+    void clearFailure(TrackId id);
 
     const PluginRegistry& registry_;
     Playlist&             playlist_;
@@ -233,12 +241,6 @@ private:
     /// so a stop is reported the moment it is asked for rather than once the fade
     /// and the joins have finished.
     std::atomic<bool> stopping_{false};
-
-    /// Entries that failed to open during the current gesture. The skip-to-next
-    /// rule needs a memory across asynchronous hops for the same reason the
-    /// engine's advance loop does: nextForPlayback() answers from the repeat
-    /// rules, so with repeat on it offers the same dead entry for ever.
-    std::vector<TrackId> failedStarts_;
 
     /// Where a start now in flight should land, or 0 to begin at the top.
     ///

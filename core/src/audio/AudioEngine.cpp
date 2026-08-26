@@ -30,6 +30,15 @@ constexpr std::size_t kPreRingSamples = 1U << 18;
 /// overhead is irrelevant, small enough to stay well inside the shallow ring.
 constexpr std::size_t kDspBlockSamples = 4096;
 
+/// How many tracks in a row may fail to open before an advance gives up.
+///
+/// One unreadable file in the middle of an album is a thing to step over; a
+/// share that has gone away makes every remaining entry unreadable, and stepping
+/// over those means running the whole playlist at decode speed while the
+/// listener watches error after error go by. A short run tells the two apart
+/// without asking anyone which case it is.
+constexpr std::size_t kMaxFailedAdvances = 3;
+
 }  // namespace
 
 struct AudioEngine::OpenTrack {
@@ -755,6 +764,11 @@ bool AudioEngine::pumpTrack() {
             // simplest case. Seeing a failed candidate come round again means
             // the delegate has no fresh answer left, and the honest outcome is
             // to stop, not to spin at full speed emitting trackFailed.
+            //
+            // The count is the other half of that, and it is what a playlist of
+            // *distinct* dead entries needs: nothing repeats, so the list above
+            // never matches, and the advance would walk the rest of the playlist
+            // in a second or two. See kMaxFailedAdvances.
             std::vector<std::string> failedThisAdvance;
 
             bool advanced = false;
@@ -799,10 +813,12 @@ bool AudioEngine::pumpTrack() {
                 failedThisAdvance.push_back(key);
                 if (delegate_ != nullptr) {
                     delegate_->trackFailed(candidate);
-                    next = delegate_->nextTrack();
-                } else {
-                    next.reset();
                 }
+                if (failedThisAdvance.size() >= kMaxFailedAdvances ||
+                    delegate_ == nullptr) {
+                    break;
+                }
+                next = delegate_->nextTrack();
             }
 
             if (!advanced) {

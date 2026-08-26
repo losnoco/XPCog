@@ -1278,6 +1278,25 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   repeat-one, repeat-all over an all-bad playlist, and every mixed case: a
   candidate that opens resets the situation by ending the advance.
 
+- **An advance also gives up after three dead tracks in a row**, which the memory
+  above does not cover. Reported from use: a track on a share that had gone away
+  was double-clicked, and the player walked the whole playlist. Nothing repeated,
+  so the "tried this one already" guard never matched -- and opens fail at decode
+  speed, so several hundred entries went by in a second or two, each rewriting
+  the status line, ending wherever the list ran out. One rotten file in the
+  middle of an album is still stepped over; `kMaxFailedAdvances` is what tells
+  that case from a share that is simply not there.
+
+  The gesture that *starts* a track no longer advances at all -- see the
+  deliberate differences below. Both halves are needed: the run the listener saw
+  began with the double-click, which the engine's advance loop never sees.
+
+  Either way the entry is marked unplayable: the same `error` flag the library
+  scanner sets, so the row greys and takes the warning glyph it already has a
+  column for. Playing it clears the mark, which is what a share coming back looks
+  like. The stored sentence is English -- the library persists that field, and
+  what a window says is the translated one published to the status line.
+
 - **Tracker modules**, through libopenmpt. Port of Cog's OpenMPT plugin, and the
   first decoder added since the architecture claimed that adding one is a single
   `xpcog_add_codec()` call. It was: one directory, one registrar, one option, one
@@ -3380,6 +3399,17 @@ All of these are also documented at the call site.
   worked around in `tests/codecs/test_sid.cpp`, which compares how *much* two
   subsongs differ rather than whether they differ at all. That matters: written
   as an exact comparison first, the test passed with `selectSong()` sabotaged.
+
+- **A start that was asked for stops on failure; only an advance skips.** Cog
+  treats the two the same: `-playEntryAtIndex:` reports the failure and moves to
+  the next entry, on the reasonable ground that one bad file should not stall a
+  playlist. That is right for a track *ending* into a bad neighbour, and XPCog
+  keeps it there (bounded, see `kMaxFailedAdvances`). It is wrong for a track
+  being chosen. A double-click names one entry, and when its share has gone away
+  every other entry has gone away with it -- so the skip chain answered a request
+  for one track by running the length of the playlist and stopping somewhere
+  nobody chose. `PlaybackController::finishStart()` now reports the entry the
+  listener named and stops there.
 
 - **Sort order is display-only and never changes playback order.** In Cog, shuffle
   and next/previous operate on `arrangedObjects` — the *sorted* order — a
