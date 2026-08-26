@@ -179,6 +179,39 @@ TEST_CASE("repeat one replays until the user skips", "[playlist]") {
     REQUIRE(playlist.find(*playlist.current())->rawTitle == "2");
 }
 
+TEST_CASE("peeking ahead walks without moving the current entry", "[playlist]") {
+    // What the quiet search for a playable track needs: look several entries
+    // forward while the one being *heard* stays current, so the selection never
+    // follows the search onto rows the audio does not reach.
+    Playlist   playlist;
+    const auto ids = fill(playlist, 4);
+    playlist.setRepeat(RepeatMode::None);
+    playlist.setCurrent(ids[0]);
+
+    TrackId at = ids[0];
+    std::vector<std::string> seen;
+    while (const auto ahead = playlist.peekNext(at)) {
+        seen.push_back(playlist.find(*ahead)->rawTitle);
+        at = *ahead;
+    }
+    CHECK(seen == std::vector<std::string>{"2", "3", "4"});
+    CHECK(playlist.current() == ids[0]);
+}
+
+TEST_CASE("peeking ahead ignores repeat-one, as Next does", "[playlist]") {
+    // Otherwise the search would offer the track already playing for ever, and a
+    // playlist on repeat-one could never be searched at all.
+    Playlist   playlist;
+    const auto ids = fill(playlist, 3);
+    playlist.setRepeat(RepeatMode::One);
+    playlist.setCurrent(ids[0]);
+
+    const auto ahead = playlist.peekNext(ids[0]);
+    REQUIRE(ahead.has_value());
+    CHECK(playlist.find(*ahead)->rawTitle == "2");
+    CHECK(playlist.current() == ids[0]);
+}
+
 TEST_CASE("repeat album loops the album, not the playlist", "[playlist]") {
     Playlist                   playlist;
     std::vector<PlaylistEntry> entries;

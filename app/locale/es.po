@@ -990,13 +990,21 @@ msgstr ""
 msgid "Invalid URL"
 msgstr "URL no válida"
 
-#: app/src/PlaybackController.cpp:277
+#: app/src/PlaybackController.cpp:279
 msgid "No decoder could open this file"
 msgstr "Ningún decodificador pudo abrir este archivo"
 
-#: app/src/PlaybackController.cpp:508
+#: app/src/PlaybackController.cpp:429
+msgid "Looking for a playable track..."
+msgstr "Buscando una pista que se pueda reproducir..."
+
+#: app/src/PlaybackController.cpp:483 app/src/PlaybackController.cpp:621
 msgid "Could not play %s"
 msgstr "No se pudo reproducir %s"
+
+#: app/src/PlaybackController.cpp:492
+msgid "No playable track found"
+msgstr "No se encontró ninguna pista que se pueda reproducir"
 
 #: app/src/PreferencesDialog.cpp:58
 msgid "None"
@@ -1238,7 +1246,17 @@ msgstr "Seguir en la lista la pista que suena"
 msgid "Move the selection to each track as it starts."
 msgstr "Mueve la selección a cada pista en cuanto empieza."
 
-#: app/src/PreferencesDialog.cpp:824
+#: app/src/PreferencesDialog.cpp:855
+msgid "Keep playing while looking for the next playable track"
+msgstr "Seguir reproduciendo mientras se busca la siguiente pista reproducible"
+
+#: app/src/PreferencesDialog.cpp:857
+msgid ""
+"When Next lands on a track that will not open, carry on playing the current one until a playable track is found."
+msgstr ""
+"Cuando Siguiente llega a una pista que no se puede abrir, sigue sonando la actual hasta encontrar una que sí se pueda reproducir."
+
+#: app/src/PreferencesDialog.cpp:859
 msgid "Resume playback on startup"
 msgstr "Reanudar la reproducción al iniciar"
 

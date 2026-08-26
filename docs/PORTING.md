@@ -1297,6 +1297,12 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   like. The stored sentence is English -- the library persists that field, and
   what a window says is the translated one published to the status line.
 
+  **Next was given its search back, in two shapes**, once the stopping rule had
+  been lived with: stopping is right for a track that was named and wrong for a
+  button whose whole meaning is "the one after this". See the deliberate
+  differences below for the two shapes, the setting that picks between them, and
+  what cancelling one can and cannot interrupt.
+
 - **Tracker modules**, through libopenmpt. Port of Cog's OpenMPT plugin, and the
   first decoder added since the architecture claimed that adding one is a single
   `xpcog_add_codec()` call. It was: one directory, one registrar, one option, one
@@ -3400,16 +3406,59 @@ All of these are also documented at the call site.
   subsongs differ rather than whether they differ at all. That matters: written
   as an exact comparison first, the test passed with `selectSong()` sabotaged.
 
-- **A start that was asked for stops on failure; only an advance skips.** Cog
-  treats the two the same: `-playEntryAtIndex:` reports the failure and moves to
-  the next entry, on the reasonable ground that one bad file should not stall a
-  playlist. That is right for a track *ending* into a bad neighbour, and XPCog
-  keeps it there (bounded, see `kMaxFailedAdvances`). It is wrong for a track
-  being chosen. A double-click names one entry, and when its share has gone away
-  every other entry has gone away with it -- so the skip chain answered a request
-  for one track by running the length of the playlist and stopping somewhere
-  nobody chose. `PlaybackController::finishStart()` now reports the entry the
-  listener named and stops there.
+- **A track that was named stops on failure; Next keeps looking.** Cog treats
+  every start the same: `-playEntryAtIndex:` reports the failure and moves to the
+  next entry, on the reasonable ground that one bad file should not stall a
+  playlist. XPCog splits the two apart by what the gesture *said*.
+
+  A double-click names one entry. When its share has gone away every other entry
+  has gone away with it, so a skip chain answers a request for one track by
+  running the length of the playlist and stopping somewhere nobody chose;
+  `finishStart()` reports that entry and stops.
+
+  Next names no entry -- it means "the one after this", and when that one will
+  not open, "the next one that works" is what the button is for. So Next searches,
+  and it is the only gesture that does. It ends on the first entry that opens, or
+  when the playlist has been all the way round and handed back something already
+  tried. A track *ending* into a bad neighbour is a third case again, and steps
+  over no more than a few (`kMaxFailedAdvances`).
+
+  Cancelling the search needs nothing of its own: every start takes a new
+  generation and a superseded answer is dropped before it is read, so any gesture
+  that starts something else has already ended it. What cannot be cancelled is an
+  open already under way -- a source waiting out its own timeout is not reachable
+  from the interface -- so a cancel takes effect at the next candidate rather
+  than at once.
+
+- **The search has two shapes, and `keepPlayingWhileSkipping` picks one.** Off,
+  it runs where Next has always run: what was playing stops, each attempt is
+  named in the status line, each dead entry greys as it is passed. On, it runs
+  silently underneath the track that is playing -- candidates are opened and
+  thrown away on the start thread, nothing audible changes until one of them
+  opens, and if none does, the track that was playing simply carries on.
+
+  The quiet shape needed one thing from core: `Playlist::peekNext(from)`, "what
+  Next would select from here, without selecting it". Walking with `next()`
+  instead would drag the current entry -- and with it the bold row and anything
+  following the selection -- through rows the audio never reaches. It consumes
+  the same state `next()` would, the queue included, because it answers the same
+  question.
+
+  The probe is exactly the test the engine applies: `AudioEngine::openTrack()`
+  begins with the same `registry_.open()` call and everything after it is
+  bookkeeping. The cost is opening a track twice, which for a file is nothing and
+  for a stream is one connection made and dropped.
+
+  One candidate per executor task, not one task for the search. The executor is
+  serial, so a search written as a single long task would leave a track clicked
+  mid-search sitting behind it -- on the share that made all of this necessary,
+  that is a wait of minutes.
+
+  **Not tested at the app layer, and this is the gap to close.**
+  `PlaybackController` builds a miniaudio output in its constructor, so it cannot
+  be constructed in a headless test at all; `peekNext()` has core tests and the
+  rest is covered by inspection. Giving the controller its output rather than
+  making one is the change that would fix it.
 
 - **Sort order is display-only and never changes playback order.** In Cog, shuffle
   and next/previous operate on `arrangedObjects` — the *sorted* order — a

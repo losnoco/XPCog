@@ -550,6 +550,10 @@ void MainFrame::wireUp() {
                 // publishes the sentence it wants shown, not a code.
                 setStatusText(toWx(reason));
             });
+    // Same treatment, and for the same reason. What differs is what it is about:
+    // the search for a playable track rather than any one row of the playlist.
+    observe(playback_->statusNote,
+            [this](const std::string& note) { setStatusText(toWx(note)); });
     observe(playback_->trackMetadataChanged, [this](TrackId id) {
         // A stream renamed itself. The row redraws from the view's own
         // notification; what has to happen here is the title bar, the status

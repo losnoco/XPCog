@@ -852,6 +852,10 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
     row->toggle(_("Follow the playing track in the playlist"),
                 "selectionFollowsPlayback",
                 _("Move the selection to each track as it starts."));
+    row->toggle(_("Keep playing while looking for the next playable track"),
+                "keepPlayingWhileSkipping",
+                _("When Next lands on a track that will not open, carry on "
+                  "playing the current one until a playable track is found."));
     row->toggle(_("Resume playback on startup"), "resumePlaybackOnStartup",
                 _("Continue the last track from where it stopped. The track is "
                   "selected either way."));

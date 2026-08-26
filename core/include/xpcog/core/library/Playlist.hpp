@@ -197,6 +197,20 @@ public:
     /// What Previous would select, without selecting it.
     [[nodiscard]] std::optional<TrackId> peekPrevious();
 
+    /// What Next would select from `from`, without selecting it.
+    ///
+    /// Measured from a given entry rather than from the current one, which is
+    /// what lets a caller look several entries ahead: a search for a playable
+    /// track walks forward while the entry actually being *heard* stays current,
+    /// so the selection never visits rows the audio does not reach.
+    ///
+    /// **This consumes the same state next() would**, since it answers the same
+    /// question: the queue is popped when it has something to say, and shuffle
+    /// extends its order. Peeking twice from the same entry is therefore not the
+    /// same as peeking once -- walk forward from each answer, as the caller
+    /// that wanted this does.
+    [[nodiscard]] std::optional<TrackId> peekNext(TrackId from);
+
     // --- persistence ----------------------------------------------------
 
     /// Everything a Library needs to store, and everything restoring needs to

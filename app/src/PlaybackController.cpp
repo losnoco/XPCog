@@ -192,7 +192,19 @@ void PlaybackController::playTrack(TrackId id) {
     requestStart(id);
 }
 
-void PlaybackController::requestStart(TrackId id) {
+void PlaybackController::requestStart(TrackId id, bool huntOnFailure) {
+    // Set on every start, not only on the ones that want it: a start that is not
+    // part of a search is a gesture that ended whatever search was running.
+    //
+    // The list goes with the flag. Leaving it behind would outlive the search it
+    // belongs to, and next() reads it to decide where to carry on from -- so a
+    // stale one sends the following search off from wherever an abandoned one
+    // happened to stop.
+    hunting_ = huntOnFailure;
+    if (!hunting_) {
+        searched_.clear();
+    }
+
     const PlaylistEntry* entry = playlist_.find(id);
     if (entry == nullptr) {
         // Cog's "Invalid playlist entry reached" (PlaybackController.m:863), and
@@ -245,6 +257,7 @@ void PlaybackController::finishStart(TrackId id, bool opened,
     starting_.store(false);
 
     if (opened) {
+        endSearch(/*found=*/true);
         clearFailure(id);
         audible_ = id;
         currentTrackChanged.publish(audible_);
@@ -273,19 +286,25 @@ void PlaybackController::finishStart(TrackId id, bool opened,
     markFailure(id);
     playbackFailed.publish(id, toUtf8(_("No decoder could open this file")));
 
-    // And that is where it ends. This start was asked for -- a double-click, the
-    // Next button, a session being resumed -- so the entry the listener named is
-    // the one they get an answer about, and the answer is that it would not
-    // open.
-    //
-    // It used to ask the playlist for the following entry and start that
-    // instead, on the grounds that Cog does not stall on one bad file. That is
-    // true of a track *ending* into a bad neighbour, which the engine's own
-    // advance still steps over (AudioEngine::pumpTrack, kMaxFailedAdvances). It
-    // is not true of a track being chosen: a share that has gone away makes
-    // every entry fail, and the chain then ran the length of the playlist as
-    // fast as the opens could fail, rewriting the status line each time and
-    // ending somewhere the listener never asked to be.
+    // A track that was *named* stops here, and that is the whole of it: a
+    // double-click asks for one entry, and answering it by playing a different
+    // one is not an answer. Next is the exception, because "the next one that
+    // works" is what the button means -- and it says so by asking for the hunt.
+    if (hunting_) {
+        searched_.push_back(id);
+        if (playlist_.next()) {
+            const TrackId following = playlist_.current().value_or(kInvalidTrackId);
+            if (std::find(searched_.begin(), searched_.end(), following) ==
+                searched_.end()) {
+                requestStart(following, /*huntOnFailure=*/true);
+                return;
+            }
+        }
+        // Either the playlist ran out, or it repeated and handed back something
+        // already tried -- a full lap with nothing playable on it.
+        endSearch(/*found=*/false);
+    }
+
     audible_ = kInvalidTrackId;
     currentTrackChanged.publish(audible_);
     publishState();
@@ -309,6 +328,11 @@ void PlaybackController::playPause() {
         return;
     }
 
+    // Pausing during a quiet search ends it. The search is only allowed to run
+    // because something is playing under it; a listener who has just stopped the
+    // sound is not expecting a track they never chose to start a moment later.
+    cancelSearch();
+
     if (paused_) {
         engine_->resume();
         paused_ = false;
@@ -317,6 +341,17 @@ void PlaybackController::playPause() {
         paused_ = true;
     }
     publishState();
+}
+
+void PlaybackController::cancelSearch() {
+    if (!hunting_ && searched_.empty()) {
+        return;
+    }
+    // The bump is the cancel: a candidate already being opened comes back with a
+    // generation nobody is waiting for, and is dropped before it is read.
+    ++startGeneration_;
+    hunting_ = false;
+    searched_.clear();
 }
 
 void PlaybackController::reloadDsp() {
@@ -340,6 +375,8 @@ void PlaybackController::stop() {
     // a track as current after the user asked for silence.
     ++startGeneration_;
     starting_.store(false);
+    hunting_ = false;
+    searched_.clear();
 
     // Posted, because stop() blocks: it plays out the fade and joins two threads.
     // Short, but it is the same thread that draws the window.
@@ -376,10 +413,116 @@ void PlaybackController::stop() {
 }
 
 void PlaybackController::next() {
-    if (playlist_.next()) {
-        playTrack(*playlist_.current());
-    } else {
+    // The quiet search, when there is something playing for it to be quiet
+    // *about*. It looks ahead without moving the current entry, so the interface
+    // stays on the track being heard rather than following the search through
+    // rows that turn out to be dead.
+    if (settings_.KeepPlayingWhileSkipping() && playing() && !paused_) {
+        // Pressed again while a search is already running: carry that one on
+        // from where it had reached rather than starting it over. Starting over
+        // would re-open the entry it is currently stuck on, which is the one
+        // thing an impatient second press must not mean. `searched_` is
+        // non-empty only while a search is in flight -- both kinds clear it when
+        // they end -- and during a quiet one nothing is playing but the track
+        // the search began under.
+        const TrackId from = !searched_.empty()
+                                 ? searched_.back()
+                                 : playlist_.current().value_or(kInvalidTrackId);
+        if (from != kInvalidTrackId) {
+            startProbe(from);
+            return;
+        }
+    }
+
+    searched_.clear();
+    if (!playlist_.next()) {
         stop();
+        return;
+    }
+    // Not playTrack(): this start is allowed to keep looking, and playTrack() is
+    // the gesture that names one entry and means it.
+    resumeAt_ = 0.0;
+    requestStart(*playlist_.current(), /*huntOnFailure=*/true);
+}
+
+// --- the quiet search ---------------------------------------------------
+//
+// Same shape as the loud one, and deliberately: one candidate per task on the
+// same executor, each checking the generation before it does any work. A search
+// written as a single long task would be uninterruptible in the way that
+// matters -- the executor is serial, so a track clicked mid-search would sit
+// behind it, and on the share that made all this necessary that is a wait of
+// minutes.
+//
+// What it cannot interrupt is an open already under way. A source that is
+// waiting out its own timeout is not reachable from here, so a cancel takes
+// effect at the next candidate rather than at once.
+
+void PlaybackController::startProbe(TrackId from) {
+    statusNote.publish(toUtf8(_("Looking for a playable track...")));
+    probeNext(from, ++startGeneration_);
+}
+
+void PlaybackController::probeNext(TrackId from, std::uint64_t generation) {
+    const auto candidate = playlist_.peekNext(from);
+    if (!candidate || std::find(searched_.begin(), searched_.end(), *candidate) !=
+                          searched_.end()) {
+        endSearch(/*found=*/false);
+        return;
+    }
+    const PlaylistEntry* entry = playlist_.find(*candidate);
+    if (entry == nullptr) {
+        endSearch(/*found=*/false);
+        return;
+    }
+
+    searched_.push_back(*candidate);
+    const TrackId id  = *candidate;
+    const Url     url = entry->url;
+
+    starter_->post([this, id, url, generation] {
+        bool opens = false;
+        if (generation == startGeneration_.load()) {
+            // Opened and thrown away. This is exactly the test the engine
+            // applies -- AudioEngine::openTrack() begins with the same call, and
+            // everything after it is bookkeeping -- so a candidate that passes
+            // here is one that will play. The cost is opening it twice, which
+            // for a file is nothing and for a stream is one connection made and
+            // dropped; the alternative is holding a source open across a search
+            // that may pass a hundred of them.
+            opens = static_cast<bool>(registry_.open(url));
+        }
+        dispatch_([this, id, opens, generation] { finishProbe(id, opens, generation); });
+    });
+}
+
+void PlaybackController::finishProbe(TrackId id, bool opens, std::uint64_t generation) {
+    // Superseded: something else was asked for while this candidate was being
+    // opened, and it owns the transport now.
+    if (generation != startGeneration_.load()) {
+        return;
+    }
+
+    if (opens) {
+        endSearch(/*found=*/true);
+        // Through playTrack(), so what happens from here is an ordinary start of
+        // an ordinary track: the search is over, and its result is not a special
+        // kind of playing.
+        playTrack(id);
+        return;
+    }
+
+    markFailure(id);
+    playbackFailed.publish(id, toUtf8(wxString::Format(_("Could not play %s"),
+                                                       toWx(nameOf(id, {})))));
+    probeNext(id, generation);
+}
+
+void PlaybackController::endSearch(bool found) {
+    hunting_ = false;
+    searched_.clear();
+    if (!found) {
+        statusNote.publish(toUtf8(_("No playable track found")));
     }
 }
 
@@ -508,9 +651,19 @@ void PlaybackController::trackFailed(const Url& url) {
                 break;
             }
         }
-        playbackFailed.publish(
-            id, toUtf8(wxString::Format(_("Could not play %s"), toWx(name))));
+        playbackFailed.publish(id, toUtf8(wxString::Format(_("Could not play %s"),
+                                                           toWx(nameOf(id, name)))));
     });
+}
+
+std::string PlaybackController::nameOf(TrackId id, const std::string& fallback) const {
+    // What the row says, which is the tag title or the file name. The URL is the
+    // fallback rather than the answer: a listener told "could not play
+    // file:///Users/.../04%20Untitled.flac" has been told the truth in the least
+    // useful available form, and a stream that is not in the playlist is the only
+    // case with nothing better to offer.
+    const PlaylistEntry* entry = playlist_.find(id);
+    return entry != nullptr ? entry->title() : fallback;
 }
 
 // --- the unplayable mark ------------------------------------------------

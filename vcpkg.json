@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "xpcog",
-  "version": "0.2.8",
+  "version": "0.3.0",
   "description": "Cross-platform wxWidgets port of the Cog audio player",
   "homepage": "https://github.com/losnoco/Cog",
   "license": "GPL-2.0-or-later",
