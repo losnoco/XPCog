@@ -96,21 +96,33 @@ string(REGEX MATCH "\"status\"[ \t]*:[ \t]*\"([^\"]+)\"" _ "${_json}")
 set(_status "${CMAKE_MATCH_1}")
 
 if(NOT _status STREQUAL "Accepted")
-    # The log, always, and this is the whole reason this is a script rather than
-    # a command line. `notarytool submit` reports "Invalid" and stops; the
-    # *reasons* -- an unsigned nested binary, a missing hardened runtime flag, a
-    # secure timestamp that was not there -- are in a log fetched by submission
-    # id, and a release engineer who has to be told to go and fetch it is being
-    # told twenty minutes later than they could have been.
-    message(STATUS "XPCog: notarisation returned '${_status}'. Apple's log:")
     if(_id)
+        # The log, and this is the whole reason this is a script rather than a
+        # command line. `notarytool submit` reports "Invalid" and stops; the
+        # *reasons* -- an unsigned nested binary, a missing hardened runtime
+        # flag, a secure timestamp that was not there -- are in a log fetched by
+        # submission id, and a release engineer who has to be told to go and
+        # fetch it is being told twenty minutes later than they could have been.
+        message(STATUS "XPCog: notarisation returned '${_status}'. Apple's log:")
         execute_process(
             COMMAND xcrun notarytool log "${_id}"
                     --key "${_key}" --key-id "${_key_id}" --issuer "${_issuer}")
+        message(FATAL_ERROR
+            "XPCog: notarisation failed (status '${_status}', submission ${_id}).")
     endif()
+
+    # No submission id means the upload never happened -- bad credentials, an
+    # unreadable key, no network -- so there is no log to fetch and saying
+    # "Apple's log:" above a silence is worse than saying nothing. What there is
+    # instead is whatever notarytool put on stderr, which in that case is the
+    # entire diagnosis and belongs at the top of the message rather than under a
+    # status line that has nothing in it.
     message(FATAL_ERROR
-        "XPCog: notarisation failed (status '${_status}', submission ${_id}).\n"
-        "${_stderr}")
+        "XPCog: the notary service accepted no submission.\n"
+        "${_stderr}\n"
+        "invalidPrivateKeyContents means XPCOG_NOTARY_KEY is not a readable "
+        "App Store Connect .p8; check that the file begins with "
+        "-----BEGIN PRIVATE KEY-----.")
 endif()
 
 execute_process(

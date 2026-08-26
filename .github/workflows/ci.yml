@@ -998,6 +998,16 @@ jobs:
       # The .p8 is written to a file because that is the only form notarytool
       # accepts, into RUNNER_TEMP, and removed by a trap on the way out whether
       # the submission succeeded or not.
+      #
+      # The secret is taken either as the .p8's own text or as base64 of it, and
+      # that is not politeness. A .p8 *is* text, so pasting the file into the
+      # secret box is the obvious thing to do -- and `base64 --decode` on macOS
+      # accepts it, because a PEM body is base64 and the dashes and newlines
+      # around it are quietly ignored. It exits zero having written 174 bytes of
+      # rubbish, which is what took this job's first notarisation attempt down
+      # with `Error: invalidPrivateKeyContents` and nothing to point at. The two
+      # forms are told apart with certainty by the PEM header, so both are
+      # accepted and anything else is refused here by name.
       - name: Notarise and staple
         if: >-
           steps.signing.outputs.identity != ''
@@ -1009,7 +1019,23 @@ jobs:
         run: |
           export XPCOG_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
           trap 'rm -f "$XPCOG_NOTARY_KEY"' EXIT
-          printf '%s' "$MACOS_NOTARY_KEY_P8" | base64 --decode > "$XPCOG_NOTARY_KEY"
+
+          case "$MACOS_NOTARY_KEY_P8" in
+              *"-----BEGIN"*)
+                  printf '%s' "$MACOS_NOTARY_KEY_P8" > "$XPCOG_NOTARY_KEY"
+                  echo "MACOS_NOTARY_KEY_P8 holds the key itself."
+                  ;;
+              *)
+                  printf '%s' "$MACOS_NOTARY_KEY_P8" | base64 --decode > "$XPCOG_NOTARY_KEY"
+                  echo "MACOS_NOTARY_KEY_P8 holds base64; decoded it."
+                  ;;
+          esac
+
+          if ! grep -q -- "-----BEGIN PRIVATE KEY-----" "$XPCOG_NOTARY_KEY"; then
+              echo "::error::MACOS_NOTARY_KEY_P8 is not an App Store Connect private key. Expected either the .p8 file's text, which begins -----BEGIN PRIVATE KEY-----, or the base64 of it from: base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy"
+              exit 1
+          fi
+
           cmake --build --preset macos-app-release --target notarize
 
       # if-no-files-found: error, for the reason the Windows one gives -- a green
