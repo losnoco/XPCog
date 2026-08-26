@@ -20,6 +20,13 @@
 
 #include <windows.h>
 
+// Both are needed, and which one supplies what is worth writing down because the
+// build defines WIN32_LEAN_AND_MEAN: windows.h then pulls in neither, so a
+// missing one of these is a wall of "undeclared identifier" rather than a hint.
+//
+//   shlobj.h    SHParseDisplayName, SHOpenFolderAndSelectItems
+//   shellapi.h  SHFileOperationW, SHFILEOPSTRUCTW, FO_DELETE, the FOF_ flags
+#include <shellapi.h>
 #include <shlobj.h>
 
 #include <string>
@@ -59,7 +66,8 @@ bool moveToTrash(const std::filesystem::path& path) {
     // ALLOWUNDO is the Recycle Bin. The rest suppress the shell's own dialogs:
     // the caller has already asked, and a second confirmation from a different
     // process is how a command ends up looking broken.
-    operation.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+    operation.fFlags = static_cast<FILEOP_FLAGS>(FOF_ALLOWUNDO | FOF_NOCONFIRMATION |
+                                                 FOF_NOERRORUI | FOF_SILENT);
 
     return SHFileOperationW(&operation) == 0 && operation.fAnyOperationsAborted == FALSE;
 }
