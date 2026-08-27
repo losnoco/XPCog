@@ -212,6 +212,36 @@ TEST_CASE("peeking ahead ignores repeat-one, as Next does", "[playlist]") {
     CHECK(playlist.current() == ids[0]);
 }
 
+TEST_CASE("peeking back walks without moving the current entry", "[playlist]") {
+    // Previous searches too, and it needs the same footing Next has: walk
+    // backwards from each answer while the entry being heard stays current.
+    Playlist   playlist;
+    const auto ids = fill(playlist, 4);
+    playlist.setRepeat(RepeatMode::None);
+    playlist.setCurrent(ids[3]);
+
+    TrackId                  at = ids[3];
+    std::vector<std::string> seen;
+    while (const auto back = playlist.peekPrevious(at)) {
+        seen.push_back(playlist.find(*back)->rawTitle);
+        at = *back;
+    }
+    CHECK(seen == std::vector<std::string>{"3", "2", "1"});
+    CHECK(playlist.current() == ids[3]);
+}
+
+TEST_CASE("peeking back ignores repeat-one, as Previous does", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 3);
+    playlist.setRepeat(RepeatMode::One);
+    playlist.setCurrent(ids[2]);
+
+    const auto back = playlist.peekPrevious(ids[2]);
+    REQUIRE(back.has_value());
+    CHECK(playlist.find(*back)->rawTitle == "2");
+    CHECK(playlist.current() == ids[2]);
+}
+
 TEST_CASE("repeat album loops the album, not the playlist", "[playlist]") {
     Playlist                   playlist;
     std::vector<PlaylistEntry> entries;

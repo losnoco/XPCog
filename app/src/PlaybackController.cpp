@@ -192,16 +192,16 @@ void PlaybackController::playTrack(TrackId id) {
     requestStart(id);
 }
 
-void PlaybackController::requestStart(TrackId id, bool huntOnFailure) {
+void PlaybackController::requestStart(TrackId id, Search hunt) {
     // Set on every start, not only on the ones that want it: a start that is not
     // part of a search is a gesture that ended whatever search was running.
     //
-    // The list goes with the flag. Leaving it behind would outlive the search it
-    // belongs to, and next() reads it to decide where to carry on from -- so a
-    // stale one sends the following search off from wherever an abandoned one
-    // happened to stop.
-    hunting_ = huntOnFailure;
-    if (!hunting_) {
+    // The list goes with the direction. Leaving it behind would outlive the
+    // search it belongs to, and next() and previous() read it to decide where to
+    // carry on from -- so a stale one sends the following search off from
+    // wherever an abandoned one happened to stop.
+    searching_ = hunt;
+    if (searching_ == Search::None) {
         searched_.clear();
     }
 
@@ -288,15 +288,19 @@ void PlaybackController::finishStart(TrackId id, bool opened,
 
     // A track that was *named* stops here, and that is the whole of it: a
     // double-click asks for one entry, and answering it by playing a different
-    // one is not an answer. Next is the exception, because "the next one that
-    // works" is what the button means -- and it says so by asking for the hunt.
-    if (hunting_) {
+    // one is not an answer. Next and Previous are the exceptions, because "the
+    // next one that works" is what those buttons mean -- and they say so by
+    // asking for the hunt, each in their own direction.
+    if (searching_ != Search::None) {
+        const Search direction = searching_;
         searched_.push_back(id);
-        if (playlist_.next()) {
+        const bool stepped = direction == Search::Backward ? playlist_.previous()
+                                                           : playlist_.next();
+        if (stepped) {
             const TrackId following = playlist_.current().value_or(kInvalidTrackId);
             if (std::find(searched_.begin(), searched_.end(), following) ==
                 searched_.end()) {
-                requestStart(following, /*huntOnFailure=*/true);
+                requestStart(following, direction);
                 return;
             }
         }
@@ -344,13 +348,13 @@ void PlaybackController::playPause() {
 }
 
 void PlaybackController::cancelSearch() {
-    if (!hunting_ && searched_.empty()) {
+    if (searching_ == Search::None && searched_.empty()) {
         return;
     }
     // The bump is the cancel: a candidate already being opened comes back with a
     // generation nobody is waiting for, and is dropped before it is read.
     ++startGeneration_;
-    hunting_ = false;
+    searching_ = Search::None;
     searched_.clear();
 }
 
@@ -375,7 +379,7 @@ void PlaybackController::stop() {
     // a track as current after the user asked for silence.
     ++startGeneration_;
     starting_.store(false);
-    hunting_ = false;
+    searching_ = Search::None;
     searched_.clear();
 
     // Posted, because stop() blocks: it plays out the fade and joins two threads.
@@ -418,18 +422,20 @@ void PlaybackController::next() {
     // stays on the track being heard rather than following the search through
     // rows that turn out to be dead.
     if (settings_.KeepPlayingWhileSkipping() && playing() && !paused_) {
-        // Pressed again while a search is already running: carry that one on
-        // from where it had reached rather than starting it over. Starting over
-        // would re-open the entry it is currently stuck on, which is the one
-        // thing an impatient second press must not mean. `searched_` is
-        // non-empty only while a search is in flight -- both kinds clear it when
-        // they end -- and during a quiet one nothing is playing but the track
-        // the search began under.
-        const TrackId from = !searched_.empty()
+        // Pressed again while a search is already running the same way: carry
+        // that one on from where it had reached rather than starting it over.
+        // Starting over would re-open the entry it is currently stuck on, which
+        // is the one thing an impatient second press must not mean. `searched_`
+        // is non-empty only while a search is in flight -- both kinds clear it
+        // when they end -- and during a quiet one nothing is playing but the
+        // track the search began under. A search running the *other* way is not
+        // carried on: its position is somewhere the button was not pressed
+        // towards, so this one starts from the track being heard.
+        const TrackId from = searching_ == Search::Forward && !searched_.empty()
                                  ? searched_.back()
                                  : playlist_.current().value_or(kInvalidTrackId);
         if (from != kInvalidTrackId) {
-            startProbe(from);
+            startProbe(from, Search::Forward);
             return;
         }
     }
@@ -442,7 +448,49 @@ void PlaybackController::next() {
     // Not playTrack(): this start is allowed to keep looking, and playTrack() is
     // the gesture that names one entry and means it.
     resumeAt_ = 0.0;
-    requestStart(*playlist_.current(), /*huntOnFailure=*/true);
+    requestStart(*playlist_.current(), Search::Forward);
+}
+
+void PlaybackController::previous() {
+    // A backwards search already running is carried on, and that test comes
+    // before the clock. The search began with a press near the top of a track,
+    // and during the quiet shape that track has gone on playing underneath it --
+    // so by the second press the clock reads well past the threshold, and
+    // answering with "restart this one" would be answering a question about the
+    // previous track with the current one.
+    const bool continuing = searching_ == Search::Backward && !searched_.empty();
+
+    // Cog restarts the track when you are more than a few seconds in, which is
+    // what every other player does and what a user pressing Previous mid-song
+    // means. Only near the start does it step back a track.
+    constexpr double kRestartThreshold = 3.0;
+    if (!continuing && playing() && position() > kRestartThreshold) {
+        seek(0.0);
+        return;
+    }
+
+    // The quiet search, walking the other way. Everything next() does, and for
+    // the same reasons -- see the block above.
+    if (settings_.KeepPlayingWhileSkipping() && playing() && !paused_) {
+        const TrackId from = continuing
+                                 ? searched_.back()
+                                 : playlist_.current().value_or(kInvalidTrackId);
+        if (from != kInvalidTrackId) {
+            startProbe(from, Search::Backward);
+            return;
+        }
+    }
+
+    searched_.clear();
+    if (!playlist_.previous()) {
+        // Unlike Next, which stops: running off the top of the playlist is not
+        // the end of it, and Cog's -prev leaves what is playing alone there.
+        return;
+    }
+    // Not playTrack(): this start is allowed to keep looking backwards, and
+    // playTrack() is the gesture that names one entry and means it.
+    resumeAt_ = 0.0;
+    requestStart(*playlist_.current(), Search::Backward);
 }
 
 // --- the quiet search ---------------------------------------------------
@@ -458,13 +506,19 @@ void PlaybackController::next() {
 // waiting out its own timeout is not reachable from here, so a cancel takes
 // effect at the next candidate rather than at once.
 
-void PlaybackController::startProbe(TrackId from) {
+void PlaybackController::startProbe(TrackId from, Search direction) {
+    searching_ = direction;
     statusNote.publish(toUtf8(_("Looking for a playable track...")));
     probeNext(from, ++startGeneration_);
 }
 
 void PlaybackController::probeNext(TrackId from, std::uint64_t generation) {
-    const auto candidate = playlist_.peekNext(from);
+    // The direction is read from the search rather than carried through the
+    // hop, and it is safe to: the generation check is what says this call still
+    // belongs to the search that set it, and anything that ends one clears it.
+    const auto candidate = searching_ == Search::Backward
+                               ? playlist_.peekPrevious(from)
+                               : playlist_.peekNext(from);
     if (!candidate || std::find(searched_.begin(), searched_.end(), *candidate) !=
                           searched_.end()) {
         endSearch(/*found=*/false);
@@ -519,25 +573,10 @@ void PlaybackController::finishProbe(TrackId id, bool opens, std::uint64_t gener
 }
 
 void PlaybackController::endSearch(bool found) {
-    hunting_ = false;
+    searching_ = Search::None;
     searched_.clear();
     if (!found) {
         statusNote.publish(toUtf8(_("No playable track found")));
-    }
-}
-
-void PlaybackController::previous() {
-    // Cog restarts the track when you are more than a few seconds in, which is
-    // what every other player does and what a user pressing Previous mid-song
-    // means. Only near the start does it step back a track.
-    constexpr double kRestartThreshold = 3.0;
-    if (playing() && position() > kRestartThreshold) {
-        seek(0.0);
-        return;
-    }
-
-    if (playlist_.previous()) {
-        playTrack(*playlist_.current());
     }
 }
 

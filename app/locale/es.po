@@ -1369,9 +1369,9 @@ msgstr "Seguir reproduciendo mientras se busca la siguiente pista reproducible"
 
 #: app/src/PreferencesDialog.cpp:857
 msgid ""
-"When Next lands on a track that will not open, carry on playing the current one until a playable track is found."
+"When Next or Previous lands on a track that will not open, carry on playing the current one until a playable track is found."
 msgstr ""
-"Cuando Siguiente llega a una pista que no se puede abrir, sigue sonando la actual hasta encontrar una que sí se pueda reproducir."
+"Cuando Siguiente o Anterior llega a una pista que no se puede abrir, sigue sonando la actual hasta encontrar una que sí se pueda reproducir."
 
 #: app/src/PreferencesDialog.cpp:859
 msgid "Resume playback on startup"

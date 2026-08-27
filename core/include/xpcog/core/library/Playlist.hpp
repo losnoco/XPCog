@@ -197,6 +197,12 @@ public:
     /// What Previous would select, without selecting it.
     [[nodiscard]] std::optional<TrackId> peekPrevious();
 
+    /// The same, measured from `from` rather than from the current entry, so a
+    /// caller can walk backwards several entries. The mirror of `peekNext`, and
+    /// it exists for the same reason: a search for a playable track walks while
+    /// the entry being *heard* stays current.
+    [[nodiscard]] std::optional<TrackId> peekPrevious(TrackId from);
+
     /// What Next would select from `from`, without selecting it.
     ///
     /// Measured from a given entry rather than from the current one, which is

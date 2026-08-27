@@ -116,16 +116,16 @@ XPCOG_SETTING(RepeatMode, int, "repeat", 3)
 XPCOG_SETTING(ShuffleMode, int, "shuffle", 0)
 XPCOG_SETTING(AlwaysStopAfterCurrent, bool, "alwaysStopAfterCurrent", false)
 
-/// When Next lands on a track that will not open, keep the current one playing
-/// while the search for a playable entry runs.
+/// When Next or Previous lands on a track that will not open, keep the current
+/// one playing while the search for a playable entry runs.
 ///
-/// **No Cog counterpart.** Cog's -next opens the entry it lands on and reports
-/// the failure, so there is no search to have an opinion about.
+/// **No Cog counterpart.** Cog's -next and -prev open the entry they land on and
+/// report the failure, so there is no search to have an opinion about.
 ///
-/// Off, the search runs where Next has always run: what was playing stops, each
-/// attempt is named in the status line, and each dead entry greys as it is
-/// passed. On, nothing audible changes until a playable entry is found -- the
-/// entries are opened and closed on the start thread while the track that is
+/// Off, the search runs where those buttons have always run: what was playing
+/// stops, each attempt is named in the status line, and each dead entry greys as
+/// it is passed. On, nothing audible changes until a playable entry is found --
+/// the entries are opened and closed on the start thread while the track that is
 /// playing carries on -- and if none is found, it simply keeps playing.
 ///
 /// Off by default. A Next that leaves the same track playing looks, for the

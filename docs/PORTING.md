@@ -1297,11 +1297,11 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   like. The stored sentence is English -- the library persists that field, and
   what a window says is the translated one published to the status line.
 
-  **Next was given its search back, in two shapes**, once the stopping rule had
-  been lived with: stopping is right for a track that was named and wrong for a
-  button whose whole meaning is "the one after this". See the deliberate
-  differences below for the two shapes, the setting that picks between them, and
-  what cancelling one can and cannot interrupt.
+  **Next and Previous were given their search back, in two shapes**, once the
+  stopping rule had been lived with: stopping is right for a track that was named
+  and wrong for a button whose whole meaning is "the one after this" -- or the one
+  before it. See the deliberate differences below for the two shapes, the setting
+  that picks between them, and what cancelling one can and cannot interrupt.
 
 - **Tracker modules**, through libopenmpt. Port of Cog's OpenMPT plugin, and the
   first decoder added since the architecture claimed that adding one is a single
@@ -3406,7 +3406,7 @@ All of these are also documented at the call site.
   subsongs differ rather than whether they differ at all. That matters: written
   as an exact comparison first, the test passed with `selectSong()` sabotaged.
 
-- **A track that was named stops on failure; Next keeps looking.** Cog treats
+- **A track that was named stops on failure; Next and Previous keep looking.** Cog treats
   every start the same: `-playEntryAtIndex:` reports the failure and moves to the
   next entry, on the reasonable ground that one bad file should not stall a
   playlist. XPCog splits the two apart by what the gesture *said*.
@@ -3417,11 +3417,29 @@ All of these are also documented at the call site.
   `finishStart()` reports that entry and stops.
 
   Next names no entry -- it means "the one after this", and when that one will
-  not open, "the next one that works" is what the button is for. So Next searches,
-  and it is the only gesture that does. It ends on the first entry that opens, or
-  when the playlist has been all the way round and handed back something already
-  tried. A track *ending* into a bad neighbour is a third case again, and steps
-  over no more than a few (`kMaxFailedAdvances`).
+  not open, "the next one that works" is what the button is for. Previous is the
+  same sentence backwards. So those two search, and they are the only gestures
+  that do. A search ends on the first entry that opens, or when the playlist has
+  been all the way round and handed back something already tried. A track
+  *ending* into a bad neighbour is a third case again, and steps over no more
+  than a few (`kMaxFailedAdvances`).
+
+  The direction belongs to the button and is carried the whole way, because both
+  shapes would otherwise pick one for themselves: the loud search steps the
+  current entry with `next()` or `previous()`, the quiet one peeks with
+  `peekNext` or `peekPrevious`. Pressing a button while the *other* one's search
+  is running starts a fresh search from the track being heard rather than
+  carrying that one on; its position is somewhere the new button was not pressed
+  towards.
+
+  Previous keeps the rule that a press more than three seconds in restarts the
+  track rather than stepping back -- except while a backwards search is already
+  running. That search began with a press near the top of a track and, in the
+  quiet shape, that track has gone on playing underneath it, so by the second
+  press the clock reads well past the threshold; restarting there would answer a
+  question about the previous track with the current one. Running off the top of
+  the playlist also leaves what is playing alone, where Next stops -- which is
+  Cog's `-prev`.
 
   Cancelling the search needs nothing of its own: every start takes a new
   generation and a superseded answer is dropped before it is read, so any gesture
@@ -3431,18 +3449,19 @@ All of these are also documented at the call site.
   than at once.
 
 - **The search has two shapes, and `keepPlayingWhileSkipping` picks one.** Off,
-  it runs where Next has always run: what was playing stops, each attempt is
-  named in the status line, each dead entry greys as it is passed. On, it runs
+  it runs where Next and Previous have always run: what was playing stops, each
+  attempt is named in the status line, each dead entry greys as it is passed. On,
+  it runs
   silently underneath the track that is playing -- candidates are opened and
   thrown away on the start thread, nothing audible changes until one of them
   opens, and if none does, the track that was playing simply carries on.
 
-  The quiet shape needed one thing from core: `Playlist::peekNext(from)`, "what
-  Next would select from here, without selecting it". Walking with `next()`
-  instead would drag the current entry -- and with it the bold row and anything
-  following the selection -- through rows the audio never reaches. It consumes
-  the same state `next()` would, the queue included, because it answers the same
-  question.
+  The quiet shape needed one thing from core: `Playlist::peekNext(from)` and its
+  mirror `peekPrevious(from)`, "what the button would select from here, without
+  selecting it". Walking with `next()` or `previous()` instead would drag the
+  current entry -- and with it the bold row and anything following the selection
+  -- through rows the audio never reaches. `peekNext` consumes the same state
+  `next()` would, the queue included, because it answers the same question.
 
   The probe is exactly the test the engine applies: `AudioEngine::openTrack()`
   begins with the same `registry_.open()` call and everything after it is

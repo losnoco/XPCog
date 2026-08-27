@@ -800,6 +800,16 @@ std::optional<TrackId> Playlist::peekPrevious() {
     return previousEntry(current_.value_or(kInvalidTrackId), /*ignoreRepeatOne=*/true);
 }
 
+std::optional<TrackId> Playlist::peekPrevious(TrackId from) {
+    if (entries_.empty()) {
+        return std::nullopt;
+    }
+    // Repeat-one ignored, as in previous(), and for peekNext()'s reason: this
+    // answers for the button, and the button that lands on the track already
+    // playing is a button that does nothing.
+    return previousEntry(from, /*ignoreRepeatOne=*/true);
+}
+
 std::optional<TrackId> Playlist::peekNext(TrackId from) {
     if (entries_.empty()) {
         return std::nullopt;

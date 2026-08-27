@@ -169,8 +169,9 @@ public:
     /// A file could not be opened, and the entry has been marked unplayable.
     ///
     /// A track that was *named* -- double-clicked, resumed -- stops here. Next
-    /// keeps looking (see next()), and a track ending into a bad neighbour steps
-    /// over no more than a few in a row -- AudioEngine's kMaxFailedAdvances.
+    /// and Previous keep looking, each in their own direction (see next() and
+    /// previous()), and a track ending into a bad neighbour steps over no more
+    /// than a few in a row -- AudioEngine's kMaxFailedAdvances.
     /// `id` is kInvalidTrackId when the URL that failed is not in the playlist
     /// any more.
     Signal<TrackId, std::string> playbackFailed;
@@ -185,6 +186,14 @@ public:
     Signal<std::string> statusNote;
 
 private:
+    /// Which way a search for a playable track is walking, or that none is.
+    ///
+    /// Next and Previous both search, and everything between the gesture and the
+    /// track that finally plays has to know which button was pressed: the loud
+    /// shape steps the current entry, the quiet one peeks, and both would walk
+    /// away from the listener if they picked the direction for themselves.
+    enum class Search { None, Forward, Backward };
+
     // --- AudioEngine::Delegate, all called on the feeder thread ---------
     std::optional<Url> nextTrack() override;
     void               trackBegan(const Url& url) override;
@@ -197,19 +206,19 @@ private:
 
     /// Queues a start on the executor. Returns immediately.
     ///
-    /// `huntOnFailure` is what Next asks for: should this one not open, take the
-    /// entry after it and try again, rather than stopping. Every other caller
-    /// leaves it alone, and passing it at all is what clears a hunt that was
-    /// already running -- a gesture that starts something else has, by making
-    /// it, said to stop looking.
-    void requestStart(TrackId id, bool huntOnFailure = false);
+    /// `hunt` is what Next and Previous ask for: should this one not open, take
+    /// the entry beyond it *in that direction* and try again, rather than
+    /// stopping. Every other caller leaves it at None, and passing it at all is
+    /// what clears a hunt that was already running -- a gesture that starts
+    /// something else has, by making it, said to stop looking.
+    void requestStart(TrackId id, Search hunt = Search::None);
     /// The executor's answer, back on the interface's thread.
     void finishStart(TrackId id, bool opened, std::uint64_t generation);
 
     /// The silent search: opens candidates on the start thread and throws them
     /// away, so the track that is playing keeps playing until one of them turns
     /// out to be openable. `KeepPlayingWhileSkipping`.
-    void startProbe(TrackId from);
+    void startProbe(TrackId from, Search direction);
     void probeNext(TrackId from, std::uint64_t generation);
     void finishProbe(TrackId id, bool opens, std::uint64_t generation);
 
@@ -276,18 +285,19 @@ private:
     /// and the joins have finished.
     std::atomic<bool> stopping_{false};
 
-    /// A Next that is stepping past entries which will not open.
+    /// A Next or a Previous that is stepping past entries which will not open.
     ///
-    /// `hunting_` says the start now in flight belongs to a search, so its
-    /// failure should take the next entry rather than stop; `searched_` is what
-    /// has already been tried, and it is what ends a search that has been all
-    /// the way round a repeating playlist without finding anything.
+    /// `searching_` names the direction of the search now running -- and, for
+    /// the loud shape, says that the start in flight belongs to it, so its
+    /// failure should take the entry beyond rather than stop. `searched_` is
+    /// what has already been tried, and it is what ends a search that has been
+    /// all the way round a repeating playlist without finding anything.
     ///
     /// Neither needs to be cleared to cancel a search. Every start takes a new
     /// generation, and a superseded answer is dropped before it is read -- so a
     /// gesture that starts anything else has already ended the search by the
     /// time its own start comes back.
-    bool                 hunting_ = false;
+    Search               searching_ = Search::None;
     std::vector<TrackId> searched_;
 
     /// Where a start now in flight should land, or 0 to begin at the top.
