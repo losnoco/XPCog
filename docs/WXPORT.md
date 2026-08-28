@@ -451,6 +451,28 @@ button would leave a window with no way to start playback and no obvious way bac
 which is why the Qt build removed the transport from its own context menu too;
 here it simply is not something a layout can hide.
 
+The strip itself is two windows, one for each kind of thing on it. A `wxToolBar`
+carries everything that is a button — the transport, then check tools for the file
+browser, Info, Spectrum and the equaliser — and a `wxPanel` beside it carries the
+seek bar, the clock, the volume and the filter. The split is not cosmetic. A tool
+raises `wxEVT_TOOL`, which is `wxEVT_MENU` under another name, so it arrives at the
+handler the menu item already has; `wxToolBarBase::UpdateWindowUI` walks its own
+tools every idle, so the four check tools take their pressed state from the
+`EVT_UPDATE_UI` handlers the View menu's ticks were already coming from, with
+nothing pushing it. Those controls could go on the toolbar too, via `AddControl()`,
+and should not: a toolbar sizes a control to the tool height and centres it, which
+is the wrong answer for a bar that has to stretch. On a panel an ordinary sizer
+says "stretch this one" and the matter is closed.
+
+Not the *frame's* toolbar, which would also have kept it out of that sizer. wxOSX
+builds a native `NSToolbar` when a toolbar's parent is a `wxFrame`, installs it in
+the title bar and hides the window it was standing in — so `CreateToolBar()` would
+move the transport out of the strip on macOS and nowhere else. A panel for a parent
+gives the same drawn toolbar on all three. One cost worth knowing: wxMSW's
+`SetToolNormalBitmap()` calls `Realize()` internally, so the palette re-stroke and
+the Play/Pause swap are separate paths through `refreshTransportIcons()` rather
+than one loop over every tool.
+
 `SavePerspective()` and `LoadPerspective()` are what `saveState()` and
 `restoreState()` were, with the same trap carried across: the layout is saved only
 while the window is on screen. Close-to-tray makes "save a layout with nothing

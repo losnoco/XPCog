@@ -31,6 +31,7 @@
 #pragma once
 
 #include <wx/defs.h>
+#include <wx/string.h>
 
 #include <string>
 #include <vector>
@@ -147,6 +148,42 @@ struct MenuItem {
 
 /// The transport buttons, in order.
 [[nodiscard]] const std::vector<CommandId>& transportLayout();
+
+/// One tool on the main window's toolbar. A subset of MenuItem, because a
+/// toolbar has no submenu structure and takes its wording from the menu row
+/// carrying the same id rather than repeating it.
+struct ToolbarItem {
+    CommandId id   = PlaybackPlayPause;
+    /// Check draws a tool that stays pressed while its pane is open, and gets
+    /// its state from the same EVT_UPDATE_UI handler the menu tick does.
+    ItemKind kind            = ItemKind::Normal;
+    bool     separatorBefore = false;
+};
+
+/// The main window's toolbar: the transport, then the panes worth one click.
+///
+/// Built from transportLayout() rather than repeating it, so the order of the
+/// transport is stated once and the mini player cannot drift from the toolbar.
+[[nodiscard]] const std::vector<ToolbarItem>& toolbarLayout();
+
+/// The command's menu label, translated, with the mnemonic ampersands removed.
+///
+/// Read out of menuLayout(), so a toolbar tool and a menu item cannot end up
+/// named differently -- and a command with no menu row returns an empty string
+/// rather than inventing one.
+[[nodiscard]] wxString commandLabel(CommandId id);
+
+/// The same, plus the command's accelerator in parentheses where it has one:
+/// "Next (Ctrl+Right)". For a tooltip, which is the only place a surface
+/// showing icons alone can say either.
+///
+/// The accelerator is rendered by wx rather than pasted in, so macOS reads its
+/// own modifier symbols instead of the table's literal `Ctrl`.
+[[nodiscard]] wxString commandTooltip(CommandId id);
+
+/// The wx spelling of an ItemKind, for a surface that builds its own items
+/// rather than going through buildMenu().
+[[nodiscard]] wxItemKind toWxItemKind(ItemKind kind);
 
 /// Builds the whole menu bar from the table above.
 [[nodiscard]] wxMenuBar* buildMenuBar();

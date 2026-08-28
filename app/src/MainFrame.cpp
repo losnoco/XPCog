@@ -48,6 +48,7 @@
 #include <wx/statline.h>
 #include <wx/stattext.h>
 #include <wx/statusbr.h>
+#include <wx/toolbar.h>
 #include <wx/translation.h>
 
 #include <algorithm>
@@ -306,8 +307,7 @@ MainFrame::~MainFrame() {
 #ifdef XPCOG_HAVE_SC55_PANEL
     sc55_ = nullptr;
 #endif
-    transportButtons_.clear();
-    playPauseButton_ = nullptr;
+    toolBar_ = nullptr;
 }
 
 void MainFrame::buildUi() {
@@ -505,38 +505,81 @@ void MainFrame::buildUi() {
 }
 
 void MainFrame::buildTransport(wxWindow* parent) {
+    // Two halves, and each is the kind of window its contents actually want.
+    //
+    // A wxToolBar for anything that is a button. It gets the platform's own
+    // spacing, hover and pressed drawing, its tools raise wxEVT_TOOL -- which is
+    // wxEVT_MENU under another name -- and it answers EVT_UPDATE_UI for its own
+    // tools every idle. A row of wxBitmapButtons had none of that: the buttons
+    // needed a second Bind for wxEVT_BUTTON, could not show a pressed state at
+    // all, and were spaced by a hand-picked FromDIP(2).
+    //
+    // A wxPanel for the seek bar, the clock, the volume and the filter. These
+    // could go on the toolbar with AddControl(), and should not: a toolbar sizes
+    // a control to the tool height and centres it, which is the wrong answer for
+    // a bar that has to stretch and a slider that should not be as tall as a
+    // button. On a panel they are laid out by an ordinary sizer, which is what
+    // "stretch this one and leave the rest at their best size" is spelled in.
     auto* sizer = new wxBoxSizer(wxHORIZONTAL);
 
-    for (const CommandId id : transportLayout()) {
-        auto* button = new wxBitmapButton(parent, id, lucideIcon(commandIcon(id)),
-                                          wxDefaultPosition, wxDefaultSize,
-                                          wxBORDER_NONE);
-        button->SetBitmapDisabled(lucideIconDisabled(commandIcon(id)));
-        sizer->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxALL, FromDIP(2));
-        transportButtons_.push_back(button);
-        if (id == PlaybackPlayPause) {
-            playPauseButton_ = button;
+    // Not the frame's toolbar, deliberately, and not only to keep it in this
+    // sizer. wxOSX builds a native NSToolbar when a toolbar's parent is a
+    // wxFrame, then installs it in the title bar and hides the window it was
+    // standing in -- the transport would leave the strip on macOS and nowhere
+    // else. A panel for a parent gives the same drawn toolbar on all three.
+    toolBar_ = new wxToolBar(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                             wxTB_HORIZONTAL | wxTB_FLAT | wxTB_NODIVIDER);
+
+    for (const ToolbarItem& item : toolbarLayout()) {
+        if (item.separatorBefore) {
+            toolBar_->AddSeparator();
         }
+        const std::string glyph = commandIcon(item.id);
+        // The label is passed even though nothing draws it -- these are icon-only
+        // tools -- because it is what a screen reader announces.
+        toolBar_->AddTool(item.id, commandLabel(item.id), lucideIcon(glyph),
+                          lucideIconDisabled(glyph), toWxItemKind(item.kind),
+                          commandTooltip(item.id));
     }
 
-    seekBar_ = new SeekBar(parent, kSeekBarId);
-    sizer->Add(seekBar_, 1, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(8));
+    // Required, and not a formality: tools added before Realize() exist in the
+    // list and are not on screen until it runs.
+    toolBar_->Realize();
 
-    clock_ = new wxStaticText(parent, wxID_ANY, "0:00 / 0:00", wxDefaultPosition,
+    // Play/Pause is settled once here as well, so it opens saying "Play" rather
+    // than the table's "Play/Pause" and only correcting itself at the first
+    // track. A restored session that comes back paused wants the same.
+    refreshTransportIcons();
+
+    sizer->Add(toolBar_, 0, wxALIGN_CENTER_VERTICAL);
+
+    auto* controls = new wxPanel(parent, wxID_ANY);
+    auto* row      = new wxBoxSizer(wxHORIZONTAL);
+
+    seekBar_ = new SeekBar(controls, kSeekBarId);
+    row->Add(seekBar_, 1, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(8));
+
+    clock_ = new wxStaticText(controls, wxID_ANY, "0:00 / 0:00", wxDefaultPosition,
                               FromDIP(wxSize(90, -1)), wxALIGN_CENTRE_HORIZONTAL);
-    sizer->Add(clock_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+    row->Add(clock_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
 
-    volume_ = new wxSlider(parent, kVolumeId,
+    volume_ = new wxSlider(controls, kVolumeId,
                            static_cast<int>(settings_.Volume() * 100.0), 0, 100,
                            wxDefaultPosition, FromDIP(wxSize(110, -1)));
     volume_->SetToolTip(_("Volume"));
-    sizer->Add(volume_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+    row->Add(volume_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
 
-    filter_ = new wxSearchCtrl(parent, kFilterId, wxEmptyString, wxDefaultPosition,
+    filter_ = new wxSearchCtrl(controls, kFilterId, wxEmptyString, wxDefaultPosition,
                                FromDIP(wxSize(200, -1)));
     filter_->ShowCancelButton(true);
     filter_->SetDescriptiveText(_("Filter"));
-    sizer->Add(filter_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
+    // The descriptive text disappears the moment somebody types, which is when
+    // "what was this box for" starts being asked.
+    filter_->SetToolTip(_("Filter the playlist"));
+    row->Add(filter_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
+
+    controls->SetSizer(row);
+    sizer->Add(controls, 1, wxEXPAND);
 
     parent->SetSizer(sizer);
 }
@@ -726,7 +769,7 @@ void MainFrame::wireUp() {
     Bind(wxEVT_SYS_COLOUR_CHANGED, [this](wxSysColourChangedEvent& event) {
         event.Skip();
         forgetLucideIcons();
-        refreshTransportIcons();
+        refreshTransportIcons(Restroke::Yes);
         scanCancel_->SetBitmap(lucideIcon("x"));
         tree_->refreshIcons();
         if (mini_ != nullptr) {
@@ -1247,38 +1290,56 @@ void MainFrame::askCrashReportingConsent() {
     platform::startCrashReporting();
 }
 
-void MainFrame::refreshTransportIcons() {
-    for (std::size_t i = 0; i < transportButtons_.size(); ++i) {
-        const CommandId id = transportLayout()[i];
-        transportButtons_[i]->SetBitmap(lucideIcon(commandIcon(id)));
-        transportButtons_[i]->SetBitmapDisabled(lucideIconDisabled(commandIcon(id)));
+void MainFrame::refreshTransportIcons(Restroke restroke) {
+    if (toolBar_ == nullptr) {
+        return;
     }
 
-    // Play/Pause carries whichever of the two the transport is asking for.
-    // EVT_UPDATE_UI relabels the *menu* item from state every idle, but a
-    // wxUpdateUIEvent can set a label and an enabled state and nothing else --
-    // there is no bitmap on it -- so the button has to be told separately. That
-    // is why the button kept showing a play triangle over a playing track.
-    if (playPauseButton_ != nullptr) {
-        const bool playing = playback_->playing() && !playback_->paused();
-        const char* glyph  = playing ? "pause" : "play";
-        playPauseButton_->SetBitmap(lucideIcon(glyph));
-        playPauseButton_->SetBitmapDisabled(lucideIconDisabled(glyph));
-        playPauseButton_->SetToolTip(playing ? _("Pause") : _("Play"));
+    // The glyphs only, not the tooltips: those are set once when the tools are
+    // added and cannot go stale here. A palette change does not reword anything,
+    // and a language change is not a thing that happens to a running window --
+    // choosing one in preferences asks for a restart.
+    if (restroke == Restroke::Yes) {
+        for (const ToolbarItem& item : toolbarLayout()) {
+            const std::string glyph = commandIcon(item.id);
+            toolBar_->SetToolNormalBitmap(item.id, lucideIcon(glyph));
+            toolBar_->SetToolDisabledBitmap(item.id, lucideIconDisabled(glyph));
+        }
     }
+
+    // Play/Pause carries whichever of the two the transport is asking for, and
+    // it is settled here rather than in the loop above, which has just drawn
+    // "play" over it from the command table.
+    //
+    // EVT_UPDATE_UI relabels the *menu* item from state every idle and cannot
+    // help here twice over: a wxUpdateUIEvent carries no bitmap, and
+    // wxToolBarBase::UpdateWindowUI reads the enabled and checked state off it
+    // and drops the text. So the tool is told both directly. That is why the
+    // button kept showing a play triangle over a playing track.
+    const bool  playing = playback_->playing() && !playback_->paused();
+    const char* glyph   = playing ? "pause" : "play";
+    toolBar_->SetToolNormalBitmap(PlaybackPlayPause, lucideIcon(glyph));
+    toolBar_->SetToolDisabledBitmap(PlaybackPlayPause, lucideIconDisabled(glyph));
+    toolBar_->SetToolShortHelp(PlaybackPlayPause, playing ? _("Pause") : _("Play"));
 }
 
 void MainFrame::bindCommands() {
     // Both event types, for every command.
     //
-    // A menu item and an accelerator raise wxEVT_MENU; a wxBitmapButton raises
-    // wxEVT_BUTTON. They are different events carrying the same id, and binding
-    // only the first is why the transport buttons did nothing at all while the
-    // menu entries behind them worked -- a failure with no error attached to it,
-    // because the event simply reached the end of the chain unhandled.
+    // A menu item, an accelerator and a toolbar tool all raise wxEVT_MENU --
+    // wxEVT_TOOL is defined as wxEVT_MENU, not merely handled alongside it -- so
+    // the toolbar needs nothing said about it here. A plain wxButton raises
+    // wxEVT_BUTTON instead, which is a different event carrying the same id, and
+    // binding only the first is why the transport did nothing at all while the
+    // menu entries behind it worked, back when it was a row of wxBitmapButtons:
+    // a failure with no error attached to it, because the event simply reached
+    // the end of the chain unhandled.
     //
-    // Binding both here rather than translating at each button keeps the rule
-    // that a command has one handler, whatever surface posts it.
+    // The second binding is kept now that the transport is a toolbar. Nothing in
+    // this window relies on it, but a button anywhere that carries a command id
+    // works without discovering this the hard way a second time, and the rule it
+    // states -- a command has one handler, whatever surface posts it -- is the
+    // point of the file.
     const auto on = [this](CommandId id, auto handler) {
         Bind(wxEVT_MENU, [handler](wxCommandEvent&) { handler(); }, id);
         Bind(wxEVT_BUTTON, [handler](wxCommandEvent&) { handler(); }, id);

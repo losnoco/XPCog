@@ -65,6 +65,11 @@ MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& s
                                           wxDefaultPosition, wxDefaultSize,
                                           wxBORDER_NONE);
         button->SetBitmapDisabled(lucideIconDisabled(commandIcon(id)));
+        // Out of the menu table, so the name and the shortcut a tooltip promises
+        // are the ones the menu bar shows. Set once, because none of it changes
+        // while the window is up -- except Play/Pause, which refreshIcons()
+        // overwrites from the state it is drawing.
+        button->SetToolTip(commandTooltip(id));
         row->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxALL, FromDIP(2));
         buttons_.push_back(button);
         if (id == PlaybackPlayPause) {
@@ -187,6 +192,7 @@ void MiniFrame::refreshIcons() {
         const char* glyph = showingPause_ ? "pause" : "play";
         playPauseButton_->SetBitmap(lucideIcon(glyph));
         playPauseButton_->SetBitmapDisabled(lucideIconDisabled(glyph));
+        playPauseButton_->SetToolTip(showingPause_ ? _("Pause") : _("Play"));
     }
 }
 

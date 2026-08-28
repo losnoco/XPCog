@@ -2,10 +2,13 @@
 
 #include "Text.hpp"
 
+#include <wx/accel.h>
+#include <wx/control.h>
 #include <wx/menu.h>
 #include <wx/translation.h>
 
 #include <map>
+#include <memory>
 
 namespace xpcog::app {
 namespace {
@@ -194,15 +197,6 @@ const std::map<CommandId, std::string>& icons() {
     return table;
 }
 
-[[nodiscard]] wxItemKind toWx(ItemKind kind) {
-    switch (kind) {
-        case ItemKind::Check: return wxITEM_CHECK;
-        case ItemKind::Radio: return wxITEM_RADIO;
-        case ItemKind::Normal: break;
-    }
-    return wxITEM_NORMAL;
-}
-
 /// One row, onto whichever menu is being built.
 void appendItem(wxMenu& menu, const MenuItem& item) {
     if (item.separatorBefore) {
@@ -214,7 +208,22 @@ void appendItem(wxMenu& menu, const MenuItem& item) {
         label += "\t";
         label += wxString::FromAscii(item.accelerator);
     }
-    menu.Append(item.id, label, wxEmptyString, toWx(item.kind));
+    menu.Append(item.id, label, wxEmptyString, toWxItemKind(item.kind));
+}
+
+/// The menu bar's row for a command, or nullptr where it has none.
+///
+/// The menu bar rather than the playlist's context menu: a command on both
+/// carries the real accelerator in the first and a display-only one in the
+/// second, and a tooltip promising a key that does nothing is worse than one
+/// promising nothing.
+[[nodiscard]] const MenuItem* findMenuItem(CommandId id) {
+    for (const MenuItem& item : layout()) {
+        if (item.id == id) {
+            return &item;
+        }
+    }
+    return nullptr;
 }
 
 }  // namespace
@@ -236,6 +245,87 @@ const std::vector<CommandId>& transportLayout() {
         PlaybackNext,
     };
     return table;
+}
+
+const std::vector<ToolbarItem>& toolbarLayout() {
+    static const std::vector<ToolbarItem> table = [] {
+        std::vector<ToolbarItem> rows;
+
+        for (const CommandId id : transportLayout()) {
+            rows.push_back({id, ItemKind::Normal, false});
+        }
+
+        // The four panes that are worth a click, and they are exactly the four
+        // View commands the icon table already has a glyph for -- which is not a
+        // coincidence to be tidied away: a command with no icon has no business
+        // on a toolbar showing icons alone, so the two lists agreeing is the
+        // check that this one is complete rather than merely short.
+        //
+        // Check tools, so each one stays pressed while its pane is open. Nothing
+        // has to push that state: EVT_UPDATE_UI already answers these four ids
+        // for the View menu's ticks, and wxToolBarBase::UpdateWindowUI asks the
+        // same handler every idle.
+        //
+        // Lyrics and the SC-55 panel are deliberately absent. Neither has a
+        // glyph, and a toolbar that lists every pane is a second View menu drawn
+        // wider; these are the ones somebody reaches for while listening.
+        rows.push_back({ViewFileTree, ItemKind::Check, true});
+        rows.push_back({ViewInfo, ItemKind::Check, false});
+        rows.push_back({ViewSpectrum, ItemKind::Check, false});
+        rows.push_back({ViewEqualizer, ItemKind::Check, false});
+
+        return rows;
+    }();
+    return table;
+}
+
+wxItemKind toWxItemKind(ItemKind kind) {
+    switch (kind) {
+        case ItemKind::Check: return wxITEM_CHECK;
+        case ItemKind::Radio: return wxITEM_RADIO;
+        case ItemKind::Normal: break;
+    }
+    return wxITEM_NORMAL;
+}
+
+wxString commandLabel(CommandId id) {
+    const MenuItem* item = findMenuItem(id);
+    if (item == nullptr) {
+        return {};
+    }
+    // The ampersand is a menu's underline marker and nothing else's. A tooltip
+    // reading "&Next" is the one place this table's wording escapes the menu
+    // without wx stripping it on the way.
+    return wxControl::RemoveMnemonics(trUtf8(item->label));
+}
+
+wxString commandTooltip(CommandId id) {
+    const MenuItem* item = findMenuItem(id);
+    if (item == nullptr) {
+        return {};
+    }
+
+    const wxString label = commandLabel(id);
+    if (*item->accelerator == '\0') {
+        return label;
+    }
+
+    // Through wxAcceleratorEntry rather than appended as written. The table
+    // spells every shortcut `Ctrl`, which wx turns into Cmd when it builds the
+    // real accelerator -- so pasting the literal here would put "Ctrl+I" in a
+    // tooltip for a key that is actually Cmd-I. ToString() renders whatever the
+    // platform would draw in a menu, symbols and all.
+    //
+    // An entry wx cannot parse falls back to the literal: a slightly wrong
+    // tooltip beats a missing one, and the menu bar would be just as wrong.
+    wxString shortcut = wxString::FromAscii(item->accelerator);
+    if (const std::unique_ptr<wxAcceleratorEntry> entry{
+            wxAcceleratorEntry::Create("\t" + shortcut)};
+        entry && entry->IsOk()) {
+        shortcut = entry->ToString();
+    }
+
+    return label + " (" + shortcut + ")";
 }
 
 wxMenuBar* buildMenuBar() {

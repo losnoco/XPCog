@@ -63,6 +63,7 @@ class wxSearchCtrl;
 class wxSlider;
 class wxSplitterWindow;
 class wxStaticText;
+class wxToolBar;
 
 namespace xpcog::app {
 
@@ -93,14 +94,25 @@ private:
     void buildUi();
     void buildTransport(wxWindow* parent);
 
-    /// Re-strokes the transport glyphs, and points Play/Pause at whichever of
+    /// Whether every tool's glyph has to be rendered again, or only the one
+    /// that moves with the transport.
+    ///
+    /// `Yes` is for a system palette change, where each glyph is stroked in a
+    /// colour that has just stopped being right. It is not the default because
+    /// wxMSW's SetToolNormalBitmap() calls Realize() internally -- re-applying
+    /// ten unchanged bitmaps is a full toolbar rebuild, and a track that starts,
+    /// pauses and ends asks for one at each step.
+    enum class Restroke { No, Yes };
+
+    /// Re-strokes the toolbar's glyphs, and points Play/Pause at whichever of
     /// the two the current state calls for.
     ///
     /// Both jobs in one place because they are the same job: the bitmap has to
     /// be chosen from state *and* re-stroked when the system appearance
     /// changes, and two functions doing half each is how the Qt build ended up
-    /// with an icon refresh that put "play" back over a running track.
-    void refreshTransportIcons();
+    /// with an icon refresh that put "play" back over a running track. Play/Pause
+    /// is settled after the loop for that reason, whichever way it was called.
+    void refreshTransportIcons(Restroke restroke = Restroke::No);
     /// Every connection this window owns, in one place.
     void wireUp();
     void bindCommands();
@@ -451,10 +463,16 @@ private:
     wxGauge*      scanBar_    = nullptr;
     wxBitmapButton* scanCancel_ = nullptr;
 
-    std::vector<wxBitmapButton*> transportButtons_;
-    /// Held out of that list as well, because it is the one button whose
-    /// bitmap changes with the transport rather than only with the palette.
-    wxBitmapButton* playPauseButton_ = nullptr;
+    /// The transport and the pane toggles. A real toolbar rather than a row of
+    /// wxBitmapButtons: a tool posts wxEVT_TOOL, which *is* wxEVT_MENU, so it
+    /// reaches the same handler the menu item does with nothing translating for
+    /// it -- and wxToolBarBase::UpdateWindowUI walks its own tools every idle,
+    /// which is what puts the pane toggles' pressed state on the same
+    /// EVT_UPDATE_UI handlers the View menu's ticks already come from.
+    ///
+    /// Tools are addressed by command id, so there is no parallel vector to keep
+    /// in step with toolbarLayout() -- which is what the old button list was.
+    wxToolBar* toolBar_ = nullptr;
 
     /// The OS's Now Playing entry and media keys. Never null -- platforms
     /// without an implementation get a base-class instance that does nothing.

@@ -819,6 +819,9 @@ msgstr "Volumen"
 msgid "Filter"
 msgstr "Filtrar"
 
+msgid "Filter the playlist"
+msgstr "Filtrar la lista de reproducción"
+
 #: app/src/MainFrame.cpp:560
 msgid "Connecting to %s..."
 msgstr "Conectando con %s…"
