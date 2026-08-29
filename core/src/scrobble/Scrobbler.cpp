@@ -288,13 +288,33 @@ void Scrobbler::workerLoop() {
                 }
             }
 
-            idleChanged_.notify_all();
+            // Not when a handler is about to run: see below.
+            if (!notify) {
+                idleChanged_.notify_all();
+            }
         }
 
         // Outside the lock: the handler is the application's, and calling it
         // while holding this mutex would invite a lock order nobody declared.
         if (notify) {
             notify();
+
+            // And only now is this pass over, which is why the notify above is
+            // conditional rather than unconditional at the end of the block.
+            //
+            // Clearing the session makes canSendLocked() false, and that is one
+            // of the three things drain() waits for -- so notifying while still
+            // holding the lock let drain() return with the handler not yet
+            // called. Everything the caller can ask the scrobbler was already
+            // true at that point, which is what made it look correct: the
+            // session was cleared, the play was still queued. Only the
+            // invalidation had not been delivered. A caller that drains and then
+            // asks whether it was told to reauthorise raced the worker for it,
+            // and lost on a Windows runner.
+            //
+            // Notified without the lock. The state this reports was written
+            // under it above, and the handler must not run holding it.
+            idleChanged_.notify_all();
         }
     }
 }
