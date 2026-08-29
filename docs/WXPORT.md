@@ -445,33 +445,39 @@ the sash is remembered while it is closed so reopening does not reset the width.
 See "Deliberate differences from Cog" in `PORTING.md`.
 
 Two things are deliberately not dockable. The transport is not a pane at all --
-`wxAuiManager` manages a host panel below it and the frame's own sizer stacks the
-two, for the reason worked out at the bottom of this file. Hiding the only play
-button would leave a window with no way to start playback and no obvious way back,
-which is why the Qt build removed the transport from its own context menu too;
-here it simply is not something a layout can hide.
+it is the frame's own toolbar, `wxAuiManager` manages a host panel further down,
+and the frame's sizer stacks what is between them, for the reason worked out at the
+bottom of this file. Hiding the only play button would leave a window with no way
+to start playback and no obvious way back, which is why the Qt build removed the
+transport from its own context menu too; here it simply is not something a layout
+can hide.
 
-The strip itself is two windows, one for each kind of thing on it. A `wxToolBar`
-carries everything that is a button — the transport, then check tools for the file
-browser, Info, Spectrum and the equaliser — and a `wxPanel` beside it carries the
-seek bar, the clock, the volume and the filter. The split is not cosmetic. A tool
-raises `wxEVT_TOOL`, which is `wxEVT_MENU` under another name, so it arrives at the
-handler the menu item already has; `wxToolBarBase::UpdateWindowUI` walks its own
-tools every idle, so the four check tools take their pressed state from the
-`EVT_UPDATE_UI` handlers the View menu's ticks were already coming from, with
-nothing pushing it. Those controls could go on the toolbar too, via `AddControl()`,
-and should not: a toolbar sizes a control to the tool height and centres it, which
-is the wrong answer for a bar that has to stretch. On a panel an ordinary sizer
-says "stretch this one" and the matter is closed.
+So the window is three bands. `CreateToolBar()` carries everything that is a
+button — the transport, then check tools for the file browser, Info, Spectrum and
+the equaliser — a `wxPanel` under it carries the seek bar, the clock, the volume
+and the filter, and the docks fill what is left. The split between the first two is
+not cosmetic. A tool raises `wxEVT_TOOL`, which is `wxEVT_MENU` under another name,
+so it arrives at the handler the menu item already has; `wxToolBarBase::UpdateWindowUI`
+walks its own tools every idle, so the four check tools take their pressed state
+from the `EVT_UPDATE_UI` handlers the View menu's ticks were already coming from,
+with nothing pushing it. Those four controls could go on the toolbar too, via
+`AddControl()`, and should not: a toolbar sizes a control to the tool height and
+centres it, which is the wrong answer for a bar that has to stretch, and an item on
+a native `NSToolbar` is something the toolbar may push into an overflow menu, which
+is nowhere for a seek bar to be. On a panel an ordinary sizer says "stretch this
+one" and the matter is closed.
 
-Not the *frame's* toolbar, which would also have kept it out of that sizer. wxOSX
-builds a native `NSToolbar` when a toolbar's parent is a `wxFrame`, installs it in
-the title bar and hides the window it was standing in — so `CreateToolBar()` would
-move the transport out of the strip on macOS and nowhere else. A panel for a parent
-gives the same drawn toolbar on all three. One cost worth knowing: wxMSW's
-`SetToolNormalBitmap()` calls `Realize()` internally, so the palette re-stroke and
-the Play/Pause swap are separate paths through `refreshTransportIcons()` rather
-than one loop over every tool.
+The *frame's* toolbar means a different window on macOS from the other two, and
+that is the point rather than a difference to paper over. wxOSX builds a native
+`NSToolbar` when a toolbar's parent is a `wxFrame`, and `wxFrame::SetToolBar`
+installs it in the title bar and hides the wx window it was drawn in — so the
+buttons read as a Mac toolbar there and as a toolbar row on Windows and Linux.
+Being the frame's also takes them out of the sizer entirely: the frame reserves the
+band and positions the toolbar in it, so nothing below can squeeze it. The hidden
+window is still a child, which is what keeps the idle `UpdateWindowUI` walk running
+on macOS. One cost worth knowing: wxMSW's `SetToolNormalBitmap()` calls `Realize()`
+internally, so the palette re-stroke and the Play/Pause swap are separate paths
+through `refreshTransportIcons()` rather than one loop over every tool.
 
 `SavePerspective()` and `LoadPerspective()` are what `saveState()` and
 `restoreState()` were, with the same trap carried across: the layout is saved only

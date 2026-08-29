@@ -92,7 +92,10 @@ public:
 
 private:
     void buildUi();
-    void buildTransport(wxWindow* parent);
+    /// The frame's toolbar: the transport buttons and the pane toggles.
+    void buildToolBar();
+    /// The strip under it: the seek bar, the clock, the volume and the filter.
+    void buildControls(wxWindow* parent);
 
     /// Whether every tool's glyph has to be rendered again, or only the one
     /// that moves with the transport.
@@ -469,6 +472,10 @@ private:
     /// it -- and wxToolBarBase::UpdateWindowUI walks its own tools every idle,
     /// which is what puts the pane toggles' pressed state on the same
     /// EVT_UPDATE_UI handlers the View menu's ticks already come from.
+    ///
+    /// The frame's own toolbar, so the frame places it above the client area and
+    /// nothing in the sizer shares a row with it. Borrowed, not owned: the frame
+    /// destroys it with its other children, and clears this pointer when it does.
     ///
     /// Tools are addressed by command id, so there is no parallel vector to keep
     /// in step with toolbarLayout() -- which is what the old button list was.

@@ -334,11 +334,18 @@ void MainFrame::buildUi() {
     //
     // A saved perspective from before this still names a "transport" pane;
     // LoadPerspective() skips names it cannot find, so it costs nothing.
+    //
+    // The strip is only the controls now. The buttons are not in that sizer at
+    // all -- they are the frame's toolbar, which the frame reserves a band for
+    // and places itself, above whatever the sizer lays out. So the window is
+    // three bands rather than two: toolbar, controls, docks.
+    buildToolBar();
+
     auto* root = new wxBoxSizer(wxVERTICAL);
 
-    auto* transport = new wxPanel(this, wxID_ANY);
-    buildTransport(transport);
-    root->Add(transport, 0, wxEXPAND);
+    auto* controls = new wxPanel(this, wxID_ANY);
+    buildControls(controls);
+    root->Add(controls, 0, wxEXPAND);
 
     dockHost_ = new wxPanel(this, wxID_ANY);
     root->Add(dockHost_, 1, wxEXPAND);
@@ -504,31 +511,25 @@ void MainFrame::buildUi() {
         [this](std::vector<Url> urls) { addUrls(urls, -1); }));
 }
 
-void MainFrame::buildTransport(wxWindow* parent) {
-    // Two halves, and each is the kind of window its contents actually want.
+void MainFrame::buildToolBar() {
+    // Everything on the strip that is a button, and nothing else.
     //
-    // A wxToolBar for anything that is a button. It gets the platform's own
-    // spacing, hover and pressed drawing, its tools raise wxEVT_TOOL -- which is
-    // wxEVT_MENU under another name -- and it answers EVT_UPDATE_UI for its own
-    // tools every idle. A row of wxBitmapButtons had none of that: the buttons
-    // needed a second Bind for wxEVT_BUTTON, could not show a pressed state at
-    // all, and were spaced by a hand-picked FromDIP(2).
+    // A wxToolBar rather than a row of wxBitmapButtons: it gets the platform's
+    // own spacing, hover and pressed drawing, its tools raise wxEVT_TOOL --
+    // which is wxEVT_MENU under another name -- and it answers EVT_UPDATE_UI for
+    // its own tools every idle. The buttons had none of that: each needed a
+    // second Bind for wxEVT_BUTTON, none could show a pressed state at all, and
+    // they were spaced by a hand-picked FromDIP(2).
     //
-    // A wxPanel for the seek bar, the clock, the volume and the filter. These
-    // could go on the toolbar with AddControl(), and should not: a toolbar sizes
-    // a control to the tool height and centres it, which is the wrong answer for
-    // a bar that has to stretch and a slider that should not be as tall as a
-    // button. On a panel they are laid out by an ordinary sizer, which is what
-    // "stretch this one and leave the rest at their best size" is spelled in.
-    auto* sizer = new wxBoxSizer(wxHORIZONTAL);
-
-    // Not the frame's toolbar, deliberately, and not only to keep it in this
-    // sizer. wxOSX builds a native NSToolbar when a toolbar's parent is a
-    // wxFrame, then installs it in the title bar and hides the window it was
-    // standing in -- the transport would leave the strip on macOS and nowhere
-    // else. A panel for a parent gives the same drawn toolbar on all three.
-    toolBar_ = new wxToolBar(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-                             wxTB_HORIZONTAL | wxTB_FLAT | wxTB_NODIVIDER);
+    // The *frame's* toolbar, which is what CreateToolBar() makes it: the frame
+    // reserves a band for it above the client area and positions it there, so it
+    // is not in the sizer below and cannot be squeezed by what is. That is also
+    // what puts it in the title bar on macOS -- wxOSX builds a native NSToolbar
+    // when a toolbar's parent is a wxFrame, and wxFrame::SetToolBar installs it
+    // in the window, hiding the wx window it was drawn in. So the transport
+    // looks like a Mac toolbar on macOS and a toolbar row on the other two,
+    // which is the point rather than a difference to paper over.
+    toolBar_ = CreateToolBar(wxTB_HORIZONTAL | wxTB_FLAT | wxTB_NODIVIDER);
 
     for (const ToolbarItem& item : toolbarLayout()) {
         if (item.separatorBefore) {
@@ -536,7 +537,8 @@ void MainFrame::buildTransport(wxWindow* parent) {
         }
         const std::string glyph = commandIcon(item.id);
         // The label is passed even though nothing draws it -- these are icon-only
-        // tools -- because it is what a screen reader announces.
+        // tools -- because it is what a screen reader announces, and on macOS it
+        // is also the name the native toolbar's overflow menu shows.
         toolBar_->AddTool(item.id, commandLabel(item.id), lucideIcon(glyph),
                           lucideIconDisabled(glyph), toWxItemKind(item.kind),
                           commandTooltip(item.id));
@@ -550,26 +552,36 @@ void MainFrame::buildTransport(wxWindow* parent) {
     // than the table's "Play/Pause" and only correcting itself at the first
     // track. A restored session that comes back paused wants the same.
     refreshTransportIcons();
+}
 
-    sizer->Add(toolBar_, 0, wxALIGN_CENTER_VERTICAL);
+void MainFrame::buildControls(wxWindow* parent) {
+    // The seek bar, the clock, the volume and the filter -- the things on the
+    // strip that are not buttons, on a panel of their own under the toolbar.
+    //
+    // They could go on the toolbar with AddControl(), and should not, for two
+    // separate reasons. A toolbar sizes a control to the tool height and centres
+    // it, which is the wrong answer for a bar that has to stretch and a slider
+    // that should not be as tall as a button. And a control on a native
+    // NSToolbar is an item the toolbar lays out and may push into an overflow
+    // menu, which is not somewhere a seek bar can do its job. On a panel they
+    // are laid out by an ordinary sizer, which is what "stretch this one and
+    // leave the rest at their best size" is spelled in.
+    auto* row = new wxBoxSizer(wxHORIZONTAL);
 
-    auto* controls = new wxPanel(parent, wxID_ANY);
-    auto* row      = new wxBoxSizer(wxHORIZONTAL);
-
-    seekBar_ = new SeekBar(controls, kSeekBarId);
+    seekBar_ = new SeekBar(parent, kSeekBarId);
     row->Add(seekBar_, 1, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(8));
 
-    clock_ = new wxStaticText(controls, wxID_ANY, "0:00 / 0:00", wxDefaultPosition,
+    clock_ = new wxStaticText(parent, wxID_ANY, "0:00 / 0:00", wxDefaultPosition,
                               FromDIP(wxSize(90, -1)), wxALIGN_CENTRE_HORIZONTAL);
     row->Add(clock_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
 
-    volume_ = new wxSlider(controls, kVolumeId,
+    volume_ = new wxSlider(parent, kVolumeId,
                            static_cast<int>(settings_.Volume() * 100.0), 0, 100,
                            wxDefaultPosition, FromDIP(wxSize(110, -1)));
     volume_->SetToolTip(_("Volume"));
     row->Add(volume_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
 
-    filter_ = new wxSearchCtrl(controls, kFilterId, wxEmptyString, wxDefaultPosition,
+    filter_ = new wxSearchCtrl(parent, kFilterId, wxEmptyString, wxDefaultPosition,
                                FromDIP(wxSize(200, -1)));
     filter_->ShowCancelButton(true);
     filter_->SetDescriptiveText(_("Filter"));
@@ -578,10 +590,12 @@ void MainFrame::buildTransport(wxWindow* parent) {
     filter_->SetToolTip(_("Filter the playlist"));
     row->Add(filter_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
 
-    controls->SetSizer(row);
-    sizer->Add(controls, 1, wxEXPAND);
-
-    parent->SetSizer(sizer);
+    // A little air above and below, which the toolbar beside it used to be
+    // providing: on its own row the strip would otherwise sit flush against the
+    // toolbar's edge and the playlist's.
+    auto* pad = new wxBoxSizer(wxVERTICAL);
+    pad->Add(row, 1, wxEXPAND | wxTOP | wxBOTTOM, FromDIP(4));
+    parent->SetSizer(pad);
 }
 
 // --- wiring -------------------------------------------------------------
