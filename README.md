@@ -229,9 +229,14 @@ imported certificate, which is one less thing to keep in step and makes "that
 rather than a `codesign` error twenty minutes later. It is not secret in any
 case — the team name and id are in every signature XPCog ships.
 
-**arm64 only.** The runner builds natively and an Intel Mac cannot run the
-result. A universal image means a second vcpkg tree, a second build and a `lipo`
-pass over the executable and `libvgmstream`, which is not what this does today.
+**arm64 only — not a universal binary.** The runner builds natively and an Intel
+Mac cannot run the result. Configure says so in as many words, because `arm64` in
+a filename is a fact about the build and "will not launch" is what that fact means
+to somebody on an Intel Mac, and nothing else in the chain draws the distinction:
+`codesign`, `hdiutil` and `notarytool` are all perfectly happy with a
+single-architecture image. A universal one means a second vcpkg tree, a second
+build and a `lipo` pass over the executable and `libvgmstream`, which is not what
+this does today.
 
 ### Windows: the installer
 
@@ -289,6 +294,36 @@ pinned release, configures `windows-app-release`, packages it, and attaches
 where it broke rather than at release time. It is unsigned, as a locally built
 one is. Its Last.fm credentials come from repository secrets; see
 [Last.fm](#lastfm) below.
+
+### Releases
+
+**A release per version bump, made from the run that built it.** Both packages
+above are attached to every run as artifacts, which is where a pull request's go
+and where they stay. On `main` the `Release` job takes the same two files —
+downloaded, not rebuilt — creates the tag `v<version>` on the commit that was
+built, and publishes them.
+
+What decides that a bump happened is whether a release for the version in
+`CMakeLists.txt` exists yet, rather than a diff against the previous commit. The
+diff is the obvious reading and it loses releases quietly: a push carrying
+several commits, or a squash whose bump is not the tip, leaves the version
+changed and the tip's diff empty. Asking whether `v<version>` is published
+answers the same question from the state that matters, does nothing when re-run
+on a commit already released, and repairs itself — a version that reaches `main`
+without a release gets one on the next run.
+
+It waits on every other job. A release is the only thing here that outlives the
+run that made it, so it is the one thing not published while any part of the tree
+is red. The notes name both files and say what was done to each: the installer is
+unsigned, and the disk image says whether that run signed and notarised it rather
+than asserting that it usually does. Everything after the notes is GitHub's own
+list of what changed, read from the previous `v` release.
+
+The version itself is checked before any of that, by a `Version` job that runs on
+pull requests too. `CMakeLists.txt` and `vcpkg.json` both carry it and are kept
+identical; nothing in a build reads both, so a half-bump configures, compiles,
+packages and passes every other job, and would surface only as a release tagged
+one thing holding an installer named another.
 
 ### Linux: building against the distribution's libraries
 

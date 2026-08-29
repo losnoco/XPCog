@@ -77,13 +77,32 @@ name, or empty for an unsigned bundle")
 # reconfigure. Empty is a legitimate answer: an unsigned image is what a fork's
 # pull request produces, and it is exactly what a developer without a Developer
 # Program membership can build.
-set(_dmg_arch "${CMAKE_SYSTEM_PROCESSOR}")
+set(_dmg_archs "${CMAKE_SYSTEM_PROCESSOR}")
 if(CMAKE_OSX_ARCHITECTURES)
-    string(REPLACE ";" "-" _dmg_arch "${CMAKE_OSX_ARCHITECTURES}")
+    set(_dmg_archs "${CMAKE_OSX_ARCHITECTURES}")
 endif()
+string(REPLACE ";" "-" _dmg_arch "${_dmg_archs}")
 
 set(XPCOG_DMG "${CMAKE_BINARY_DIR}/XPCog-${PROJECT_VERSION}-${_dmg_arch}.dmg"
     CACHE INTERNAL "The disk image the `dmg` target produces")
+
+# Said out loud at configure time, because it is the one thing about this image
+# that cannot be seen from it. A Mac builds for the Mac it is, so the default is
+# a single architecture and the file is named after it -- but `arm64` in a
+# filename is a fact about the build, and "will not launch" is what that fact
+# means to somebody on an Intel Mac. Nothing else in the chain says which of the
+# two this is: codesign, hdiutil and notarytool are all perfectly happy with a
+# single-architecture image, and CI names its artifact from a string in the
+# workflow rather than from anything the build told it.
+list(LENGTH _dmg_archs _dmg_arch_count)
+if(_dmg_arch_count GREATER 1)
+    message(STATUS "XPCog: the `dmg` target packages a universal binary (${_dmg_arch}).")
+else()
+    message(STATUS
+        "XPCog: the `dmg` target packages ${_dmg_arch} only -- NOT a universal "
+        "binary. A Mac of any other architecture cannot run it. Set "
+        "CMAKE_OSX_ARCHITECTURES to build one.")
+endif()
 
 set(_scripts "${CMAKE_CURRENT_SOURCE_DIR}")
 

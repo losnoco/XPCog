@@ -10,10 +10,68 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Read for everything, and the one job that needs more asks for it by name.
+#
+# The repository's default is write, so the release job would work without this
+# and every other job would carry a token that can push to main for no reason.
+# Stating it here makes that grant visible at the one place it is used, and
+# survives the default being tightened later.
+permissions:
+  contents: read
+
 env:
   VCPKG_DISABLE_METRICS: "1"
 
 jobs:
+  version:
+    # What version this tree says it is, asserted once and answered to everyone.
+    #
+    # Two files carry it -- CMakeLists.txt's `project(XPCog VERSION ...)` and
+    # vcpkg.json's `version` -- and CLAUDE.md's rule is that they are identical.
+    # Nothing enforced that, and nothing would have: a half-bump configures,
+    # builds, packages and passes every job in this file, because CMake never
+    # reads vcpkg.json's field and vcpkg never reads CMake's. It would surface
+    # as a release tagged one thing holding an installer named another.
+    #
+    # So it is checked here, on pull requests as well as on main, which is the
+    # point of it being its own job rather than a step in the release. Catching
+    # the mismatch at review time is worth thirty seconds; catching it after the
+    # merge means the version that shipped is already wrong.
+    name: Version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: read
+        run: |
+          # Scoped to the project() call rather than grepping the file for
+          # VERSION, which also matches the CMake policy lines and anything a
+          # dependency block sets.
+          cmake_version=$(sed -n '/^project(XPCog/,/)/{
+              s/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9][0-9A-Za-z.+-]*\)[[:space:]]*$/\1/p
+          }' CMakeLists.txt)
+          vcpkg_version=$(jq -r '.version' vcpkg.json)
+
+          if [ "$(printf '%s' "$cmake_version" | grep -c .)" -ne 1 ]; then
+              echo "::error::could not read one VERSION out of project(XPCog ...) in CMakeLists.txt; found: ${cmake_version:-nothing}"
+              exit 1
+          fi
+          if [ -z "$vcpkg_version" ] || [ "$vcpkg_version" = "null" ]; then
+              echo "::error::vcpkg.json has no \"version\" field."
+              exit 1
+          fi
+          if [ "$cmake_version" != "$vcpkg_version" ]; then
+              echo "::error::CMakeLists.txt says $cmake_version and vcpkg.json says $vcpkg_version. The two are kept identical -- see the Versioning section of CLAUDE.md -- and everything else in the build derives from the first."
+              exit 1
+          fi
+
+          echo "version=$cmake_version" >> "$GITHUB_OUTPUT"
+          echo "XPCog $cmake_version"
+
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -786,6 +844,14 @@ jobs:
     # See the matrix job above for why an hour.
     timeout-minutes: 60
 
+    # Read by the release job, which puts what happened to this image into the
+    # release notes rather than describing what usually happens. Notarisation is
+    # conditional -- secrets, and main or a tag -- so "signed and notarised" is a
+    # claim that has to be sourced from the run that either did it or did not.
+    outputs:
+      signed: ${{ steps.signing.outputs.identity != '' }}
+      notarised: ${{ steps.notarise.outcome == 'success' }}
+
     # At the job level rather than on each step, because `if: env.FOO != ''` is
     # the only way a step can ask whether a secret exists: the secrets context is
     # not available to a step-level `if`, and a fork's pull request gets every
@@ -1009,6 +1075,7 @@ jobs:
       # forms are told apart with certainty by the PEM header, so both are
       # accepted and anything else is refused here by name.
       - name: Notarise and staple
+        id: notarise
         if: >-
           steps.signing.outputs.identity != ''
           && env.MACOS_NOTARY_KEY_P8 != ''
@@ -1068,3 +1135,168 @@ jobs:
         with:
           path: .vcpkg-cache
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+  release:
+    # One release per version bump, with the installer and the disk image on it.
+    #
+    # What decides that a bump happened is whether a release for this tree's
+    # version exists yet, and not a diff against the previous commit. The diff is
+    # the obvious reading of "per version bump" and it is wrong in a way that
+    # loses releases silently: a push carrying several commits, or a squash of a
+    # branch whose bump is not the tip, leaves the version changed and
+    # `HEAD` vs `HEAD^` identical, so the release is missed and never
+    # reconsidered. Asking GitHub whether `v<version>` is already published
+    # answers the same question from the state that matters, is idempotent
+    # across re-runs of the same commit, and repairs itself: whenever a version
+    # with no release lands on main, the next run makes one.
+    #
+    # The consequence to know about is the first run of this job. Whatever
+    # version main is on then has no release, so it gets one, bump or not.
+    #
+    # It waits on every other job, packaging included. A release is the one
+    # artifact here that outlives the run, so it is the one thing that should not
+    # be published while any part of the tree is red.
+    name: Release
+    needs: [version, build, system-libs, headless, installer, macos-package]
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    # The only job in this file that writes anything. See the top of the file.
+    # `actions: read` is for download-artifact, which is reading this run's own
+    # artifacts back out.
+    permissions:
+      contents: write
+      actions: read
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+
+    steps:
+      # No checkout. Everything this job needs is either an artifact from
+      # another job or an answer from the API, and `gh` takes the repository
+      # from GH_REPO rather than from a git directory.
+      - name: Decide whether this version is already released
+        id: check
+        run: |
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+              echo "v$VERSION is already released; nothing to do."
+              echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+              echo "v$VERSION has no release yet."
+              echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # By name rather than by pattern, so that an artifact that stopped being
+      # uploaded fails here instead of producing a release with one download on
+      # it. Both land in the same directory because that is what gets attached.
+      - name: Download the Windows installer
+        if: steps.check.outputs.needed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: XPCog-windows-x64-installer
+          path: dist
+
+      - name: Download the macOS disk image
+        if: steps.check.outputs.needed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: XPCog-macos-arm64-dmg
+          path: dist
+
+      # The names are checked against the version, and this is not a formality.
+      # The two packaging jobs build from their own checkout of the same commit,
+      # so a mismatch here means the version this job read is not the version
+      # that got built -- which is exactly the failure the tag would otherwise
+      # bake in permanently.
+      - name: Check what was downloaded
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          ls -l dist
+
+          exe="dist/XPCog-$VERSION-x64-setup.exe"
+          dmg="dist/XPCog-$VERSION-arm64.dmg"
+
+          missing=0
+          for f in "$exe" "$dmg"; do
+              if [ ! -f "$f" ]; then
+                  echo "::error::expected $f in the artifacts and it is not there."
+                  missing=1
+              fi
+          done
+          if [ "$missing" -ne 0 ]; then
+              echo "The artifacts hold:"
+              ls -1 dist
+              exit 1
+          fi
+
+      - name: Publish the release
+        if: steps.check.outputs.needed == 'true'
+        env:
+          SIGNED: ${{ needs['macos-package'].outputs.signed }}
+          NOTARISED: ${{ needs['macos-package'].outputs.notarised }}
+        run: |
+          # What the disk image actually had done to it in this run, rather than
+          # what usually happens to one. Both are conditional in the macOS job.
+          if [ "$NOTARISED" = "true" ]; then
+              mac_state="Signed with a Developer ID and notarised."
+          elif [ "$SIGNED" = "true" ]; then
+              mac_state="Signed with a Developer ID, not notarised -- Gatekeeper will ask."
+              echo "::warning::publishing a disk image that was not notarised."
+          else
+              mac_state="Unsigned. Gatekeeper will refuse it."
+              echo "::warning::publishing an unsigned disk image."
+          fi
+
+          cat > notes.md <<EOF
+          ### Downloads
+
+          - **\`XPCog-$VERSION-x64-setup.exe\`** — Windows x64. Unsigned, as a locally
+            built one is; SmartScreen will say so.
+          - **\`XPCog-$VERSION-arm64.dmg\`** — macOS on Apple silicon. $mac_state
+            **Not a universal binary:** arm64 only, so an Intel Mac cannot run it.
+
+          Built from \`${GITHUB_SHA:0:12}\` by [run $GITHUB_RUN_NUMBER]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
+          EOF
+
+          # Where the generated notes start reading from, and it is worth being
+          # explicit. Left to itself GitHub walks back to the last release that
+          # is not a pre-release, and this repository has one release that is
+          # neither a build nor a pre-release-by-accident -- `ci-encoders-1`,
+          # which mirrors two encoder binaries for the test fixtures. Pinning to
+          # the newest v-tagged release keeps the notes to the versions in
+          # between; when there is no such release yet, the generated list would
+          # be the whole history, so it is left off and the preamble stands
+          # alone.
+          previous=$(gh release list --limit 100 --json tagName \
+              --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0].tagName // empty')
+
+          # --target pins the tag to the commit that was built. main can have
+          # moved on while the packaging jobs ran, and a tag on a commit nothing
+          # in this run compiled is worse than no tag at all.
+          if [ -n "$previous" ]; then
+              echo "Generating notes since $previous."
+              gh release create "v$VERSION" \
+                  --target "$GITHUB_SHA" \
+                  --title "XPCog $VERSION" \
+                  --notes-file notes.md \
+                  --generate-notes \
+                  --notes-start-tag "$previous" \
+                  "dist/XPCog-$VERSION-x64-setup.exe" \
+                  "dist/XPCog-$VERSION-arm64.dmg"
+          else
+              echo "No earlier v-tagged release; publishing without generated notes."
+              gh release create "v$VERSION" \
+                  --target "$GITHUB_SHA" \
+                  --title "XPCog $VERSION" \
+                  --notes-file notes.md \
+                  "dist/XPCog-$VERSION-x64-setup.exe" \
+                  "dist/XPCog-$VERSION-arm64.dmg"
+          fi
+
+          echo "Released v$VERSION." >> "$GITHUB_STEP_SUMMARY"
+          gh release view "v$VERSION" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
