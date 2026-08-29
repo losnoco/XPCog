@@ -312,9 +312,17 @@ answers the same question from the state that matters, does nothing when re-run
 on a commit already released, and repairs itself — a version that reaches `main`
 without a release gets one on the next run.
 
-It waits on every other job. A release is the only thing here that outlives the
-run that made it, so it is the one thing not published while any part of the tree
-is red. The notes name both files and say what was done to each: the installer is
+It waits on the two packaging jobs and the version check, and on nothing else.
+A failing test, a broken system-libs build or a headless link error does not hold
+the release: those jobs say something about the tree, while the packaging jobs say
+whether there is anything to publish. Failing to *build* a package still stops it,
+because `needs` skips the job and the artifacts would not be there to download.
+The trade is deliberate — a version can be released with a red run behind it. The
+run says which job failed, so what this changes is who decides: a release that
+went out on a known failure is something to see and yank, rather than a packaged
+build nobody can have because an unrelated job broke.
+
+The notes name both files and say what was done to each: the installer is
 unsigned, and the disk image says whether that run signed and notarised it rather
 than asserting that it usually does. Everything after the notes is GitHub's own
 list of what changed, read from the previous `v` release.

@@ -1153,11 +1153,21 @@ jobs:
     # The consequence to know about is the first run of this job. Whatever
     # version main is on then has no release, so it gets one, bump or not.
     #
-    # It waits on every other job, packaging included. A release is the one
-    # artifact here that outlives the run, so it is the one thing that should not
-    # be published while any part of the tree is red.
+    # It waits on the two packaging jobs and on the version, and deliberately on
+    # nothing else. A red test suite, a broken Linux system-libs build or a
+    # headless link failure no longer holds the release: those jobs say something
+    # about the tree, and the two packaging jobs say whether there is anything to
+    # publish. Failing to build the installer is what should stop a release, and
+    # it still does -- `needs` skips this job when either packaging job fails, and
+    # the artifacts would not be there to download in any case.
+    #
+    # The cost of that is real and worth stating: a version can be released with
+    # a failing test in it. The run is still red and says which job, so what this
+    # changes is who decides -- a release that goes out on a known failure is a
+    # thing somebody can see and yank, rather than a packaged build nobody can
+    # have because an unrelated job broke.
     name: Release
-    needs: [version, build, system-libs, headless, installer, macos-package]
+    needs: [version, installer, macos-package]
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
