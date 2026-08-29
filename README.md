@@ -327,6 +327,16 @@ unsigned, and the disk image says whether that run signed and notarised it rathe
 than asserting that it usually does. Everything after the notes is GitHub's own
 list of what changed, read from the previous `v` release.
 
+Once the release is up, the job POSTs to a Netlify build hook so that
+[the download page](https://cog.losno.co/xpcog) rebuilds. That site is static and
+reads this repository's releases at build time, so without the POST a release is
+published and invisible until something else deploys. The hook URL lives in a
+`WEBSITE_BUILD_HOOK` repository secret, because the URL *is* the credential --
+holding it lets you start a deploy of that site and nothing else. It is optional:
+unset, the step says so and does nothing, which is what a fork wants. It also
+cannot fail the job, since the release is already public by then and a site one
+version behind is fixed by the next release or by a deploy from Netlify.
+
 The version itself is checked before any of that, by a `Version` job that runs on
 pull requests too. `CMakeLists.txt` and `vcpkg.json` both carry it and are kept
 identical; nothing in a build reads both, so a half-bump configures, compiles,

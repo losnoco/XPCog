@@ -1310,3 +1310,39 @@ jobs:
 
           echo "Released v$VERSION." >> "$GITHUB_STEP_SUMMARY"
           gh release view "v$VERSION" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
+
+      # The website reads this repository's releases at build time -- it is a
+      # static site, so a release nobody rebuilds for is a release the download
+      # page does not have. This is that rebuild: a Netlify build hook for the
+      # cog-losnoco project, held in WEBSITE_BUILD_HOOK because the URL is the
+      # credential. Anyone with it can start a deploy, and that is all they can
+      # do, which is why a hook and not a token.
+      #
+      # It runs only when this job actually published something, so a re-run
+      # that finds the release already there does not deploy again.
+      #
+      # Nothing here fails the job. The release is public by the time this
+      # step runs and cannot be unpublished by a curl that timed out; a site
+      # one version stale is fixed by the next release or by a deploy from the
+      # Netlify UI. A missing secret is the same case and is not an error at
+      # all -- a fork has none.
+      - name: Ask the website to rebuild
+        if: steps.check.outputs.needed == 'true'
+        env:
+          BUILD_HOOK: ${{ secrets.WEBSITE_BUILD_HOOK }}
+        run: |
+          if [ -z "$BUILD_HOOK" ]; then
+              echo "::notice::WEBSITE_BUILD_HOOK is unset; not rebuilding the site."
+              exit 0
+          fi
+
+          # trigger_title is what the deploy is called in Netlify's list, which
+          # otherwise reads "Manual deploy" for every one of these.
+          if curl --fail-with-body --silent --show-error \
+                  --retry 3 --retry-delay 5 --max-time 30 \
+                  --request POST --data '' \
+                  "$BUILD_HOOK?trigger_title=XPCog+v$VERSION"; then
+              echo "Asked the website to rebuild for v$VERSION." >> "$GITHUB_STEP_SUMMARY"
+          else
+              echo "::warning::the website build hook did not answer; the download page will be stale until the next deploy."
+          fi
