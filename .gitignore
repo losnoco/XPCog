@@ -16,3 +16,8 @@ CMakeUserPresets.json
 
 # macOS
 .DS_Store
+
+# Last.fm credentials handed to a Flatpak build. flatpak-builder does not pass
+# the host environment into its sandbox, so CI writes this file from repository
+# secrets; it is never committed. See packaging/flatpak/co.losno.XPCog.yml.
+lastfm.env
