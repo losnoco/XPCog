@@ -21,3 +21,10 @@ CMakeUserPresets.json
 # the host environment into its sandbox, so CI writes this file from repository
 # secrets; it is never committed. See packaging/flatpak/co.losno.XPCog.yml.
 lastfm.env
+
+# makepkg's working directories and the source tarball it downloads, when
+# packaging/arch is built in place rather than with BUILDDIR set.
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.pkg.tar*
+packaging/arch/*.tar.gz

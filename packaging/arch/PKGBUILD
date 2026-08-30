@@ -56,8 +56,10 @@ source=(
   "$pkgname-$pkgver.tar.gz::https://github.com/losnoco/XPCog/archive/refs/tags/v$pkgver.tar.gz"
   "vcpkg::git+https://github.com/microsoft/vcpkg.git#commit=$_vcpkg_commit"
 )
+# The release tarball is checksummed; the vcpkg tree is not, because a git
+# source is pinned by its commit and makepkg wants SKIP for one.
 sha256sums=(
-  'SKIP'
+  '78f30470ff2c01bd69673af8b05ce9ca32e628e9f2ca05f5f2db28b2ec2e5385'
   'SKIP'
 )
 

@@ -33,7 +33,7 @@ pkgbase = xpcog
 	depends = hicolor-icon-theme
 	source = xpcog-1.0.0.tar.gz::https://github.com/losnoco/XPCog/archive/refs/tags/v1.0.0.tar.gz
 	source = vcpkg::git+https://github.com/microsoft/vcpkg.git#commit=17f35ad2418007a895ced8a4cece4ab34068a58d
-	sha256sums = SKIP
+	sha256sums = 78f30470ff2c01bd69673af8b05ce9ca32e628e9f2ca05f5f2db28b2ec2e5385
 	sha256sums = SKIP
 
 pkgname = xpcog
