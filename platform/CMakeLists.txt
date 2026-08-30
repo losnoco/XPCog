@@ -19,6 +19,7 @@
 # Occupants:
 #   Settings       registry / CFPreferences / a file, and the paths around them
 #   MediaIntegration  MPNowPlayingInfoCenter / SMTC / MPRIS
+#   TrayIcon       StatusNotifierItem on Linux, where wxTaskBarIcon cannot go
 #   TaskbarIntegration ITaskbarList3 done; NSDockTile outstanding
 #   FileAssociations   Windows only, by design
 #   FileManager    revealing a file and moving it to the trash
@@ -60,6 +61,7 @@ if(WIN32)
         src/windows/WindowsSettings.cpp
         src/windows/WindowsFileManager.cpp
         src/common/CommonPropertyList.cpp
+        src/common/NullTrayIcon.cpp
         src/windows/WindowsTaskbarIntegration.cpp
         src/windows/WindowsMediaIntegration.cpp)
 
@@ -83,6 +85,7 @@ elseif(APPLE)
         src/common/NullTaskbarIntegration.cpp
         src/mac/MacSettings.cpp
         src/mac/MacPropertyList.cpp
+        src/common/NullTrayIcon.cpp
         src/mac/MacFileManager.mm
         src/mac/MacMediaIntegration.mm)
     # ARC, so the Objective-C objects there need no manual retain or release.
@@ -102,7 +105,8 @@ elseif(UNIX)
         src/common/CommonSettings.cpp
         src/common/CommonPropertyList.cpp
         src/linux/GioFileManager.cpp
-        src/linux/GDbusMediaIntegration.cpp)
+        src/linux/GDbusMediaIntegration.cpp
+        src/linux/SniTrayIcon.cpp)
 
     # MPRIS is D-Bus, and GDBus is the binding. REQUIRED rather than optional: a
     # Linux desktop without a session bus is possible, which the code handles at
@@ -128,6 +132,7 @@ else()
         src/common/FileAssociations.cpp
         src/common/NullTaskbarIntegration.cpp
         src/common/NullMediaIntegration.cpp
+        src/common/NullTrayIcon.cpp
         src/common/NullFileManager.cpp
         src/common/CommonSettings.cpp)
 endif()

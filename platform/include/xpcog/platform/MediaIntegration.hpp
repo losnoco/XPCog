@@ -41,6 +41,7 @@
 
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/Url.hpp"
+#include "xpcog/platform/Dispatcher.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -70,12 +71,6 @@ struct NowPlayingInfo {
     /// original bytes all along.
     std::vector<std::byte> artwork;
 };
-
-/// Runs a callable on the thread that owns the user interface.
-///
-/// Supplied by the application, because this layer deliberately does not know
-/// what the interface is built with. In XPCog it wraps wxEvtHandler::CallAfter.
-using Dispatcher = std::function<void(std::function<void()>)>;
 
 class MediaIntegration {
 public:

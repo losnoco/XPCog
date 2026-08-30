@@ -226,7 +226,7 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
     media_             = platform::MediaIntegration::create(dispatch_, handle);
     taskbar_           = platform::TaskbarIntegration::create(handle);
 
-    presence_ = std::make_unique<StatusPresence>(this);
+    presence_ = std::make_unique<StatusPresence>(this, dispatch_);
 
     wireUp();
     restoreState();

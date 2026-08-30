@@ -29,13 +29,36 @@
 // Every entry in the menu posts a command id the frame already handles, so the
 // tray and the menu bar enable and disable together through EVT_UPDATE_UI and
 // there is no second play button to keep in step.
+//
+// --- And then there is Linux ----------------------------------------------
+//
+// wxTaskBarIcon on GTK is GtkStatusIcon, which is the XEmbed system-tray
+// protocol, which is X11. On a Wayland session it cannot work and says so:
+// IsAvailable() returns false before it looks at anything. That is most Linux
+// desktops now, so the tray platform that wanted this most was the one not
+// getting it.
+//
+// So there are two routes to a tray here, and this class picks. platform::TrayIcon
+// is StatusNotifierItem over D-Bus, which no display server is involved in, and
+// it is preferred wherever a panel answers for it; wxTaskBarIcon is the fallback,
+// unchanged, and still the whole story on Windows. Both are driven from one menu
+// model -- menuModel() -- so the two cannot describe different menus, which is
+// the failure this arrangement would otherwise invite.
+//
+// hasTrayIcon() is the answer to "did either of them work", which is what every
+// caller actually wanted to ask.
 
 #pragma once
+
+#include "xpcog/core/Signal.hpp"
+#include "xpcog/platform/TrayIcon.hpp"
 
 #include <wx/taskbar.h>
 #include <wx/toplevel.h>
 
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace xpcog::app {
 
@@ -53,7 +76,11 @@ class StatusPresence : public wxTaskBarIcon {
 public:
     /// `frame` is the window to raise and where commands are posted; it must
     /// outlive this object, which it does because the frame owns it.
-    explicit StatusPresence(MainFrame* frame);
+    ///
+    /// `dispatch` is what the StatusNotifierItem route needs and the wx route
+    /// does not: a panel's click arrives on whichever thread pumps D-Bus, and
+    /// this is how it gets back to the one that owns the window.
+    StatusPresence(MainFrame* frame, platform::Dispatcher dispatch);
 
     /// The track now playing, at the top of the menu as in Cog's dock menu.
     /// Either string may be empty -- an unknown artist hides its row rather than
@@ -74,6 +101,10 @@ public:
     /// exists while a tray icon does not. Anything that hides the window and
     /// relies on getting it back has to ask this, or it will hide the window on
     /// macOS and leave nothing to click.
+    ///
+    /// Which of the two routes produced it is deliberately not exposed. A caller
+    /// that branched on it would be encoding today's platform support into a
+    /// place that has no business knowing.
     [[nodiscard]] bool hasTrayIcon() const { return hasTrayIcon_; }
 
     /// A transient notification. `icon` is shown alongside the text where the
@@ -101,10 +132,35 @@ public:
     // --- wxTaskBarIcon ----------------------------------------------------
     wxMenu* CreatePopupMenu() override;
 
+    /// Overridden so that taking the icon down takes down whichever one is up.
+    ///
+    /// The frame calls this on the way out and does not know which route was
+    /// taken, which is the point -- the alternative was a second method the frame
+    /// had to remember to call as well.
+    bool RemoveIcon() override;
+
 private:
-    void refreshTooltip();
+    /// The menu, once, for both routes to render.
+    [[nodiscard]] std::vector<platform::TrayMenuItem> menuModel() const;
+
+    /// Pushes the tooltip and the menu to whichever route is live. Called
+    /// whenever the track or the transport state moves, because both appear in
+    /// both of them.
+    void refresh();
+
+    [[nodiscard]] std::string tooltipBody() const;
+
+    /// Runs the command a row carries, from either route.
+    void activateCommand(int id);
 
     MainFrame* frame_ = nullptr;
+
+    /// StatusNotifierItem, where a panel answers for it. Always constructed --
+    /// the base class is a working do-nothing -- and consulted through
+    /// isAvailable() rather than through a null check.
+    std::unique_ptr<platform::TrayIcon> tray_;
+    Subscription                        trayActivated_;
+    Subscription                        trayMenuActivated_;
 
     /// The track, kept because the tooltip is rebuilt from scratch whenever
     /// either the track or the state changes and the two arrive separately.
