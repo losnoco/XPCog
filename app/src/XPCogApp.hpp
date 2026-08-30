@@ -46,7 +46,7 @@ public:
     /// and the desktop identity has to be set before that happens. See
     /// xpcog/platform/DesktopIdentity.hpp for what is being set and why the
     /// timing is the whole of it.
-    bool Initialize(int& argc, wxChar** argv) override;
+    bool Initialize(int& argCount, wxChar** argValues) override;
 
     bool OnInit() override;
     int  OnRun() override;

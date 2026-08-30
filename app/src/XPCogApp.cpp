@@ -50,7 +50,9 @@ const wxCmdLineEntryDesc kCommandLine[] = {
 
 }  // namespace
 
-bool XPCogApp::Initialize(int& argc, wxChar** argv) {
+// argCount/argValues rather than argc/argv, which would shadow wxAppConsole's
+// members of those names -- and this project builds with -Wshadow.
+bool XPCogApp::Initialize(int& argCount, wxChar** argValues) {
     // Before the base class, not after: wxGTK's wxApp::Initialize is where
     // gtk_init() runs, GTK reads the program name exactly once while it does,
     // and a window's Wayland app_id is fixed when its surface is created. Doing
@@ -70,7 +72,7 @@ bool XPCogApp::Initialize(int& argc, wxChar** argv) {
         SetClassName(wxString::FromUTF8(id.data(), id.size()));
     }
 
-    return wxApp::Initialize(argc, argv);
+    return wxApp::Initialize(argCount, argValues);
 }
 
 void XPCogApp::OnInitCmdLine(wxCmdLineParser& parser) {

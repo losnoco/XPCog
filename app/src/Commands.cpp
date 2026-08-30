@@ -98,6 +98,15 @@ const std::vector<MenuItem>& layout() {
         // a command that appears and disappears with a compile flag is worse
         // than one that is occasionally inert.
         {nullptr, ViewSc55Panel, wxTRANSLATE("SC-55 &Panel"), "", ItemKind::Check},
+        // Putting a torn-off pane back, which on Wayland is otherwise
+        // impossible: docking one is a drag, and a Wayland client cannot place
+        // its own surfaces, so wxAUI never sees the gesture that would re-dock
+        // it. A menu item is the only way back, and it costs nothing on the two
+        // platforms where the drag works.
+        //
+        // Disabled when nothing is floating, so it also answers "is anything
+        // torn off" rather than sitting there permanently clickable.
+        {nullptr, ViewDockPanes, wxTRANSLATE("&Dock Floating Panes"), "", ItemKind::Normal, true},
         {nullptr, ViewMiniPlayer, wxTRANSLATE("&Mini Player"), "Ctrl+M", ItemKind::Check, true},
 
         {wxTRANSLATE("&Edit"), EditUndo, wxTRANSLATE("&Undo"), "Ctrl+Z"},

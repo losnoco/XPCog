@@ -91,6 +91,7 @@ enum CommandId : int {
     ViewFollowSelection,
     ViewFollowPlayback,
     ViewSc55Panel,
+    ViewDockPanes,
     ViewMiniPlayer,
 
     // The playlist's context menu. Cog reaches most of these from its Playlist

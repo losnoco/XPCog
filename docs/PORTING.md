@@ -3402,6 +3402,32 @@ All of these are also documented at the call site.
 
 **Behaviour**
 
+- **The pitch and tempo sliders have four times Cog's resolution, and half its
+  snap window.** Cog's `speedScale` maps a slider position in 0..100 onto a ratio
+  in 0.2..5.0 quadratically, and the curve here is that one unchanged: the same
+  position, as a fraction of the travel, gives the same ratio, so an imported
+  plist and this slider agree about what 1.5 means.
+
+  What changed is how finely it is sampled. Quadratic means a step near 1.0 is
+  worth far more than a step at either end -- about 0.039 with a hundred
+  positions -- so the slider could not express 0.98 or 0.99 at all. It went 0.97,
+  1.00, 1.05: most of a semitone skipped in the range people actually use. 400
+  positions puts that step at about 0.0098, which is what the two-decimal readout
+  beside the slider can distinguish; finer would be travel that changes nothing a
+  reader can see.
+
+  Cog's `snapSpeeds` window follows it down from 0.01 to 0.005, and that is not a
+  second opinion about the number. The window has to be wide enough that some
+  position falls inside it -- otherwise the slider can never land on exactly 1.0
+  and the stretcher runs for nothing audible -- and narrow enough not to swallow
+  its neighbours. At 0.01 against the finer slider it caught the positions on
+  *both* sides of 1.0, which made 1.01 unreachable: the original complaint moved
+  along by one step. Exactly one of the 400 positions now snaps.
+
+  Cog gets away with the coarser slider because its pair sit in the main window
+  and are dragged against playing audio; here they are in a preferences pane, set
+  deliberately and read off a label.
+
 - **SID playback is reproducible; Cog's is not.** `SidConfig::DEFAULT_POWER_ON_DELAY`
   is deliberately one past `MAX_POWER_ON_DELAY`, and libsidplayfp reads anything
   above the maximum as *pick one at random*, from a generator seeded with

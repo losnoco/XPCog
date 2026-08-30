@@ -242,6 +242,19 @@ private:
     /// reverse. The manager is the authority.
     [[nodiscard]] bool paneShown(wxWindow* pane) const;
 
+    /// Docks every floating pane, and reports whether any was.
+    ///
+    /// The escape hatch for Wayland. A pane is docked by dragging it onto the
+    /// frame, and a Wayland client cannot position its own surfaces -- so the
+    /// drag that would re-dock a torn-off pane never reaches wxAUI, and a pane
+    /// floated there stays floated for good. Each pane remembers the dock it
+    /// came from, so this puts them back where they were rather than at a
+    /// default.
+    bool dockFloatingPanes();
+
+    /// Whether any pane is torn off. Drives the menu item's enabled state.
+    [[nodiscard]] bool anyPaneFloating();
+
     void addUrls(const std::vector<Url>& urls, int atRow = -1);
 
     /// Starts the next queued scan, if any and if none is running.

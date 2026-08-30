@@ -1058,6 +1058,38 @@ void MainFrame::showFileTree(bool show) {
     }
 }
 
+bool MainFrame::dockFloatingPanes() {
+    wxAuiPaneInfoArray& panes = auiManager_.GetAllPanes();
+    bool docked = false;
+    for (std::size_t i = 0; i < panes.GetCount(); ++i) {
+        wxAuiPaneInfo& info = panes.Item(i);
+        if (info.IsFloating()) {
+            // Dock() alone, with no Direction() beside it: the pane still
+            // carries the dock it was torn from, and overriding that would send
+            // a pane the user had moved to the bottom back to the default side.
+            info.Dock();
+            docked = true;
+        }
+    }
+    // Hidden panes are docked too, and deliberately. A floating pane that is
+    // closed is still floating, so leaving it alone would mean re-opening it
+    // later and finding it torn off again with no memory of why.
+    if (docked) {
+        auiManager_.Update();
+    }
+    return docked;
+}
+
+bool MainFrame::anyPaneFloating() {
+    wxAuiPaneInfoArray& panes = auiManager_.GetAllPanes();
+    for (std::size_t i = 0; i < panes.GetCount(); ++i) {
+        if (panes.Item(i).IsFloating()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool MainFrame::paneShown(wxWindow* pane) const {
     if (pane == nullptr) {
         return false;
@@ -1491,6 +1523,7 @@ void MainFrame::bindCommands() {
         sc55_->setActive(showing);
     });
 #endif
+    on(ViewDockPanes, [this] { dockFloatingPanes(); });
     on(ViewFileTree, [this] { showFileTree(!splitter_->IsSplit()); });
 
     // --- the playlist's context menu -------------------------------------
@@ -1597,6 +1630,8 @@ void MainFrame::bindUpdateUi() {
     });
     update(ViewSpectrum,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(spectrum_)); });
+    update(ViewDockPanes,
+           [this](wxUpdateUIEvent& event) { event.Enable(anyPaneFloating()); });
 #ifdef XPCOG_HAVE_SC55_PANEL
     update(ViewSc55Panel,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(sc55_)); });
