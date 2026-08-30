@@ -36,6 +36,81 @@ keeping — see [Relationship to Cog](#relationship-to-cog).
 [`docs/PORTING.md`](docs/PORTING.md) has the full plan and the reasoning behind the
 structure.
 
+## Installing
+
+Six ways, and the [latest release](https://github.com/losnoco/XPCog/releases/latest)
+carries the first three.
+
+### Prebuilt
+
+- **Windows** — `XPCog-<version>-x64-setup.exe`. **Unsigned**, so SmartScreen will
+  say so. See [Windows: the installer](#windows-the-installer) for the silent
+  switches and what the installer registers.
+- **macOS** — `XPCog-<version>-arm64.dmg`. Signed with a Developer ID and
+  notarised, so Gatekeeper opens it without argument. **Apple silicon only** — not
+  a universal binary, so an Intel Mac cannot run it. See
+  [macOS: the disk image](#macos-the-disk-image).
+- **Linux** — `XPCog-<version>-x86_64.tar.gz`:
+
+  ```sh
+  sudo tar xzf XPCog-<version>-x86_64.tar.gz --strip-components=1 -C /usr/local
+  ```
+
+  **Needs glibc 2.39 or newer** — Ubuntu 24.04, Debian 13, current Fedora, Arch
+  and openSUSE are above that line; Ubuntu 22.04, Debian 12 and RHEL 9 are below
+  it. wxWidgets and GTK come from your distribution and the codecs are linked in.
+  `bin/`, `lib/` and `share/` relocate happily so long as they move together, but
+  the desktop file's `Exec` is an absolute path — unpack at the prefix you mean to
+  run from, or edit that one line. See [Linux: installing](#linux-installing).
+
+### Built on your machine
+
+- **Arch** — [`xpcog`](https://aur.archlinux.org/packages/xpcog) on the AUR:
+
+  ```sh
+  yay -S xpcog          # or paru, or a clone and `makepkg -si`
+  ```
+
+  Built against Arch's own libraries. It **reaches the network during `build()`**,
+  because vcpkg fetches what has no system path, so it will not work in a
+  network-isolated clean chroot. `packaging/arch/README.md` has the rest.
+
+- **Flatpak** — runs on any distribution whatever its glibc, which is the one
+  thing the tarball cannot do:
+
+  ```sh
+  flatpak run org.flatpak.Builder --force-clean --user --install \
+      build-dir packaging/flatpak/co.losno.XPCog.yml
+  ```
+
+  **Not on Flathub**, for the same vcpkg reason: the manifest needs
+  `--share=network`. `packaging/flatpak/README.md` lists what would remove it.
+
+- **From source** — the developer path, and the one [Building](#building)
+  documents at length:
+
+  ```sh
+  cmake --preset linux-repo-release       # or macos-release / windows-release
+  cmake --build --preset linux-repo-release
+  sudo cmake --install build/linux-repo-release --prefix /usr/local
+  ```
+
+### Which one
+
+| You are on | Take |
+| --- | --- |
+| Windows or macOS | the installer or the disk image |
+| Arch | `yay -S xpcog` |
+| A current mainstream distribution | the tarball |
+| Something older, or you want the sandbox | the Flatpak |
+| Ubuntu 22.04, Debian 12, RHEL 9 | Flatpak or source — the tarball's glibc floor rules you out |
+
+One thing applies to everything you build yourself: **scrobbling is off unless you
+supply your own Last.fm credentials.** The key identifies the *application* to
+Last.fm and cannot be published, so a build without it compiles the scrobbling
+code and reports the feature as unavailable — the prebuilt downloads carry one,
+and [Last.fm](#lastfm) covers applying for your own.
+
 ## Design
 
 The player is arranged around one narrow contract, and everything else is built
