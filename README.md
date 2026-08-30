@@ -423,12 +423,29 @@ three deliberate differences from the preset — no crash reporter, no tests, an
 `libdir` set to `lib/xpcog` so the bundled `libvgmstream.so` does not claim a
 name in `/usr/lib`.
 
-**No Flatpak yet.** It is the right answer for a user on any distribution who
-does not build, and the obstacle is worth stating: `flatpak-builder` builds with
-no network, so vcpkg's manifest mode cannot run inside it. The path that works
-is `org.gnome.Platform` plus `XPCOG_USE_SYSTEM_LIBS` and a manifest module per
-remaining dependency, which the `linux-repo-*` presets already do most of the
-thinking for. Flathub also requires screenshots, which the metainfo has none of.
+**Flatpak.** `packaging/flatpak/co.losno.XPCog.yml` builds against
+`org.gnome.Platform` 50, which makes it the only artefact here that runs on a
+distribution regardless of its glibc:
+
+```sh
+flatpak run org.flatpak.Builder --force-clean --user --install \
+    build-dir packaging/flatpak/co.losno.XPCog.yml
+```
+
+Nothing in it renames a file or patches an install rule: Flatpak wants the
+desktop file, the metainfo and the icons named for the application ID, and
+`packaging/linux/` installs them that way already.
+
+**It is not ready for Flathub, and the obstacle is one line.** The `xpcog`
+module asks for `--share=network`, because `flatpak-builder` builds offline and
+vcpkg fetches port sources itself. Everything else about the manifest is
+submittable. Removing vcpkg is most of the way done by the runtime — the SDK
+already supplies SQLite, curl, libarchive, Ogg, Vorbis, FLAC, Opus, opusfile,
+TagLib, WavPack and FFmpeg, all of which `XPCogSystemDeps` substitutes — and
+what remains is listed in `packaging/flatpak/README.md`, the awkward entry
+being that `codecs/flac` and `codecs/vorbis` want `find_package(... CONFIG)`
+and the SDK ships those libraries without config packages. Flathub would also
+want screenshots, which the metainfo has none of.
 
 ### Releases
 

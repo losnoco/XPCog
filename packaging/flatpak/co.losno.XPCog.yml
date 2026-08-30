@@ -1,0 +1,197 @@
+# XPCog as a Flatpak.
+#
+#     flatpak run org.flatpak.Builder --force-clean --user --install \
+#         build-dir packaging/flatpak/co.losno.XPCog.yml
+#
+# The application ID here is the one everything else already agreed on --
+# XPCOG_DESKTOP_ID in the root CMakeLists.txt -- which is why nothing in this
+# manifest renames a file. Flatpak wants the desktop file, the AppStream
+# metainfo and the icons named for the app ID, and packaging/linux/ installs
+# them that way already.
+#
+# --- Not ready for Flathub, and exactly why ---------------------------------
+#
+# This builds, installs and runs. It cannot be submitted to Flathub as it
+# stands, because the xpcog module asks for --share=network: flatpak-builder
+# builds offline by design, and vcpkg fetches each port's sources itself rather
+# than through `sources:` below.
+#
+# Getting rid of that means getting rid of vcpkg, and the obstacles are
+# specific rather than general. The GNOME 50 SDK already supplies most of what
+# XPCogSystemDeps.cmake can substitute -- SQLite, curl, libarchive, Ogg,
+# Vorbis, FLAC, Opus, opusfile, TagLib, WavPack and FFmpeg are all there, which
+# is why the vcpkg build below is a fraction of a normal one. What stands in
+# the way is:
+#
+#   * codecs/flac and codecs/vorbis call find_package(FLAC CONFIG) and
+#     find_package(Vorbis CONFIG), and the SDK ships neither FLACConfig.cmake
+#     nor VorbisConfig.cmake -- the ones vcpkg uses are vcpkg's own. Modules
+#     for those two would have to install a config package as well as a
+#     library.
+#   * mgba and libvgm have no system path in XPCogSystemDeps at all, so GSF and
+#     the VGM family would need modules of their own.
+#   * libopenmpt, libgme, soxr, rubberband and nlohmann/json are not in the
+#     SDK either, though those are ordinary builds rather than awkward ones.
+#
+# None of that is hard, all of it is work, and the version here is worth having
+# in the meantime: it is the only artefact this project produces that runs on a
+# distribution regardless of its glibc.
+
+id: co.losno.XPCog
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: XPCog
+
+# Every one of these is here because something in platform/src/linux or core/
+# asks for it. Nothing is speculative.
+finish-args:
+  # The window, on either display protocol.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+
+  - --socket=pulseaudio
+
+  # codecs/httpsource and codecs/hls open URLs, and core scrobbles to Last.fm.
+  - --share=network
+
+  # A music library is wherever the listener keeps it, and XPCog is pointed at
+  # directories rather than handed individual files.
+  - --filesystem=home
+  - --filesystem=xdg-music
+
+  # platform/src/linux/SniTrayIcon.cpp registers a StatusNotifierItem with it.
+  - --talk-name=org.kde.StatusNotifierWatcher
+
+  # platform/src/linux/GDbusMediaIntegration.cpp owns
+  # org.mpris.MediaPlayer2.xpcog.instance<pid> -- see kBusName there.
+  - --own-name=org.mpris.MediaPlayer2.xpcog.*
+
+  # platform/src/linux/GioFileManager.cpp calls ShowItems to reveal a track.
+  - --talk-name=org.freedesktop.FileManager1
+
+  # The Last.fm session key lives in wxSecretStore, which is libsecret here.
+  - --talk-name=org.freedesktop.secrets
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/aclocal
+  - '*.a'
+  - '*.la'
+
+modules:
+  # The toolkit, and the one dependency that has to be a module rather than
+  # left to vcpkg. vcpkg's wxwidgets port depends on its gtk3 port, which would
+  # build GTK, glib, pango, cairo, harfbuzz and seven X11 libraries from source
+  # inside a runtime that already has every one of them -- the same trade
+  # cmake/XPCogWx.cmake makes on a Linux desktop, for the same reason.
+  #
+  # secretstore is on because core keeps the Last.fm session key in
+  # wxSecretStore rather than in settings; webview is off because nothing here
+  # displays a web page, and it is the one wx component that would want WebKit.
+  - name: wxwidgets
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DwxBUILD_SHARED=ON
+      - -DwxBUILD_TOOLKIT=gtk3
+      - -DwxBUILD_SAMPLES=OFF
+      - -DwxBUILD_TESTS=OFF
+      - -DwxBUILD_DEMOS=OFF
+      - -DwxUSE_SECRETSTORE=ON
+      - -DwxUSE_WEBVIEW=OFF
+      # Off because it does not work here, not merely because it is unused.
+      # wx's exported targets put CURL::libcurl_shared in wxnet's link
+      # interface, and resolving that name needs CURL's own CMake config -- but
+      # find_package inside this build goes through vcpkg's toolchain wrapper,
+      # which looks for vcpkg's curl rather than the runtime's, finds neither,
+      # and fails at generate time with "the target was not found".
+      #
+      # Nothing is lost. XPCog does its own HTTP: codecs/httpsource is libcurl
+      # directly, ported from Cog's HTTPSource, and wxWebRequest appears
+      # nowhere in app/, core/ or platform/.
+      - -DwxUSE_WEBREQUEST=OFF
+    sources:
+      - type: archive
+        url: https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.8.1/wxWidgets-3.2.8.1.tar.bz2
+        sha256: ad0cf6c18815dcf1a6a89ad3c3d21a306cd7b5d99a602f77372ef1d92cb7d756
+
+  - name: xpcog
+    buildsystem: simple
+    # The line that keeps this off Flathub. See the note at the top.
+    build-options:
+      build-args:
+        - --share=network
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - build
+          - .git
+          - .vcpkg-cache
+      # Pinned to the manifest's builtin-baseline, exactly as
+      # packaging/arch/PKGBUILD pins it, and checked below for the same reason:
+      # two files that have to say the same commit, and nothing else would
+      # notice them drifting apart.
+      - type: git
+        url: https://github.com/microsoft/vcpkg.git
+        commit: 17f35ad2418007a895ced8a4cece4ab34068a58d
+        dest: vcpkg
+    build-commands:
+      - |
+        set -e
+
+        # That the commit pinned in `sources:` above and the manifest's
+        # builtin-baseline still name the same tree. Advisory rather than fatal,
+        # and deliberately so: flatpak-builder does not promise to leave a .git
+        # behind for a git source, so "cannot tell" is a real answer here and is
+        # not the same as "they disagree". The pin that matters is the one in
+        # `sources:`; this only catches it drifting from vcpkg.json.
+        baseline=$(sed -n 's/.*"builtin-baseline"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' vcpkg.json)
+        if pinned=$(git -C vcpkg rev-parse HEAD 2>/dev/null); then
+            if [ "$baseline" != "$pinned" ]; then
+                echo "manifest: the pinned vcpkg commit is $pinned but vcpkg.json's" >&2
+                echo "builtin-baseline is $baseline. Update the commit to match." >&2
+                exit 1
+            fi
+            echo "vcpkg pinned at $pinned, matching the manifest baseline."
+        else
+            echo "vcpkg has no .git here; trusting the commit pinned in sources."
+        fi
+
+        # vcpkg wants somewhere writable for its downloads and its own tools.
+        export VCPKG_ROOT="$PWD/vcpkg"
+        export HOME="$PWD/.home"
+        mkdir -p "$HOME"
+        "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+        # The three differences from linux-repo-release are the ones
+        # packaging/arch/PKGBUILD makes, for the same reasons: no crash
+        # reporter in a distributed package, no test suite, and everything the
+        # runtime already has taken from the runtime.
+        #
+        # mgba and libvgm stay on: they have no system path, so vcpkg builds
+        # them, which is the part that needs the network above.
+        cmake -B _build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_INSTALL_PREFIX=/app \
+            -DXPCOG_USE_SYSTEM_LIBS=ON \
+            -DXPCOG_BUILD_TESTS=OFF \
+            -DXPCOG_WITH_SENTRY=OFF \
+            -DVCPKG_MANIFEST_FEATURES="ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm" \
+            -DXPCOG_WITH_FFMPEG=ON \
+            -DXPCOG_WITH_VGMSTREAM=ON \
+            -DXPCOG_WITH_PSF=ON \
+            -DXPCOG_WITH_SID=ON \
+            -DXPCOG_WITH_MUSEPACK=ON \
+            -DXPCOG_WITH_MIDI=ON \
+            -DXPCOG_WITH_ADPLUG=ON \
+            -DXPCOG_WITH_LIBVGM=ON
+
+        cmake --build _build
+        cmake --install _build
