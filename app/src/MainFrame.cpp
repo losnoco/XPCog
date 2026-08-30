@@ -759,6 +759,44 @@ void MainFrame::wireUp() {
         CallAfter([this] { showSortIndicator(); });
     });
 
+    // And again once the native control has had its own say, which on GTK is
+    // strictly later than the CallAfter above.
+    //
+    // The three ports arrive here by different routes. The generic control --
+    // which is what wxMSW uses -- offers the click to the application first and
+    // does nothing more when it is handled, so the arrow is ours alone and
+    // always was. macOS decides immediately after the click, which the
+    // CallAfter is placed after. GTK sends this event from a *button-press*
+    // handler on the header button and then lets GtkTreeView carry on: the
+    // release emits the column's "clicked" signal, which asks the model to sort
+    // and, through "sort-column-changed", re-derives every column's indicator
+    // from what the model now says. That happens after the idle the CallAfter
+    // runs in, so on GTK the arrow was GTK's rather than ours from the moment
+    // the button came back up.
+    //
+    // What GTK rewrites it to is decided by what the model says at that moment,
+    // and the CallAfter has already told it: wxDataViewColumn::SetSortOrder()
+    // writes the column and the order into wxDataViewCtrlInternal, which is what
+    // GtkTreeSortable reads back. So GTK treats the state we just set as the one
+    // to move on from, and toggles it. On the first two clicks the arrow
+    // therefore comes back *reversed* -- ascending drawn over a descending sort
+    // -- and on the third our unset left the model saying nothing is sorted, GTK
+    // sees a column that is not it, and puts an ascending arrow on a column the
+    // playlist is no longer sorted by. There is no third state for it to reach
+    // instead: wxWidgets' model reports no default sort function, which is the
+    // one that would give it one.
+    //
+    // The arrow was wrong on every click, then, and not only the last. A
+    // reversed one is simply easier to miss than one that will not go away.
+    //
+    // wxEVT_DATAVIEW_COLUMN_SORTED is sent at the end of that same model call,
+    // after the indicators have been rewritten, so this is the last word.
+    // Setting the arrows cannot itself re-enter it -- it pokes the columns, not
+    // the sortable -- and everywhere else the event does not arrive at all,
+    // where re-stating the view's own sort would be a no-op anyway.
+    list_->Bind(wxEVT_DATAVIEW_COLUMN_SORTED,
+                [this](wxDataViewEvent&) { showSortIndicator(); });
+
     filter_->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
         view_.setFilter(toUtf8(event.GetString()));
     });
