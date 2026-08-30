@@ -1136,8 +1136,210 @@ jobs:
           path: .vcpkg-cache
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
+  linux-package:
+    # The Linux tarball, built the way it would ship.
+    #
+    # A job of its own for the reason the other two packaging jobs are: the
+    # matrix job builds a Debug tree because that is what runs the test suite,
+    # and a Debug tree is not what a person downloads.
+    #
+    # It runs on pull requests too, and packaging is where the Linux-specific
+    # things break -- an install() rule that stopped naming a target, an rpath
+    # that went back to pointing into vcpkg_installed, a desktop file that stopped
+    # validating. None of that is visible to any other job here: every one of them
+    # builds, and a build has never needed the install rules to be right.
+    #
+    # --- Why linux-release and not linux-app-release ---------------------------
+    #
+    # The macOS job packages app-only, because a bundle holds no CLI and building
+    # one would be link time spent on a file nothing packages. The Linux install
+    # tree *does* ship xpcog-cli -- it is the headless way to ask an installed
+    # XPCog what it can decode -- so app-only would produce a tarball missing a
+    # documented part of itself.
+    #
+    # What that costs is the three test binaries, which linux-release also builds
+    # and nothing installs. Link time, and no more: install() names targets, so
+    # they cannot end up in the archive.
+    #
+    # --- And not linux-repo-release --------------------------------------------
+    #
+    # The system-libs presets exist for a machine that already has the libraries,
+    # which is the opposite of a machine downloading a tarball. Building against
+    # Ubuntu's copies would put seventeen more sonames -- libtag.so.2,
+    # libavcodec.so.63, libopenmpt.so.0 and the rest -- on the list of things that
+    # have to already be right on someone else's system. linux-release takes them
+    # from vcpkg and links them in, so what the tarball needs from its host is
+    # GTK, wxWidgets and the C library.
+    #
+    # The C library is the floor, and it is worth stating because nothing in the
+    # artifact says it: this runs on ubuntu-24.04, so the tarball wants glibc 2.39
+    # or newer. Ubuntu 24.04, Debian 13 and current Fedora, Arch and openSUSE are
+    # above that line; Ubuntu 22.04, Debian 12 and RHEL 9 are below it and cannot
+    # run this download. Moving the floor means moving this runner, and the
+    # release notes say the version so nobody has to guess.
+    name: Linux tarball
+    runs-on: ubuntu-24.04
+    # See the matrix job for why an hour.
+    timeout-minutes: 60
+
+    # `bash` with pipefail, for the reason the macOS job says it once: the
+    # configure step pipes into `tee` so a later step can assert on what it
+    # printed, and without pipefail the status of that step is tee's, which is
+    # always zero.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The build tools and the toolkit, and one package that is neither.
+      #
+      # No command-line encoders: those exist for test fixtures and this job runs
+      # no tests. xvfb is here anyway, and not optionally -- linux-release
+      # configures the test targets even though nothing here runs them, and
+      # tests/CMakeLists.txt raises a fatal error when xvfb-run is missing and CI
+      # is set, precisely so the GUI test cannot quietly go back to skipping.
+      # GitHub sets CI, so without this package the *configure* fails.
+      #
+      # See the matrix job for what each of the rest is for; this is that list
+      # without the encoders.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
+            libwxgtk3.2-dev libglib2.0-dev xvfb
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          runVcpkgInstall: false
+          # See the matrix job: an overlay port's manifest is also a vcpkg.json.
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
+
+      # Two restore keys, the second being the matrix job's, on the same argument
+      # the macOS job makes: linux-release and linux-debug both inherit the
+      # `linux` preset's VCPKG_MANIFEST_FEATURES, and the build type is not a
+      # vcpkg feature, so the two ask for exactly the same package set.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-v3-linux-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          restore-keys: |
+            vcpkg-v3-linux-release-
+            vcpkg-v3-linux-debug-
+
+      # See the matrix job: vcpkg creates this, but not if configure dies first.
+      - name: Prepare the binary cache directory
+        run: mkdir -p .vcpkg-cache
+
+      # The Last.fm credentials, through the environment for the reason the
+      # Windows installer job sets out at length: a -D lands in CMakeCache.txt and
+      # outlives the run that supplied it.
+      - name: Configure
+        id: configure
+        env:
+          XPCOG_LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          XPCOG_LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: cmake --preset linux-release 2>&1 | tee configure.log
+
+      # See the Windows installer job for why this is asserted from the configure
+      # output rather than from the secret being non-empty, and why forks skip it.
+      - name: Check the Last.fm credentials were baked in
+        if: github.event.pull_request.head.repo.fork != true
+        run: |
+          if ! grep -q "Last.fm: API key configured" configure.log; then
+              echo "::error::configure reports no Last.fm API key. Set the LASTFM_API_KEY and LASTFM_API_SECRET repository secrets; see the Configure step for what they are."
+              exit 1
+          fi
+          echo "Last.fm credentials reached the build."
+
+      - name: Build
+        run: cmake --build --preset linux-release
+
+      # `package` is CPack over the install rules. Named explicitly because it is
+      # not part of ALL, the same as `installer` and `dmg`.
+      - name: Build the tarball
+        run: cmake --build --preset linux-release --target package 2>&1 | tee package.log
+
+      # The two files nothing at run time reads, which is what makes them worth
+      # checking here: a malformed desktop file or metainfo installs perfectly
+      # well and is simply ignored by the desktop, so the failure is a download
+      # with no menu entry and nothing anywhere that says why.
+      #
+      # From the staged install rather than from the build directory's configured
+      # copies, so what is validated is what is actually in the archive.
+      - name: Validate the desktop file and the metainfo
+        run: |
+          sudo apt-get install -y --no-install-recommends desktop-file-utils appstream
+          staged=$(mktemp -d)
+          tar xzf build/linux-release/XPCog-*.tar.gz --strip-components=1 -C "$staged"
+
+          desktop-file-validate "$staged/share/applications/co.losno.XPCog.desktop"
+          appstreamcli validate "$staged/share/metainfo/co.losno.XPCog.metainfo.xml"
+          echo "Both validate."
+
+      # That the archive holds a player rather than merely some files, checked by
+      # running the one binary that needs no display. It is extracted somewhere
+      # unrelated to any prefix on purpose: this is also the check that the rpath
+      # and the asset lookup are still relative, which is what lets the tarball be
+      # unpacked anywhere at all.
+      #
+      # `info` on a generated MIDI file rather than `--version`, because the
+      # version prints without opening anything. Reporting SpessaSynth means the
+      # shipped SoundFont was found through <exe dir>/../share/xpcog; the OPL3
+      # fallback would mean it was not, and would not be an error anywhere.
+      - name: Check the extracted tarball runs
+        run: |
+          staged=$(mktemp -d)
+          tar xzf build/linux-release/XPCog-*.tar.gz --strip-components=1 -C "$staged"
+
+          "$staged/bin/xpcog-cli" --version
+
+          python3 - "$staged/t.mid" <<'PY'
+          import struct, sys
+          chunk = lambda t, d: t + struct.pack('>I', len(d)) + d
+          trk = bytes([0x00,0x90,0x3C,0x64, 0x60,0x80,0x3C,0x00, 0x00,0xFF,0x2F,0x00])
+          open(sys.argv[1], 'wb').write(
+              chunk(b'MThd', struct.pack('>HHH', 0, 1, 96)) + chunk(b'MTrk', trk))
+          PY
+
+          "$staged/bin/xpcog-cli" info "$staged/t.mid" | tee info.log
+          if ! grep -q "SpessaSynth" info.log; then
+              echo "::error::the extracted tarball did not find its shipped SoundFont. $(grep '^codec:' info.log || echo 'no codec line at all') -- the asset lookup is <exe dir>/../share/xpcog; see core/include/xpcog/core/AssetPath.hpp."
+              exit 1
+          fi
+          echo "The extracted tarball plays."
+
+      # if-no-files-found: error, for the reason the other two give -- a green job
+      # with no tarball in it is the one way this fails quietly.
+      #
+      # The name says x86_64 because that is what the runner builds. An arm64
+      # Linux tarball is a second runner and a second vcpkg tree, and is not what
+      # this job does today.
+      - name: Upload the tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: XPCog-linux-x86_64-tarball
+          path: build/linux-release/XPCog-*.tar.gz
+          if-no-files-found: error
+
+      # See the matrix job: gated on configure, not on the job as a whole.
+      - name: Save vcpkg binary cache
+        if: >-
+          always() && steps.configure.outcome == 'success'
+          && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
   release:
-    # One release per version bump, with the installer and the disk image on it.
+    # One release per version bump, with the installer, the disk image and the
+    # tarball on it.
     #
     # What decides that a bump happened is whether a release for this tree's
     # version exists yet, and not a diff against the previous commit. The diff is
@@ -1153,13 +1355,13 @@ jobs:
     # The consequence to know about is the first run of this job. Whatever
     # version main is on then has no release, so it gets one, bump or not.
     #
-    # It waits on the two packaging jobs and on the version, and deliberately on
+    # It waits on the three packaging jobs and on the version, and deliberately on
     # nothing else. A red test suite, a broken Linux system-libs build or a
     # headless link failure no longer holds the release: those jobs say something
-    # about the tree, and the two packaging jobs say whether there is anything to
-    # publish. Failing to build the installer is what should stop a release, and
-    # it still does -- `needs` skips this job when either packaging job fails, and
-    # the artifacts would not be there to download in any case.
+    # about the tree, and the packaging jobs say whether there is anything to
+    # publish. Failing to build a package is what should stop a release, and it
+    # still does -- `needs` skips this job when any packaging job fails, and the
+    # artifacts would not be there to download in any case.
     #
     # The cost of that is real and worth stating: a version can be released with
     # a failing test in it. The run is still red and says which job, so what this
@@ -1167,7 +1369,7 @@ jobs:
     # thing somebody can see and yank, rather than a packaged build nobody can
     # have because an unrelated job broke.
     name: Release
-    needs: [version, installer, macos-package]
+    needs: [version, installer, macos-package, linux-package]
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
@@ -1218,11 +1420,18 @@ jobs:
           name: XPCog-macos-arm64-dmg
           path: dist
 
+      - name: Download the Linux tarball
+        if: steps.check.outputs.needed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: XPCog-linux-x86_64-tarball
+          path: dist
+
       # The names are checked against the version, and this is not a formality.
-      # The two packaging jobs build from their own checkout of the same commit,
-      # so a mismatch here means the version this job read is not the version
-      # that got built -- which is exactly the failure the tag would otherwise
-      # bake in permanently.
+      # The packaging jobs build from their own checkout of the same commit, so a
+      # mismatch here means the version this job read is not the version that got
+      # built -- which is exactly the failure the tag would otherwise bake in
+      # permanently.
       - name: Check what was downloaded
         if: steps.check.outputs.needed == 'true'
         run: |
@@ -1230,9 +1439,10 @@ jobs:
 
           exe="dist/XPCog-$VERSION-x64-setup.exe"
           dmg="dist/XPCog-$VERSION-arm64.dmg"
+          tgz="dist/XPCog-$VERSION-x86_64.tar.gz"
 
           missing=0
-          for f in "$exe" "$dmg"; do
+          for f in "$exe" "$dmg" "$tgz"; do
               if [ ! -f "$f" ]; then
                   echo "::error::expected $f in the artifacts and it is not there."
                   missing=1
@@ -1269,6 +1479,13 @@ jobs:
             built one is; SmartScreen will say so.
           - **\`XPCog-$VERSION-arm64.dmg\`** — macOS on Apple silicon. $mac_state
             **Not a universal binary:** arm64 only, so an Intel Mac cannot run it.
+          - **\`XPCog-$VERSION-x86_64.tar.gz\`** — Linux x86_64. Unpack it at the
+            prefix you mean to run it from; the desktop file's \`Exec\` is an absolute
+            path, and everything else in the archive is relocatable.
+            **Needs glibc 2.39 or newer** — Ubuntu 24.04, Debian 13, current Fedora,
+            Arch and openSUSE. Ubuntu 22.04, Debian 12 and RHEL 9 are below that
+            line. wxWidgets and GTK come from your distribution; the codecs are
+            linked in.
 
           Built from \`${GITHUB_SHA:0:12}\` by [run $GITHUB_RUN_NUMBER]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
           EOF
@@ -1297,7 +1514,8 @@ jobs:
                   --generate-notes \
                   --notes-start-tag "$previous" \
                   "dist/XPCog-$VERSION-x64-setup.exe" \
-                  "dist/XPCog-$VERSION-arm64.dmg"
+                  "dist/XPCog-$VERSION-arm64.dmg" \
+                  "dist/XPCog-$VERSION-x86_64.tar.gz"
           else
               echo "No earlier v-tagged release; publishing without generated notes."
               gh release create "v$VERSION" \
@@ -1305,7 +1523,8 @@ jobs:
                   --title "XPCog $VERSION" \
                   --notes-file notes.md \
                   "dist/XPCog-$VERSION-x64-setup.exe" \
-                  "dist/XPCog-$VERSION-arm64.dmg"
+                  "dist/XPCog-$VERSION-arm64.dmg" \
+                  "dist/XPCog-$VERSION-x86_64.tar.gz"
           fi
 
           echo "Released v$VERSION." >> "$GITHUB_STEP_SUMMARY"

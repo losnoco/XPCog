@@ -380,6 +380,25 @@ file's `Exec` is the absolute path the tree was *configured* for, so unpack the
 archive at that prefix, or edit the one line. Everything else works from
 anywhere.
 
+**CI builds one on every run.** The `Linux tarball` job configures
+`linux-release` on `ubuntu-24.04`, packages it, and attaches
+`XPCog-<version>-x86_64.tar.gz` to the run — so a pull request that breaks the
+install rules says so where it broke rather than at release time. It also
+validates the desktop file and the metainfo out of the *staged archive* rather
+than the build tree, and extracts the tarball somewhere unrelated to any prefix
+and plays a MIDI file with it: that one command proves the rpath still resolves
+`libvgmstream.so` and that `<exe dir>/../share/xpcog` still finds the shipped
+bank, both of which fail silently and neither of which any other job touches.
+
+`linux-release` rather than `linux-repo-release`, and that is the point of the
+choice: the system-libs presets exist for a machine that already has the
+libraries, which is the opposite of a machine downloading a tarball. Building
+against vcpkg's copies links seventeen of them in — `libtag`, `libavcodec`,
+`libopenmpt` and the rest — so what the download needs from its host is GTK,
+wxWidgets and the C library. **The C library is the floor:** built on
+`ubuntu-24.04`, the tarball wants glibc 2.39 or newer, which rules out Ubuntu
+22.04, Debian 12 and RHEL 9. Moving that line means moving the runner.
+
 No `DEB` or `RPM` generator, deliberately. CPack can emit both, but a package
 worth installing needs a dependency list, and `CPACK_DEBIAN_PACKAGE_SHLIBDEPS`
 derives one naming the exact sonames of whichever distribution happened to build
@@ -395,11 +414,11 @@ thinking for. Flathub also requires screenshots, which the metainfo has none of.
 
 ### Releases
 
-**A release per version bump, made from the run that built it.** Both packages
-above are attached to every run as artifacts, which is where a pull request's go
-and where they stay. On `main` the `Release` job takes the same two files —
-downloaded, not rebuilt — creates the tag `v<version>` on the commit that was
-built, and publishes them.
+**A release per version bump, made from the run that built it.** All three
+packages above are attached to every run as artifacts, which is where a pull
+request's go and where they stay. On `main` the `Release` job takes the same
+three files — downloaded, not rebuilt — creates the tag `v<version>` on the
+commit that was built, and publishes them.
 
 What decides that a bump happened is whether a release for the version in
 `CMakeLists.txt` exists yet, rather than a diff against the previous commit. The
@@ -410,10 +429,10 @@ answers the same question from the state that matters, does nothing when re-run
 on a commit already released, and repairs itself — a version that reaches `main`
 without a release gets one on the next run.
 
-It waits on the two packaging jobs and the version check, and on nothing else.
+It waits on the three packaging jobs and the version check, and on nothing else.
 A failing test, a broken system-libs build or a headless link error does not hold
 the release: those jobs say something about the tree, while the packaging jobs say
-whether there is anything to publish. Failing to *build* a package still stops it,
+whether there is anything to publish. Failing to *build* any one package still stops it,
 because `needs` skips the job and the artifacts would not be there to download.
 The trade is deliberate — a version can be released with a red run behind it. The
 run says which job failed, so what this changes is who decides: a release that
