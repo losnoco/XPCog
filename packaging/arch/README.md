@@ -46,6 +46,24 @@ what guarantees the system copy is the one found — and that two builds of the
 same `pkgver` produce the same package. That is why `nlohmann-json`, which is
 header-only and never linked, is in `makedepends`.
 
+## Last.fm
+
+Scrobbling needs an API key compiled in, and it comes through the environment:
+
+```sh
+XPCOG_LASTFM_API_KEY=... XPCOG_LASTFM_API_SECRET=... makepkg -si
+```
+
+`makepkg` runs `build()` with the environment it was invoked with, and
+`app/CMakeLists.txt` reads those two variables when the cache variables are
+unset — so nothing in the `PKGBUILD` has to forward them. A plain `makepkg -si`
+builds a package that compiles all of the scrobbling code and reports the
+feature as unavailable, and `build()` says which of the two happened rather
+than leaving it to be found in the Last.fm pane.
+
+Not passed with `-D`: that would put the secret in `CMakeCache.txt`, where it
+outlives the environment that supplied it.
+
 ## Three differences from `linux-repo-release`
 
 - **Crash reporting is off.** It is the upstream project's Sentry, and a

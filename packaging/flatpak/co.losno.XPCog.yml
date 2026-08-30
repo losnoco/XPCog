@@ -163,6 +163,30 @@ modules:
             echo "vcpkg has no .git here; trusting the commit pinned in sources."
         fi
 
+        # The Last.fm credentials, if this build was given any.
+        #
+        # flatpak-builder does not pass the host environment into the build
+        # sandbox and has no flag that would -- so unlike the Arch package,
+        # which inherits whatever makepkg was run with, exporting the variables
+        # before the build reaches nothing here. A file is the way in, and it is
+        # the same one app/CMakeLists.txt already documents for a developer
+        # build:
+        #
+        #     op run --env-file=lastfm.env -- <build>
+        #
+        # CI writes packaging/flatpak/lastfm.env from repository secrets before
+        # invoking the builder; it is gitignored, and absent everywhere else. A
+        # build without it compiles all of the scrobbling code and reports the
+        # feature as unavailable, which is what a fork's build should do.
+        if [ -f packaging/flatpak/lastfm.env ]; then
+            set -a
+            . ./packaging/flatpak/lastfm.env
+            set +a
+            echo "Last.fm: credentials supplied to this build."
+        else
+            echo "Last.fm: no lastfm.env; scrobbling will report itself unavailable."
+        fi
+
         # vcpkg wants somewhere writable for its downloads and its own tools.
         export VCPKG_ROOT="$PWD/vcpkg"
         export HOME="$PWD/.home"
