@@ -4080,11 +4080,24 @@ asserted a property Qt provides rather than the one the code was responsible for
   widget. Compilation is a weak check for a D-Bus contract, where the failures are
   a wrong variant type or a missing `PropertiesChanged` — both of which produce a
   player that appears on the bus and then quietly does not update.
-- MPRIS reports **no `DesktopEntry`**, because XPCog installs no `.desktop` file.
-  A panel therefore shows the transport with no application icon or localised
-  name. Naming a file that does not exist would not improve that, so this waits on
-  Linux packaging existing at all — the same gap as there being no `deploy` target
-  for Linux.
+- MPRIS now reports a `DesktopEntry` of `co.losno.XPCog`, and `packaging/linux/`
+  installs the file it names. **Neither end is verified against a running panel.**
+  The files validate — `desktop-file-validate` is clean and `appstreamcli
+  validate` passes, with one pedantic note about the uppercase in the ID — and
+  the install tree is correct, but that a panel actually resolves the transport
+  to XPCog's icon and localised name is the same kind of claim as the rest of
+  MPRIS here: compiled, plausible, unobserved.
+- **`StartupWMClass=XPCog` in the desktop file is a deduction, not a measurement.**
+  GTK takes a window's `WM_CLASS` from `g_get_prgname()`, wx sets that from
+  `argv[0]`, and `app/CMakeLists.txt` sets `OUTPUT_NAME` to `XPCog` — so that is
+  the basename. It has not been checked with `xprop WM_CLASS` against a running
+  window, and if it is wrong the symptom is narrow and easy to miss: the player
+  works, but its task-list entry carries a generic icon rather than its own.
+  Wayland is the case more likely to bite, and it is not the same case. GTK uses
+  that same `prgname` as the surface `app_id`, and the shell matches `app_id`
+  against the desktop file's *basename* rather than against `StartupWMClass` —
+  so `XPCog` and `co.losno.XPCog.desktop` do not match, and the fix would be
+  `g_set_prgname()` early enough to stick, not another line in the desktop file.
 - MPRIS omits the optional **`LoopStatus` and `Shuffle`** properties, so a panel
   cannot see or change the repeat and shuffle modes even though the playlist has
   both. They map onto `RepeatMode` and `ShuffleMode`, which have three and four

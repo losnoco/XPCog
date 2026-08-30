@@ -363,12 +363,22 @@ private:
         if (g_strcmp0(property, "Identity") == 0) {
             return g_variant_new_string("XPCog");
         }
-        // The basename of an installed .desktop file, which is how a panel finds
-        // the application's icon and localised name. Empty because XPCog installs
-        // none yet: naming a file that does not exist gets no icon either way, and
-        // adds a failed lookup.
+        // The basename of an installed .desktop file, minus the extension, which
+        // is how a panel gets from this transport to the application's icon and
+        // localised name. packaging/linux/ installs that file; the name comes
+        // from the build rather than from a literal here so that the two cannot
+        // drift apart -- see XPCOG_DESKTOP_ID in the root CMakeLists.txt.
+        //
+        // Still empty where the build did not define one, which is any platform
+        // that is not Linux and any Linux build predating the install rules:
+        // naming a file that does not exist gets no icon either way, and adds a
+        // failed lookup.
         if (g_strcmp0(property, "DesktopEntry") == 0) {
+#ifdef XPCOG_DESKTOP_ID
+            return g_variant_new_string(XPCOG_DESKTOP_ID);
+#else
             return g_variant_new_string("");
+#endif
         }
         if (g_strcmp0(property, "SupportedUriSchemes") == 0) {
             const gchar* const schemes[] = {"file", nullptr};

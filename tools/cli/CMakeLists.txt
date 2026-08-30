@@ -10,3 +10,12 @@ set_target_properties(xpcog-cli PROPERTIES FOLDER tools)
 
 # Plays MIDI, so it wants the shipped bank beside it.
 add_dependencies(xpcog-cli xpcog-assets)
+
+# Installed alongside the player on Linux, for the same reason it exists in the
+# build tree: it is the headless way to ask what an installed XPCog can decode.
+# It finds the shipped bank through the same <exe dir>/../share/xpcog lookup the
+# application does, so being in the same bin/ is all it needs.
+if(UNIX AND NOT APPLE)
+    install(TARGETS xpcog-cli RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    xpcog_install_linux_runtime(xpcog-cli)
+endif()

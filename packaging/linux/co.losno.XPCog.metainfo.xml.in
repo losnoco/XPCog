@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata: what GNOME Software, KDE Discover and Flathub read to
+  describe XPCog before it is installed. Nothing at run time consults it, which
+  is exactly why it is easy to leave broken — `appstreamcli validate` is the
+  check, and README's Linux section says when to run it.
+
+  The <id> is the application ID and must match the .desktop file's basename and
+  the installed icon's name. All three come from XPCOG_DESKTOP_ID; see the root
+  CMakeLists.txt for why there is one variable rather than three literals.
+-->
+<component type="desktop-application">
+  <id>@XPCOG_DESKTOP_ID@</id>
+
+  <!-- The licence of this file, which is not the licence of the program. -->
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+
+  <name>XPCog</name>
+  <summary>Play music, including formats other players do not</summary>
+
+  <description>
+    <p>
+      XPCog is an audio player for Windows, macOS and Linux, ported from Cog,
+      the macOS player by Vincent Spader and Christopher Snowhill.
+    </p>
+    <p>
+      Alongside the formats every player handles, it decodes the ones that need
+      an emulator rather than a codec: tracker modules, chiptunes from a dozen
+      consoles, DOS-era AdLib music, C64 SID tunes, and the PSF family of
+      ripped game soundtracks. Which of those a given build understands depends
+      on how it was compiled; ask it with <code>xpcog-cli codecs</code>.
+    </p>
+    <ul>
+      <li>Gapless playback, including across the spans of a cue sheet</li>
+      <li>ReplayGain, a ten-band equaliser, and tempo and pitch control</li>
+      <li>A SQLite music library, and import of an existing Cog library</li>
+      <li>Last.fm scrobbling</li>
+      <li>MPRIS, so the desktop's own media controls work</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">@XPCOG_DESKTOP_ID@.desktop</launchable>
+  <provides>
+    <binary>XPCog</binary>
+    <binary>xpcog-cli</binary>
+  </provides>
+
+  <url type="homepage">https://cog.losno.co/xpcog</url>
+  <url type="bugtracker">https://github.com/losnoco/XPCog/issues</url>
+
+  <developer id="co.losno">
+    <name>The XPCog authors</name>
+  </developer>
+
+  <!-- Empty is not an omission: it is the OARS way of saying every category is
+       "none", which for a music player it is. -->
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="@PROJECT_VERSION@" date="@XPCOG_RELEASE_DATE@" />
+  </releases>
+</component>

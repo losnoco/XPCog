@@ -1,0 +1,43 @@
+[Desktop Entry]
+# Version is the *specification* version this file is written against, not
+# XPCog's. It is a common enough confusion that the spec calls it out, and a
+# desktop file claiming Version=0.9.0 is invalid rather than merely wrong.
+Version=1.5
+Type=Application
+
+Name=XPCog
+GenericName=Audio Player
+Comment=Play music, including formats other players do not
+# Hand-maintained here rather than pulled from app/locale/*.po: a desktop file is
+# not part of the gettext catalogue -- the desktop reads these keys itself, long
+# before the process starts and Localization.cpp installs anything. Adding a
+# language here means adding it here, not only to the catalogue.
+GenericName[es]=Reproductor de audio
+Comment[es]=Reproduce música, incluidos formatos que otros reproductores no abren
+
+# %F, not %U, and that is load-bearing. XPCogApp::OnInit hands every command
+# line parameter to Url::fromLocalPath, so a `file:///home/...` URI would be
+# taken as the literal name of a file in the current directory. MPRIS says the
+# same thing about the same limitation: SupportedUriSchemes is "file" alone.
+#
+# The full path rather than a bare `XPCog`, because CMAKE_INSTALL_PREFIX is
+# whatever the person installing chose: a bare name resolves through PATH, which
+# is right for /usr and /usr/local and wrong for the /opt prefix a tarball tends
+# to land in. This is the path this build was configured to install to.
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/XPCog %F
+# The application ID, because Flatpak requires the icon be named for it, and
+# because a panel resolving DesktopEntry lands here to find it.
+Icon=@XPCOG_DESKTOP_ID@
+Terminal=false
+
+Categories=AudioVideo;Audio;Player;
+MimeType=@XPCOG_DESKTOP_MIME_TYPES@
+Keywords=audio;music;player;sound;chiptune;tracker;cog;
+
+StartupNotify=true
+# The window's WM_CLASS, so the shell can match a running window to this file and
+# show the right icon in the task list. GTK takes it from g_get_prgname(), which
+# wx sets from argv[0] -- and app/CMakeLists.txt sets OUTPUT_NAME to XPCog, so
+# that is the basename. Verify with `xprop WM_CLASS` rather than trusting this
+# comment; see docs/PORTING.md.
+StartupWMClass=XPCog

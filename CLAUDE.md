@@ -47,10 +47,11 @@ the CMake options and preset names.
   setting, a new option or preset, a new interface alongside the existing ones.
 - **MAJOR** — incompatible changes to that surface.
 
-While the version is **0.x**, semver puts no compatibility promise on it: a
-breaking change goes in the minor, and the major stays at 0 until releasing 1.0.0
-is a decision someone makes deliberately. So in practice, today, only PATCH and
-MINOR move.
+**1.0.0 has been released, so all three components now move.** Until then the
+version was 0.x, semver put no compatibility promise on it, and a breaking change
+went in the minor; that is no longer the rule. A change that breaks the surface
+listed above is a MAJOR bump and needs saying out loud, not absorbing into a
+minor.
 
 ## Commit messages
 
@@ -122,6 +123,15 @@ Other targets: `xpcog-no-toolkit` (layering check, runs as part of `ALL`),
 `dmg` and `notarize` (`packaging/macos/`; the identity comes from
 `XPCOG_CODESIGN_IDENTITY` and the notary credentials from the environment only —
 see the README section).
+
+Linux has no packaging target, because there is nothing to build: the artefact is
+the install tree, and `cmake --install` produces it. `packaging/linux/` adds the
+desktop integration that goes with it — a `.desktop` file, AppStream metainfo and
+hicolor icons, all named for `XPCOG_DESKTOP_ID` (`co.losno.XPCog`, set in the root
+`CMakeLists.txt`). Four files have to agree on that ID, one of them at run time:
+MPRIS publishes it as `DesktopEntry`. `desktop-file-validate` and `appstreamcli
+validate` are the checks; nothing at run time reads either file, so a mistake in
+them is silent.
 
 ### Skips are the thing to watch
 
@@ -224,7 +234,7 @@ cannot exercise wall-clock timing.
 model, settings, HTTP, scrobbling), `codecs/` (one directory per decoder),
 `platform/` (per-OS integration behind toolkit-free headers), `app/` (wxWidgets
 UI), `tools/cli/`, `tests/`, `assets/`, `packaging/windows/`,
-`packaging/macos/`.
+`packaging/macos/`, `packaging/linux/`.
 
 **`vendor/` vs `ports/`**: `ports/` holds vcpkg overlay ports for dependencies
 with a real upstream release or pinned commit (vgmstream, libsidplayfp, mGBA,

@@ -258,7 +258,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-0.8.0-x64-setup.exe
+:: -> build\windows-release\XPCog-1.0.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -279,7 +279,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-0.8.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-1.0.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -294,6 +294,72 @@ pinned release, configures `windows-app-release`, packages it, and attaches
 where it broke rather than at release time. It is unsigned, as a locally built
 one is. Its Last.fm credentials come from repository secrets; see
 [Last.fm](#lastfm) below.
+
+### Linux: installing
+
+Linux has no installer and no disk image. The artefact is the install tree
+itself, so `cmake --install` is the whole of it:
+
+```sh
+cmake --preset linux-repo-release
+cmake --build --preset linux-repo-release
+cmake --install build/linux-repo-release --prefix /usr/local
+```
+
+What lands is an ordinary FHS layout — `bin/XPCog` and `bin/xpcog-cli`, the
+shipped SoundFont and equaliser presets under `share/xpcog/`, and the desktop
+integration under `share/applications`, `share/metainfo` and
+`share/icons/hicolor`. `DESTDIR=... cmake --install` stages it for a package
+builder in the usual way.
+
+The relative layout is load-bearing rather than conventional.
+`core/include/xpcog/core/AssetPath.hpp` resolves the shipped assets as
+`<exe dir>/../share/xpcog`, which is the same arrangement the build tree
+already uses — so an installed player exercises the lookup that has been
+exercised all along, and `bin/` and `share/` have to keep their relationship to
+each other whatever the prefix is.
+
+One shared library is installed beside the player: `lib/libvgmstream.so`, found
+through an `$ORIGIN/../lib` rpath. It is the only dependency that is neither
+the distribution's nor statically linked; `cmake/XPCogInstallRuntime.cmake` says
+why the vgmstream port leaves no choice.
+
+**Two caches are not updated, deliberately.** A package manager has a trigger
+for both, and running them from an install rule would write outside `DESTDIR`,
+which is what breaks packaging. After installing by hand:
+
+```sh
+update-desktop-database /usr/local/share/applications
+gtk-update-icon-cache /usr/local/share/icons/hicolor
+```
+
+**The application ID is `co.losno.XPCog`**, set once as `XPCOG_DESKTOP_ID` in
+`CMakeLists.txt`. Four things have to agree on it or the desktop quietly does
+nothing: the `.desktop` file's basename, the AppStream `<id>`, the installed
+icon's filename, and the `DesktopEntry` property MPRIS publishes — which is how
+a panel gets from the transport it is showing to XPCog's icon and name. The
+macOS bundle identifier beside it is the lowercase `co.losno.xpcog` and stays
+that way; it is a different platform's namespace, and on macOS it is also where
+a user's preferences are keyed.
+
+The two generated files are worth validating after changing either template,
+because nothing at run time reads them and a mistake is silent:
+
+```sh
+desktop-file-validate build/linux-repo-release/packaging/linux/co.losno.XPCog.desktop
+appstreamcli validate build/linux-repo-release/packaging/linux/co.losno.XPCog.metainfo.xml
+```
+
+The `MimeType=` list is assembled from the enabled codec options rather than
+written out once, so a build without `XPCOG_WITH_MUSEPACK` does not offer XPCog
+for a Musepack file it cannot play. See `packaging/linux/CMakeLists.txt`.
+
+**No Flatpak yet.** It is the right answer for a user on any distribution who
+does not build, and the obstacle is worth stating: `flatpak-builder` builds with
+no network, so vcpkg's manifest mode cannot run inside it. The path that works
+is `org.gnome.Platform` plus `XPCOG_USE_SYSTEM_LIBS` and a manifest module per
+remaining dependency, which the `linux-repo-*` presets already do most of the
+thinking for. Flathub also requires screenshots, which the metainfo has none of.
 
 ### Releases
 

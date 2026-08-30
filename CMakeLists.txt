@@ -11,7 +11,7 @@ xpcog_probe_system_deps()
 
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 0.8.0
+    VERSION 1.0.0
     DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
     LANGUAGES C CXX)
 
@@ -26,6 +26,39 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# ---------------------------------------------------------------------------
+# The application's identity on a Linux desktop.
+#
+# One reverse-DNS name, in one place, because four separate files have to agree
+# on it or the desktop silently does nothing: the .desktop file's basename, the
+# AppStream metainfo's <id>, the installed icon's filename -- Flatpak requires
+# the icon be named for the application ID -- and the DesktopEntry property
+# MPRIS publishes, which is how a panel gets from the transport it is showing to
+# the application's icon and localised name.
+#
+# co.losno.XPCog: losno.co reversed, which is the domain the project's site is
+# on, plus the product name. Not io.github.* -- that is the fallback Flathub
+# offers projects with no domain of their own. The namespace is not new either;
+# the MPRIS track paths in platform/src/linux/GDbusMediaIntegration.cpp have
+# been /co/losno/xpcog/track/N since MPRIS was written.
+#
+# The macOS bundle identifier next to it in app/CMakeLists.txt is the lowercase
+# co.losno.xpcog, and deliberately stays that way: it is a different platform's
+# namespace, and on macOS it is also where a user's preferences are keyed, so
+# changing its spelling would orphan them.
+# ---------------------------------------------------------------------------
+set(XPCOG_DESKTOP_ID "co.losno.XPCog")
+
+# bin/, lib/ and the rest, so a packager can place them.
+#
+# One of them does not move, and it is worth knowing which:
+# core/include/xpcog/core/AssetPath.hpp resolves the shipped assets by walking
+# from the executable to ../share/xpcog, and that path is compiled in. It agrees
+# with CMAKE_INSTALL_DATADIR's default -- "share" -- but it cannot follow the
+# variable if someone overrides it, so assets/CMakeLists.txt installs to a
+# literal share/xpcog rather than pretending otherwise.
+include(GNUInstallDirs)
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
@@ -37,6 +70,8 @@ include(XPCogWarnings)
 include(XPCogCodec)
 include(XPCogResources)
 include(XPCogCatalogs)
+# The rpath and the one bundled shared library an installed Linux build needs.
+include(XPCogInstallRuntime)
 # The UI toolkit. An ordinary vcpkg dependency: no environment variable to set,
 # no separate installer, and no deploy step. See docs/WXPORT.md for what that
 # replaced.
@@ -68,6 +103,11 @@ if(XPCOG_BUILD_APP)
         add_subdirectory(packaging/windows)
     elseif(APPLE)
         add_subdirectory(packaging/macos)
+    else()
+        # Unlike the other two this one *is* built by ALL, because it builds
+        # nothing: it is install() rules and two configured text files, and they
+        # are what `cmake --install` needs to produce a working player.
+        add_subdirectory(packaging/linux)
     endif()
 endif()
 

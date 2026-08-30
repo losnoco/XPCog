@@ -226,7 +226,8 @@ if(XPCOG_WITH_SENTRY)
             COMMENT "Staging crashpad_handler"
             VERBATIM)
         if(UNIX AND NOT APPLE)
-            install(PROGRAMS "${_handler}" DESTINATION bin)
+            install(PROGRAMS "${_handler}"
+                    DESTINATION "${CMAKE_INSTALL_BINDIR}")
         endif()
     else()
         # A message rather than a fatal error: a build with no handler is a
@@ -513,3 +514,31 @@ endif()
 # declared there too. This file's business with the bundle ends at the bytes
 # going into it, which is what the two sections above are.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Installing, which is Linux only.
+#
+# Windows harvests the whole output directory (packaging/windows/Harvest.cmake
+# says why that beats install() there) and macOS ships the bundle the sections
+# above assembled, so neither has ever needed a rule here. Linux has no such
+# container: the player is a file in bin/, its data is a directory under share/,
+# and the desktop only finds the second from the first because
+# core/include/xpcog/core/AssetPath.hpp looks at <exe dir>/../share/xpcog.
+#
+# That layout is the one the build tree already uses -- assets/CMakeLists.txt
+# stages the same files beside the same binary -- so an installed player
+# exercises the lookup the developer has been exercising all along, rather than
+# a second one that only runs on someone else's machine.
+#
+# The desktop integration that goes with this -- the .desktop file, the icons a
+# launcher and a task list resolve through the hicolor theme, and the AppStream
+# metainfo -- is in packaging/linux/, beside the identity all three have to
+# share. Not the tray icon, which sends its artwork as pixmaps over D-Bus and
+# needs no installed theme icon; see SniTrayIcon.cpp.
+# ---------------------------------------------------------------------------
+if(UNIX AND NOT APPLE)
+    install(TARGETS xpcog-app RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    # Without this the installed binary does not start: see
+    # cmake/XPCogInstallRuntime.cmake for which library and why.
+    xpcog_install_linux_runtime(xpcog-app)
+endif()

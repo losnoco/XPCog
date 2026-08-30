@@ -126,6 +126,13 @@ elseif(UNIX)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(XPCOG_GIO REQUIRED IMPORTED_TARGET gio-2.0 glib-2.0 gobject-2.0)
     target_link_libraries(xpcog-platform PRIVATE PkgConfig::XPCOG_GIO)
+
+    # The application ID, for MPRIS's DesktopEntry. From the build rather than
+    # from a literal in the source because packaging/linux/ installs the file it
+    # names: two spellings of it would be a panel that finds no icon, and no
+    # error anywhere to say which of the two was wrong.
+    target_compile_definitions(xpcog-platform
+        PRIVATE XPCOG_DESKTOP_ID="${XPCOG_DESKTOP_ID}")
 else()
     target_sources(xpcog-platform PRIVATE
         src/common/Foreground.cpp
