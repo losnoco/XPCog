@@ -35,9 +35,12 @@ MimeType=@XPCOG_DESKTOP_MIME_TYPES@
 Keywords=audio;music;player;sound;chiptune;tracker;cog;
 
 StartupNotify=true
-# The window's WM_CLASS, so the shell can match a running window to this file and
-# show the right icon in the task list. GTK takes it from g_get_prgname(), which
-# wx sets from argv[0] -- and app/CMakeLists.txt sets OUTPUT_NAME to XPCog, so
-# that is the basename. Verify with `xprop WM_CLASS` rather than trusting this
-# comment; see docs/PORTING.md.
-StartupWMClass=XPCog
+# The window's WM_CLASS, so an X11 shell can match a running window to this file
+# and show the right icon in the task list.
+#
+# Both halves of that pair are the application ID, which is not what they would
+# be by default: XPCogApp::Initialize sets the program name and the class name
+# before gtk_init, precisely so this key has one unambiguous thing to equal.
+# Wayland needs no key here and offers none -- it matches the surface's app_id
+# against this file's basename, which is the same string again.
+StartupWMClass=@XPCOG_DESKTOP_ID@

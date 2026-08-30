@@ -41,6 +41,13 @@ class MainFrame;
 
 class XPCogApp : public wxApp {
 public:
+    /// Runs before the toolkit is initialised, which is the only reason it is
+    /// overridden: wxGTK calls gtk_init() inside the base class implementation,
+    /// and the desktop identity has to be set before that happens. See
+    /// xpcog/platform/DesktopIdentity.hpp for what is being set and why the
+    /// timing is the whole of it.
+    bool Initialize(int& argc, wxChar** argv) override;
+
     bool OnInit() override;
     int  OnRun() override;
     int  OnExit() override;

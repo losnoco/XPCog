@@ -7,6 +7,7 @@
 #include "Text.hpp"
 
 #include "xpcog/platform/CrashReporter.hpp"
+#include "xpcog/platform/DesktopIdentity.hpp"
 #include "xpcog/platform/FileAssociations.hpp"
 #include "xpcog/platform/SettingsStore.hpp"
 
@@ -48,6 +49,29 @@ const wxCmdLineEntryDesc kCommandLine[] = {
 };
 
 }  // namespace
+
+bool XPCogApp::Initialize(int& argc, wxChar** argv) {
+    // Before the base class, not after: wxGTK's wxApp::Initialize is where
+    // gtk_init() runs, GTK reads the program name exactly once while it does,
+    // and a window's Wayland app_id is fixed when its surface is created. Doing
+    // this afterwards changes nothing and says nothing about having failed.
+    platform::applyDesktopIdentity();
+
+    // The other half of the X11 pair. wx passes GetClassName() to
+    // gdk_set_program_class(), so setting it here is what makes WM_CLASS's class
+    // half the application ID too -- rather than GDK's fallback, which is the
+    // program name with its first letter capitalised and would read
+    // "Co.losno.XPCog". Both halves matching means StartupWMClass matches
+    // whichever one a given shell compares against.
+    //
+    // Guarded by the ID being empty off Linux, so Windows and macOS keep the
+    // class name wx gives them.
+    if (const std::string_view id = platform::desktopApplicationId(); !id.empty()) {
+        SetClassName(wxString::FromUTF8(id.data(), id.size()));
+    }
+
+    return wxApp::Initialize(argc, argv);
+}
 
 void XPCogApp::OnInitCmdLine(wxCmdLineParser& parser) {
     parser.SetDesc(kCommandLine);

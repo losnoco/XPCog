@@ -62,6 +62,7 @@ if(WIN32)
         src/windows/WindowsFileManager.cpp
         src/common/CommonPropertyList.cpp
         src/common/NullTrayIcon.cpp
+        src/common/NullDesktopIdentity.cpp
         src/windows/WindowsTaskbarIntegration.cpp
         src/windows/WindowsMediaIntegration.cpp)
 
@@ -86,6 +87,7 @@ elseif(APPLE)
         src/mac/MacSettings.cpp
         src/mac/MacPropertyList.cpp
         src/common/NullTrayIcon.cpp
+        src/common/NullDesktopIdentity.cpp
         src/mac/MacFileManager.mm
         src/mac/MacMediaIntegration.mm)
     # ARC, so the Objective-C objects there need no manual retain or release.
@@ -106,7 +108,8 @@ elseif(UNIX)
         src/common/CommonPropertyList.cpp
         src/linux/GioFileManager.cpp
         src/linux/GDbusMediaIntegration.cpp
-        src/linux/SniTrayIcon.cpp)
+        src/linux/SniTrayIcon.cpp
+        src/linux/DesktopIdentity.cpp)
 
     # MPRIS is D-Bus, and GDBus is the binding. REQUIRED rather than optional: a
     # Linux desktop without a session bus is possible, which the code handles at
@@ -127,9 +130,10 @@ elseif(UNIX)
     pkg_check_modules(XPCOG_GIO REQUIRED IMPORTED_TARGET gio-2.0 glib-2.0 gobject-2.0)
     target_link_libraries(xpcog-platform PRIVATE PkgConfig::XPCOG_GIO)
 
-    # The application ID, for MPRIS's DesktopEntry. From the build rather than
-    # from a literal in the source because packaging/linux/ installs the file it
-    # names: two spellings of it would be a panel that finds no icon, and no
+    # The application ID, for MPRIS's DesktopEntry and for the process name a
+    # shell matches a window against. From the build rather than from a literal
+    # in the source because packaging/linux/ installs the file both of those
+    # point at: two spellings of it would be a panel that finds no icon, and no
     # error anywhere to say which of the two was wrong.
     target_compile_definitions(xpcog-platform
         PRIVATE XPCOG_DESKTOP_ID="${XPCOG_DESKTOP_ID}")
@@ -140,6 +144,7 @@ else()
         src/common/NullTaskbarIntegration.cpp
         src/common/NullMediaIntegration.cpp
         src/common/NullTrayIcon.cpp
+        src/common/NullDesktopIdentity.cpp
         src/common/NullFileManager.cpp
         src/common/CommonSettings.cpp)
 endif()

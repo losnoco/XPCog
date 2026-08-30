@@ -4087,17 +4087,29 @@ asserted a property Qt provides rather than the one the code was responsible for
   the install tree is correct, but that a panel actually resolves the transport
   to XPCog's icon and localised name is the same kind of claim as the rest of
   MPRIS here: compiled, plausible, unobserved.
-- **`StartupWMClass=XPCog` in the desktop file is a deduction, not a measurement.**
-  GTK takes a window's `WM_CLASS` from `g_get_prgname()`, wx sets that from
-  `argv[0]`, and `app/CMakeLists.txt` sets `OUTPUT_NAME` to `XPCog` — so that is
-  the basename. It has not been checked with `xprop WM_CLASS` against a running
-  window, and if it is wrong the symptom is narrow and easy to miss: the player
-  works, but its task-list entry carries a generic icon rather than its own.
-  Wayland is the case more likely to bite, and it is not the same case. GTK uses
-  that same `prgname` as the surface `app_id`, and the shell matches `app_id`
-  against the desktop file's *basename* rather than against `StartupWMClass` —
-  so `XPCog` and `co.losno.XPCog.desktop` do not match, and the fix would be
-  `g_set_prgname()` early enough to stick, not another line in the desktop file.
+- **The window's desktop identity is now set rather than guessed, but nobody has
+  looked at a window yet.** The defaults were wrong on Wayland and not repairable
+  from the desktop file: GTK uses `g_get_prgname()` as both the X11 `WM_CLASS`
+  instance and the Wayland `app_id`, `gtk_init()` fills it from `argv[0]` —
+  `XPCog` — and a Wayland shell matches `app_id` against the desktop file's
+  *basename*, `co.losno.XPCog.desktop`, with no `StartupWMClass` equivalent to
+  bridge the difference. Checking the wx library settles what it does and does
+  not do here: `nm -D` shows it calls `gdk_set_program_class` and never
+  `g_set_prgname`, so it sets the class half of the X11 pair and leaves the
+  program name alone.
+
+  So `XPCogApp::Initialize` — overridden for this, because wxGTK runs
+  `gtk_init()` inside the base implementation and it is the last hook before
+  that — calls `platform::applyDesktopIdentity()` and `SetClassName()`, putting
+  the application ID in all three places: `app_id`, and both halves of
+  `WM_CLASS`. `StartupWMClass` is that same string, so it matches whichever half
+  a given shell compares against. See `xpcog/platform/DesktopIdentity.hpp`.
+
+  **What is unverified is the observation, not the reasoning.** No window has
+  been inspected on either protocol. Worth doing once, on each:
+  `xprop WM_CLASS` under X11, and under Wayland whether the task list shows the
+  icon at all — that is the whole symptom, and the player works either way,
+  which is what makes it easy to miss.
 - MPRIS omits the optional **`LoopStatus` and `Shuffle`** properties, so a panel
   cannot see or change the repeat and shuffle modes even though the playlist has
   both. They map onto `RepeatMode` and `ShuffleMode`, which have three and four
