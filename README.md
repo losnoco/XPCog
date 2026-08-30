@@ -405,6 +405,24 @@ derives one naming the exact sonames of whichever distribution happened to build
 it. That is a per-distribution job, and what a per-distribution packager needs
 from this repository is `cmake --install`, which they have.
 
+**Arch.** `packaging/arch/` holds a `PKGBUILD` that builds against Arch's own
+libraries — the `linux-repo-release` trade applied to a distribution that has
+nearly all of them:
+
+```sh
+cd packaging/arch && makepkg -si
+```
+
+It still runs vcpkg, and that is worth knowing before reaching for a clean
+chroot: `mgba` and `libvgm` have no system path in `XPCogSystemDeps`, and the
+four never-substituted libraries are compiled into the overlay ports, so vcpkg
+downloads. The tree is pinned to the manifest's `builtin-baseline` and
+`prepare()` fails the build if the two drift apart, so what is removed is
+version drift rather than the network. `packaging/arch/README.md` covers the
+three deliberate differences from the preset — no crash reporter, no tests, and
+`libdir` set to `lib/xpcog` so the bundled `libvgmstream.so` does not claim a
+name in `/usr/lib`.
+
 **No Flatpak yet.** It is the right answer for a user on any distribution who
 does not build, and the obstacle is worth stating: `flatpak-builder` builds with
 no network, so vcpkg's manifest mode cannot run inside it. The path that works
