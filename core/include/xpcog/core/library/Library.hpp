@@ -127,6 +127,21 @@ public:
                                                            std::string_view album,
                                                            std::string_view title) const;
 
+    /// Records that the track exists without counting a play, and returns its
+    /// row as it now stands. A track with no row gets one, tallying whatever
+    /// count the entry already carries -- zero for an ordinary add, an imported
+    /// number after a Cog import -- and `whenUnixSeconds` as its first-seen
+    /// date. A track that already has a row keeps its date and its tally.
+    ///
+    /// This is what makes `first_seen` mean what it says. Without it the row is
+    /// created by the first recordPlay(), so a date that should read "when this
+    /// entered the library" reads "sixty seconds into the first listen" -- and
+    /// every track added and never played has no date at all.
+    ///
+    /// Returns nullopt only on failure; see lastError().
+    [[nodiscard]] std::optional<PlayCountRecord> noteFirstSeen(
+        const PlaylistEntry& entry, std::int64_t whenUnixSeconds);
+
     /// Increments the count for this entry, creating the row if needed.
     /// `whenUnixSeconds` is passed in rather than read from the clock, so the
     /// behaviour is testable and core stays free of a time source.

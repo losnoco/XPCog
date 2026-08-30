@@ -458,6 +458,85 @@ TEST_CASE("play counts accumulate on the natural key", "[library]") {
     REQUIRE_FALSE(library.playCount("Pink Floyd", "Animals", "Sheep").has_value());
 }
 
+TEST_CASE("a track is first seen when it is added, not when it is played",
+          "[library]") {
+    Library library = openMemoryLibrary();
+
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath("/music/dogs.flac");
+    entry.artist   = "Pink Floyd";
+    entry.album    = "Animals";
+    entry.rawTitle = "Dogs";
+
+    const auto added = library.noteFirstSeen(entry, 1000);
+    REQUIRE(added.has_value());
+    CHECK(added->firstSeen == 1000);
+    // Added is not played: no tally and no last-played date, which is the whole
+    // distinction this exists to draw.
+    CHECK(added->count == 0);
+    CHECK(added->lastPlayed == 0);
+
+    REQUIRE(library.recordPlay(entry, 5000));
+
+    const auto played = library.playCount("Pink Floyd", "Animals", "Dogs");
+    REQUIRE(played.has_value());
+    CHECK(played->count == 1);
+    CHECK(played->lastPlayed == 5000);
+    // The date the track entered the library did not move when it was listened
+    // to, which is what it meant before this was called anywhere.
+    CHECK(played->firstSeen == 1000);
+}
+
+TEST_CASE("being added again keeps the first-seen date and the tally",
+          "[library]") {
+    Library library = openMemoryLibrary();
+
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath("/music/pigs.flac");
+    entry.artist   = "Pink Floyd";
+    entry.album    = "Animals";
+    entry.rawTitle = "Pigs";
+
+    REQUIRE(library.noteFirstSeen(entry, 1000).has_value());
+    REQUIRE(library.recordPlay(entry, 2000));
+    REQUIRE(library.recordPlay(entry, 3000));
+
+    // Removed from the playlist and added back, from a different rip of the same
+    // recording. The filename follows the file; nothing else does.
+    PlaylistEntry rerip = entry;
+    rerip.url          = Url::fromLocalPath("/music/rerip/04 Pigs.flac");
+
+    const auto record = library.noteFirstSeen(rerip, 9000);
+    REQUIRE(record.has_value());
+    CHECK(record->firstSeen == 1000);
+    CHECK(record->count == 2);
+    CHECK(record->lastPlayed == 3000);
+    CHECK(record->filename == "04 Pigs.flac");
+}
+
+TEST_CASE("a first-seen note carries the count the entry arrived with",
+          "[library]") {
+    Library library = openMemoryLibrary();
+
+    // What a Cog import produces: the tally is on the entry before the track has
+    // a row of its own, and it has to survive reaching one.
+    PlaylistEntry entry;
+    entry.url       = Url::fromLocalPath("/music/sheep.flac");
+    entry.artist    = "Pink Floyd";
+    entry.album     = "Animals";
+    entry.rawTitle  = "Sheep";
+    entry.playCount = 12;
+
+    const auto seeded = library.noteFirstSeen(entry, 1000);
+    REQUIRE(seeded.has_value());
+    CHECK(seeded->count == 12);
+
+    REQUIRE(library.recordPlay(entry, 2000));
+    const auto record = library.playCount("Pink Floyd", "Animals", "Sheep");
+    REQUIRE(record.has_value());
+    CHECK(record->count == 13);
+}
+
 TEST_CASE("ratings attach to the play count row", "[library]") {
     Library library = openMemoryLibrary();
 

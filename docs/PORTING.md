@@ -3120,6 +3120,29 @@ are the same plumbing as scrobbling, they are Cog's own sixty-second threshold,
 and wiring one without the other would have meant building the accumulator and
 deliberately leaving half its output dangling.
 
+**And it closed only the write.** The count lives in two places, deliberately and
+following Cog: `play_count.count` in the database is the tally, and
+`PlaylistEntry::playCount` is the copy the playlist carries -- the one the Info
+pane reads, the one a Cog import fills in, the one `resetPlayCountSelected()` was
+already careful to write alongside the database. The threshold wrote the table
+and not the entry, so the number on screen stayed at whatever the playlist was
+loaded with, and the next whole-playlist save wrote that stale number back over
+the row it had just incremented. The play-count callback now mirrors the new
+tally onto the entry and saves it, which is the pairing the reset command had
+always made.
+
+The other half of that was `first_seen`, which was written by nothing but the
+INSERT inside `recordPlay()`. A date meaning "when this track entered the
+library" was therefore stamped sixty seconds into the first listen, and a track
+added and never played had no date at all. `Library::noteFirstSeen()` creates the
+row where the track actually enters -- `addScannedEntries()`, the single path
+every add takes -- with the entry's own count as the seed, so a Cog import's
+tally reaches the table rather than being forgotten the first time XPCog counts a
+play. Re-adding a track keeps the date and the tally and returns them, which is
+how a track removed and added again comes back with its history instead of at
+zero. `recordPlay()` still sets the date on insert, now only as the fallback for
+a track that reached playback without passing through an add.
+
 **The Cog settings import refuses `enableAudioScrobbler`.** This is the one key
 that exists on both sides under the same name and is still not copied, and it is
 the only exception to the import having no translation table — see

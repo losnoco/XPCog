@@ -1212,6 +1212,46 @@ std::optional<PlayCountRecord> Library::playCount(std::string_view artist,
     return record;
 }
 
+std::optional<PlayCountRecord> Library::noteFirstSeen(const PlaylistEntry& entry,
+                                                      std::int64_t whenUnixSeconds) {
+    if (!isOpen()) {
+        static_cast<void>(impl_->fail("no database"));
+        return std::nullopt;
+    }
+
+    // The same natural key and the same upsert as recordPlay, minus the counting:
+    // a track being added to the playlist is not a play. On conflict only the
+    // filename moves, so re-adding a track keeps both the date it was first seen
+    // and everything that has been counted against it since.
+    sql::Statement statement{
+        impl_->database,
+        "INSERT INTO play_count (artist, album, title, filename, count, first_seen) "
+        "VALUES (?,?,?,?,?,?) "
+        "ON CONFLICT(artist, album, title) DO UPDATE SET "
+        "filename = excluded.filename;"};
+    if (!statement.valid()) {
+        static_cast<void>(impl_->fail("cannot prepare the first-seen upsert"));
+        return std::nullopt;
+    }
+
+    statement.bind(1, entry.artist);
+    statement.bind(2, entry.album);
+    statement.bind(3, entry.title());
+    statement.bind(4, entry.filename());
+    // Whatever the entry arrives holding, which is zero for an ordinary add and
+    // the imported tally after a Cog import. Seeding it here is what stops the
+    // import's counts from being forgotten the first time XPCog counts a play of
+    // its own.
+    statement.bind(5, entry.playCount);
+    statement.bind(6, whenUnixSeconds);
+    if (!statement.run()) {
+        static_cast<void>(impl_->fail("cannot note the track"));
+        return std::nullopt;
+    }
+    impl_->error.clear();
+    return playCount(entry.artist, entry.album, entry.title());
+}
+
 bool Library::recordPlay(const PlaylistEntry& entry, std::int64_t whenUnixSeconds) {
     if (!isOpen()) {
         return impl_->fail("no database");
@@ -1220,6 +1260,11 @@ bool Library::recordPlay(const PlaylistEntry& entry, std::int64_t whenUnixSecond
     // Upsert on the natural key, so playing the same track from two different
     // files (a rip and a re-rip, or a cue track and the flat file) shares one
     // count -- which is the behaviour Cog's three-predicate fetch produces.
+    //
+    // `first_seen` is written only by the INSERT half, and by the time a play is
+    // counted noteFirstSeen() has normally created the row already. It stays
+    // here for the track that reached playback without passing through an add --
+    // a row has to carry some date, and the first play is the best one available.
     sql::Statement statement{
         impl_->database,
         "INSERT INTO play_count (artist, album, title, filename, count, "

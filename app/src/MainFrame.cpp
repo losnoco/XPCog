@@ -52,8 +52,10 @@
 #include <wx/translation.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <fstream>
@@ -75,6 +77,13 @@ enum : int {
     kFilterId,
     kScanCancelId,
 };
+
+/// The wall clock, in the units the library stores dates in.
+[[nodiscard]] std::int64_t unixNow() {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
 
 [[nodiscard]] std::string formatClock(double seconds) {
     if (seconds < 0.0) {
@@ -2019,8 +2028,24 @@ void MainFrame::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow,
     // reached gigabytes that way, which is most of what made saving and loading
     // the playlist slow.
     if (library_) {
+        const std::int64_t now = unixNow();
         for (PlaylistEntry& entry : entries) {
             static_cast<void>(library_->adoptArtwork(entry));
+
+            // And the track's play count row, which is created here rather than
+            // by the first play. "First seen" is the date the track entered the
+            // library -- if nothing writes it until sixty seconds into a listen
+            // then it names the wrong event, and a track added and never played
+            // has no date at all.
+            //
+            // The count comes back the other way. A track re-added to the
+            // playlist carries whatever has been counted against it, so its
+            // history survives being removed and added again; the max is for the
+            // Cog import, whose entries arrive already holding a tally that the
+            // row may not have seen.
+            if (const auto record = library_->noteFirstSeen(entry, now)) {
+                entry.playCount = std::max(entry.playCount, record->count);
+            }
         }
     }
 
@@ -2544,10 +2569,28 @@ void MainFrame::wireScrobbling() {
         if (entry == nullptr) {
             return;
         }
-        const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-                             std::chrono::system_clock::now().time_since_epoch())
-                             .count();
-        static_cast<void>(library_->recordPlay(*entry, now));
+        if (!library_->recordPlay(*entry, unixNow())) {
+            return;
+        }
+
+        // Mirrored back onto the entry, which is the pairing
+        // resetPlayCountSelected() already makes and for the same reason: the
+        // entry is the copy the Info pane reads and the copy the playlist
+        // persists. Writing only the table left the count on screen frozen at
+        // whatever it was when the playlist was last loaded, and let the next
+        // whole-playlist save write that stale number back over the row.
+        const TrackId id    = currentTrack_;
+        std::int64_t  count = entry->playCount + 1;
+        if (const auto record =
+                library_->playCount(entry->artist, entry->album, entry->title())) {
+            count = record->count;
+        }
+
+        playlist_.update(id, [count](PlaylistEntry& target) { target.playCount = count; });
+        if (const PlaylistEntry* updated = playlist_.find(id)) {
+            static_cast<void>(library_->saveEntry(*updated));
+        }
+        refreshInfo();
     });
 
     // Half the track or four minutes, whichever came first. The captured
