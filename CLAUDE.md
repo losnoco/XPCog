@@ -142,6 +142,15 @@ SoundFont) and are pointed at it by environment variable: `XPCOG_PSF_CORPUS`,
 `xpcog-cli` is the headless way to exercise the engine: `codecs`, `info`,
 `expand`, `decode`, `play`.
 
+`tools/ci-watch/ci-watch.sh` watches a GitHub Actions run and prints one line per
+job as it finishes — the run for the checked-out commit with no argument, or a
+run id. Two details are the reason it exists rather than a poll loop written on
+the spot: it parses with `gh`'s built-in `--jq`, because a standalone `jq` is not
+on a stock Windows box, and a job that did not succeed names the step it died in.
+Exit status is the run's, so it also reads as a plain command. Reach for it
+before writing something that polls `gh`; `tools/ci-watch/README.md` has the
+rest.
+
 ## Architecture
 
 ```
