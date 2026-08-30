@@ -354,6 +354,38 @@ The `MimeType=` list is assembled from the enabled codec options rather than
 written out once, so a build without `XPCOG_WITH_MUSEPACK` does not offer XPCog
 for a Musepack file it cannot play. See `packaging/linux/CMakeLists.txt`.
 
+**The tarball.** `cmake --build build/linux-repo-release --target package`
+produces `XPCog-<version>-<arch>.tar.gz` beside the build, which is the Linux
+counterpart of `installer` on Windows and `dmg` on macOS. It is CPack's `TGZ`
+generator over the install rules above, stripped — 120 MB of executable becomes
+24, and the symbols stay in the build tree where a debugger and a crash report
+want them.
+
+```sh
+cmake --build build/linux-repo-release --target package
+tar tzf build/linux-repo-release/XPCog-1.0.0-x86_64.tar.gz
+```
+
+**It is not an AppImage and does not pretend to be.** wxWidgets, GTK and most of
+the codec libraries are the distribution's, linked dynamically, so the tarball
+runs on the distribution release that built it or a compatible newer one. That
+is a convenience for that case, not a portable binary for any Linux; the
+portable answer is the Flatpak below.
+
+The tree inside is relocatable in the two ways that took arranging — the player
+finds its assets through `<exe dir>/../share/xpcog` and `libvgmstream.so`
+through an `$ORIGIN/../lib` rpath, so `bin/`, `lib/` and `share/` can sit
+anywhere as long as they sit together. **One file in it is not:** the desktop
+file's `Exec` is the absolute path the tree was *configured* for, so unpack the
+archive at that prefix, or edit the one line. Everything else works from
+anywhere.
+
+No `DEB` or `RPM` generator, deliberately. CPack can emit both, but a package
+worth installing needs a dependency list, and `CPACK_DEBIAN_PACKAGE_SHLIBDEPS`
+derives one naming the exact sonames of whichever distribution happened to build
+it. That is a per-distribution job, and what a per-distribution packager needs
+from this repository is `cmake --install`, which they have.
+
 **No Flatpak yet.** It is the right answer for a user on any distribution who
 does not build, and the obstacle is worth stating: `flatpak-builder` builds with
 no network, so vcpkg's manifest mode cannot run inside it. The path that works

@@ -146,3 +146,85 @@ endforeach()
 # package manager has a trigger for both -- and running them from an install
 # rule would write outside DESTDIR, which is precisely what breaks packaging.
 # README's Linux section says what to run after a manual `cmake --install`.
+
+# ---------------------------------------------------------------------------
+# The tarball.
+#
+#     cmake --build build/linux-repo-release --target package
+#
+# produces build/linux-repo-release/XPCog-<version>-<arch>.tar.gz, which is the
+# Linux counterpart of `installer` on Windows and `dmg` on macOS -- one artefact
+# to attach to a release, for someone who wants to run XPCog without building
+# it.
+#
+# --- Why CPack here, when Windows deliberately does not --------------------
+#
+# packaging/windows/CMakeLists.txt sets out why the installer is an NSIS script
+# and not CPACK_NSIS: CPack packages what install() rules say to package, and
+# there were none for the application. That was the argument against it, and on
+# Linux it is now the argument for it -- the install rules above are complete
+# and tested, so CPack has something to read and there is nothing left for a
+# hand-written packager to add. `package` is `cmake --install` into a staging
+# directory, compressed.
+#
+# --- What this tarball is, and is not --------------------------------------
+#
+# It is not an AppImage and does not pretend to be. wxWidgets, GTK and most of
+# the codec libraries are the distribution's, linked dynamically, so the tarball
+# runs on the distribution release that built it or a compatible newer one -- it
+# is a convenience for that case, not a portable binary for any Linux.
+#
+# The tree inside it is relocatable in the two ways that took work to arrange:
+# the player finds its shipped assets through <exe dir>/../share/xpcog and
+# libvgmstream through an $ORIGIN/../lib rpath, so bin/, lib/ and share/ can sit
+# anywhere as long as they sit together.
+#
+# One file in it is not relocatable, and it is worth knowing which. The desktop
+# file's Exec is the absolute path this tree was *configured* for -- see
+# co.losno.XPCog.desktop.in for why a bare name is worse -- so unpacking the
+# archive somewhere other than that prefix gives a working player whose menu
+# entry launches nothing. Unpack it at the prefix it was built for, which is
+# what README's Linux section says to do, or edit the one line.
+# ---------------------------------------------------------------------------
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # The same warning the Windows installer gives, for a smaller reason: a Debug
+    # tarball is enormous and slow rather than unredistributable. Still not what
+    # anyone means to publish.
+    message(STATUS
+        "XPCog: the `package` target in a Debug tree produces a debug tarball. "
+        "Use linux-release or linux-repo-release to ship.")
+endif()
+
+set(CPACK_PACKAGE_NAME "XPCog")
+set(CPACK_PACKAGE_VENDOR "The XPCog authors")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://cog.losno.co/xpcog")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/COPYING")
+
+# TGZ alone. Not DEB or RPM: CPack can emit both, but a package worth installing
+# needs a dependency list, and CPACK_DEBIAN_PACKAGE_SHLIBDEPS would derive one
+# naming the exact sonames of the distribution that happened to build it. That
+# is a per-distribution job done properly by a per-distribution packager, and
+# `cmake --install` is what such a packager needs from us.
+set(CPACK_GENERATOR "TGZ")
+
+# And explicitly no source package. CPack's default source generator on Unix
+# would add a `package_source` target that tarballs the working tree, build
+# directories and all; `git archive` is the right tool for that and is nobody's
+# accident.
+set(CPACK_SOURCE_GENERATOR "")
+
+# XPCog-1.0.0-x86_64.tar.gz, which is the Windows installer's name with the
+# platform's own idea of the architecture. CPack's default spells the system and
+# not the machine, so a 64-bit build and a build for anything else would both be
+# "Linux".
+set(CPACK_PACKAGE_FILE_NAME
+    "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
+
+# 120 MB of executable becomes 24. The symbols stay in the build tree, which is
+# where a crash report is symbolicated from and where a debugger is pointed;
+# what is dropped here is a copy of them in a download, which nothing reads.
+set(CPACK_STRIP_FILES ON)
+
+include(CPack)

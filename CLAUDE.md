@@ -124,8 +124,11 @@ Other targets: `xpcog-no-toolkit` (layering check, runs as part of `ALL`),
 `XPCOG_CODESIGN_IDENTITY` and the notary credentials from the environment only —
 see the README section).
 
-Linux has no packaging target, because there is nothing to build: the artefact is
-the install tree, and `cmake --install` produces it. `packaging/linux/` adds the
+On Linux `package` builds `XPCog-<version>-<arch>.tar.gz` — CPack's `TGZ`
+generator over the install rules, stripped, and the only generator enabled on
+purpose (see `packaging/linux/CMakeLists.txt` for why not `DEB` or `RPM`). The
+install tree is the real artefact there and `cmake --install` produces it; the
+tarball is that tree compressed. `packaging/linux/` adds the
 desktop integration that goes with it — a `.desktop` file, AppStream metainfo and
 hicolor icons, all named for `XPCOG_DESKTOP_ID` (`co.losno.XPCog`, set in the root
 `CMakeLists.txt`). Four files have to agree on that ID, one of them at run time:
