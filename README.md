@@ -30,11 +30,12 @@ unpacking first, and internet radio.
 > separately, no environment variable pointing at a toolkit, and no deploy step.
 > See [Status](#status) for what is not there.
 
-XPCog began as a port of [Cog](https://cog.losno.co/), the macOS player by Vincent
-Spader and Christopher Snowhill, and still follows it wherever its behaviour is worth
-keeping — see [Relationship to Cog](#relationship-to-cog).
-[`docs/PORTING.md`](docs/PORTING.md) has the full plan and the reasoning behind the
-structure.
+XPCog grew out of a port of [Cog](https://cog.losno.co/), the macOS player by Vincent
+Spader and Christopher Snowhill, and owes it a great deal: the plugin contract the
+design hangs off, the settings keys, and a lot of carefully chosen behaviour. It runs
+on three platforms now, and has since gained things Cog does not have. Where following
+Cog is still the right answer it follows Cog; where it is not, the difference is
+written down — see [Relationship to Cog](#relationship-to-cog).
 
 ## Installing
 
@@ -131,8 +132,9 @@ and the bulk of the format support beneath it is portable C and C++ libraries in
 both players. The rest of Cog does not travel: its UI is 12 Cocoa XIBs driven by 190
 bindings, persistence is Core Data, audio output is AUHAL, every DSP kernel is
 Accelerate/vDSP, and decoders are Objective-C bundles discovered at runtime. None of
-that survives a move off Apple platforms, so all of it is rebuilt here — which is why
-this is a port and not a fork.
+that survives a move off Apple platforms, so all of it is built again here. That is why
+none of Cog's source is in this tree: what was inherited is a design, not an
+implementation.
 
 ## Architecture
 
@@ -993,25 +995,26 @@ What is outstanding is short and named:
   delivered by SMTC, MPRIS and MediaPlayer.framework.
 - **NSDockTile** was dropped by decision.
 
-The decoder list is closed at 842 extensions across 23 decoders, up from the 30-odd
-the first working build recognised. FLAC, MP3, Vorbis, Opus, AAC/ALAC and WavPack
-came first, with APE and Musepack arriving through FFmpeg rather than decoders of
-their own; Musepack has its own now, and APE still does not, because Cog has none
-either. Reopening the list is cheap by design — an additional decoder is one
-`xpcog_add_codec()` call, never a refactor, and every one added so far has cost
-exactly that.
+The decoder list stands at 842 extensions across 23 decoders, up from the 30-odd the
+first working build recognised. FLAC, MP3, Vorbis, Opus, AAC/ALAC and WavPack came
+first, with APE and Musepack arriving through FFmpeg rather than decoders of their own;
+Musepack has one now and APE does not, because FFmpeg already plays it and a second
+path to the same audio would be upkeep for nothing. Extending the list is cheap by
+design — a decoder is one `xpcog_add_codec()` call, never a refactor, and every one
+added so far has cost exactly that.
 
 ### Deliberately out of scope
 
 The Mac App Store sandbox (`SandboxBroker`, security-scoped bookmarks), AudioUnit MIDI
-instrument hosting, AppleScript and Spotlight integration are macOS-only and are not
-being ported. A no-op `IFileAccess` seam preserves the sandbox call sites in case that
-changes.
+instrument hosting, AppleScript and Spotlight integration are macOS-only, and nothing
+here reimplements them. A no-op `IFileAccess` seam preserves the sandbox call sites in
+case that changes.
 
-This is a record of what did not travel rather than a boundary on what XPCog may do.
-Cog not having something is not a reason not to build it — it only means the result is
-new work rather than port work. The [remote control](#remote-control) is the first
-feature to land on those terms, and Cog's own MCP server was on this list until it did.
+That is a record of what did not travel, not a boundary on what XPCog may do. Cog not
+having something is a fact about Cog: it means the work would be new rather than
+inherited, and is judged on its own terms. The [remote control](#remote-control) is the
+first feature to land that way, and Cog's own MCP server sat on this list until it
+did.
 
 AudioUnit hosting is one of Cog's four MIDI backends, not MIDI itself — `.mid` and
 its dozen relatives play here through the other three, all of which have landed:
@@ -1019,20 +1022,30 @@ SpessaSynth, Nuked OPL3 and Nuked SC-55. See [`docs/MIDI.md`](docs/MIDI.md).
 
 ## Relationship to Cog
 
-XPCog is a derivative work of [Cog](https://github.com/losnoco/Cog) and tracks its
-behaviour closely, including quirks worth preserving. Cog recognises around 900
-extensions across ~35 decoders, against 842 across 23 here. Where XPCog deliberately
-differs, the difference is documented — for example, Cog's shuffle and
-next/previous operate on the *sorted* playlist order, whereas XPCog keeps playback
-order canonical and treats sorting as display-only.
+XPCog is a derivative work of [Cog](https://github.com/losnoco/Cog), and the
+[License](#license) below is not a formality about that. The debt is specific and
+large: the six-protocol plugin contract the whole design hangs off, the
+`NSUserDefaults` keys — kept identical, so an existing Cog plist imports verbatim —
+and years of decisions about how a player of this kind should behave, down to quirks
+worth preserving.
 
-The full porting plan, the progress against it, and the complete list of deliberate
-behaviour differences live in [`docs/PORTING.md`](docs/PORTING.md), which ends with
-**Where to pick up next** — the remaining work itemised, in order, each with where
-Cog does it and what the trap is. Work that spans several commits gets its own plan
-beside it —
-[`docs/HIGHLYCOMPLETE.md`](docs/HIGHLYCOMPLETE.md) staged the eight emulator
-cores behind the PSF formats, one at a time, and is now the record of all eight.
+It is not only a port any more. It runs on Windows and Linux as well as macOS from one
+codebase, it has a REST remote control and a translated interface, and its build
+fetches its own dependencies. Cog recognises around 900 extensions across ~35 decoders,
+against 842 across 23 here.
+
+Where the two do the same thing, XPCog follows Cog. Where it deliberately differs, the
+difference is written down rather than discovered — Cog's shuffle and next/previous
+operate on the *sorted* playlist order, for instance, whereas XPCog keeps playback
+order canonical and treats sorting as display-only. And where Cog simply has nothing to
+say, XPCog decides for itself.
+
+[`docs/PORTING.md`](docs/PORTING.md) is the record of that work: the original survey,
+the structural decisions, the complete list of deliberate behaviour differences, and
+**Where to pick up next**. It began as a plan and is now mostly a history, which is the
+usual fate of a good one. Work spanning several commits gets its own document beside
+it — [`docs/HIGHLYCOMPLETE.md`](docs/HIGHLYCOMPLETE.md) staged the eight emulator cores
+behind the PSF formats one at a time, and is now the record of all eight.
 
 ## License
 
