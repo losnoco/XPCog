@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "AppCommands.hpp"
 #include "PlaybackController.hpp"
 #include "StatusPresence.hpp"
 
@@ -391,6 +392,10 @@ private:
     std::unique_ptr<Library> library_;
     PlaylistView             view_;
     UndoStack                undo_;
+
+    /// The playlist edits, with the selection taken out of them. Declared after
+    /// what it refers to, so it is destroyed before any of it.
+    AppCommands              commands_;
 
     std::unique_ptr<PlaybackController> playback_;
 

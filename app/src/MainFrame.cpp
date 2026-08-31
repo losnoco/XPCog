@@ -16,12 +16,12 @@
 #include "LucideIcon.hpp"
 #include "PlaylistDataModel.hpp"
 #include "SeekBar.hpp"
+#include "SettingEffect.hpp"
 #include "SpeedPanel.hpp"
 #include "Text.hpp"
 
 #include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/audio/EqualizerPresets.hpp"
-#include "xpcog/core/library/PlaylistCommands.hpp"
 #include "xpcog/core/library/PlaylistFile.hpp"
 #include "xpcog/platform/CrashReporter.hpp"
 #include "xpcog/platform/FileManager.hpp"
@@ -220,7 +220,8 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
       registry_(registry),
       settings_(settings),
       dispatch_(std::move(dispatch)),
-      view_(playlist_) {
+      view_(playlist_),
+      commands_(playlist_, undo_, nullptr) {
     SetIcons(applicationIcons());
 
     playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
@@ -241,6 +242,7 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
         platform::reportProblem("Library would not open: " + library_->lastError());
         library_.reset();
     }
+    commands_.setLibrary(library_.get());
 
     playback_ =
         std::make_unique<PlaybackController>(registry_, playlist_, settings_, dispatch_);
@@ -971,128 +973,128 @@ void MainFrame::wireUp() {
 }
 
 void MainFrame::onSettingChanged(const std::string& key) {
-    if (key == "enableAudioScrobbler") {
-        if (scrobbler_) {
-            scrobbler_->setEnabled(settings_.EnableScrobbling());
+    // What to do about a key is decided in SettingEffect.cpp rather than here,
+    // because this is no longer the only writer: the REST remote control writes
+    // settings too, and a chain of ifs inside a window is not reachable from a
+    // socket. It is also the only way to test the question -- xpcog-app-tests
+    // walks Settings::all() and insists every key has a deliberate answer, which
+    // is what stops the next setting from being added inert.
+    switch (effectOf(key).effect) {
+        case Effect::ReloadDsp:
+            playback_->reloadDsp();
+            break;
+
+        case Effect::RefreshSpeed:
+            playback_->reloadDsp();
+            // Either control may have moved these -- the popup on the strip or
+            // the preferences pane -- and the other one is showing a stale
+            // number until it is told. The engine choice matters too: it is what
+            // decides whether the popup shows its "nothing is listening to
+            // these" line.
+            if (speedPanel_ != nullptr) {
+                speedPanel_->refresh();
+            }
+            break;
+
+        case Effect::GenreEqualizer:
+            // Turning genre tracking on applies the playing track's genre at
+            // once. Cog's -toggleTracking: does the same, and the reason is that
+            // the alternative -- waiting for the next track -- makes the checkbox
+            // look like it did nothing. Turning it *off* deliberately leaves the
+            // curve where it is: the last preset it chose is as good a starting
+            // point as any, and silently flipping back to some remembered curve
+            // would be a second surprise.
+            if (settings_.GraphicEqTrackGenre()) {
+                // Past the memo deliberately: the playing track has almost
+                // certainly been matched already, and the whole point of the
+                // toggle is to act on it now.
+                lastGenreTrack_ = kInvalidTrackId;
+                lastGenre_.clear();
+                applyGenreEqualizer(playlist_.find(currentTrack_));
+            }
+            break;
+
+        case Effect::ReopenOutput:
+            // The device is read when the engine opens it, which is when a track
+            // starts. Moving what is already playing is what reopenOutput() is
+            // for.
+            playback_->reopenOutput();
+            break;
+
+        case Effect::MiniFloating:
+            if (mini_ != nullptr) {
+                mini_->setFloating(settings_.FloatingMiniWindow());
+            }
+            break;
+
+        case Effect::RefreshSpectrum:
+            spectrum_->applySettings(settings_);
+            break;
+
+        case Effect::RefreshPanels:
+            // The View menu is where this is normally changed, and that path
+            // refreshes the panes itself. This is the other one: the generated
+            // row in Advanced, which every setting gets. Without it, changing the
+            // mode there does nothing visible until the next selection or track
+            // change, which reads as the row being inert.
+            refreshInfo();
+            refreshLyrics();
+            break;
+
+        case Effect::PlaylistMode:
+            // The playlist's own three, which it holds as state rather than
+            // reading when it needs them. The constructor seeds all three and,
+            // until this branch existed, nothing ever seeded them again -- so
+            // "Stop after every track" in Preferences did nothing at all until
+            // the next launch, and silently: the box stays ticked, the setting is
+            // stored, and playback simply carries on to the next track.
+            //
+            // Repeat and Shuffle escaped notice because the Order menu sets them
+            // on the playlist directly as well as storing them. Their rows in
+            // Advanced had exactly the same defect.
+            playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
+            playlist_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
+            playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
+            break;
+
+        case Effect::Volume: {
+            // The same shape once more, with a slider instead of a menu in front
+            // of it. Volume is seeded into the engine by PlaybackController's
+            // constructor and into the slider by buildUi(), and both keep it from
+            // then on -- so the row in Advanced moved a number nothing read
+            // again. The slider has to be moved too, or the interface disagrees
+            // with what is coming out of the speakers.
+            const double gain = settings_.Volume();
+            volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
+            playback_->setVolume(gain);
+            media_->setVolume(static_cast<float>(gain));
+            break;
         }
-        return;
-    }
 
-    // The equaliser and the DSP chain are read by the engine when it is asked to,
-    // so a band that moves has to say so or the slider does nothing until the
-    // next track.
-    if (key.starts_with("eq") || key == "GraphicEQenable" ||
-        key == "enableFSurround" || key == "enableFading" ||
-        key == "volumeScaling" || key == "enableHDCD" ||
-        key == "pitch" || key == "tempo" || key.starts_with("rubberband")) {
-        playback_->reloadDsp();
-        // Either control may have moved these -- the popup on the strip or the
-        // preferences pane -- and the other one is showing a stale number until
-        // it is told. The engine choice matters too: it is what decides whether
-        // the popup shows its "nothing is listening to these" line.
-        if (speedPanel_ != nullptr &&
-            (key == "pitch" || key == "tempo" || key == "speedLock" ||
-             key == "rubberbandEngine")) {
-            speedPanel_->refresh();
-        }
-        return;
-    }
+        case Effect::Scrobbler:
+            if (scrobbler_) {
+                scrobbler_->setEnabled(settings_.EnableScrobbling());
+            }
+            break;
 
-    // Turning genre tracking on applies the playing track's genre at once. Cog's
-    // -toggleTracking: does the same, and the reason is that the alternative --
-    // waiting for the next track -- makes the checkbox look like it did nothing.
-    // Turning it *off* deliberately leaves the curve where it is: the last
-    // preset it chose is as good a starting point as any, and silently flipping
-    // back to some remembered curve would be a second surprise.
-    if (key == "GraphicEQtrackgenre") {
-        if (settings_.GraphicEqTrackGenre()) {
-            // Past the memo deliberately: the playing track has almost certainly
-            // been matched already, and the whole point of the toggle is to act
-            // on it now.
-            lastGenreTrack_ = kInvalidTrackId;
-            lastGenre_.clear();
-            applyGenreEqualizer(playlist_.find(currentTrack_));
-        }
-        return;
-    }
+        case Effect::CrashReporter:
+            // Immediately, in both directions, which is the half of Cog's
+            // arrangement that is easy to leave out: its observer on
+            // `sentryConsented` calls `[SentrySDK close]` the moment the box is
+            // unticked (AppController.m:417-420), rather than waiting for a
+            // relaunch. Anything else means unticking the box and still being
+            // reported on for the rest of the session.
+            if (settings_.SentryConsented()) {
+                platform::startCrashReporting();
+            } else {
+                platform::stopCrashReporting();
+            }
+            settings_.sync();
+            break;
 
-    // The device is read when the engine opens it, which is when a track starts.
-    // Moving what is already playing is what reopenOutput() is for.
-    if (key == "outputDeviceId" || key == "exclusiveOutput") {
-        playback_->reopenOutput();
-        return;
-    }
-
-    if (key == "floatingMiniWindow" && mini_ != nullptr) {
-        mini_->setFloating(settings_.FloatingMiniWindow());
-        return;
-    }
-
-    if (key.starts_with("spectrum")) {
-        spectrum_->applySettings(settings_);
-        return;
-    }
-
-    // The View menu is where this is normally changed, and that path refreshes
-    // the panes itself. This is the other one: the generated row in Advanced,
-    // which every setting gets. Without it, changing the mode there does nothing
-    // visible until the next selection or track change, which reads as the row
-    // being inert.
-    if (key == "panelFollowMode") {
-        refreshInfo();
-        refreshLyrics();
-        return;
-    }
-
-    // The playlist's own three, which it holds as state rather than reading when
-    // it needs them. The constructor seeds all three and, until this branch,
-    // nothing ever seeded them again -- so "Stop after every track" in
-    // Preferences did nothing at all until the next launch, and silently:
-    // the box stays ticked, the setting is stored, and playback simply carries
-    // on to the next track.
-    //
-    // Repeat and Shuffle escaped notice because the Order menu sets them on the
-    // playlist directly as well as storing them. Their rows in Advanced had
-    // exactly the same defect.
-    if (key == "alwaysStopAfterCurrent") {
-        playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
-        return;
-    }
-    if (key == "repeat") {
-        playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
-        return;
-    }
-    if (key == "shuffle") {
-        playlist_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
-        return;
-    }
-
-    // The same shape once more, with a slider instead of a menu in front of it.
-    // Volume is seeded into the engine by PlaybackController's constructor and
-    // into the slider by buildUi(), and both keep it from then on -- so the row
-    // in Advanced moved a number nothing read again. The slider has to be moved
-    // too, or the interface disagrees with what is coming out of the speakers.
-    if (key == "volume") {
-        const double gain = settings_.Volume();
-        volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
-        playback_->setVolume(gain);
-        media_->setVolume(static_cast<float>(gain));
-        return;
-    }
-
-    // Immediately, in both directions, which is the half of Cog's arrangement
-    // that is easy to leave out: its observer on `sentryConsented` calls
-    // `[SentrySDK close]` the moment the box is unticked
-    // (AppController.m:417-420), rather than waiting for a relaunch. Anything
-    // else means unticking the box and still being reported on for the rest of
-    // the session.
-    if (key == "sentryConsented") {
-        if (settings_.SentryConsented()) {
-            platform::startCrashReporting();
-        } else {
-            platform::stopCrashReporting();
-        }
-        settings_.sync();
+        case Effect::None:
+        case Effect::Internal:
+            break;
     }
 }
 
@@ -1525,16 +1527,11 @@ void MainFrame::bindCommands() {
         Close(true);
     });
 
-    on(EditUndo, [this] { undo_.undo(); });
-    on(EditRedo, [this] { undo_.redo(); });
+    on(EditUndo, [this] { commands_.undo(); });
+    on(EditRedo, [this] { commands_.redo(); });
     on(EditRemove, [this] { removeSelected(); });
     on(EditSelectAll, [this] { list_->SelectAll(); });
-    on(EditRandomize, [this] {
-        if (playlist_.size() > 1) {
-            undo_.push(std::make_unique<RandomizeCommand>(
-                playlist_, toUtf8(_("Randomize"))));
-        }
-    });
+    on(EditRandomize, [this] { commands_.randomize(); });
 
     on(PlaybackPlayPause, [this] { playback_->playPause(); });
     on(PlaybackStop, [this] { playback_->stop(); });
@@ -2217,11 +2214,7 @@ void MainFrame::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow,
         (atRow >= 0) ? static_cast<std::size_t>(atRow) : playlist_.size();
     const std::size_t count = entries.size();
 
-    undo_.push(std::make_unique<InsertTracksCommand>(
-        playlist_, where, std::move(entries),
-        toUtf8(wxString::Format(wxPLURAL("Add %zu Track", "Add %zu Tracks",
-                                         static_cast<unsigned>(count)),
-                                count))));
+    commands_.insert(std::move(entries), where);
 
     if (cogImportSummary_) {
         // Said instead of the ordinary summary, because after an import the
@@ -2308,24 +2301,12 @@ void MainFrame::showSortIndicator() {
 }
 
 void MainFrame::removeSelected() {
-    std::vector<TrackId> ids = selectedTracks();
-    if (ids.empty()) {
-        return;
+    if (commands_.remove(selectedTracks()) > 0) {
+        setStatusText(statusSummary());
     }
-    const std::size_t count = ids.size();
-    undo_.push(std::make_unique<RemoveTracksCommand>(
-        playlist_, std::move(ids),
-        toUtf8(wxString::Format(wxPLURAL("Remove %zu Track", "Remove %zu Tracks",
-                                         static_cast<unsigned>(count)),
-                                count))));
-    setStatusText(statusSummary());
 }
 
-void MainFrame::enqueueSelected() {
-    for (const TrackId id : selectedTracks()) {
-        playlist_.enqueue(id);
-    }
-}
+void MainFrame::enqueueSelected() { commands_.setQueued(selectedTracks(), true); }
 
 // --- the playlist's context menu -----------------------------------------
 
@@ -2394,28 +2375,12 @@ void MainFrame::showPlaylistMenu(const wxDataViewItem& item) {
 }
 
 void MainFrame::toggleQueuedSelected() {
-    // Per entry rather than one decision for the whole selection, which is Cog's
-    // -toggleQueuedForEntries: (PlaylistController.m:1909). A mixed selection
-    // ends up inverted rather than made uniform, and the menu label says so.
-    for (const TrackId id : selectedTracks()) {
-        const PlaylistEntry* entry = playlist_.find(id);
-        if (entry == nullptr) {
-            continue;
-        }
-        if (entry->queued()) {
-            playlist_.dequeue(id);
-        } else {
-            playlist_.enqueue(id);
-        }
-    }
+    commands_.toggleQueued(selectedTracks());
     setStatusText(statusSummary());
 }
 
 void MainFrame::toggleStopAfterSelected() {
-    for (const TrackId id : selectedTracks()) {
-        playlist_.update(id,
-                         [](PlaylistEntry& entry) { entry.stopAfter = !entry.stopAfter; });
-    }
+    commands_.toggleStopAfter(selectedTracks());
 }
 
 void MainFrame::searchForSelected(bool byAlbum) {
@@ -2529,20 +2494,7 @@ void MainFrame::applyReloadedEntries(std::vector<PlaylistEntry> entries) {
 }
 
 void MainFrame::resetPlayCountSelected() {
-    std::size_t count = 0;
-    for (const TrackId id : selectedTracks()) {
-        const PlaylistEntry* entry = playlist_.find(id);
-        if (entry == nullptr) {
-            continue;
-        }
-        if (library_) {
-            static_cast<void>(library_->resetPlayCount(*entry));
-        }
-        // And on the entry, which is the copy the Info pane reads. The database
-        // alone would leave the old number on screen until the next launch.
-        playlist_.update(id, [](PlaylistEntry& target) { target.playCount = 0; });
-        ++count;
-    }
+    const std::size_t count = commands_.resetPlayCount(selectedTracks());
     refreshInfo();
     setStatusText(wxString::Format(
         wxPLURAL("Play count reset for %zu track.", "Play count reset for %zu tracks.",
@@ -2554,13 +2506,7 @@ void MainFrame::removeRatingSelected() {
     if (!library_) {
         return;
     }
-    std::size_t count = 0;
-    for (const TrackId id : selectedTracks()) {
-        if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
-            static_cast<void>(library_->setRating(*entry, 0.0F));
-            ++count;
-        }
-    }
+    const std::size_t count = commands_.removeRating(selectedTracks());
     // Said in the status line because there is nowhere else it could show: XPCog
     // has no rating column and no star control, so a rating is something a Cog
     // library brought with it and this is the command that clears it. Silence
@@ -2636,15 +2582,7 @@ void MainFrame::trashSelected() {
         }
     }
 
-    if (!trashed.empty()) {
-        const std::size_t count = trashed.size();
-        undo_.push(std::make_unique<RemoveTracksCommand>(
-            playlist_, std::move(trashed),
-            toUtf8(wxString::Format(wxPLURAL("Move %zu Track to the Trash",
-                                             "Move %zu Tracks to the Trash",
-                                             static_cast<unsigned>(count)),
-                                    count))));
-    }
+    commands_.removeTrashed(std::move(trashed));
 
     if (failed > 0) {
         setStatusText(wxString::Format(

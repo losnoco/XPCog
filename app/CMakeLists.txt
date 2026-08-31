@@ -8,6 +8,8 @@
 set(XPCOG_APP_SOURCES
     src/AboutDialog.cpp
     src/AboutDialog.hpp
+    src/AppCommands.cpp
+    src/AppCommands.hpp
     src/AppIcon.cpp
     src/AppIcon.hpp
     src/Commands.cpp
@@ -40,6 +42,8 @@ set(XPCOG_APP_SOURCES
     src/PreferencesDialog.hpp
     src/SeekBar.cpp
     src/SeekBar.hpp
+    src/SettingEffect.cpp
+    src/SettingEffect.hpp
     src/SingleInstance.cpp
     src/SingleInstance.hpp
     src/SpectrumPanel.cpp

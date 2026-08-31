@@ -414,6 +414,7 @@ catch_discover_tests(xpcog-tests)
 # ---------------------------------------------------------------------------
 if(XPCOG_BUILD_APP)
     add_executable(xpcog-app-tests
+        app/test_appcommands.cpp
         app/test_cogplist.cpp
         app/test_crashreporter.cpp
         app/test_embedded_icons.cpp
@@ -422,6 +423,7 @@ if(XPCOG_BUILD_APP)
         app/test_localization.cpp
         app/test_lyricspanel.cpp
         app/test_playlistmodel.cpp
+        app/test_settingeffect.cpp
     )
 
     # So the availability case can assert rather than accept either answer. The
