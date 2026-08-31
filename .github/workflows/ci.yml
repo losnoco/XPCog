@@ -1389,9 +1389,18 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
 
     steps:
-      # No checkout. Everything this job needs is either an artifact from
-      # another job or an answer from the API, and `gh` takes the repository
-      # from GH_REPO rather than from a git directory.
+      # Sparse, and one file deep. The job still takes everything *about the
+      # release* from the API -- that property is the reason the note below said
+      # "no checkout" -- but the changelog script has to come from somewhere, and
+      # fetching one file is not the same thing as fetching the history. In
+      # particular this is still not a `git log`: tools/release-notes reads the
+      # commits through the compare endpoint, so no depth is needed here.
+      - name: Fetch the changelog script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/release-notes
+          sparse-checkout-cone-mode: false
+
       - name: Decide whether this version is already released
         id: check
         run: |
@@ -1502,30 +1511,33 @@ jobs:
           previous=$(gh release list --limit 100 --json tagName \
               --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0].tagName // empty')
 
+          # The changelog, ahead of the downloads: what changed is what somebody
+          # opening a release page came to find out, and the file list is the
+          # same three lines every time.
+          if [ -n "$previous" ]; then
+              echo "Listing changes since $previous."
+              {
+                  tools/release-notes/release-notes.sh "$previous" "$GITHUB_SHA"
+                  echo
+                  cat notes.md
+              } > combined.md
+              mv combined.md notes.md
+          fi
+
           # --target pins the tag to the commit that was built. main can have
           # moved on while the packaging jobs ran, and a tag on a commit nothing
           # in this run compiled is worse than no tag at all.
-          if [ -n "$previous" ]; then
-              echo "Generating notes since $previous."
-              gh release create "v$VERSION" \
-                  --target "$GITHUB_SHA" \
-                  --title "XPCog $VERSION" \
-                  --notes-file notes.md \
-                  --generate-notes \
-                  --notes-start-tag "$previous" \
-                  "dist/XPCog-$VERSION-x64-setup.exe" \
-                  "dist/XPCog-$VERSION-arm64.dmg" \
-                  "dist/XPCog-$VERSION-x86_64.tar.gz"
-          else
-              echo "No earlier v-tagged release; publishing without generated notes."
-              gh release create "v$VERSION" \
-                  --target "$GITHUB_SHA" \
-                  --title "XPCog $VERSION" \
-                  --notes-file notes.md \
-                  "dist/XPCog-$VERSION-x64-setup.exe" \
-                  "dist/XPCog-$VERSION-arm64.dmg" \
-                  "dist/XPCog-$VERSION-x86_64.tar.gz"
-          fi
+          #
+          # No --generate-notes: it lists merged pull requests, and this
+          # repository commits straight to main, so it had almost nothing to say.
+          # The changelog above replaces it and reads the commits themselves.
+          gh release create "v$VERSION" \
+              --target "$GITHUB_SHA" \
+              --title "XPCog $VERSION" \
+              --notes-file notes.md \
+              "dist/XPCog-$VERSION-x64-setup.exe" \
+              "dist/XPCog-$VERSION-arm64.dmg" \
+              "dist/XPCog-$VERSION-x86_64.tar.gz"
 
           echo "Released v$VERSION." >> "$GITHUB_STEP_SUMMARY"
           gh release view "v$VERSION" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
