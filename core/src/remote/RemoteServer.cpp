@@ -1,6 +1,9 @@
 #include "xpcog/core/remote/RemoteServer.hpp"
 
+#include "CallGate.hpp"
 #include "RateLimit.hpp"
+#include "Router.hpp"
+#include "Routes.hpp"
 
 #include "xpcog/core/Version.hpp"
 #include "xpcog/core/remote/Token.hpp"
@@ -22,17 +25,63 @@
 #include <utility>
 
 namespace xpcog::remote {
-namespace {
 
-RawResponse jsonError(int status, std::string_view code, std::string_view message) {
+// The shared response shapes live here rather than in Routes.cpp because the
+// router needs them for the answers no handler ever produces -- 401, 404, 405,
+// 413 -- and a route that failed validation and a request that never reached one
+// should not answer in two different shapes.
+RawResponse jsonResponse(const nlohmann::json& body, int status) {
     RawResponse response;
     response.status = status;
+    response.body   = body.dump();
+    return response;
+}
+
+RawResponse jsonError(int status, std::string_view code, std::string_view message,
+                      std::string_view field) {
     nlohmann::json body;
     body["error"]["code"]    = code;
     body["error"]["message"] = message;
-    response.body            = body.dump();
+    if (!field.empty()) {
+        body["error"]["field"] = field;
+    }
+    return jsonResponse(body, status);
+}
+
+RawResponse interfaceBusy() {
+    RawResponse response =
+        jsonError(503, "ui_busy", "The player did not answer in time.");
+    response.headers.emplace_back("Retry-After", "1");
     return response;
 }
+
+RawResponse outcomeResponse(Outcome outcome, const nlohmann::json& body) {
+    switch (outcome) {
+        case Outcome::Ok:
+            return jsonResponse(body.is_null() ? nlohmann::json::object() : body);
+        case Outcome::Busy: {
+            // A start or stop is in flight and the player would silently decline.
+            // Saying so is the difference between an API that reports what
+            // happened and one that reports what was asked.
+            RawResponse response = jsonError(
+                409, "busy", "A track is starting or stopping; try again shortly.");
+            response.headers.emplace_back("Retry-After", "1");
+            return response;
+        }
+        case Outcome::NotFound:
+            return jsonError(404, "not_found", "No such track, key or preset.");
+        case Outcome::Rejected:
+            return jsonError(400, "rejected", "The player refused that value.");
+        case Outcome::ReadOnly:
+            return jsonError(403, "read_only",
+                             "That is session state rather than a setting.");
+        case Outcome::Unsupported:
+            return jsonError(501, "unsupported", "This host cannot do that.");
+    }
+    return jsonError(500, "internal", "Unreachable.");
+}
+
+namespace {
 
 /// The bearer token in an Authorization header, or empty when there is not one
 /// in the shape this accepts.
@@ -80,12 +129,17 @@ struct RemoteServer::Impl {
     ServerConfig    config;
 
     RateLimit       rateLimit;
+    Router          router;
+    CallGate        gate;
     httplib::Server server;
     std::thread     thread;
     int             port = 0;
 
     Impl(IPlayerControl& c, Dispatcher d, ServerConfig cfg)
-        : control(c), dispatch(std::move(d)), config(std::move(cfg)) {}
+        : control(c),
+          dispatch(std::move(d)),
+          config(std::move(cfg)),
+          gate(control, dispatch, config.callTimeout) {}
 };
 
 RemoteServer::RemoteServer(IPlayerControl& control, Dispatcher dispatch,
@@ -178,16 +232,57 @@ RawResponse RemoteServer::handle(const RawRequest& request) {
     }
     impl_->rateLimit.noteSuccess(request.peer);
 
-    if (request.method == "GET" && request.path == "/api/v1/version") {
-        nlohmann::json body;
-        body["version"]    = kVersionString;
-        body["apiVersion"] = 1;
-        RawResponse response;
-        response.body = body.dump();
+    const Router::Match match = impl_->router.find(request.method, request.path);
+    if (match.route == nullptr) {
+        if (match.allowed.empty()) {
+            return jsonError(404, "not_found", "No such endpoint.");
+        }
+        // The path exists under other methods, which is a different mistake from
+        // a wrong path and worth saying so -- otherwise the reader goes looking
+        // for a typo in a URL that is correct.
+        RawResponse response = jsonError(
+            405, "method_not_allowed", "That endpoint does not take this method.");
+        std::string allow;
+        for (const std::string_view method : match.allowed) {
+            if (!allow.empty()) {
+                allow += ", ";
+            }
+            allow += method;
+        }
+        response.headers.emplace_back("Allow", allow);
         return response;
     }
 
-    return jsonError(404, "not_found", "No such endpoint.");
+    if (match.route->writes && !impl_->config.allowWrite) {
+        return jsonError(403, "read_only",
+                         "This server is configured to allow reads only.");
+    }
+
+    // Parsed non-throwing, because this is bytes off a socket and an exception
+    // escaping into httplib's worker is not a way to answer 400.
+    nlohmann::json body = nlohmann::json::object();
+    if (!request.body.empty()) {
+        body = nlohmann::json::parse(request.body, nullptr, false);
+        if (body.is_discarded()) {
+            return jsonError(400, "bad_json", "The request body is not valid JSON.");
+        }
+        if (!body.is_object()) {
+            return jsonError(400, "bad_json", "The request body must be a JSON object.");
+        }
+    }
+
+    const Query query{request.query};
+    const Ctx   ctx{impl_->gate, request, query, match.path, body};
+
+    RawResponse response = match.route->handler(ctx);
+
+    // On everything, and cheap. nosniff is what stops a JSON error body being
+    // read as something executable by a browser that went looking.
+    response.headers.emplace_back("X-Content-Type-Options", "nosniff");
+    response.headers.emplace_back("Cache-Control", "no-store");
+    // Deliberately no CORS headers at all. A page on another origin cannot reach
+    // this even holding a stolen token, and there is nothing to preflight past.
+    return response;
 }
 
 std::string RemoteServer::openApiDocument() {

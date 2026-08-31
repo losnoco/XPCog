@@ -78,7 +78,12 @@ endfunction()
 xpcog_gather(_everything core codecs platform app tools tests)
 xpcog_scan(
     "Qt was removed from this project, but Qt includes were found:"
-    "^[ \t]*#[ \t]*include[ \t]*[<\"]Q"
+    # Q followed by a capital, which is what every Qt header is: QString,
+    # QObject, QtGlobal, QtCore/QApplication. Matching a bare Q caught our own
+    # files too -- Query.hpp in core/src/remote was reported as Qt coming back --
+    # and a check that cannot tell a false positive from the thing it guards is
+    # one people learn to work around.
+    "^[ \t]*#[ \t]*include[ \t]*[<\"]Qt?[A-Z]"
     "If Qt is coming back, that is a decision -- edit cmake/CheckNoToolkit.cmake."
     ${_everything})
 

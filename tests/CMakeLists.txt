@@ -57,7 +57,8 @@ if(XPCOG_WITH_REST)
     # The gate is a private header beside the server, and the suite reaches it
     # directly: what it does is worth testing on its own, and going through
     # handle() would test the router instead.
-    target_sources(xpcog-tests PRIVATE core/test_remote_gate.cpp)
+    target_sources(xpcog-tests PRIVATE core/test_remote_gate.cpp
+                                     core/test_remote_router.cpp)
     target_include_directories(xpcog-tests PRIVATE "${CMAKE_SOURCE_DIR}/core/src/remote")
 endif()
 

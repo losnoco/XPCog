@@ -173,7 +173,12 @@ if(XPCOG_WITH_REST)
     if(NOT _xpcog_core_httplib_from_system)
         find_package(httplib CONFIG REQUIRED GLOBAL)
     endif()
-    target_sources(xpcog-core PRIVATE src/remote/RemoteServer.cpp)
+    target_sources(xpcog-core PRIVATE
+        src/remote/Json.cpp
+        src/remote/Query.cpp
+        src/remote/RemoteServer.cpp
+        src/remote/Router.cpp
+        src/remote/Routes.cpp)
     target_link_libraries(xpcog-core PRIVATE httplib::httplib)
 else()
     target_sources(xpcog-core PRIVATE src/remote/NullRemoteServer.cpp)
