@@ -426,6 +426,10 @@ msgstr "Ecuali&zador"
 msgid "SC-55 &Panel"
 msgstr "&Panel del SC-55"
 
+#: app/src/Commands.cpp:109
+msgid "&Dock Floating Panes"
+msgstr "&Acoplar los paneles flotantes"
+
 #: app/src/Commands.cpp:98
 msgid "&Mini Player"
 msgstr "Reproductor &mini"
