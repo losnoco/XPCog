@@ -285,14 +285,6 @@ RawResponse RemoteServer::handle(const RawRequest& request) {
     return response;
 }
 
-std::string RemoteServer::openApiDocument() {
-    nlohmann::json document;
-    document["openapi"]      = "3.1.0";
-    document["info"]["title"]   = "XPCog";
-    document["info"]["version"] = kVersionString;
-    document["paths"]           = nlohmann::json::object();
-    return document.dump(2);
-}
 
 bool remoteServerAvailable() noexcept { return true; }
 

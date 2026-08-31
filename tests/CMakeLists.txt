@@ -58,6 +58,7 @@ if(XPCOG_WITH_REST)
     # directly: what it does is worth testing on its own, and going through
     # handle() would test the router instead.
     target_sources(xpcog-tests PRIVATE core/test_remote_gate.cpp
+                                     core/test_remote_openapi.cpp
                                      core/test_remote_router.cpp)
     target_include_directories(xpcog-tests PRIVATE "${CMAKE_SOURCE_DIR}/core/src/remote")
 endif()

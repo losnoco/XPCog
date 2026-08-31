@@ -175,6 +175,7 @@ if(XPCOG_WITH_REST)
     endif()
     target_sources(xpcog-core PRIVATE
         src/remote/Json.cpp
+        src/remote/OpenApi.cpp
         src/remote/Query.cpp
         src/remote/RemoteServer.cpp
         src/remote/Router.cpp

@@ -57,6 +57,13 @@ RawResponse getVersion(const Ctx& /*ctx*/) {
     return jsonResponse(body);
 }
 
+RawResponse getOpenApi(const Ctx& /*ctx*/) {
+    RawResponse response;
+    response.body        = RemoteServer::openApiDocument();
+    response.contentType = "application/json; charset=utf-8";
+    return response;
+}
+
 RawResponse getStatus(const Ctx& ctx) {
     const auto status = gated(ctx, [](IPlayerControl& player) { return player.status(); });
     if (!status) {
@@ -1110,6 +1117,10 @@ constexpr std::array kSchemas = std::to_array<Schema>({
 constexpr std::array kRoutes = std::to_array<Route>({
     {Method::Get, "/api/v1/version", "getVersion", "The player's version.",
      kNoParams, "", "Version", "application/json", false, false, getVersion},
+
+    {Method::Get, "/openapi.json", "getOpenApi",
+     "This document. Needs a token like everything else.", kNoParams, "", "",
+     "application/json", false, false, getOpenApi},
 
     {Method::Get, "/api/v1/status", "getStatus",
      "What is playing, where, and how the playlist is ordered.", kNoParams, "",
