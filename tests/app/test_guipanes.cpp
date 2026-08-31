@@ -1,4 +1,8 @@
-// The suite that needs a screen, and the one fault that justifies having one.
+// The suite that needs a screen, and the faults that justify having one.
+//
+// Two of them so far, and they have the same shape: a control that is the wrong
+// size only once a real toolkit has given it a real one. Neither is visible to a
+// test that calls functions.
 //
 // A note in the preferences form re-wraps itself from its own size event, and
 // everything a wxStaticText does about its label -- wrapping it, and laying the
@@ -19,9 +23,11 @@
 // fails where there is no display at all, which is the same bargain the
 // corpus-gated codec tests make.
 
+#include "EqualizerPanel.hpp"
 #include "PreferencesDialog.hpp"
 
 #include "xpcog/core/Settings.hpp"
+#include "xpcog/core/audio/Equalizer.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -32,6 +38,8 @@
 #include <wx/init.h>
 #include <wx/panel.h>
 #include <wx/scrolwin.h>
+#include <wx/sizer.h>
+#include <wx/slider.h>
 #include <wx/stattext.h>
 
 #include <algorithm>
@@ -196,6 +204,58 @@ TEST_CASE("every preference pane can be opened and resized", "[gui][preferences]
 
     // The frame takes the dialog with it, and the yield is what actually runs
     // both deletes -- Destroy() only queues them.
+    frame->Destroy();
+    wxYield();
+}
+
+TEST_CASE("the equaliser's sliders are given room to be drawn", "[gui][equalizer]") {
+    Toolkit toolkit;
+    if (!toolkit.started()) {
+        SKIP("no display: wx could not initialise the toolkit");
+    }
+
+    auto            store = xpcog::makeMemorySettingsStore();
+    xpcog::Settings settings(*store);
+
+    auto* frame = new wxFrame(nullptr, wxID_ANY, "xpcog-gui-tests", wxDefaultPosition,
+                              wxSize(1000, 320));
+    auto* panel = new xpcog::app::EqualizerPanel(frame, settings);
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(panel, 1, wxEXPAND);
+    frame->SetSizer(sizer);
+    frame->Show();
+    frame->Layout();
+    wxYield();
+
+    std::vector<wxSlider*> sliders;
+    for (wxWindow* child : panel->GetChildren()) {
+        if (auto* slider = dynamic_cast<wxSlider*>(child)) {
+            sliders.push_back(slider);
+        }
+    }
+
+    // The preamp and every band.
+    REQUIRE(sliders.size() == xpcog::Equalizer::bandSettingsKeys().size() + 1);
+
+    for (const wxSlider* slider : sliders) {
+        // A control narrower than the toolkit will draw it in is not a narrow
+        // control, it is an invisible one: GTK measures a scale's trough against
+        // the width it was given, and at 24 pixels against a 34-pixel minimum it
+        // warns once per slider and draws no scale at all. The panel therefore
+        // asks for a height and leaves the width to the control.
+        CHECK(slider->GetSize().GetWidth() >= slider->GetBestSize().GetWidth());
+        CHECK(slider->GetSize().GetHeight() > 0);
+    }
+
+    // And the size the pane opens at is the whole curve's, not a scrollbar's:
+    // GetBestSize() answers thirteen here, because a wxScrolled that scrolls
+    // sideways reports its minimum width plus a scrollbar, and that is the whole
+    // reason contentSize() exists.
+    const wxSize content = panel->contentSize();
+    CHECK(content.GetWidth() >=
+          static_cast<int>(sliders.size()) * sliders.front()->GetSize().GetWidth());
+    CHECK(content.GetHeight() >= panel->GetBestSize().GetHeight());
+
     frame->Destroy();
     wxYield();
 }

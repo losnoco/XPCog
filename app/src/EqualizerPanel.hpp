@@ -68,6 +68,16 @@ public:
     /// a lie.
     void refresh();
 
+    /// What the pane around this panel should open at: the whole curve, plus the
+    /// scrollbar that appears when it cannot be had.
+    ///
+    /// GetBestSize() cannot answer that question and does not try. A wxScrolled
+    /// that scrolls sideways reports its *minimum* width plus a scrollbar --
+    /// FilterBestSize(), wxWidgets/src/generic/scrlwing.cpp:1558 -- which with
+    /// no minimum set is thirteen pixels, and a dock told to open a pane at
+    /// thirteen pixels opens a sliver with nothing in it.
+    [[nodiscard]] wxSize contentSize() const;
+
     /// A setting under this panel changed. Carries the key, so the frame can
     /// tell an equaliser change from any other and ask the engine to re-read the
     /// chain mid-track.

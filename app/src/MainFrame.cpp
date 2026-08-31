@@ -464,7 +464,11 @@ void MainFrame::buildUi() {
     // pane shorter than that clips the labels off the bottom, where there is no
     // vertical scrolling to reach them. The width is asked for generously and
     // scrolls horizontally when it cannot be had.
-    const wxSize equalizerBest = equalizer_->GetBestSize();
+    //
+    // From contentSize() and not GetBestSize(): the panel scrolls sideways, and
+    // a wxScrolled that does reports a best width of a scrollbar and nothing
+    // else. See the note on contentSize().
+    const wxSize equalizerBest = equalizer_->contentSize();
     auiManager_.AddPane(equalizer_, wxAuiPaneInfo()
                                         .Name("equalizer")
                                         .Bottom()

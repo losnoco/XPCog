@@ -100,8 +100,10 @@ Two test binaries, both Catch2 v3 and both registered with ctest through
 
 On Linux there is a third, `xpcog-gui-tests`, and it is the one that needs a
 screen: it opens the preferences dialog and walks its panes, which is the only
-way to catch a layout handler that recurses until the stack runs out. It is
-registered as a single `add_test()` rather than discovered, so it can be run
+way to catch a layout handler that recurses until the stack runs out, and it
+measures the equaliser's sliders, which is the only way to catch a control the
+toolkit refuses to draw because it was forced narrower than its own minimum. It
+is registered as a single `add_test()` rather than discovered, so it can be run
 under `xvfb-run` where CMake found one; without a display it skips. Linux only
 because that is where a display can be conjured — the code under test is the
 same on all three.

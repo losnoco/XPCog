@@ -473,7 +473,7 @@ endif()
 # or it does not, and gating a test on that is how a suite grows a case nobody
 # ever sees run. The code under test is the same everywhere, so once is enough.
 if(XPCOG_BUILD_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_executable(xpcog-gui-tests app/test_preferencespanes.cpp)
+    add_executable(xpcog-gui-tests app/test_guipanes.cpp)
 
     target_link_libraries(xpcog-gui-tests PRIVATE
         xpcog-appcore
@@ -493,7 +493,7 @@ if(XPCOG_BUILD_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(XPCOG_XVFB_RUN)
         # -a picks a free server number, so parallel ctest jobs do not collide
         # over :99.
-        add_test(NAME "every preference pane can be opened and resized"
+        add_test(NAME "the panes that need a screen"
                  COMMAND "${XPCOG_XVFB_RUN}" -a "$<TARGET_FILE:xpcog-gui-tests>")
         message(STATUS "GUI tests: under ${XPCOG_XVFB_RUN}")
     elseif(DEFINED ENV{CI})
@@ -508,7 +508,7 @@ if(XPCOG_BUILD_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
             "than run. Install xvfb.")
     else()
         # Whatever display the session has, and the test skips if there is none.
-        add_test(NAME "every preference pane can be opened and resized"
+        add_test(NAME "the panes that need a screen"
                  COMMAND "$<TARGET_FILE:xpcog-gui-tests>")
         message(STATUS "GUI tests: no xvfb-run, using the session's display")
     endif()
@@ -516,6 +516,6 @@ if(XPCOG_BUILD_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # What Catch.cmake registers for the discovered tests, for the same reason:
     # a binary whose every case skipped exits 4, and without this ctest reads
     # that as a failure.
-    set_tests_properties("every preference pane can be opened and resized"
+    set_tests_properties("the panes that need a screen"
                          PROPERTIES SKIP_RETURN_CODE 4)
 endif()

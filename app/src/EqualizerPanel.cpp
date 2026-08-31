@@ -9,6 +9,7 @@
 #include <wx/checkbox.h>
 #include <wx/choice.h>
 #include <wx/sizer.h>
+#include <wx/settings.h>
 #include <wx/slider.h>
 #include <wx/statline.h>
 #include <wx/stattext.h>
@@ -197,9 +198,19 @@ wxSlider* EqualizerPanel::addBand(wxBoxSizer* columns, const std::string& captio
     // *top* by default, so without it every band reads upside down -- a boost
     // drags the handle down. Qt's vertical slider is the other way round, which
     // is why this has no counterpart in the file it was ported from.
+    //
+    // The height is asked for and the width is not. A narrow slider is what makes
+    // 32 columns fit, but the control has a minimum of its own -- a GtkScale is
+    // 34 pixels wide before it will draw, an 18-pixel handle plus its margins --
+    // and forcing 24 on it does not make it narrower, it makes it *absent*: GTK
+    // measures the trough against the width it was given, finds nothing to work
+    // with, warns "for_size smaller than min-size (0 < 4)" once per slider and
+    // draws no scale at all. Thirty-two of those is an equaliser pane with the
+    // readouts and the frequency labels in it and no sliders between them.
     auto* slider = new wxSlider(this, wxID_ANY, 0, -kEqRangeDb * kEqScale,
                                 kEqRangeDb * kEqScale, wxDefaultPosition,
-                                FromDIP(wxSize(24, 140)), wxSL_VERTICAL | wxSL_INVERSE);
+                                wxSize(wxDefaultCoord, FromDIP(140)),
+                                wxSL_VERTICAL | wxSL_INVERSE);
     slider->SetToolTip(toWx(caption));
 
     slider->Bind(wxEVT_SLIDER, [this, key, readout](wxCommandEvent& event) {
@@ -222,6 +233,20 @@ wxSlider* EqualizerPanel::addBand(wxBoxSizer* columns, const std::string& captio
     readouts_.push_back(readout);
     keys_.push_back(key);
     return slider;
+}
+
+wxSize EqualizerPanel::contentSize() const {
+    wxSizer* layout = GetSizer();
+    if (layout == nullptr) {
+        return GetBestSize();
+    }
+
+    wxSize size = layout->GetMinSize();
+    // Plus the horizontal scrollbar, which appears the moment the pane is
+    // narrower than the curve -- which is most of the time, and it comes out of
+    // the height the columns were measured for.
+    size.y += wxSystemSettings::GetMetric(wxSYS_HSCROLL_Y, this);
+    return size;
 }
 
 int EqualizerPanel::customIndex() const { return static_cast<int>(presets_.size()); }
