@@ -115,11 +115,21 @@ FileTree::FileTree(wxWindow* parent, const PluginRegistry& registry)
 
     // Double-click or Enter. wxGenericDirCtrl reports both as ITEM_ACTIVATED on
     // the tree it wraps.
+    //
+    // Skipped only when nothing was added. Both tree controls treat an
+    // unprocessed activation as permission to toggle the item -- the generic one
+    // toggles when ProcessEvent() returns false (wxWidgets/src/generic/
+    // treectlg.cpp:3954), and the native Windows one returns `processed` as the
+    // notification's result for exactly the same purpose (src/msw/treectrl.cpp:
+    // 3780). So skipping meant double-clicking a folder both queued it and
+    // opened it, and the tree jumped about under the pointer while the scan ran.
     tree_->GetTreeCtrl()->Bind(wxEVT_TREE_ITEM_ACTIVATED, [this](wxTreeEvent& event) {
-        event.Skip();
-        if (std::vector<Url> urls = selectedUrls(); !urls.empty()) {
-            activated.publish(urls);
+        std::vector<Url> urls = selectedUrls();
+        if (urls.empty()) {
+            event.Skip();
+            return;
         }
+        activated.publish(urls);
     });
 
     tree_->GetTreeCtrl()->Bind(wxEVT_TREE_ITEM_MENU, [this](wxTreeEvent& event) {
