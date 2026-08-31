@@ -1,24 +1,28 @@
 #include "PreferencesDialog.hpp"
 
 #include "LastFmAccount.hpp"
+#include "RemoteToken.hpp"
 #include "Localization.hpp"
 #include "SpeedCurve.hpp"
 
 #include "Text.hpp"
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
+#include "xpcog/core/remote/RemoteServer.hpp"
 #include "xpcog/platform/CrashReporter.hpp"
 
 #include <wx/app.h>
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
+#include <wx/clipbrd.h>
 #include <wx/clrpicker.h>
 #include <wx/dirdlg.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/hyperlink.h>
 #include <wx/listbox.h>
+#include <wx/msgdlg.h>
 #include <wx/panel.h>
 #include <wx/scrolwin.h>
 #include <wx/settings.h>
@@ -202,6 +206,9 @@ constexpr std::array kCuratedKeys = {
     "floatingMiniWindow",
     // Notifications
     "notifications.enable", "notifications.show-album-art",
+    // Remote control. The token is not here at all -- it lives in the system
+    // password store, not in settings.
+    "remoteEnable", "remoteAddress", "remotePort", "remoteAllowWrite",
 };
 
 /// Not settings at all, but internal state that happens to live in the same
@@ -798,6 +805,7 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     page(buildMidiPane(book), "MIDI");  // an acronym, the same in every language
     spectrumPage_ = static_cast<int>(book->GetPageCount());
     page(buildSpectrumPane(book), _("Spectrum"));
+    page(buildRemotePane(book), _("Remote"));
     page(buildAdvancedPane(book), _("Advanced"));
 
     categories->SetSelection(0);
@@ -1567,6 +1575,134 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
 }
 
 // --- Last.fm --------------------------------------------------------------
+
+
+wxWindow* PreferencesDialog::buildRemotePane(wxWindow* parent) {
+    auto* pane = makePane(parent);
+    auto* form = makeForm(pane->FromDIP(6));
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
+
+    auto* enable = static_cast<wxCheckBox*>(
+        row->toggle(_("Allow remote control over HTTP"), "remoteEnable").control);
+
+    static constexpr std::array kAddresses = std::to_array<Choice>({
+        {"127.0.0.1", wxTRANSLATE("This computer only")},
+        {"0.0.0.0", wxTRANSLATE("Any computer on the network")},
+    });
+    row->choice(_("Listen on"), "remoteAddress", kAddresses);
+    row->number(_("Port"), "remotePort", 1024, 65535);
+    row->toggle(_("Allow changes, not just reading"), "remoteAllowWrite");
+
+    // Read-only and selectable rather than hidden behind a button alone: the
+    // token has to be got into another device somehow, and the usual way is to
+    // look at it.
+    auto* token = new wxTextCtrl(pane, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                 wxDefaultSize, wxTE_READONLY);
+    auto* copy       = new wxButton(pane, wxID_ANY, _("Copy"));
+    auto* regenerate = new wxButton(pane, wxID_ANY, _("Regenerate"));
+
+    auto* tokenRow = new wxBoxSizer(wxHORIZONTAL);
+    tokenRow->Add(token, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, pane->FromDIP(6));
+    tokenRow->Add(copy, 0, wxRIGHT, pane->FromDIP(6));
+    tokenRow->Add(regenerate, 0);
+    form->Add(new wxStaticText(pane, wxID_ANY, _("Access token")), 0,
+              wxALIGN_CENTER_VERTICAL);
+    form->Add(tokenRow, 1, wxEXPAND);
+
+    auto* status = new NoteText(pane, wxEmptyString, false);
+    form->AddSpacer(0);
+    form->Add(status, 1, wxEXPAND | wxTOP | wxBOTTOM, pane->FromDIP(6));
+
+    // One closure decides what the pane says, as the Last.fm pane's does, so
+    // there is no way for two paths to disagree about it.
+    const auto refresh = [this, pane, enable, token, copy, regenerate, status] {
+        const bool built = remote::remoteServerAvailable();
+        wxString   storeProblem;
+        const bool store = RemoteToken::storeAvailable(&storeProblem);
+
+        enable->Enable(built && store);
+        token->Enable(built && store);
+        copy->Enable(built && store);
+        regenerate->Enable(built && store);
+
+        wxString text;
+        if (!built) {
+            // Greyed and explained rather than hidden, which is how the
+            // crash-reporting checkbox handles a build without Sentry. A control
+            // that does nothing is worse than one that says why.
+            enable->SetValue(false);
+            text = _("This build has no remote-control server.");
+        } else if (!store) {
+            text = storeProblem.empty()
+                       ? wxString(_("The system password store is not available, "
+                                    "so an access token cannot be kept safely."))
+                       : storeProblem;
+        } else {
+            token->ChangeValue(toWx(RemoteToken::load()));
+            if (!isTrue(settings_.rawValue("remoteEnable"))) {
+                text = _("Off. Nothing is listening.");
+            } else {
+                const std::string address = settings_.rawValue("remoteAddress");
+                const wxString    where   = wxString::Format(
+                    "http://%s:%s", toWx(address == "0.0.0.0" ? "<this computer>"
+                                                              : address),
+                    toWx(settings_.rawValue("remotePort")));
+                text = wxString::Format(
+                    _("Listening on %s -- open %s/docs in a browser to try it."),
+                    where, where);
+                if (address == "0.0.0.0") {
+                    // Said plainly, because it is the one choice on this pane
+                    // that puts the player on the network. The token is what
+                    // protects it, and it travels in a header on every request
+                    // over a connection nothing encrypts.
+                    text += "\n\n";
+                    text += _("Reachable from other machines. The connection is not "
+                              "encrypted and the access token is sent with every "
+                              "request, so use this on a network you trust.");
+                }
+            }
+        }
+        status->SetLabelText(text);
+        status->Wrap(status->GetSize().GetWidth());
+        pane->Layout();
+    };
+
+    enable->Bind(wxEVT_CHECKBOX, [refresh](wxCommandEvent& event) {
+        event.Skip();
+        // After the toggle's own handler has stored the value, so the line below
+        // describes what the pane now is rather than what it was.
+        refresh();
+    });
+
+    copy->Bind(wxEVT_BUTTON, [token](wxCommandEvent&) {
+        if (wxTheClipboard->Open()) {
+            wxTheClipboard->SetData(new wxTextDataObject(token->GetValue()));
+            wxTheClipboard->Close();
+        }
+    });
+
+    regenerate->Bind(wxEVT_BUTTON, [this, refresh](wxCommandEvent&) {
+        // Confirmed, because it is not undoable and it silently breaks whatever
+        // is already connected -- a phone on the other side of the room that
+        // simply stops working is a bad way to find that out.
+        if (wxMessageBox(_("Every device using the current token will stop working "
+                           "until it is given the new one.\n\nGenerate a new "
+                           "token?"),
+                         _("Regenerate Access Token"), wxYES_NO | wxICON_QUESTION,
+                         this) != wxYES) {
+            return;
+        }
+        static_cast<void>(RemoteToken::regenerate());
+        // Through the ordinary fan-out, so the server restarts on the new token
+        // the same way it would after a port change.
+        changeNotifier()("remoteEnable");
+        refresh();
+    });
+
+    refresh();
+    return finishPane(pane, form);
+}
 
 wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
     auto* pane = makePane(parent);

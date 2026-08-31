@@ -1878,3 +1878,107 @@ msgstr ""
 "XPCog ya se ofrece para %zu tipos de archivo de audio.\n"
 "\n"
 "Windows no permite que una aplicación se convierta a sí misma en la predeterminada. Para abrir estos archivos con doble clic, elige Abrir con → Elegir otra aplicación → XPCog y marca «Usar siempre esta aplicación»."
+
+#: app/src/AppCommands.cpp:26
+msgid "%s (remote)"
+msgstr "%s (remoto)"
+
+#: app/src/AppCommands.cpp:88
+msgid "Move %zu Track"
+msgid_plural "Move %zu Tracks"
+msgstr[0] "Mover %zu pista"
+msgstr[1] "Mover %zu pistas"
+
+#: app/src/AppCommands.cpp:112
+msgid "Clear Playlist"
+msgstr "Vaciar la lista"
+
+#: app/src/MainFrame.cpp
+msgid "Remote control listening on http://%s:%d"
+msgstr "Control remoto escuchando en http://%s:%d"
+
+#: app/src/MainFrame.cpp
+msgid "Remote control unavailable: %s"
+msgstr "Control remoto no disponible: %s"
+
+#: app/src/MainFrame.cpp
+msgid "The remote control could not create an access token."
+msgstr "El control remoto no pudo crear un token de acceso."
+
+#: app/src/PreferencesDialog.cpp
+msgid "Remote"
+msgstr "Remoto"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Allow remote control over HTTP"
+msgstr "Permitir el control remoto por HTTP"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Listen on"
+msgstr "Escuchar en"
+
+#: app/src/PreferencesDialog.cpp
+msgid "This computer only"
+msgstr "Solo este equipo"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Any computer on the network"
+msgstr "Cualquier equipo de la red"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Port"
+msgstr "Puerto"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Allow changes, not just reading"
+msgstr "Permitir cambios, no solo lectura"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Access token"
+msgstr "Token de acceso"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Copy"
+msgstr "Copiar"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Regenerate"
+msgstr "Regenerar"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Regenerate Access Token"
+msgstr "Regenerar el token de acceso"
+
+#: app/src/PreferencesDialog.cpp
+msgid ""
+"Every device using the current token will stop working until it is given the new one.\n"
+"\n"
+"Generate a new token?"
+msgstr ""
+"Todos los dispositivos que usen el token actual dejarán de funcionar hasta que reciban el nuevo.\n"
+"\n"
+"¿Generar un token nuevo?"
+
+#: app/src/PreferencesDialog.cpp
+msgid "This build has no remote-control server."
+msgstr "Esta compilación no incluye servidor de control remoto."
+
+#: app/src/PreferencesDialog.cpp
+msgid "The system password store is not available, so an access token cannot be kept safely."
+msgstr "El almacén de contraseñas del sistema no está disponible, así que no se puede guardar un token de acceso de forma segura."
+
+#: app/src/PreferencesDialog.cpp
+msgid "Off. Nothing is listening."
+msgstr "Desactivado. No hay nada escuchando."
+
+#: app/src/PreferencesDialog.cpp
+msgid "Listening on %s -- open %s/docs in a browser to try it."
+msgstr "Escuchando en %s: abre %s/docs en un navegador para probarlo."
+
+#: app/src/PreferencesDialog.cpp
+msgid "Reachable from other machines. The connection is not encrypted and the access token is sent with every request, so use this on a network you trust."
+msgstr "Accesible desde otros equipos. La conexión no está cifrada y el token de acceso viaja en cada petición, así que usa esta opción solo en una red de confianza."
+
+#: app/src/RemoteToken.cpp
+msgid "This build of wxWidgets has no secret store, so the remote control's access token could not be kept safely."
+msgstr "Esta compilación de wxWidgets no tiene almacén de secretos, así que el token de acceso del control remoto no se puede guardar de forma segura."

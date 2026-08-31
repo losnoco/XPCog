@@ -122,6 +122,7 @@ private:
     /// Cog draws a username field and a password field, and there is no password
     /// field anywhere in this program. See LastFmAccount.hpp.
     [[nodiscard]] wxWindow* buildLastFmPane(wxWindow* parent);
+    [[nodiscard]] wxWindow* buildRemotePane(wxWindow* parent);
 
     /// What the curated rows call when a value changes. Handed to them rather
     /// than reached for, so nothing outside this class publishes its signal.
