@@ -161,6 +161,24 @@ else()
     target_sources(xpcog-core PRIVATE src/net/NullHttpClient.cpp)
 endif()
 
+# The REST remote control, on the same one-of-two-translation-units arrangement
+# and for the same reason. A separate switch from XPCOG_WITH_HTTP rather than a
+# rider on it: that one decides whether this build can reach *out* to the
+# network, and this one decides whether it listens -- opposite directions, and a
+# packager may well want one without the other. See
+# core/include/xpcog/core/remote/RemoteServer.hpp for why listening is off by
+# default even when it is built.
+if(XPCOG_WITH_REST)
+    xpcog_system_dep(cpp-httplib _xpcog_core_httplib_from_system)
+    if(NOT _xpcog_core_httplib_from_system)
+        find_package(httplib CONFIG REQUIRED GLOBAL)
+    endif()
+    target_sources(xpcog-core PRIVATE src/remote/RemoteServer.cpp)
+    target_link_libraries(xpcog-core PRIVATE httplib::httplib)
+else()
+    target_sources(xpcog-core PRIVATE src/remote/NullRemoteServer.cpp)
+endif()
+
 target_link_libraries(xpcog-core
     PUBLIC  vendor-miniaudio
     PRIVATE vendor-hdcd

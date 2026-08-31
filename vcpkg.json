@@ -26,7 +26,8 @@
     "opus",
     "wavpack",
     "catch2",
-    "nlohmann-json"
+    "nlohmann-json",
+    "cpp-httplib"
   ],
   "features": {
     "spessasynth-core": {
@@ -115,6 +116,12 @@
       "description": "nlohmann/json, for parsing the Last.fm API's replies. Header-only, so this costs a download and no build time. A library rather than a hand-written parser because this one reads bytes off a network: the hand-written plist reader next to it parses files this program wrote, and MD5 is pinned by RFC vectors, but a JSON parser facing a remote server is a fuzzing target and not somewhere to save a dependency. Substitutable; see the `sqlite3` feature.",
       "dependencies": [
         "nlohmann-json"
+      ]
+    },
+    "cpp-httplib": {
+      "description": "cpp-httplib, the HTTP server behind the REST remote control (XPCOG_WITH_REST). Header-only, so it costs a download and no build time -- the same trade as `nlohmann-json`, and made for the same reason: something parsing requests off a socket is a fuzzing target and not the place to save a dependency by hand-writing a parser. A default feature so a Linux build with XPCOG_USE_SYSTEM_LIBS can take the distribution's copy instead; see cmake/XPCogSystemDeps.cmake for the floor.",
+      "dependencies": [
+        "cpp-httplib"
       ]
     },
     "gui": {

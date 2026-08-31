@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include "xpcog/core/Dispatcher.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/Url.hpp"
@@ -39,9 +40,10 @@ namespace xpcog {
 
 class ScanTask {
 public:
-    /// Runs a callable on the thread that owns the user interface. The same
-    /// shape as platform::Dispatcher, and for the same reason.
-    using Dispatcher = std::function<void(std::function<void()>)>;
+    /// Kept as a member name because every call site spells it ScanTask::
+    /// Dispatcher; the type itself moved to xpcog/core/Dispatcher.hpp when the
+    /// remote control became its third user.
+    using Dispatcher = xpcog::Dispatcher;
 
     /// `options` is the Scanner's, and the caller supplies it because the
     /// answer lives in Settings, which core takes by injection rather than

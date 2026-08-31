@@ -24,7 +24,8 @@
         "XPCOG_WITH_MIDI": "ON",
         "XPCOG_WITH_ADPLUG": "ON",
         "XPCOG_WITH_LIBVGM": "ON",
-        "XPCOG_WITH_SENTRY": "ON"
+        "XPCOG_WITH_SENTRY": "ON",
+        "XPCOG_WITH_REST": "ON"
       },
       "environment": {
         "VCPKG_BINARY_SOURCES": "clear;files,${sourceDir}/.vcpkg-cache,readwrite"

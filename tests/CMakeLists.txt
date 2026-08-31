@@ -44,7 +44,16 @@ add_executable(xpcog-tests
     codecs/test_cuesheet.cpp
     codecs/test_gme_sidecar.cpp
     codecs/test_id3v2.cpp
+    core/test_remote_server.cpp
 )
+
+# The remote-control suite is compiled either way -- the null twin is worth a
+# case of its own -- so the option arrives as a define rather than as a source
+# list. The cases that need a server are behind it; the one that asks whether
+# this build has one is not.
+if(XPCOG_WITH_REST)
+    target_compile_definitions(xpcog-tests PRIVATE XPCOG_HAS_REST=1)
+endif()
 
 # Guarded because the HTTP source is an option: without it the headers under
 # codecs/httpsource are not on the include path at all.

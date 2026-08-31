@@ -94,10 +94,18 @@ get_filename_component(XPCOG_VCPKG_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/../vcpkg.
 #   FEATURE   the vcpkg.json feature that installs the port, dropped from
 #             VCPKG_MANIFEST_FEATURES when the system answers
 #   MODULES   pkg-config specs, all of which must be satisfied
-#   FILES     header + library names, for the libraries that ship no .pc file
+#   FILES     header + library names, for the libraries that ship no .pc file.
+#             A *single* name means a header-only library -- there is nothing to
+#             link, so the library half of the probe is skipped rather than
+#             looked for and never found.
 #   MACROS    with FILES: #define names in that header, major/minor/patch, whose
 #             values are the version the FILES probe has no .pc file to ask for
 #   RANGE     with MACROS: the floor, and an exclusive ceiling where there is one
+#   VERSION_STRING with FILES: one #define whose value is a quoted dotted
+#             version, for a header that states its version as a string rather
+#             than as the three integers MACROS reads. cpp-httplib writes
+#             `#define CPPHTTPLIB_VERSION "0.53.1"`, which is not a number and
+#             which math(EXPR) therefore cannot be pointed at.
 #   SOVERSION with FILES: the ABI the library must be installed under, for a
 #             header tree that states no version of its own
 #   TARGETS   imported targets the resolver creates, for the call sites whose
@@ -108,7 +116,7 @@ get_filename_component(XPCOG_VCPKG_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/../vcpkg.
 set(XPCOG_SYSTEM_DEP_KEYS "")
 
 macro(_xpcog_system_dep name label)
-    cmake_parse_arguments(_D "" "FEATURE;SOVERSION"
+    cmake_parse_arguments(_D "" "FEATURE;SOVERSION;VERSION_STRING"
                           "MODULES;FILES;MACROS;RANGE;TARGETS" ${ARGN})
     list(APPEND XPCOG_SYSTEM_DEP_KEYS "${name}")
     set(_xpcog_dep_${name}_LABEL   "${label}")
@@ -117,6 +125,7 @@ macro(_xpcog_system_dep name label)
     set(_xpcog_dep_${name}_FILES   "${_D_FILES}")
     set(_xpcog_dep_${name}_MACROS  "${_D_MACROS}")
     set(_xpcog_dep_${name}_SOVERSION "${_D_SOVERSION}")
+    set(_xpcog_dep_${name}_VERSION_STRING "${_D_VERSION_STRING}")
     set(_xpcog_dep_${name}_RANGE   "${_D_RANGE}")
     set(_xpcog_dep_${name}_TARGETS "${_D_TARGETS}")
 endmacro()
@@ -218,6 +227,20 @@ _xpcog_system_dep(catch2 "Catch2"
 _xpcog_system_dep(nlohmann-json "nlohmann/json"
     FEATURE nlohmann-json
     MODULES "nlohmann_json >= 3.9")
+
+# cpp-httplib, behind the REST remote control. Header-only, so there is nothing
+# to link and the probe is the header alone -- and it states its version as a
+# string rather than as three integers, which is what VERSION_STRING is for.
+#
+# The floor is 0.12, where set_pre_routing_handler() and the Result/Error pair
+# this uses settled into their current shape. Arch carries 0.53 in `extra` and
+# vcpkg's port is the same release, so on this machine the substitution is exact.
+_xpcog_system_dep(cpp-httplib "cpp-httplib"
+    FEATURE cpp-httplib
+    FILES   "httplib.h"
+    VERSION_STRING CPPHTTPLIB_VERSION
+    RANGE   0.12
+    TARGETS httplib::httplib)
 
 # codecs/ffmpeg/FFmpegDecoder.cpp uses AVChannelLayout (codec_ctx_->ch_layout)
 # and swr_alloc_set_opts2(), both new in FFmpeg 5.1. The library versions below
@@ -393,6 +416,22 @@ function(_xpcog_header_version header macros out_var)
     set(${out_var} "${_version}" PARENT_SCOPE)
 endfunction()
 
+# The same question for a header that answers it with a string. Kept separate
+# from _xpcog_header_version rather than folded into it: that one runs every
+# component through math(EXPR), which is what lets it read vgmstream's hex, and a
+# quoted "0.53.1" is not something math(EXPR) can be handed at all.
+function(_xpcog_header_version_string header macro out_var)
+    set(${out_var} "" PARENT_SCOPE)
+    if(NOT EXISTS "${header}")
+        return()
+    endif()
+    file(READ "${header}" _text)
+    if(NOT "${_text}" MATCHES "#[ \t]*define[ \t]+${macro}[ \t]+\"([0-9][0-9.]*)\"")
+        return()
+    endif()
+    set(${out_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+
 # ---------------------------------------------------------------------------
 # The probe. Called from the top-level CMakeLists.txt *before* project().
 # ---------------------------------------------------------------------------
@@ -489,7 +528,11 @@ function(xpcog_probe_system_deps)
             # question about the distribution, and something unpacked elsewhere is
             # not what "installed" means.
             list(GET _xpcog_dep_${_key}_FILES 0 _header)
-            list(GET _xpcog_dep_${_key}_FILES 1 _libname)
+            list(LENGTH _xpcog_dep_${_key}_FILES _files_len)
+            set(_libname "")
+            if(_files_len GREATER 1)
+                list(GET _xpcog_dep_${_key}_FILES 1 _libname)
+            endif()
             set(_have_header OFF)
             set(_header_path "")
             foreach(_dir /usr/include /usr/local/include)
@@ -498,12 +541,19 @@ function(xpcog_probe_system_deps)
                     set(_header_path "${_dir}/${_header}")
                 endif()
             endforeach()
+            # Header-only: there is no library, so there is nothing to find and
+            # the question is answered by the header alone.
             set(_have_lib OFF)
+            if(NOT _libname)
+                set(_have_lib ON)
+            endif()
             set(_abi_version "")
             set(_sover "${_xpcog_dep_${_key}_SOVERSION}")
             foreach(_dir /usr/lib "/usr/lib/${_machine}-linux-gnu" /usr/lib64
                          /usr/local/lib "/usr/local/lib/${_machine}-linux-gnu")
-                if(_sover)
+                if(NOT _libname)
+                    break()
+                elseif(_sover)
                     # An entry whose only version marker is the soname, so the
                     # question is not "is a library called this installed" but
                     # "is the one find_library() will pick the ABI we asked for".
@@ -551,6 +601,21 @@ function(xpcog_probe_system_deps)
             if(_found AND _xpcog_dep_${_key}_MACROS)
                 _xpcog_header_version("${_header_path}"
                                       "${_xpcog_dep_${_key}_MACROS}" _version)
+                list(GET _xpcog_dep_${_key}_RANGE 0 _floor)
+                list(LENGTH _xpcog_dep_${_key}_RANGE _range_len)
+                if(NOT _version OR _version VERSION_LESS "${_floor}")
+                    set(_found OFF)
+                elseif(_range_len GREATER 1)
+                    list(GET _xpcog_dep_${_key}_RANGE 1 _ceiling)
+                    if(NOT _version VERSION_LESS "${_ceiling}")
+                        set(_found OFF)
+                    endif()
+                endif()
+            endif()
+
+            if(_found AND _xpcog_dep_${_key}_VERSION_STRING)
+                _xpcog_header_version_string(
+                    "${_header_path}" "${_xpcog_dep_${_key}_VERSION_STRING}" _version)
                 list(GET _xpcog_dep_${_key}_RANGE 0 _floor)
                 list(LENGTH _xpcog_dep_${_key}_RANGE _range_len)
                 if(NOT _version OR _version VERSION_LESS "${_floor}")
@@ -740,18 +805,32 @@ function(xpcog_system_dep key out_var)
         endif()
     elseif(_xpcog_dep_${key}_FILES)
         list(GET _xpcog_dep_${key}_FILES 0 _header)
-        list(GET _xpcog_dep_${key}_FILES 1 _libname)
-        # REQUIRED: the pre-project probe already saw both of these, so failing
-        # here means they moved between then and now, which is worth an error
-        # rather than a quiet fallback to a port that is no longer installed.
+        list(LENGTH _xpcog_dep_${key}_FILES _files_len)
+        set(_libname "")
+        if(_files_len GREATER 1)
+            list(GET _xpcog_dep_${key}_FILES 1 _libname)
+        endif()
+        # REQUIRED: the pre-project probe already saw these, so failing here means
+        # they moved between then and now, which is worth an error rather than a
+        # quiet fallback to a port that is no longer installed.
         find_path(XPCOG_SYS_${key}_INCLUDE_DIR NAMES "${_header}" REQUIRED)
-        find_library(XPCOG_SYS_${key}_LIBRARY NAMES "${_libname}" REQUIRED)
+        if(_libname)
+            find_library(XPCOG_SYS_${key}_LIBRARY NAMES "${_libname}" REQUIRED)
+        endif()
         foreach(_target IN LISTS _xpcog_dep_${key}_TARGETS)
             if(NOT TARGET ${_target})
-                add_library(${_target} UNKNOWN IMPORTED GLOBAL)
-                set_target_properties(${_target} PROPERTIES
-                    IMPORTED_LOCATION "${XPCOG_SYS_${key}_LIBRARY}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${XPCOG_SYS_${key}_INCLUDE_DIR}")
+                if(_libname)
+                    add_library(${_target} UNKNOWN IMPORTED GLOBAL)
+                    set_target_properties(${_target} PROPERTIES
+                        IMPORTED_LOCATION "${XPCOG_SYS_${key}_LIBRARY}"
+                        INTERFACE_INCLUDE_DIRECTORIES "${XPCOG_SYS_${key}_INCLUDE_DIR}")
+                else()
+                    # Nothing to link. An INTERFACE target carrying the include
+                    # directory is the whole of what a header-only library is.
+                    add_library(${_target} INTERFACE IMPORTED GLOBAL)
+                    set_target_properties(${_target} PROPERTIES
+                        INTERFACE_INCLUDE_DIRECTORIES "${XPCOG_SYS_${key}_INCLUDE_DIR}")
+                endif()
             endif()
         endforeach()
     endif()

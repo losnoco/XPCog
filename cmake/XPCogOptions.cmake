@@ -43,6 +43,18 @@ option(XPCOG_WITH_VGMSTREAM "Video-game streamed audio (vgmstream)" OFF)
 option(XPCOG_WITH_PSF       "PSF container (HighlyComplete; cores land separately)" OFF)
 option(XPCOG_WITH_SID       "Commodore 64 tunes (libsidplayfp)" OFF)
 
+# The REST remote control. OFF for a bare `cmake` and ON in the presets, which is
+# XPCOG_WITH_SENTRY's rule -- but off here for a second reason the others do not
+# have. app/src/SingleInstance.hpp is an argument against this program owning a
+# listening socket at all: "the firewall asks the user to approve a *music
+# player* wanting network access, which is alarming, unanswerable and entirely
+# self-inflicted." That argument stands, and it is answered twice over as well.
+# This decides whether a server is *built*; `remoteEnable` decides whether it
+# ever listens, and it is false by default. A packager who wants neither has this
+# switch, and a build that never compiles a server is the strongest form of the
+# answer.
+option(XPCOG_WITH_REST "REST remote-control server (cpp-httplib)" OFF)
+
 # Crash reporting, which is opt-in twice over: this decides whether the reporter
 # is *built*, and `sentryConsented` decides whether it ever runs. OFF here for
 # the same reason XPCOG_WITH_FFMPEG is -- sentry-native builds crashpad and, on
