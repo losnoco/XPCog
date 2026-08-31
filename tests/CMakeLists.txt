@@ -59,7 +59,11 @@ if(XPCOG_WITH_REST)
     # handle() would test the router instead.
     target_sources(xpcog-tests PRIVATE core/test_remote_gate.cpp
                                      core/test_remote_openapi.cpp
-                                     core/test_remote_router.cpp)
+                                     core/test_remote_router.cpp
+                                     core/test_remote_socket.cpp)
+    # The socket test speaks to the server with httplib's own client, which is
+    # the same library the server uses and therefore already available.
+    target_link_libraries(xpcog-tests PRIVATE httplib::httplib)
     target_include_directories(xpcog-tests PRIVATE "${CMAKE_SOURCE_DIR}/core/src/remote")
 endif()
 

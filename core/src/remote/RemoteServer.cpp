@@ -158,30 +158,61 @@ bool RemoteServer::start(std::string* error) {
         return false;
     }
 
-    // One handler for everything: routing is handle()'s job, and cpp-httplib's
-    // own router would be a second table to keep in step with the one the
-    // OpenAPI document is generated from.
-    impl_->server.set_pre_routing_handler(
-        [this](const httplib::Request& in, httplib::Response& out) {
-            RawRequest request;
-            request.method        = in.method;
-            request.path          = in.path;
-            request.query         = in.target.find('?') == std::string::npos
-                                        ? std::string{}
-                                        : in.target.substr(in.target.find('?') + 1);
-            request.body          = in.body;
-            request.contentType   = in.get_header_value("Content-Type");
-            request.authorization = in.get_header_value("Authorization");
-            request.peer          = in.remote_addr;
+    // One handler per method, each matching every path, because routing is
+    // handle()'s job and cpp-httplib's own router would be a second table to
+    // keep in step with the one the OpenAPI document is generated from.
+    //
+    // Registered as route handlers rather than through
+    // set_pre_routing_handler(), and that is not a style choice: httplib reads
+    // the request body only *after* a matcher has matched, so a pre-routing
+    // handler sees an empty body on every POST, PUT and PATCH. It cost a
+    // socket test to notice, because handle() is fed a body directly everywhere
+    // else and could not have shown it.
+    auto serve = [this](const httplib::Request& in, httplib::Response& out) {
+        RawRequest request;
+        request.method = in.method;
+        request.path   = in.path;
+        // in.path is already decoded and stripped of the query; the raw target
+        // is where the query still is.
+        const std::size_t mark = in.target.find('?');
+        request.query = (mark == std::string::npos) ? std::string{}
+                                                    : in.target.substr(mark + 1);
+        request.body          = in.body;
+        request.contentType   = in.get_header_value("Content-Type");
+        request.authorization = in.get_header_value("Authorization");
+        request.peer          = in.remote_addr;
 
-            const RawResponse answer = handle(request);
-            for (const auto& [name, value] : answer.headers) {
-                out.set_header(name, value);
-            }
-            out.status = answer.status;
-            out.set_content(answer.body, answer.contentType);
-            return httplib::Server::HandlerResponse::Handled;
-        });
+        const RawResponse answer = handle(request);
+        for (const auto& [name, value] : answer.headers) {
+            out.set_header(name, value);
+        }
+        out.status = answer.status;
+        out.set_content(answer.body, answer.contentType);
+    };
+
+    impl_->server.Get(".*", serve);
+    impl_->server.Post(".*", serve);
+    impl_->server.Put(".*", serve);
+    impl_->server.Patch(".*", serve);
+    impl_->server.Delete(".*", serve);
+
+    // SO_REUSEADDR, and specifically *not* httplib's default.
+    //
+    // Its default_socket_options sets SO_REUSEPORT where the platform has it,
+    // which on Linux lets a second process bind a port the first is already
+    // listening on and has the kernel share the connections between them. For a
+    // web server behind a load balancer that is the point of the option. Here it
+    // would mean a second XPCog -- or a stale one that has not exited -- quietly
+    // binding 7799 as well, with a remote control then driving whichever player
+    // the kernel happened to hand each request to. It also means a port clash is
+    // never reported, so the preferences pane could never say the port is taken.
+    //
+    // SO_REUSEADDR keeps the thing actually wanted: rebinding a port whose
+    // previous socket is in TIME_WAIT, which is what makes a port change in the
+    // preferences pane take effect without a wait.
+    impl_->server.set_socket_options([](socket_t sock) {
+        httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
+    });
 
     // Bounded on purpose. cpp-httplib is a thread per connection, so without a
     // cap two clients holding keep-alive open can starve everything else.
@@ -193,8 +224,21 @@ bool RemoteServer::start(std::string* error) {
     // of this sees it.
     impl_->server.set_payload_max_length(1024U * 1024U);
 
-    impl_->port = impl_->server.bind_to_port(impl_->config.address, impl_->config.port);
-    if (impl_->port <= 0) {
+    // Port 0 means "any free one", and the two calls are genuinely different:
+    // bind_to_port answers a bool, so it cannot say which port it got, and only
+    // bind_to_any_port returns one. Tests ask for 0 so they never collide with
+    // whatever else is listening on the machine running them.
+    if (impl_->config.port == 0) {
+        impl_->port = impl_->server.bind_to_any_port(impl_->config.address);
+        if (impl_->port <= 0) {
+            if (error != nullptr) {
+                *error = "could not bind " + impl_->config.address;
+            }
+            return false;
+        }
+    } else if (impl_->server.bind_to_port(impl_->config.address, impl_->config.port)) {
+        impl_->port = impl_->config.port;
+    } else {
         if (error != nullptr) {
             *error = "could not bind " + impl_->config.address + ":" +
                      std::to_string(impl_->config.port);
@@ -203,6 +247,10 @@ bool RemoteServer::start(std::string* error) {
     }
 
     impl_->thread = std::thread([this] { impl_->server.listen_after_bind(); });
+    // Waiting for the accept loop rather than returning into a race: a caller
+    // that connects the moment start() answers would otherwise sometimes arrive
+    // before there is anything listening.
+    impl_->server.wait_until_ready();
     return true;
 }
 
@@ -210,6 +258,11 @@ void RemoteServer::stop() {
     if (impl_ == nullptr) {
         return;
     }
+    // The gate first, so requests waiting on the interface thread are released
+    // at once rather than each sitting out its full timeout before the listener
+    // can join. Then the socket, then the thread -- and only after all three may
+    // the owner destroy the IPlayerControl this holds a reference to.
+    impl_->gate.close();
     impl_->server.stop();
     if (impl_->thread.joinable()) {
         impl_->thread.join();
