@@ -43,6 +43,20 @@
 
 namespace xpcog {
 
+/// Does this entry match `needle`? Substring across title, artist and album,
+/// case-insensitive for ASCII -- the same question the filter box asks.
+///
+/// Exposed as a free function because there is a second searcher now: the REST
+/// remote control's `?q=`. It must not reach through setFilter(), because a
+/// remote *read* that changed what the user is looking at would be a surprise of
+/// exactly the kind this project documents against -- so it needs the matcher
+/// without the view's state, and both sides then agree on what "matches" means
+/// rather than reimplementing it slightly differently.
+///
+/// An empty needle matches everything, which is what "no filter" means.
+[[nodiscard]] bool playlistEntryMatches(const PlaylistEntry& entry,
+                                        std::string_view     needle);
+
 class PlaylistView {
 public:
     enum class Column {

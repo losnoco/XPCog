@@ -89,12 +89,16 @@ void PlaylistView::rebuild() {
     }
 }
 
-bool PlaylistView::matches(const PlaylistEntry& entry) const {
-    if (filter_.empty()) {
+bool playlistEntryMatches(const PlaylistEntry& entry, std::string_view needle) {
+    if (needle.empty()) {
         return true;
     }
-    return containsFold(entry.title(), filter_) || containsFold(entry.artist, filter_) ||
-           containsFold(entry.album, filter_);
+    return containsFold(entry.title(), needle) || containsFold(entry.artist, needle) ||
+           containsFold(entry.album, needle);
+}
+
+bool PlaylistView::matches(const PlaylistEntry& entry) const {
+    return playlistEntryMatches(entry, filter_);
 }
 
 bool PlaylistView::less(std::size_t leftIndex, std::size_t rightIndex) const {

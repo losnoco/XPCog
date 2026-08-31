@@ -17,6 +17,8 @@
 #include <nlohmann/json.hpp>
 
 #include <functional>
+#include <memory>
+#include <vector>
 #include <string>
 #include <string_view>
 
@@ -278,6 +280,247 @@ TEST_CASE("every response carries the sniffing and caching headers", "[remote]")
     // Deliberately absent: a page on another origin cannot reach this even
     // holding a stolen token, and there is nothing to preflight past.
     CHECK(harness.header(response, "Access-Control-Allow-Origin").empty());
+}
+
+// --- playlist ---------------------------------------------------------------
+
+namespace {
+
+TrackSummary summary(TrackId id, std::string title) {
+    TrackSummary track;
+    track.id    = id;
+    track.title = std::move(title);
+    return track;
+}
+
+}  // namespace
+
+TEST_CASE("the playlist is paged, and says how many matched", "[remote]") {
+    Harness harness;
+    for (TrackId id = 1; id <= 5; ++id) {
+        harness.control().trackList.push_back(summary(id, "t" + std::to_string(id)));
+    }
+
+    const nlohmann::json body =
+        Harness::parse(harness.send("GET", "/api/v1/playlist", {}, "offset=1&limit=2"));
+
+    CHECK(body.at("total").get<std::size_t>() == 5);
+    CHECK(body.at("offset").get<std::size_t>() == 1);
+    REQUIRE(body.at("items").size() == 2);
+    CHECK(body.at("items")[0].at("id").get<TrackId>() == 2);
+}
+
+TEST_CASE("the page size is capped", "[remote]") {
+    Harness harness;
+    // A client asking for everything on a hundred-thousand-row playlist would
+    // hold the interface thread for the whole serialisation.
+    const nlohmann::json body =
+        Harness::parse(harness.send("GET", "/api/v1/playlist", {}, "limit=999999"));
+    CHECK(body.at("limit").get<std::size_t>() == 1000);
+}
+
+TEST_CASE("a query string that is not numbers is 400", "[remote]") {
+    Harness harness;
+    CHECK(harness.send("GET", "/api/v1/playlist", {}, "offset=soon").status == 400);
+    CHECK(harness.send("GET", "/api/v1/playlist", {}, "limit=-3").status == 400);
+}
+
+TEST_CASE("the filter is percent-decoded and passed through", "[remote]") {
+    Harness harness;
+    harness.send("GET", "/api/v1/playlist", {}, "q=Miles%20Davis");
+
+    bool sawIt = false;
+    for (const auto& call : harness.control().calls()) {
+        if (call.name == "tracks" && call.text == "Miles Davis") {
+            sawIt = true;
+        }
+    }
+    CHECK(sawIt);
+}
+
+TEST_CASE("a plus in a query is a space", "[remote]") {
+    Harness harness;
+    // Not RFC 3986, but what every form and client library sends.
+    harness.send("GET", "/api/v1/playlist", {}, "q=Miles+Davis");
+
+    bool sawIt = false;
+    for (const auto& call : harness.control().calls()) {
+        if (call.name == "tracks" && call.text == "Miles Davis") {
+            sawIt = true;
+        }
+    }
+    CHECK(sawIt);
+}
+
+TEST_CASE("one track is served, and a missing one is 404", "[remote]") {
+    Harness harness;
+
+    TrackDetail detail;
+    detail.summary = summary(7, "Blue in Green");
+    detail.genre   = "Jazz";
+    detail.metadata.emplace_back("ENGINEER", "Fraboni");
+    harness.control().trackDetail = detail;
+
+    const nlohmann::json body = Harness::parse(harness.send("GET", "/api/v1/playlist/7"));
+    CHECK(body.at("title").get<std::string>() == "Blue in Green");
+    CHECK(body.at("genre").get<std::string>() == "Jazz");
+    // Unpromoted tags survive: the detail view is where a client goes for what
+    // the list does not carry.
+    CHECK(body.at("metadata").at("ENGINEER").get<std::string>() == "Fraboni");
+
+    harness.control().trackDetail.reset();
+    CHECK(harness.send("GET", "/api/v1/playlist/8").status == 404);
+}
+
+TEST_CASE("a track id that is not a number is 400", "[remote]") {
+    Harness harness;
+    CHECK(harness.send("GET", "/api/v1/playlist/seven").status == 400);
+}
+
+TEST_CASE("artwork is served with a sniffed type, or 404", "[remote]") {
+    Harness harness;
+
+    // A JPEG's first two bytes.
+    auto jpeg = std::make_shared<std::vector<std::byte>>(
+        std::vector<std::byte>{std::byte{0xFF}, std::byte{0xD8}, std::byte{0xFF}});
+    harness.control().artworkValue = jpeg;
+
+    const RawResponse response = harness.send("GET", "/api/v1/playlist/7/artwork");
+    REQUIRE(response.status == 200);
+    CHECK(response.contentType == "image/jpeg");
+    CHECK(response.body.size() == 3);
+
+    harness.control().artworkValue.reset();
+    CHECK(harness.send("GET", "/api/v1/playlist/7/artwork").status == 404);
+}
+
+TEST_CASE("adding tracks answers 202 and a job to follow", "[remote]") {
+    Harness harness;
+
+    const RawResponse response = harness.send(
+        "POST", "/api/v1/playlist/tracks", R"({"urls":["file:///a.flac"],"at":3})");
+
+    // Not 200: a directory of ten thousand files would time out at the gate long
+    // before the scan finished.
+    REQUIRE(response.status == 202);
+    CHECK(Harness::parse(response).at("jobId").get<std::string>() == "job-1");
+    CHECK(harness.header(response, "Location") == "/api/v1/jobs/job-1");
+}
+
+TEST_CASE("adding nothing is a client error", "[remote]") {
+    Harness harness;
+    CHECK(harness.send("POST", "/api/v1/playlist/tracks", R"({"urls":[]})").status == 400);
+    CHECK(harness.send("POST", "/api/v1/playlist/tracks", R"({"urls":"a"})").status == 400);
+    CHECK(harness.send("POST", "/api/v1/playlist/tracks", R"({"urls":[1]})").status == 400);
+    CHECK(harness.send("POST", "/api/v1/playlist/tracks", "{}").status == 400);
+}
+
+TEST_CASE("a host that cannot scan says so rather than pretending", "[remote]") {
+    Harness harness;
+    harness.control().jobId = "";
+
+    const RawResponse response =
+        harness.send("POST", "/api/v1/playlist/tracks", R"({"urls":["file:///a.flac"]})");
+    CHECK(response.status == 501);
+}
+
+TEST_CASE("removing tracks needs a non-empty id list", "[remote]") {
+    Harness harness;
+
+    CHECK(harness.send("DELETE", "/api/v1/playlist/tracks", R"({"ids":[1,2]})").status == 200);
+    CHECK(harness.control().countOf("removeTracks") == 1);
+
+    // An id list that silently became empty would be a delete that quietly did
+    // nothing and reported success.
+    CHECK(harness.send("DELETE", "/api/v1/playlist/tracks", R"({"ids":[]})").status == 400);
+    CHECK(harness.send("DELETE", "/api/v1/playlist/tracks", R"({"ids":["a"]})").status == 400);
+    CHECK(harness.send("DELETE", "/api/v1/playlist/tracks", "{}").status == 400);
+    CHECK(harness.control().countOf("removeTracks") == 1);
+}
+
+TEST_CASE("moving before null means the end", "[remote]") {
+    Harness harness;
+
+    CHECK(harness.send("POST", "/api/v1/playlist/move",
+                       R"({"ids":[1],"before":null})").status == 200);
+    CHECK(harness.send("POST", "/api/v1/playlist/move",
+                       R"({"ids":[1],"before":4})").status == 200);
+
+    const auto calls = harness.control().calls();
+    bool       sawEnd = false;
+    bool       sawAnchor = false;
+    for (const auto& call : calls) {
+        if (call.name == "moveTracks" && call.number == 0.0) {
+            sawEnd = true;
+        }
+        if (call.name == "moveTracks" && call.number == 4.0) {
+            sawAnchor = true;
+        }
+    }
+    CHECK(sawEnd);
+    CHECK(sawAnchor);
+}
+
+TEST_CASE("queueing defaults to queueing", "[remote]") {
+    Harness harness;
+
+    harness.send("POST", "/api/v1/playlist/queue", R"({"ids":[1]})");
+    harness.send("POST", "/api/v1/playlist/queue", R"({"ids":[2],"queued":false})");
+
+    const auto calls = harness.control().calls();
+    bool on = false;
+    bool off = false;
+    for (const auto& call : calls) {
+        if (call.name == "setQueued" && call.number == 1.0) { on = true; }
+        if (call.name == "setQueued" && call.number == 0.0) { off = true; }
+    }
+    CHECK(on);
+    CHECK(off);
+}
+
+TEST_CASE("patching a track takes one flag at a time or several", "[remote]") {
+    Harness harness;
+    harness.control().trackDetail = TrackDetail{};
+
+    CHECK(harness.send("PATCH", "/api/v1/playlist/7", R"({"stopAfter":true})").status == 200);
+    CHECK(harness.send("PATCH", "/api/v1/playlist/7", R"({"rating":4})").status == 200);
+    CHECK(harness.send("PATCH", "/api/v1/playlist/7", R"({"rating":null})").status == 200);
+    CHECK(harness.send("PATCH", "/api/v1/playlist/7", R"({"playCount":0})").status == 200);
+
+    // Out of range, and the one number a play count may be set to.
+    CHECK(harness.send("PATCH", "/api/v1/playlist/7", R"({"rating":9})").status == 400);
+    CHECK(harness.send("PATCH", "/api/v1/playlist/7", R"({"playCount":50})").status == 400);
+    // Nothing at all says nothing.
+    CHECK(harness.send("PATCH", "/api/v1/playlist/7", "{}").status == 400);
+}
+
+TEST_CASE("a job is reported, and an unknown one is 404", "[remote]") {
+    Harness harness;
+
+    JobStatus job;
+    job.id    = "job-1";
+    job.state = "running";
+    job.done  = 41;
+    job.total = 900;
+    harness.control().jobValue = job;
+
+    const nlohmann::json body = Harness::parse(harness.send("GET", "/api/v1/jobs/job-1"));
+    CHECK(body.at("state").get<std::string>() == "running");
+    CHECK(body.at("progress").at("done").get<int>() == 41);
+    CHECK(body.at("error").is_null());
+
+    harness.control().jobValue.reset();
+    CHECK(harness.send("GET", "/api/v1/jobs/nope").status == 404);
+}
+
+TEST_CASE("undo and redo are reachable from the API", "[remote]") {
+    Harness harness;
+    // The same stack the Edit menu drives -- which is the point of routing edits
+    // through PlaylistCommands rather than mutating the playlist directly.
+    CHECK(harness.send("POST", "/api/v1/playlist/undo").status == 200);
+    CHECK(harness.send("POST", "/api/v1/playlist/redo").status == 200);
+    CHECK(harness.control().countOf("undo") == 1);
+    CHECK(harness.control().countOf("redo") == 1);
 }
 
 #endif  // XPCOG_HAS_REST
