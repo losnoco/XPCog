@@ -3,32 +3,35 @@
 [![CI](https://github.com/losnoco/XPCog/actions/workflows/ci.yml/badge.svg)](https://github.com/losnoco/XPCog/actions/workflows/ci.yml)
 
 XPCog is an audio player for **Windows, macOS and Linux**, built on wxWidgets from a
-single codebase. It plays **842 extensions across 23 decoders**, gaplessly and across
-sample rates, and that list runs well past the usual lossless and lossy files:
-tracker modules, game music rips, the whole PSF family, Commodore 64 tunes, MIDI
-rendered on a SoundFont bank or an emulated Roland SC-55, archives played without
-unpacking first, and internet radio.
+single codebase. It plays **842 extensions across 23 decoders**, and that list runs a
+long way past the usual lossless and lossy files.
 
-> **What is there today.**
-> A window with a playlist, transport, seek bar, file browser, preferences, undo,
-> drag-and-drop and a persistent library. Gapless across formats *and* sample
-> rates, ReplayGain, cue sheets, HDCD. A 31-band equaliser, transport fades,
-> matrix downmix/upmix, FreeSurround stereo-to-5.1 and time-stretching that moves
-> pitch and tempo independently. Media keys and Now Playing on all three
-> platforms — MediaPlayer.framework, SMTC and MPRIS — plus a tray icon on Windows
-> and Linux, the Dock menu on macOS, one instance per user, a spectrum analyser, a
-> mini player, and a taskbar badge and progress bar. Now playing over HTTP too —
-> File → Open URL, internet radio included, with SHOUTcast stream titles live in
-> the window as the station announces them, HLS for the stations that use it, and
-> chained Ogg so a stream survives its own track changes. Archives played in
-> place, tracker modules, game music rips, vgmstream's console formats, the whole
-> PSF family on all eight of its emulator cores, Commodore 64 tunes, Musepack,
-> Monkey's Audio Link files, and MIDI on a SoundFont bank — one ships with it — a
-> Sound Blaster's OPL3, or an emulated Roland SC-55 with its front panel.
-> Last.fm scrobbling, with a queue that survives an evening offline.
-> Every dependency comes from vcpkg, which is why there is nothing to install
-> separately, no environment variable pointing at a toolkit, and no deploy step.
-> See [Status](#status) for what is not there.
+**The engine.** Gapless across formats *and* sample rates, ReplayGain, cue sheets and
+HDCD. A 31-band equaliser, transport fades, matrix downmix and upmix, FreeSurround
+stereo-to-5.1, and time-stretching that moves pitch and tempo independently.
+
+**The window.** A playlist, transport and seek bar, file browser, preferences, undo and
+drag-and-drop, over a persistent SQLite library. A spectrum analyser and a mini player.
+English and Spanish.
+
+**The desktop.** Media keys and Now Playing on all three platforms — MediaPlayer.framework,
+SMTC and MPRIS — with a tray icon on Windows and Linux, the Dock menu on macOS, a taskbar
+badge and progress bar, and one instance per user.
+
+**The awkward formats.** Archives played without unpacking first, tracker modules, game
+rips through vgmstream, the whole PSF family on all eight of its emulator cores,
+Commodore 64 tunes, Musepack, Monkey's Audio Link files, and MIDI rendered on a SoundFont
+bank — one ships with it — a Sound Blaster's OPL3, or an emulated Roland SC-55 with its
+front panel.
+
+**Over the network.** Internet radio, with SHOUTcast stream titles arriving in the window
+as the station announces them, HLS for the stations that use it, and chained Ogg so a
+stream survives its own track changes. Last.fm scrobbling, with a queue that survives an
+evening offline. A [remote control](#remote-control) over HTTP — off until you switch it
+on — with a generated OpenAPI document and a browser page for trying it.
+
+**Building it.** Every dependency comes from vcpkg, so there is nothing to install
+separately, no environment variable pointing at a toolkit, and no deploy step.
 
 XPCog grew out of a port of [Cog](https://cog.losno.co/), the macOS player by Vincent
 Spader and Christopher Snowhill, and owes it a great deal: the plugin contract the
@@ -978,13 +981,8 @@ allow.
 
 ## Status
 
-Everything above works today: the engine and its 23 decoders, the SQLite library and
-playlist model, the wxWidgets interface with its preferences, file browser and undo
-stack, the DSP chain, Last.fm scrobbling, and the per-platform integration — Now
-Playing, media keys, tray icon, Dock menu, single instance, taskbar badge. Windows
-gets an installer, macOS a signed bundle.
-
-What is outstanding is short and named:
+What is outstanding is short, and each item is here for a reason rather than for want
+of time:
 
 - **Adopting an existing Cog installation** is most of the way there. File →
   Import from Cog reads its library, playlist order, ReplayGain and play counts;
