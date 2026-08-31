@@ -523,4 +523,158 @@ TEST_CASE("undo and redo are reachable from the API", "[remote]") {
     CHECK(harness.control().countOf("redo") == 1);
 }
 
+// --- settings and DSP -------------------------------------------------------
+
+TEST_CASE("settings are listed with their timing", "[remote]") {
+    Harness harness;
+
+    SettingInfo eq;
+    eq.key         = "eq1kHz";
+    eq.type        = "double";
+    eq.value       = "0";
+    eq.appliesFrom = "immediately";
+
+    SettingInfo gain;
+    gain.key         = "volumeScaling";
+    gain.type        = "std::string";
+    gain.value       = "albumGainWithPeak";
+    gain.appliesFrom = "nextTrack";
+
+    harness.control().settingList = {eq, gain};
+
+    const nlohmann::json body = Harness::parse(harness.send("GET", "/api/v1/settings"));
+    REQUIRE(body.at("items").size() == 2);
+    // The pair that must not be reported alike: an equaliser band moves what is
+    // playing and a ReplayGain mode cannot.
+    CHECK(body.at("items")[0].at("appliesFrom").get<std::string>() == "immediately");
+    CHECK(body.at("items")[1].at("appliesFrom").get<std::string>() == "nextTrack");
+}
+
+TEST_CASE("one setting is served, and an unknown key is 404", "[remote]") {
+    Harness harness;
+
+    SettingInfo info;
+    info.key   = "enableFading";
+    info.value = "true";
+    harness.control().settingValue = info;
+
+    CHECK(Harness::parse(harness.send("GET", "/api/v1/settings/enableFading"))
+              .at("value")
+              .get<std::string>() == "true");
+
+    harness.control().settingValue.reset();
+    CHECK(harness.send("GET", "/api/v1/settings/nosuchkey").status == 404);
+}
+
+TEST_CASE("a setting is written as text whatever its type", "[remote]") {
+    Harness harness;
+    harness.control().settingWrite = {Outcome::Ok, "immediately", {}};
+
+    const RawResponse response =
+        harness.send("PUT", "/api/v1/settings/enableFading", R"({"value":"true"})");
+    REQUIRE(response.status == 200);
+    CHECK(Harness::parse(response).at("appliesFrom").get<std::string>() == "immediately");
+
+    // A JSON boolean for a bool setting would make the wire shape depend on a
+    // type the client has to look up first.
+    CHECK(harness.send("PUT", "/api/v1/settings/enableFading",
+                       R"({"value":true})").status == 400);
+    CHECK(harness.send("PUT", "/api/v1/settings/enableFading", "{}").status == 400);
+}
+
+TEST_CASE("session state is readable and not writable", "[remote]") {
+    Harness harness;
+    harness.control().settingWrite = {Outcome::ReadOnly, {},
+                                      "That is session state."};
+
+    const RawResponse response =
+        harness.send("PUT", "/api/v1/settings/lastPlaybackStatus", R"({"value":"2"})");
+
+    REQUIRE(response.status == 403);
+    const nlohmann::json body = Harness::parse(response);
+    CHECK(body.at("error").at("code").get<std::string>() == "read_only");
+    // The reason the player gave, rather than the generic one.
+    CHECK(body.at("error").at("message").get<std::string>() == "That is session state.");
+}
+
+TEST_CASE("a batch of settings is one hop and reports per key", "[remote]") {
+    Harness harness;
+    harness.control().settingWrite = {Outcome::Ok, "immediately", {}};
+
+    const RawResponse response = harness.send(
+        "PATCH", "/api/v1/settings", R"({"enableFading":"true","eqPreamp":"-3"})");
+
+    REQUIRE(response.status == 200);
+    CHECK(Harness::parse(response).at("results").size() == 2);
+    CHECK(harness.control().countOf("setSetting") == 2);
+}
+
+TEST_CASE("a batch where one key was refused is 207, not 200 or 400", "[remote]") {
+    Harness harness;
+    harness.control().settingWrite = {Outcome::ReadOnly, {}, "no"};
+
+    const RawResponse response =
+        harness.send("PATCH", "/api/v1/settings", R"({"miniMode":"1"})");
+
+    // Neither a success nor a failure: some keys took and some did not, and
+    // flattening that either way loses which.
+    CHECK(response.status == 207);
+}
+
+TEST_CASE("a batch with a non-string value names the key", "[remote]") {
+    Harness harness;
+    const RawResponse response =
+        harness.send("PATCH", "/api/v1/settings", R"({"eqPreamp":-3})");
+    REQUIRE(response.status == 400);
+    CHECK(Harness::parse(response).at("error").at("field").get<std::string>() == "eqPreamp");
+}
+
+TEST_CASE("the equaliser reports its bands and says it applies at once", "[remote]") {
+    Harness harness;
+    harness.control().equalizerState.enabled = true;
+    harness.control().equalizerState.preamp  = -3.0;
+    harness.control().equalizerState.bands   = {{32.0, -1.5}, {64.0, 0.5}};
+
+    const nlohmann::json body =
+        Harness::parse(harness.send("GET", "/api/v1/dsp/equalizer"));
+
+    CHECK(body.at("enabled").get<bool>());
+    CHECK(body.at("preamp").get<double>() == -3.0);
+    REQUIRE(body.at("bands").size() == 2);
+    CHECK(body.at("bands")[0].at("hz").get<double>() == 32.0);
+    CHECK(body.at("appliesFrom").get<std::string>() == "immediately");
+}
+
+TEST_CASE("the equaliser takes any of its three, and needs one", "[remote]") {
+    Harness harness;
+
+    CHECK(harness.send("PUT", "/api/v1/dsp/equalizer", R"({"enabled":true})").status == 200);
+    CHECK(harness.send("PUT", "/api/v1/dsp/equalizer", R"({"preamp":-3})").status == 200);
+    CHECK(harness.send("PUT", "/api/v1/dsp/equalizer",
+                       R"({"bands":[{"hz":32,"gain":-1.5}]})").status == 200);
+
+    CHECK(harness.send("PUT", "/api/v1/dsp/equalizer", "{}").status == 400);
+    CHECK(harness.send("PUT", "/api/v1/dsp/equalizer", R"({"bands":"loud"})").status == 400);
+    // A band missing half of itself is not a band.
+    CHECK(harness.send("PUT", "/api/v1/dsp/equalizer",
+                       R"({"bands":[{"hz":32}]})").status == 400);
+}
+
+TEST_CASE("presets are listed and applied", "[remote]") {
+    Harness harness;
+    harness.control().presetList = {"Flat", "Rock"};
+
+    CHECK(Harness::parse(harness.send("GET", "/api/v1/dsp/equalizer/presets"))
+              .at("items")
+              .size() == 2);
+
+    CHECK(harness.send("POST", "/api/v1/dsp/equalizer/preset",
+                       R"({"name":"Rock"})").status == 200);
+    CHECK(harness.send("POST", "/api/v1/dsp/equalizer/preset", R"({"name":""})").status == 400);
+
+    harness.control().outcome = Outcome::NotFound;
+    CHECK(harness.send("POST", "/api/v1/dsp/equalizer/preset",
+                       R"({"name":"Nope"})").status == 404);
+}
+
 #endif  // XPCOG_HAS_REST

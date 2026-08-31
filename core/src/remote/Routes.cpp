@@ -530,6 +530,209 @@ RawResponse getJob(const Ctx& ctx) {
     return jsonResponse(toJson(**job));
 }
 
+
+// --- settings and DSP ------------------------------------------------------
+
+RawResponse getSettings(const Ctx& ctx) {
+    const auto all =
+        ctx.gate.call([](IPlayerControl& player) { return player.settings(); });
+    if (!all) {
+        return interfaceBusy();
+    }
+    nlohmann::json items = nlohmann::json::array();
+    for (const SettingInfo& setting : *all) {
+        items.push_back(toJson(setting));
+    }
+    nlohmann::json body;
+    body["items"] = std::move(items);
+    return jsonResponse(body);
+}
+
+RawResponse getSetting(const Ctx& ctx) {
+    const std::string key = ctx.pathParam("key");
+    const auto        found =
+        ctx.gate.call([&](IPlayerControl& player) { return player.setting(key); });
+    if (!found) {
+        return interfaceBusy();
+    }
+    if (!found->has_value()) {
+        return jsonError(404, "not_found", "No setting with that key.");
+    }
+    return jsonResponse(toJson(**found));
+}
+
+RawResponse putSetting(const Ctx& ctx) {
+    const std::string key = ctx.pathParam("key");
+
+    // A string, whatever the setting's type. settings.def has four scalar types
+    // and Settings stores every one of them as text; taking a JSON number for an
+    // int and a JSON string for a string would make the wire shape depend on a
+    // type the client has to look up first.
+    const std::optional<std::string> value = readString(ctx.body, "value");
+    if (!value) {
+        return jsonError(400, "bad_request",
+                         "value must be a string; every setting is stored as text.",
+                         "value");
+    }
+
+    const auto write = ctx.gate.call(
+        [&](IPlayerControl& player) { return player.setSetting(key, *value); });
+    if (!write) {
+        return interfaceBusy();
+    }
+    if (write->outcome != Outcome::Ok) {
+        // ReadOnly is the interesting one: session state is readable and not
+        // writable, which is the rule the Advanced pane already applies.
+        RawResponse response = outcomeResponse(write->outcome, {});
+        if (!write->message.empty()) {
+            nlohmann::json body = nlohmann::json::parse(response.body, nullptr, false);
+            if (!body.is_discarded()) {
+                body["error"]["message"] = write->message;
+                response.body            = body.dump();
+            }
+        }
+        return response;
+    }
+
+    nlohmann::json body;
+    body["key"]   = key;
+    body["value"] = *value;
+    // Never omitted, and never guessed at the call site: an equaliser band moves
+    // what is playing and a ReplayGain mode does not, and an API that reported
+    // both as done would be wrong about one of them.
+    body["appliesFrom"] = write->appliesFrom;
+    return jsonResponse(body);
+}
+
+RawResponse patchSettings(const Ctx& ctx) {
+    if (ctx.body.empty()) {
+        return jsonError(400, "bad_request", "No settings given.");
+    }
+    // One hop for the lot. Twenty separate writes would be twenty round trips
+    // and twenty fan-outs, and a preferences screen saving itself is exactly the
+    // caller this is for.
+    struct Write {
+        std::string key;
+        std::string value;
+    };
+    std::vector<Write> writes;
+    for (const auto& [key, value] : ctx.body.items()) {
+        if (!value.is_string()) {
+            return jsonError(400, "bad_request",
+                             "Every value must be a string.", key);
+        }
+        writes.push_back({key, value.get<std::string>()});
+    }
+
+    const auto results = ctx.gate.call([&](IPlayerControl& player) {
+        std::vector<std::pair<std::string, SettingWrite>> answers;
+        answers.reserve(writes.size());
+        for (const Write& write : writes) {
+            answers.emplace_back(write.key, player.setSetting(write.key, write.value));
+        }
+        return answers;
+    });
+    if (!results) {
+        return interfaceBusy();
+    }
+
+    // Reported per key rather than as one verdict: a batch where one key was
+    // read-only and the rest took is not a failure, and it is not a success
+    // either.
+    nlohmann::json items = nlohmann::json::array();
+    bool           anyFailed = false;
+    for (const auto& [key, write] : *results) {
+        nlohmann::json item;
+        item["key"]         = key;
+        item["ok"]          = write.outcome == Outcome::Ok;
+        item["appliesFrom"] = write.appliesFrom;
+        if (write.outcome != Outcome::Ok) {
+            anyFailed = true;
+            item["message"] = write.message;
+        }
+        items.push_back(std::move(item));
+    }
+
+    nlohmann::json body;
+    body["results"] = std::move(items);
+    return jsonResponse(body, anyFailed ? 207 : 200);
+}
+
+RawResponse getEqualizer(const Ctx& ctx) {
+    const auto state =
+        ctx.gate.call([](IPlayerControl& player) { return player.equalizer(); });
+    if (!state) {
+        return interfaceBusy();
+    }
+    return jsonResponse(toJson(*state));
+}
+
+RawResponse putEqualizer(const Ctx& ctx) {
+    const std::optional<bool>   enabled = readBool(ctx.body, "enabled");
+    const std::optional<double> preamp  = readNumber(ctx.body, "preamp");
+
+    std::vector<std::pair<double, double>> bands;
+    const auto                             found = ctx.body.find("bands");
+    if (found != ctx.body.end()) {
+        if (!found->is_array()) {
+            return jsonError(400, "bad_request", "bands must be an array.", "bands");
+        }
+        for (const nlohmann::json& band : *found) {
+            const std::optional<double> hz   = readNumber(band, "hz");
+            const std::optional<double> gain = readNumber(band, "gain");
+            if (!hz || !gain) {
+                return jsonError(400, "bad_request",
+                                 "Every band needs hz and gain.", "bands");
+            }
+            bands.emplace_back(*hz, *gain);
+        }
+    }
+
+    if (!enabled && !preamp && bands.empty()) {
+        return jsonError(400, "bad_request",
+                         "Give at least one of enabled, preamp or bands.");
+    }
+
+    const auto outcome = ctx.gate.call([&](IPlayerControl& player) {
+        return player.setEqualizer(enabled, preamp, bands);
+    });
+    if (!outcome) {
+        return interfaceBusy();
+    }
+    if (*outcome != Outcome::Ok) {
+        return outcomeResponse(*outcome, {});
+    }
+    return getEqualizer(ctx);
+}
+
+RawResponse getPresets(const Ctx& ctx) {
+    const auto names =
+        ctx.gate.call([](IPlayerControl& player) { return player.equalizerPresets(); });
+    if (!names) {
+        return interfaceBusy();
+    }
+    nlohmann::json body;
+    body["items"] = *names;
+    return jsonResponse(body);
+}
+
+RawResponse postPreset(const Ctx& ctx) {
+    const std::optional<std::string> name = readString(ctx.body, "name");
+    if (!name || name->empty()) {
+        return jsonError(400, "bad_request", "name must be a preset name.", "name");
+    }
+    const auto outcome = ctx.gate.call([&](IPlayerControl& player) {
+        return player.applyEqualizerPreset(*name);
+    });
+    if (!outcome) {
+        return interfaceBusy();
+    }
+    if (*outcome != Outcome::Ok) {
+        return outcomeResponse(*outcome, {});
+    }
+    return getEqualizer(ctx);
+}
+
 // --- parameter and schema tables -------------------------------------------
 
 constexpr std::array<Param, 0> kNoParams{};
@@ -548,6 +751,10 @@ constexpr std::array kTrackParams = std::to_array<Param>({
 
 constexpr std::array kJobParams = std::to_array<Param>({
     {"id", In::Path, "string", true, "A job id from POST /playlist/tracks."},
+});
+
+constexpr std::array kSettingParams = std::to_array<Param>({
+    {"key", In::Path, "string", true, "A settings key, as GET /settings lists them."},
 });
 
 nlohmann::json schemaError() {
@@ -764,6 +971,106 @@ nlohmann::json schemaJob() {
     return schema;
 }
 
+nlohmann::json schemaSetting() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["properties"] = {
+        {"key", {{"type", "string"}}},
+        {"type", {{"type", "string"},
+                  {"enum", nlohmann::json::array({"bool", "int", "double",
+                                                  "std::string"})}}},
+        {"value", {{"type", "string"},
+                   {"description", "Every setting is stored and given as text."}}},
+        {"default", {{"type", "string"}}},
+        {"writable", {{"type", "boolean"},
+                      {"description",
+                       "False for session state, which is readable but not a "
+                       "preference."}}},
+        {"appliesFrom", {{"type", "string"},
+                         {"enum", nlohmann::json::array({"immediately", "nextTrack",
+                                                         "nextDeviceOpen", "nextScan",
+                                                         "nextLaunch"})}}}};
+    return schema;
+}
+
+nlohmann::json schemaSettingList() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["properties"] = {
+        {"items", {{"type", "array"},
+                   {"items", {{"$ref", "#/components/schemas/Setting"}}}}}};
+    return schema;
+}
+
+nlohmann::json schemaSettingWrite() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["required"]   = nlohmann::json::array({"value"});
+    schema["properties"] = {
+        {"value", {{"type", "string"},
+                   {"description", "Text, whatever the setting's type."}}}};
+    return schema;
+}
+
+nlohmann::json schemaSettingWritten() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["properties"] = {{"key", {{"type", "string"}}},
+                            {"value", {{"type", "string"}}},
+                            {"appliesFrom", {{"type", "string"}}}};
+    return schema;
+}
+
+nlohmann::json schemaSettingBatch() {
+    nlohmann::json schema;
+    schema["type"]        = "object";
+    schema["description"] = "Keys to values, all text. Answers 207 when some key "
+                            "was refused and the rest took.";
+    schema["additionalProperties"] = {{"type", "string"}};
+    return schema;
+}
+
+nlohmann::json schemaSettingBatchResult() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["properties"] = {{"results", {{"type", "array"},
+                                         {"items", {{"type", "object"}}}}}};
+    return schema;
+}
+
+nlohmann::json schemaEqualizer() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["properties"] = {
+        {"enabled", {{"type", "boolean"}}},
+        {"preamp", {{"type", "number"}, {"description", "dB."}}},
+        {"trackGenre", {{"type", "boolean"}}},
+        {"bands", {{"type", "array"},
+                   {"items", {{"type", "object"}}},
+                   {"description", "31 bands, each with hz and a gain in dB."}}},
+        {"appliesFrom", {{"type", "string"},
+                         {"description",
+                          "Always immediately: the equaliser moves what is already "
+                          "playing, unlike volumeScaling."}}}};
+    return schema;
+}
+
+nlohmann::json schemaPreset() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["required"]   = nlohmann::json::array({"name"});
+    schema["properties"] = {{"name", {{"type", "string"}}}};
+    return schema;
+}
+
+nlohmann::json schemaPresetList() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["properties"] = {
+        {"items", {{"type", "array"}, {"items", {{"type", "string"}}}}}};
+    return schema;
+}
+
 nlohmann::json schemaJobAccepted() {
     nlohmann::json schema;
     schema["type"]       = "object";
@@ -789,6 +1096,15 @@ constexpr std::array kSchemas = std::to_array<Schema>({
     {"TrackPatch", schemaTrackPatch},
     {"Job", schemaJob},
     {"JobAccepted", schemaJobAccepted},
+    {"Setting", schemaSetting},
+    {"SettingList", schemaSettingList},
+    {"SettingWrite", schemaSettingWrite},
+    {"SettingWritten", schemaSettingWritten},
+    {"SettingBatch", schemaSettingBatch},
+    {"SettingBatchResult", schemaSettingBatchResult},
+    {"Equalizer", schemaEqualizer},
+    {"Preset", schemaPreset},
+    {"PresetList", schemaPresetList},
 });
 
 constexpr std::array kRoutes = std::to_array<Route>({
@@ -897,6 +1213,37 @@ constexpr std::array kRoutes = std::to_array<Route>({
     {Method::Get, "/api/v1/jobs/{id}", "getJob",
      "How a scan started by POST /playlist/tracks is getting on.", kJobParams, "",
      "Job", "application/json", false, false, getJob},
+
+    {Method::Get, "/api/v1/settings", "getSettings",
+     "Every setting, with its value, default and when a write takes effect.",
+     kNoParams, "", "SettingList", "application/json", false, false, getSettings},
+
+    {Method::Patch, "/api/v1/settings", "patchSettings",
+     "Writes several settings in one hop.", kNoParams, "SettingBatch",
+     "SettingBatchResult", "application/json", true, false, patchSettings},
+
+    {Method::Get, "/api/v1/settings/{key}", "getSetting", "One setting.",
+     kSettingParams, "", "Setting", "application/json", false, false, getSetting},
+
+    {Method::Put, "/api/v1/settings/{key}", "setSetting", "Writes one setting.",
+     kSettingParams, "SettingWrite", "SettingWritten", "application/json", true,
+     false, putSetting},
+
+    {Method::Get, "/api/v1/dsp/equalizer", "getEqualizer",
+     "The 31 bands, the preamp and the switch.", kNoParams, "", "Equalizer",
+     "application/json", false, false, getEqualizer},
+
+    {Method::Put, "/api/v1/dsp/equalizer", "setEqualizer",
+     "Sets any of enabled, preamp and the bands.", kNoParams, "Equalizer",
+     "Equalizer", "application/json", true, false, putEqualizer},
+
+    {Method::Get, "/api/v1/dsp/equalizer/presets", "getEqualizerPresets",
+     "The preset names this build ships.", kNoParams, "", "PresetList",
+     "application/json", false, false, getPresets},
+
+    {Method::Post, "/api/v1/dsp/equalizer/preset", "applyEqualizerPreset",
+     "Applies a preset to the bands.", kNoParams, "Preset", "Equalizer",
+     "application/json", true, false, postPreset},
 });
 
 }  // namespace
