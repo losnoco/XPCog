@@ -16,6 +16,7 @@
 #include "LucideIcon.hpp"
 #include "PlaylistDataModel.hpp"
 #include "SeekBar.hpp"
+#include "SpeedPopup.hpp"
 #include "Text.hpp"
 
 #include "xpcog/core/FilePath.hpp"
@@ -599,6 +600,26 @@ void MainFrame::buildControls(wxWindow* parent) {
     filter_->SetToolTip(_("Filter the playlist"));
     row->Add(filter_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
 
+    // Cog's speed button, which opens an NSPopover holding the pitch and tempo
+    // sliders (Window/SpeedButton.m). Here it is a plain button and a
+    // wxPopupTransientWindow -- see SpeedPopup.hpp for what that is and is not.
+    //
+    // The label is the current tempo rather than a word, so the strip says what
+    // the setting is without being opened. It is also why the button is created
+    // with a placeholder wide enough for "1.00x" and then updated: a button that
+    // resizes as the ratio crosses a digit would shove the filter box sideways
+    // while a slider is being dragged.
+    speed_ = new wxButton(parent, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                          FromDIP(wxSize(64, -1)));
+    speed_->SetToolTip(_("Pitch and tempo"));
+    speedPopup_ = new SpeedPopup(this, settings_);
+    subscriptions_.push_back(speedPopup_->settingChanged.connect(
+        [this](const std::string& key) { onSettingChanged(key); }));
+    speed_->Bind(wxEVT_BUTTON,
+                 [this](wxCommandEvent&) { speedPopup_->popupUnder(speed_); });
+    row->Add(speed_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
+    refreshSpeedButton();
+
     // A little air above and below, which the toolbar beside it used to be
     // providing: on its own row the strip would otherwise sit flush against the
     // toolbar's edge and the playlist's.
@@ -909,6 +930,15 @@ void MainFrame::wireUp() {
     bindUpdateUi();
 }
 
+void MainFrame::refreshSpeedButton() {
+    if (speed_ == nullptr) {
+        return;
+    }
+    // FromUTF8 for the multiplication sign, as everywhere else it appears.
+    speed_->SetLabel(wxString::Format(wxString::FromUTF8("%.2f\xC3\x97"),
+                                      settings_.Tempo()));
+}
+
 void MainFrame::onSettingChanged(const std::string& key) {
     if (key == "enableAudioScrobbler") {
         if (scrobbler_) {
@@ -925,6 +955,17 @@ void MainFrame::onSettingChanged(const std::string& key) {
         key == "volumeScaling" || key == "enableHDCD" ||
         key == "pitch" || key == "tempo" || key.starts_with("rubberband")) {
         playback_->reloadDsp();
+        // Either control may have moved these -- the popup on the strip or the
+        // preferences pane -- and the other one is showing a stale number until
+        // it is told. The engine choice matters too: it is what decides whether
+        // the popup shows its "nothing is listening to these" line.
+        if (key == "pitch" || key == "tempo" || key == "speedLock" ||
+            key == "rubberbandEngine") {
+            refreshSpeedButton();
+            if (speedPopup_ != nullptr) {
+                speedPopup_->refresh();
+            }
+        }
         return;
     }
 

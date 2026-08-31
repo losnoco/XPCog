@@ -2,6 +2,7 @@
 
 #include "LastFmAccount.hpp"
 #include "Localization.hpp"
+#include "SpeedCurve.hpp"
 
 #include "Text.hpp"
 
@@ -111,42 +112,6 @@ constexpr std::array kRubberChannelsChoices = {
     Choice{"apart", wxTRANSLATE("Apart")},
     Choice{"together", wxTRANSLATE("Together")},
 };
-
-/// Cog's slider curve (PlaybackController.m speedScale): a position in 0..100
-/// becomes a ratio in 0.2..5.0, quadratically, so the octave around 1.0 gets
-/// most of the travel.
-constexpr double kSpeedMin = 0.2;
-constexpr double kSpeedMax = 5.0;
-
-/// **Four times Cog's 100, and that is the one deliberate difference here.**
-///
-/// The curve is quadratic, so a step near 1.0 is worth far more than a step at
-/// either end: with Cog's hundred positions the ratio moves about 0.039 per
-/// step there, and the slider simply cannot express 0.98 or 0.99 -- it goes
-/// 0.97, then 1.00, then 1.05. That is most of a semitone skipped in the range
-/// people actually use, which on macOS matters less than it does here because
-/// Cog's sliders are dragged against a live waveform rather than set in a
-/// preferences pane.
-///
-/// 400 rather than more: it puts the step near 1.0 at about 0.0098, which is
-/// what the two-decimal readout beside the slider can distinguish. Finer than
-/// the label would be travel that changes nothing a reader can see.
-///
-/// The curve itself is untouched -- the same position, as a fraction of the
-/// track, gives the same ratio it gives in Cog -- so an imported plist and this
-/// slider still agree about what 1.5 means.
-constexpr int kSpeedSliderMax = 400;
-
-[[nodiscard]] double speedFromSlider(int position) {
-    const double x = static_cast<double>(position) * (100.0 / kSpeedSliderMax);
-    return ((x * x) * (kSpeedMax - kSpeedMin) / 10000.0) + kSpeedMin;
-}
-[[nodiscard]] int sliderFromSpeed(double ratio) {
-    const double clamped = std::clamp(ratio, kSpeedMin, kSpeedMax);
-    const double x =
-        std::sqrt((clamped - kSpeedMin) * 10000.0 / (kSpeedMax - kSpeedMin));
-    return static_cast<int>(std::lround(x * (kSpeedSliderMax / 100.0)));
-}
 
 /// The synthesisers `midiPlugin` can name, in Cog's own spelling.
 ///
@@ -1195,26 +1160,11 @@ wxWindow* PreferencesDialog::buildPitchTempoPane(wxWindow* parent) {
     showValue(pitchValue, settings_.Pitch());
     showValue(tempoValue, settings_.Tempo());
 
-    // Cog's snapSpeeds: the slider cannot otherwise land back on exactly 1.0 --
-    // the nearest position is 0.997 -- and "very nearly unstretched" runs the
-    // whole engine for nothing audible.
-    //
-    // Half Cog's 0.01, and that follows from kSpeedSliderMax rather than being a
-    // second opinion about it. The window has to be wide enough that some
-    // position falls inside it and narrow enough that it does not swallow the
-    // neighbours: at 0.01 it caught both positions either side of 1.0, which
-    // made 1.01 unreachable -- the very complaint the finer slider is here to
-    // fix, moved along by one step.
-    constexpr double kSnap = 0.005;
-    const auto snapped = [](double ratio) {
-        return (std::fabs(ratio - 1.0) < kSnap) ? 1.0 : ratio;
-    };
-
-    const auto applySpeed = [this, showValue, snapped](
+    const auto applySpeed = [this, showValue](
                                 const char* key, wxSlider* slider,
                                 wxStaticText* value, const char* otherKey,
                                 wxSlider* otherSlider, wxStaticText* otherValue) {
-        const double ratio = snapped(speedFromSlider(slider->GetValue()));
+        const double ratio = snapSpeed(speedFromSlider(slider->GetValue()));
         showValue(value, ratio);
         settings_.setRawValue(key, wxString::FromDouble(ratio).utf8_string());
         settingChanged.publish(key);
