@@ -197,22 +197,36 @@ bool RemoteServer::start(std::string* error) {
     impl_->server.Patch(".*", serve);
     impl_->server.Delete(".*", serve);
 
-    // SO_REUSEADDR, and specifically *not* httplib's default.
+    // One socket option, spelled differently on either side, and *not* httplib's
+    // default on either.
     //
-    // Its default_socket_options sets SO_REUSEPORT where the platform has it,
-    // which on Linux lets a second process bind a port the first is already
-    // listening on and has the kernel share the connections between them. For a
-    // web server behind a load balancer that is the point of the option. Here it
-    // would mean a second XPCog -- or a stale one that has not exited -- quietly
-    // binding 7799 as well, with a remote control then driving whichever player
-    // the kernel happened to hand each request to. It also means a port clash is
-    // never reported, so the preferences pane could never say the port is taken.
+    // What is wanted is the same in both places: one XPCog owns the port, and a
+    // second one -- or a stale one that has not exited -- is told the port is
+    // taken rather than quietly sharing it. Sharing is the dangerous outcome,
+    // because the kernel then hands each request to whichever process it likes
+    // and a remote control drives an arbitrary one of two players; it also means
+    // a clash is never reported, so the preferences pane could never say so.
     //
-    // SO_REUSEADDR keeps the thing actually wanted: rebinding a port whose
-    // previous socket is in TIME_WAIT, which is what makes a port change in the
-    // preferences pane take effect without a wait.
+    // httplib's default_socket_options sets SO_REUSEPORT where the platform has
+    // it, which is exactly that sharing. Right for a web server behind a load
+    // balancer, wrong here.
+    //
+    // The names then invert. On POSIX, SO_REUSEADDR permits rebinding a port
+    // whose previous socket is in TIME_WAIT -- what makes a port change in the
+    // preferences pane take effect without a wait -- and still refuses a second
+    // live listener. On Windows the same constant means something else entirely:
+    // it *allows* binding a port another socket is actively listening on, which
+    // is the hijack the POSIX option prevents. SO_EXCLUSIVEADDRUSE is the one
+    // that means there what SO_REUSEADDR means everywhere else.
+    //
+    // Found by the socket test, on CI, having shipped in 1.5.0 -- there is no
+    // Windows here to have caught it earlier.
     impl_->server.set_socket_options([](socket_t sock) {
+#ifdef _WIN32
+        httplib::set_socket_opt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
+#else
         httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
+#endif
     });
 
     // Bounded on purpose. cpp-httplib is a thread per connection, so without a
