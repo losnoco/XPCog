@@ -796,6 +796,7 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     page(buildAppearancePane(book), _("Appearance"));
 #endif
     page(buildMidiPane(book), "MIDI");  // an acronym, the same in every language
+    spectrumPage_ = static_cast<int>(book->GetPageCount());
     page(buildSpectrumPane(book), _("Spectrum"));
     page(buildAdvancedPane(book), _("Advanced"));
 
@@ -840,6 +841,9 @@ void PreferencesDialog::showPane(PreferencesPane pane) {
     switch (pane) {
         case PreferencesPane::PitchTempo:
             index = pitchTempoPage_;
+            break;
+        case PreferencesPane::Spectrum:
+            index = spectrumPage_;
             break;
     }
     if (book_ == nullptr || index >= static_cast<int>(book_->GetPageCount())) {

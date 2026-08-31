@@ -728,6 +728,8 @@ void MainFrame::wireUp() {
     });
 
     // --- the equaliser ---------------------------------------------------
+    observe(spectrum_->settingsRequested,
+            [this] { showPreferences(PreferencesPane::Spectrum); });
     observe(speedPanel_->settingChanged,
             [this](const std::string& key) { onSettingChanged(key); });
     observe(speedPanel_->settingsRequested,

@@ -6,6 +6,7 @@
 
 #include <wx/dcbuffer.h>
 #include <wx/graphics.h>
+#include <wx/menu.h>
 
 #include <algorithm>
 #include <cmath>
@@ -58,6 +59,7 @@ SpectrumPanel::SpectrumPanel(wxWindow* parent, AudioTap& tap)
     Bind(wxEVT_PAINT, &SpectrumPanel::onPaint, this);
     Bind(wxEVT_SIZE, &SpectrumPanel::onSize, this);
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) { tick(); });
+    Bind(wxEVT_CONTEXT_MENU, &SpectrumPanel::onContextMenu, this);
 
     // Deliberately no wxEVT_SHOW handler, and this is the one comment in the file
     // worth reading twice.
@@ -114,6 +116,39 @@ void SpectrumPanel::updateFrequencyBandCount() {
     }
     analyzer_.setFrequencyBandCount(static_cast<std::size_t>(
         std::max(1, GetClientSize().GetWidth() / FromDIP(kFrequencyBarPitch))));
+}
+
+void SpectrumPanel::onContextMenu(wxContextMenuEvent& event) {
+    // Eight settings and no other way in: the spectrum has no controls of its
+    // own, so the colours, the band mode and the floor are only reachable
+    // through a dialog that gives no hint it is where this pane is configured.
+    // A right-click on the thing itself is the shortest sentence for that.
+    //
+    // Cog has no such menu -- its spectrum is configured from Appearance and
+    // that is all -- so this is an addition rather than a ported behaviour.
+    //
+    // "Preferences..." verbatim, the same string the Pitch & Tempo pane's
+    // button uses. One item on a menu popped from the spectrum does not need to
+    // repeat where it came from, and reusing the message means it is already
+    // translated.
+    wxMenu menu;
+    constexpr int kPreferencesItem = wxID_HIGHEST + 1;
+    menu.Append(kPreferencesItem, trUtf8("Preferences\xE2\x80\xA6"));
+
+    // Screen coordinates from the event, except when the menu was asked for
+    // from the keyboard -- wxDefaultPosition then, and wx documents popping it
+    // wherever the window likes.
+    const wxPoint where = event.GetPosition();
+    const wxPoint at    = (where == wxDefaultPosition)
+                              ? wxPoint(0, 0)
+                              : ScreenToClient(where);
+
+    // Synchronously rather than through a menu event: the id comes straight
+    // back, so there is no routing to get wrong for a menu that outlives
+    // nothing.
+    if (GetPopupMenuSelectionFromUser(menu, at) == kPreferencesItem) {
+        settingsRequested.publish();
+    }
 }
 
 void SpectrumPanel::onSize(wxSizeEvent& event) {

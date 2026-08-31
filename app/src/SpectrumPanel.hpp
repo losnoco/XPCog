@@ -17,6 +17,7 @@
 #pragma once
 
 #include "xpcog/core/Settings.hpp"
+#include "xpcog/core/Signal.hpp"
 // For TapCursor, which is held by value. The tap itself is still only borrowed.
 #include "xpcog/core/audio/AudioTap.hpp"
 #include "xpcog/core/audio/SpectrumAnalyzer.hpp"
@@ -27,6 +28,8 @@
 
 #include <chrono>
 #include <vector>
+
+class wxContextMenuEvent;
 
 namespace xpcog::app {
 
@@ -59,8 +62,13 @@ public:
     /// running a 4096-point FFT sixty times a second.
     void setActive(bool active);
 
+    /// The context menu's one item was chosen. MainFrame opens Preferences on
+    /// the Spectrum pane; the panel itself knows nothing about that dialog.
+    Signal<> settingsRequested;
+
 private:
     void onPaint(wxPaintEvent& event);
+    void onContextMenu(wxContextMenuEvent& event);
     void onSize(wxSizeEvent& event);
     void tick();
 

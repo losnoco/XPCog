@@ -58,7 +58,7 @@ class LastFmAccount;
 /// forward-declare it -- `enum class PreferencesPane;` is a complete
 /// declaration, where a nested type is not, and MainFrame would otherwise have
 /// to include this whole header to name one enumerator.
-enum class PreferencesPane { PitchTempo };
+enum class PreferencesPane { PitchTempo, Spectrum };
 
 class PreferencesDialog : public wxDialog {
 public:
@@ -86,6 +86,7 @@ private:
     wxListBox*    categories_    = nullptr;
     wxSimplebook* book_          = nullptr;
     int           pitchTempoPage_ = 0;
+    int           spectrumPage_   = 0;
 
     // One pane per screen, named and ordered after Cog's own
     // (Preferences/Preferences/GeneralPreferencesPlugin.m:44) minus the one
