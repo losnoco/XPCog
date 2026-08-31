@@ -232,20 +232,22 @@ remote::Outcome CliPlayerControl::setOrder(std::optional<std::string> repeat,
     return Outcome::Ok;
 }
 
-std::vector<remote::TrackSummary> CliPlayerControl::tracks(std::size_t offset,
-                                                           std::size_t limit,
-                                                           std::string_view query,
-                                                           std::size_t& total) {
-    std::vector<remote::TrackSummary> page;
-    total = 0;
+remote::TrackPage CliPlayerControl::tracks(std::size_t offset, std::size_t limit,
+                                           std::string_view query) {
+    remote::TrackPage page;
+    const TrackId     current = audible_.load(std::memory_order_acquire);
+
     for (std::size_t row = 0; row < view_.rowCount(); ++row) {
         const PlaylistEntry* entry = view_.entryAt(row);
         if (entry == nullptr || !playlistEntryMatches(*entry, query)) {
             continue;
         }
-        const std::size_t index = total++;
-        if (index >= offset && page.size() < limit) {
-            page.push_back(summarise(*entry));
+        const std::size_t index = page.total++;
+        if (current != kInvalidTrackId && entry->id == current) {
+            page.currentRow = index;
+        }
+        if (index >= offset && page.items.size() < limit) {
+            page.items.push_back(summarise(*entry));
         }
     }
     return page;

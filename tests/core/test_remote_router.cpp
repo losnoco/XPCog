@@ -376,6 +376,37 @@ TEST_CASE("the playlist is paged, and says how many matched", "[remote]") {
     CHECK(body.at("items")[0].at("id").get<TrackId>() == 2);
 }
 
+TEST_CASE("the playlist says where the playing track is", "[remote]") {
+    Harness harness;
+    for (TrackId id = 1; id <= 500; ++id) {
+        harness.control().trackList.push_back(summary(id, "t" + std::to_string(id)));
+    }
+    harness.control().currentRowValue = 147;
+
+    const nlohmann::json body =
+        Harness::parse(harness.send("GET", "/api/v1/playlist", {}, "limit=10"));
+
+    // Counted over the whole match rather than over items, which is the point:
+    // it says which page to ask for. A per-item "is this it" flag could not --
+    // it is false on every row of a page that does not contain the track, which
+    // reads exactly like nothing playing.
+    CHECK(body.at("currentRow").get<std::size_t>() == 147);
+    CHECK(body.at("items").size() == 10);
+    CHECK(body.at("total").get<std::size_t>() == 500);
+}
+
+TEST_CASE("nothing playing is a null row, not a zero", "[remote]") {
+    Harness harness;
+    harness.control().trackList.push_back(summary(1, "one"));
+    harness.control().currentRowValue.reset();
+
+    const nlohmann::json body =
+        Harness::parse(harness.send("GET", "/api/v1/playlist"));
+
+    // Zero is a real row, so it cannot double as "there isn't one".
+    CHECK(body.at("currentRow").is_null());
+}
+
 TEST_CASE("the page size is capped", "[remote]") {
     Harness harness;
     // A client asking for everything on a hundred-thousand-row playlist would

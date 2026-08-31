@@ -26,6 +26,7 @@ public:
     remote::Status                            statusValue;
     remote::Outcome                           outcome = remote::Outcome::Ok;
     std::vector<remote::TrackSummary>         trackList;
+    std::optional<std::size_t>                currentRowValue;
     std::optional<remote::TrackDetail>        trackDetail;
     std::vector<remote::SettingInfo>          settingList;
     std::optional<remote::SettingInfo>        settingValue;
@@ -99,14 +100,15 @@ public:
         return outcome;
     }
 
-    std::vector<remote::TrackSummary> tracks(std::size_t offset, std::size_t limit,
-                                             std::string_view query,
-                                             std::size_t&     total) override {
+    remote::TrackPage tracks(std::size_t offset, std::size_t limit,
+                             std::string_view query) override {
         note(Call{"tracks", {}, static_cast<double>(offset), std::string{query}});
-        total = trackList.size();
-        std::vector<remote::TrackSummary> page;
-        for (std::size_t i = offset; i < trackList.size() && page.size() < limit; ++i) {
-            page.push_back(trackList[i]);
+        remote::TrackPage page;
+        page.total      = trackList.size();
+        page.currentRow = currentRowValue;
+        for (std::size_t i = offset; i < trackList.size() && page.items.size() < limit;
+             ++i) {
+            page.items.push_back(trackList[i]);
         }
         return page;
     }

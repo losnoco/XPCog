@@ -269,16 +269,14 @@ remote::Outcome AppPlayerControl::setOrder(std::optional<std::string> repeat,
     return Outcome::Ok;
 }
 
-std::vector<remote::TrackSummary> AppPlayerControl::tracks(std::size_t offset,
-                                                           std::size_t limit,
-                                                           std::string_view query,
-                                                           std::size_t& total) {
+remote::TrackPage AppPlayerControl::tracks(std::size_t offset, std::size_t limit,
+                                           std::string_view query) {
     // Over the playlist itself rather than through PlaylistView's filter: a
     // remote read must not change what the user is looking at, so the matcher is
     // used without the view's state. The sort is the view's, though, so a client
     // and the window agree on what "row 10" is.
-    std::vector<remote::TrackSummary> page;
-    total = 0;
+    remote::TrackPage page;
+    const TrackId     current = playback_.currentTrack();
 
     const std::size_t rows = view_.rowCount();
     for (std::size_t row = 0; row < rows; ++row) {
@@ -286,9 +284,15 @@ std::vector<remote::TrackSummary> AppPlayerControl::tracks(std::size_t offset,
         if (entry == nullptr || !playlistEntryMatches(*entry, query)) {
             continue;
         }
-        const std::size_t index = total++;
-        if (index >= offset && page.size() < limit) {
-            page.push_back(summarise(*entry));
+        // Counted against the filtered result rather than the view, because that
+        // is what offset and limit index into -- a row number from the unfiltered
+        // view would name a different track once a query is applied.
+        const std::size_t index = page.total++;
+        if (current != kInvalidTrackId && entry->id == current) {
+            page.currentRow = index;
+        }
+        if (index >= offset && page.items.size() < limit) {
+            page.items.push_back(summarise(*entry));
         }
     }
     return page;

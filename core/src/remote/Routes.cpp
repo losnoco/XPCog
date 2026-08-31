@@ -374,23 +374,26 @@ RawResponse getPlaylist(const Ctx& ctx) {
     const std::size_t count = std::min(limit.value_or(kDefaultLimit), kMaxLimit);
     const std::string needle = ctx.query.get("q").value_or(std::string{});
 
-    std::size_t total = 0;
-    const auto  page  = ctx.gate.call([&](IPlayerControl& player) {
-        return player.tracks(start, count, needle, total);
+    const auto page = ctx.gate.call([&](IPlayerControl& player) {
+        return player.tracks(start, count, needle);
     });
     if (!page) {
         return interfaceBusy();
     }
 
     nlohmann::json items = nlohmann::json::array();
-    for (const TrackSummary& track : *page) {
+    for (const TrackSummary& track : page->items) {
         items.push_back(toJson(track));
     }
 
     nlohmann::json body;
-    body["total"]  = total;
+    body["total"]  = page->total;
     body["offset"] = start;
     body["limit"]  = count;
+    // Null rather than absent when there is nothing playing, so a client reads
+    // one field either way instead of testing for the key.
+    body["currentRow"] = page->currentRow ? nlohmann::json(*page->currentRow)
+                                          : nlohmann::json{};
     body["items"]  = std::move(items);
     return jsonResponse(body);
 }
@@ -1062,6 +1065,12 @@ nlohmann::json schemaTrackPage() {
         {"total", {{"type", "integer"}, {"description", "How many matched."}}},
         {"offset", {{"type", "integer"}}},
         {"limit", {{"type", "integer"}}},
+        {"currentRow",
+         {{"type", nlohmann::json::array({"integer", "null"})},
+          {"description",
+           "Where the playing track sits in this filter and sort, counted over "
+           "the whole match rather than over items -- so it says which page to "
+           "ask for. Null when nothing is playing or the query excludes it."}}},
         {"items", {{"type", "array"},
                    {"items", {{"$ref", "#/components/schemas/Track"}}}}}};
     return schema;

@@ -102,6 +102,24 @@ struct TrackDetail {
     std::vector<std::pair<std::string, std::string>> metadata;
 };
 
+/// One page of the playlist, and where the playing track is relative to it.
+struct TrackPage {
+    std::vector<TrackSummary> items;
+
+    /// How many matched the query, which is what a pager needs.
+    std::size_t total = 0;
+
+    /// The row the playing track sits at in this filter and this sort.
+    ///
+    /// Nothing when nothing is playing, or when the query filters it out. It is
+    /// an index into the whole filtered result rather than into `items`, so it
+    /// answers the question `items` cannot: a client wanting to scroll to what is
+    /// playing has to know which page to ask for, and a per-item "is this it"
+    /// flag is false on every row of a page that does not contain it -- which
+    /// reads exactly like nothing playing at all.
+    std::optional<std::size_t> currentRow;
+};
+
 /// What GET /status answers, and the only thing the interface pushes out rather
 /// than being asked for.
 struct Status {
@@ -212,11 +230,8 @@ public:
     // --- playlist ----------------------------------------------------------
 
     /// One page of the playlist, filtered by `query` when it is not empty.
-    /// `total` answers how many matched, which is what a pager needs.
-    [[nodiscard]] virtual std::vector<TrackSummary> tracks(std::size_t offset,
-                                                           std::size_t limit,
-                                                           std::string_view query,
-                                                           std::size_t& total) = 0;
+    [[nodiscard]] virtual TrackPage tracks(std::size_t offset, std::size_t limit,
+                                           std::string_view query) = 0;
 
     [[nodiscard]] virtual std::optional<TrackDetail> track(TrackId id) = 0;
 

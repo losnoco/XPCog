@@ -85,9 +85,8 @@ public:
                              std::optional<std::string> shuffle,
                              std::optional<bool>        stopAfterCurrent) override;
 
-    std::vector<remote::TrackSummary> tracks(std::size_t offset, std::size_t limit,
-                                             std::string_view query,
-                                             std::size_t&     total) override;
+    remote::TrackPage tracks(std::size_t offset, std::size_t limit,
+                             std::string_view query) override;
     std::optional<remote::TrackDetail> track(TrackId id) override;
 
     std::string addUrls(std::vector<std::string>   urls,

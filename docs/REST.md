@@ -184,7 +184,7 @@ walking the same table the router dispatches from, so it cannot drift. In outlin
 | --- | --- |
 | Now playing | `GET nowplaying` |
 | Transport | `GET status`; `POST transport/{play,pause,playPause,stop,next,previous}`; `POST transport/seek`; `GET\|PUT transport/volume`; `GET\|PUT transport/order` |
-| Playlist | `GET playlist` (`offset`, `limit`, `q`); `GET\|PATCH playlist/{id}`; `GET playlist/{id}/artwork`; `POST\|DELETE playlist/tracks`; `POST playlist/{move,randomize,undo,redo}`; `DELETE playlist`; `POST\|DELETE playlist/queue` |
+| Playlist | `GET playlist` (`offset`, `limit`, `q`, answers `currentRow`); `GET\|PATCH playlist/{id}`; `GET playlist/{id}/artwork`; `POST\|DELETE playlist/tracks`; `POST playlist/{move,randomize,undo,redo}`; `DELETE playlist`; `POST\|DELETE playlist/queue` |
 | Jobs | `GET jobs/{id}` |
 | DSP | `GET\|PUT dsp/equalizer`; `GET dsp/equalizer/presets`; `POST dsp/equalizer/preset` |
 | Settings | `GET settings`; `PATCH settings`; `GET\|PUT settings/{key}` |
@@ -212,6 +212,27 @@ It is one hop, not two: asking for the status and then the track separately woul
 let a track change land between them, and the id from the first answer would miss
 in the second. `GET /status` followed by `GET /playlist/{id}` still works and is
 what to use when you want the id for something else.
+
+### Finding the playing track in a long playlist
+
+`GET /api/v1/playlist` answers `currentRow` beside `total`: where the playing
+track sits **in the whole filtered, sorted result**, not within the page you
+happened to ask for.
+
+```json
+{ "total": 312, "offset": 0, "limit": 100, "currentRow": 147, "items": [ … ] }
+```
+
+That is what says which page to ask for. It is deliberately not a per-item "is
+this the one" flag: such a flag is `false` on every row of a page that does not
+contain the track, which reads exactly like nothing playing at all — and it would
+be a second copy of a truth that can go stale between the page being built and
+being rendered. To highlight a row, compare `item.id` against
+`nowplaying.track.id`, which is always current.
+
+`currentRow` is `null` when nothing is playing or when `q` excludes the playing
+track, and it moves with the filter: a track that is fourth overall but third
+among the matches reports `2`.
 
 A few behaviours worth knowing without reading the whole document:
 
