@@ -2833,6 +2833,14 @@ void MainFrame::onCurrentTrackChanged(TrackId id) {
     SetTitle(text.empty() ? wxString("XPCog") : toWx(text + " \xE2\x80\x94 XPCog"));
     SetStatusText(toWx(text), 1);
 
+    // And the summary back in the first field. "Connecting to X..." goes there
+    // when the start is requested, and this is the moment it stopped being true:
+    // nothing wrote over it before, so a note that means "still trying" sat
+    // there for the whole of the track, and for every track after it. The
+    // failure paths write their own sentence there instead and are not on this
+    // one -- a start that did not open publishes no current track.
+    setStatusText(statusSummary());
+
     const std::string title  = entry != nullptr ? entry->title() : std::string{};
     const std::string artist = entry != nullptr ? entry->artist : std::string{};
     presence_->setNowPlaying(title, artist);
