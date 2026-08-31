@@ -129,6 +129,12 @@ RawResponse getDocsCss(const Ctx& ctx) {
     return serveDocsAsset(ctx, "swagger-ui.css.gz", "text/css; charset=utf-8", true);
 }
 
+RawResponse getDocsApp(const Ctx& ctx) {
+    // Ours, not upstream's, and uncompressed because it is three kilobytes and
+    // stays readable in the tree.
+    return serveDocsAsset(ctx, "docs.js", "text/javascript; charset=utf-8", false);
+}
+
 RawResponse getDocsScript(const Ctx& ctx) {
     return serveDocsAsset(ctx, "swagger-ui-bundle.js.gz",
                           "text/javascript; charset=utf-8", true);
@@ -1207,6 +1213,10 @@ constexpr std::array kRoutes = std::to_array<Route>({
     {Method::Get, "/docs/swagger-ui-bundle.js", "getDocsScript",
      "The docs page's script.", kNoParams, "", "", "text/javascript", false, false,
      getDocsScript},
+
+    {Method::Get, "/docs/docs.js", "getDocsApp",
+     "The docs page's own script, which asks for the token and attaches it.",
+     kNoParams, "", "", "text/javascript", false, false, getDocsApp},
 
     {Method::Get, "/openapi.json", "getOpenApi",
      "This document. Needs a token like everything else.", kNoParams, "", "",

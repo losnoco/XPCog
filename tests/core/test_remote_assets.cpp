@@ -82,25 +82,59 @@ TEST_CASE("the embedded Swagger UI is the one MANIFEST describes", "[remote]") {
     }
 }
 
-TEST_CASE("the docs page is embedded and mentions what it needs", "[remote]") {
+TEST_CASE("the docs page is embedded and loads only its own files", "[remote]") {
     const std::span<const std::byte> bytes = resources::swagger("index.html");
     REQUIRE_FALSE(bytes.empty());
 
     const std::string page{reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 
-    // The page is ours and stays readable in the tree, so this checks meaning
-    // rather than a hash that would have to be updated on every wording change.
-    // It has to fetch the spec, and it has to attach the token itself -- a page
-    // that did neither would load and then be unable to do anything.
-    CHECK(page.find("/openapi.json") != std::string::npos);
-    CHECK(page.find("requestInterceptor") != std::string::npos);
-    CHECK(page.find("Bearer ") != std::string::npos);
-
-    // And it loads its own copies rather than a CDN, which is the point of
-    // vendoring them: a player on loopback has no internet to reach one.
+    // Its own copies rather than a CDN, which is the point of vendoring them: a
+    // player on loopback has no internet to reach one.
     CHECK(page.find("/docs/swagger-ui-bundle.js") != std::string::npos);
+    CHECK(page.find("/docs/docs.js") != std::string::npos);
     CHECK(page.find("http://cdn") == std::string::npos);
     CHECK(page.find("https://cdn") == std::string::npos);
+}
+
+TEST_CASE("the docs page has no inline script", "[remote]") {
+    const std::span<const std::byte> bytes = resources::swagger("index.html");
+    REQUIRE_FALSE(bytes.empty());
+    const std::string page{reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+
+    // The page is served with `script-src 'self'`, which blocks inline execution
+    // outright -- so an inline <script> is not a style question here, it is a
+    // page that loads and then does nothing at all. This shipped once: the CSP
+    // was asserted by its text and the page was never opened in a browser, so
+    // nothing noticed that the two disagreed.
+    //
+    // Every <script> must therefore carry a src. Scanning for the ones that do
+    // not is cruder than parsing the HTML and is the right size for the job:
+    // there are three script tags and they are all in this file.
+    std::size_t at = page.find("<script");
+    while (at != std::string::npos) {
+        const std::size_t end = page.find('>', at);
+        REQUIRE(end != std::string::npos);
+        const std::string tag = page.substr(at, end - at);
+        INFO("tag: " << tag);
+        CHECK(tag.find("src=") != std::string::npos);
+        at = page.find("<script", end);
+    }
+}
+
+TEST_CASE("the docs script fetches the spec and attaches the token", "[remote]") {
+    const std::span<const std::byte> bytes = resources::swagger("docs.js");
+    REQUIRE_FALSE(bytes.empty());
+
+    const std::string script{reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+
+    // Checked by meaning rather than by hash, because this file is ours and
+    // stays readable: a hash would have to be updated on every wording change
+    // and would say nothing about whether the page works. It has to fetch the
+    // specification, and it has to attach the token itself -- a page that did
+    // neither would load and then be unable to do anything.
+    CHECK(script.find("/openapi.json") != std::string::npos);
+    CHECK(script.find("requestInterceptor") != std::string::npos);
+    CHECK(script.find("Bearer ") != std::string::npos);
 }
 
 TEST_CASE("an asset the build does not have answers empty", "[remote]") {

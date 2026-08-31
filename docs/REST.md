@@ -111,15 +111,18 @@ generates one and prints it.
 
 ### What is *not* behind the token
 
-`/docs` and its two asset files, and only those. A browser cannot put an
+`/docs` and the three files it loads, and only those. A browser cannot put an
 `Authorization` header on a top-level navigation, so a token-gated documentation
-page is one nobody can open. What that exposes is three static files describing
+page is one nobody can open. What that exposes is four static files describing
 the page's own chrome; `/openapi.json` and every endpoint still need the token,
 and the page asks for one, keeps it in `sessionStorage` for the tab, and attaches
 it to the specification fetch and every try-it-out call itself.
 
+The page's own script is a file rather than an inline block, because the page is
+served with `script-src 'self'` and that blocks inline execution outright.
+
 The residual risk, named rather than left implicit: a hostile page could reach
-those three files through DNS rebinding. It can reach nothing else — there are no
+those four files through DNS rebinding. It can reach nothing else — there are no
 CORS headers anywhere and no ambient credential to borrow.
 
 ## The security posture, stated plainly

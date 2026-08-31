@@ -695,10 +695,17 @@ TEST_CASE("the docs page needs no token, and the specification does", "[remote]"
 
     // Forced rather than chosen: a browser cannot put an Authorization header on
     // a top-level navigation, so a token-gated /docs is a page nobody can open.
-    RawRequest anonymous;
-    anonymous.method = "GET";
-    anonymous.path   = "/docs";
-    CHECK(harness.handleRaw(anonymous).status == 200);
+    // The page and everything it loads, or the browser gets a page it cannot
+    // run. docs.js is ours and is on this list for the same reason the bundle
+    // is: `script-src 'self'` means it has to come from here.
+    for (const char* path : {"/docs", "/docs/swagger-ui.css",
+                             "/docs/swagger-ui-bundle.js", "/docs/docs.js"}) {
+        RawRequest anonymous;
+        anonymous.method = "GET";
+        anonymous.path   = path;
+        INFO("path: " << path);
+        CHECK(harness.handleRaw(anonymous).status == 200);
+    }
 
     // What it describes is still behind the token, or /docs would be a way to
     // read the whole API surface without one.

@@ -282,7 +282,8 @@ int RemoteServer::boundPort() const { return impl_ == nullptr ? 0 : impl_->port;
 /// still need the token.
 bool isDocsAsset(std::string_view path) {
     return path == "/docs" || path == "/docs/" ||
-           path == "/docs/swagger-ui.css" || path == "/docs/swagger-ui-bundle.js";
+           path == "/docs/swagger-ui.css" || path == "/docs/swagger-ui-bundle.js" ||
+           path == "/docs/docs.js";
 }
 
 RawResponse RemoteServer::handle(const RawRequest& request) {

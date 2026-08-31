@@ -47,42 +47,10 @@
 <div id="swagger-ui"></div>
 
 <script src="/docs/swagger-ui-bundle.js"></script>
-<script>
-(function () {
-  var KEY = 'xpcog-remote-token';
-  var field = document.getElementById('token');
-
-  try { field.value = sessionStorage.getItem(KEY) || ''; } catch (e) { /* private mode */ }
-
-  function currentToken() { return field.value.trim(); }
-
-  var ui = SwaggerUIBundle({
-    // Fetched with the token like everything else, so the document is not a way
-    // to learn the shape of the API without one.
-    url: '/openapi.json',
-    dom_id: '#swagger-ui',
-    presets: [SwaggerUIBundle.presets.apis],
-    layout: 'BaseLayout',
-    deepLinking: true,
-    tryItOutEnabled: true,
-    requestInterceptor: function (request) {
-      var token = currentToken();
-      if (token) { request.headers['Authorization'] = 'Bearer ' + token; }
-      return request;
-    }
-  });
-
-  document.getElementById('apply').addEventListener('click', function () {
-    try { sessionStorage.setItem(KEY, currentToken()); } catch (e) { /* private mode */ }
-    // Re-fetch, so a token typed in after the page loaded takes effect without
-    // a reload the user has to think to do.
-    ui.specActions.download('/openapi.json');
-  });
-
-  field.addEventListener('keydown', function (event) {
-    if (event.key === 'Enter') { document.getElementById('apply').click(); }
-  });
-})();
-</script>
+<!--
+  A file rather than an inline block: this page is served with `script-src
+  'self'`, which blocks inline execution. See docs.js.
+-->
+<script src="/docs/docs.js"></script>
 </body>
 </html>

@@ -198,6 +198,7 @@ if(XPCOG_WITH_REST)
         BASE   "${CMAKE_SOURCE_DIR}/assets/swagger-ui"
         FILES
             "${CMAKE_SOURCE_DIR}/assets/swagger-ui/index.html"
+            "${CMAKE_SOURCE_DIR}/assets/swagger-ui/docs.js"
             "${CMAKE_SOURCE_DIR}/assets/swagger-ui/swagger-ui.css.gz"
             "${CMAKE_SOURCE_DIR}/assets/swagger-ui/swagger-ui-bundle.js.gz")
 else()
