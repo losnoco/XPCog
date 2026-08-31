@@ -16,7 +16,7 @@
 #include "LucideIcon.hpp"
 #include "PlaylistDataModel.hpp"
 #include "SeekBar.hpp"
-#include "SpeedPopup.hpp"
+#include "SpeedPanel.hpp"
 #include "Text.hpp"
 
 #include "xpcog/core/FilePath.hpp"
@@ -404,6 +404,7 @@ void MainFrame::buildUi() {
     lyrics_    = new LyricsPanel(dockHost_);
     spectrum_  = new SpectrumPanel(dockHost_, playback_->tap());
     spectrum_->applySettings(settings_);
+    speedPanel_ = new SpeedPanel(dockHost_, settings_);
 
 #ifdef XPCOG_HAVE_SC55_PANEL
     sc55_ = new Sc55Panel(dockHost_, [this] { return playback_->position(); });
@@ -439,6 +440,23 @@ void MainFrame::buildUi() {
                                         .BestSize(equalizerBest)
                                         .MinSize(FromDIP(240), equalizerBest.GetHeight())
                                         .Hide());
+
+    // Cog reaches pitch and tempo from a toolbar button and a popover; this is
+    // a pane instead, and along the bottom with the other wide, short ones. Two
+    // sliders and a row of buttons is the same shape as the equaliser, and the
+    // reason for a pane rather than a popup is that this is a control someone
+    // leaves open while listening rather than one they open, nudge and dismiss.
+    //
+    // Sized from the panel: the pitch row disappears under varispeed, so the
+    // best size is taken while everything is still on screen and the pane keeps
+    // the room rather than resizing under the reader mid-session.
+    const wxSize speedBest = speedPanel_->GetBestSize();
+    auiManager_.AddPane(speedPanel_, wxAuiPaneInfo()
+                                         .Name("speed")
+                                         .Bottom()
+                                         .BestSize(speedBest)
+                                         .MinSize(FromDIP(240), speedBest.GetHeight())
+                                         .Hide());
 
     // The minimum is a floor, not a recommendation. It used to be set at the
     // width the panel reads *well* at, which conflated two different jobs: the
@@ -600,25 +618,6 @@ void MainFrame::buildControls(wxWindow* parent) {
     filter_->SetToolTip(_("Filter the playlist"));
     row->Add(filter_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
 
-    // Cog's speed button, which opens an NSPopover holding the pitch and tempo
-    // sliders (Window/SpeedButton.m). Here it is a plain button and a
-    // wxPopupTransientWindow -- see SpeedPopup.hpp for what that is and is not.
-    //
-    // The label is the current tempo rather than a word, so the strip says what
-    // the setting is without being opened. It is also why the button is created
-    // with a placeholder wide enough for "1.00x" and then updated: a button that
-    // resizes as the ratio crosses a digit would shove the filter box sideways
-    // while a slider is being dragged.
-    speed_ = new wxButton(parent, wxID_ANY, wxEmptyString, wxDefaultPosition,
-                          FromDIP(wxSize(64, -1)));
-    speed_->SetToolTip(_("Pitch and tempo"));
-    speedPopup_ = new SpeedPopup(this, settings_);
-    subscriptions_.push_back(speedPopup_->settingChanged.connect(
-        [this](const std::string& key) { onSettingChanged(key); }));
-    speed_->Bind(wxEVT_BUTTON,
-                 [this](wxCommandEvent&) { speedPopup_->popupUnder(speed_); });
-    row->Add(speed_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
-    refreshSpeedButton();
 
     // A little air above and below, which the toolbar beside it used to be
     // providing: on its own row the strip would otherwise sit flush against the
@@ -729,6 +728,10 @@ void MainFrame::wireUp() {
     });
 
     // --- the equaliser ---------------------------------------------------
+    observe(speedPanel_->settingChanged,
+            [this](const std::string& key) { onSettingChanged(key); });
+    observe(speedPanel_->settingsRequested,
+            [this] { showPreferences(PreferencesPane::PitchTempo); });
     observe(equalizer_->settingChanged,
             [this](const std::string& key) { onSettingChanged(key); });
 
@@ -930,15 +933,6 @@ void MainFrame::wireUp() {
     bindUpdateUi();
 }
 
-void MainFrame::refreshSpeedButton() {
-    if (speed_ == nullptr) {
-        return;
-    }
-    // FromUTF8 for the multiplication sign, as everywhere else it appears.
-    speed_->SetLabel(wxString::Format(wxString::FromUTF8("%.2f\xC3\x97"),
-                                      settings_.Tempo()));
-}
-
 void MainFrame::onSettingChanged(const std::string& key) {
     if (key == "enableAudioScrobbler") {
         if (scrobbler_) {
@@ -959,12 +953,10 @@ void MainFrame::onSettingChanged(const std::string& key) {
         // preferences pane -- and the other one is showing a stale number until
         // it is told. The engine choice matters too: it is what decides whether
         // the popup shows its "nothing is listening to these" line.
-        if (key == "pitch" || key == "tempo" || key == "speedLock" ||
-            key == "rubberbandEngine") {
-            refreshSpeedButton();
-            if (speedPopup_ != nullptr) {
-                speedPopup_->refresh();
-            }
+        if (speedPanel_ != nullptr &&
+            (key == "pitch" || key == "tempo" || key == "speedLock" ||
+             key == "rubberbandEngine")) {
+            speedPanel_->refresh();
         }
         return;
     }
@@ -1377,10 +1369,15 @@ void MainFrame::openUrl() {
     }
 }
 
-void MainFrame::showPreferences() {
+void MainFrame::showPreferences() { showPreferences(std::nullopt); }
+
+void MainFrame::showPreferences(std::optional<PreferencesPane> pane) {
     PreferencesDialog dialog(this, settings_, lastFm_.get(), scrobbler_.get());
     const Subscription subscription = dialog.settingChanged.connect(
         [this](const std::string& key) { onSettingChanged(key); });
+    if (pane) {
+        dialog.showPane(*pane);
+    }
     dialog.ShowModal();
 }
 
@@ -1517,6 +1514,7 @@ void MainFrame::bindCommands() {
         }
     });
     on(ViewEqualizer, [this] { togglePane(equalizer_, !paneShown(equalizer_)); });
+    on(ViewSpeed, [this] { togglePane(speedPanel_, !paneShown(speedPanel_)); });
     on(ViewInfo, [this] {
         const bool showing = !paneShown(info_);
         togglePane(info_, showing);
@@ -1655,6 +1653,8 @@ void MainFrame::bindUpdateUi() {
            [this](wxUpdateUIEvent& event) { event.Check(splitter_->IsSplit()); });
     update(ViewEqualizer,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(equalizer_)); });
+    update(ViewSpeed,
+           [this](wxUpdateUIEvent& event) { event.Check(paneShown(speedPanel_)); });
     update(ViewInfo, [this](wxUpdateUIEvent& event) { event.Check(paneShown(info_)); });
     update(ViewLyrics,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(lyrics_)); });
@@ -2879,6 +2879,7 @@ void MainFrame::applyPaneCaptions() {
     const std::pair<wxWindow*, wxString> captions[] = {
         {spectrum_, _("Spectrum")},
         {equalizer_, _("Equalizer")},
+        {speedPanel_, _("Pitch & Tempo")},
         {info_, _("Info")},
         {lyrics_, _("Lyrics")},
 #ifdef XPCOG_HAVE_SC55_PANEL

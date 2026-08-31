@@ -45,8 +45,8 @@ set(XPCOG_APP_SOURCES
     src/SpectrumPanel.cpp
     src/SpectrumPanel.hpp
     src/SpeedCurve.hpp
-    src/SpeedPopup.cpp
-    src/SpeedPopup.hpp
+    src/SpeedPanel.cpp
+    src/SpeedPanel.hpp
     src/StatusPresence.cpp
     src/StatusPresence.hpp
     src/Text.hpp

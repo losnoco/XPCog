@@ -78,7 +78,8 @@ class PlaylistDataModel;
 class Sc55Panel;
 class SeekBar;
 class SpectrumPanel;
-class SpeedPopup;
+class SpeedPanel;
+enum class PreferencesPane;
 
 using Dispatcher = std::function<void(std::function<void()>)>;
 
@@ -118,9 +119,6 @@ private:
     /// is settled after the loop for that reason, whichever way it was called.
     void refreshTransportIcons(Restroke restroke = Restroke::No);
 
-    /// Puts the current tempo on the speed button. Called when the popup moves
-    /// it and when the preferences pane does.
-    void refreshSpeedButton();
     /// Every connection this window owns, in one place.
     void wireUp();
     void bindCommands();
@@ -135,6 +133,9 @@ private:
     /// step with this one's queue translation and its filter warning.
     void savePlaylistAs(bool selectionOnly);
     void showPreferences();
+    /// Opens on a named pane. The Pitch & Tempo dock pane's Settings button is
+    /// the one caller; everything else opens on Playlist as before.
+    void showPreferences(std::optional<PreferencesPane> pane);
     void showAbout();
 
     /// Asks, once ever, whether XPCog may send crash reports.
@@ -479,11 +480,7 @@ private:
 
     SeekBar*      seekBar_    = nullptr;
     wxSlider*     volume_     = nullptr;
-    // The speed button and its popup. The popup is built once and kept: it
-    // holds no per-track state, and a wxPopupTransientWindow that is rebuilt on
-    // every click flickers on GTK.
-    wxButton*     speed_      = nullptr;
-    SpeedPopup*   speedPopup_ = nullptr;
+    SpeedPanel*   speedPanel_ = nullptr;
     wxSearchCtrl* filter_     = nullptr;
     wxStaticText* clock_      = nullptr;
     wxGauge*      scanBar_    = nullptr;

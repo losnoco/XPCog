@@ -759,6 +759,8 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     // DPI or in another language.
     auto* categories = new wxListBox(this, wxID_ANY);
     auto* book       = new wxSimplebook(this, wxID_ANY);
+    categories_      = categories;
+    book_            = book;
 
     const auto page = [&](wxWindow* pane, const wxString& name) {
         book->AddPage(pane, name);
@@ -772,6 +774,7 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     page(buildOutputPane(book), _("Output"));
     // Plain "&": the name lands in a wxListBox, which draws text verbatim
     // rather than eating ampersands the way menus and buttons do.
+    pitchTempoPage_ = static_cast<int>(book->GetPageCount());
     page(buildPitchTempoPane(book), _("Pitch & Tempo"));
     page(buildGeneralPane(book), _("General"));
     page(buildNotificationsPane(book), _("Notifications"));
@@ -830,6 +833,23 @@ PreferencesDialog::~PreferencesDialog() {
 
 std::function<void(const char*)> PreferencesDialog::changeNotifier() {
     return [this](const char* key) { settingChanged.publish(key); };
+}
+
+void PreferencesDialog::showPane(PreferencesPane pane) {
+    int index = 0;
+    switch (pane) {
+        case PreferencesPane::PitchTempo:
+            index = pitchTempoPage_;
+            break;
+    }
+    if (book_ == nullptr || index >= static_cast<int>(book_->GetPageCount())) {
+        return;
+    }
+    // Both, and in this order: the listbox is the selection a reader sees, and
+    // ChangeSelection rather than SetSelection so the book does not send a page
+    // -changed event for a page nobody clicked.
+    categories_->SetSelection(index);
+    book_->ChangeSelection(static_cast<std::size_t>(index));
 }
 
 wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {

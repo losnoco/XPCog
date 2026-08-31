@@ -92,6 +92,10 @@ const std::vector<MenuItem>& layout() {
         // Cog keeps its equaliser in a window of its own rather than in
         // preferences, and so does this. Ctrl-E, which nothing else claims.
         {nullptr, ViewEqualizer, wxTRANSLATE("&Equalizer"), "Ctrl+E", ItemKind::Check},
+        // Pitch and tempo, which Cog reaches from a toolbar button and a
+        // popover. No shortcut: the keys worth spending are spent, and this is
+        // a pane somebody opens once in a session and leaves open.
+        {nullptr, ViewSpeed, wxTRANSLATE("&Pitch && Tempo"), "", ItemKind::Check},
         // The SC-55's front panel. No shortcut: it is worth having and it is not
         // worth a key -- one synthesiser of three, for one format. Present even
         // in a build without MIDI, where it simply never finds a pane to toggle;

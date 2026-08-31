@@ -42,12 +42,23 @@
 #include <memory>
 #include <string>
 
+class wxListBox;
 class wxListbook;
+class wxSimplebook;
 class wxWindow;
 
 namespace xpcog::app {
 
 class LastFmAccount;
+
+/// Which pane the dialog opens on. Only the ones something asks for by name are
+/// here; it opens on Playlist otherwise, as it always has.
+///
+/// At namespace scope rather than nested in the dialog so that a caller can
+/// forward-declare it -- `enum class PreferencesPane;` is a complete
+/// declaration, where a nested type is not, and MainFrame would otherwise have
+/// to include this whole header to name one enumerator.
+enum class PreferencesPane { PitchTempo };
 
 class PreferencesDialog : public wxDialog {
 public:
@@ -61,11 +72,21 @@ public:
 
     ~PreferencesDialog() override;
 
+    /// Selects a pane before the dialog is shown. The index is recorded as the
+    /// pages are built rather than matched against a caption, so it does not
+    /// depend on what language the sidebar is in.
+    void showPane(PreferencesPane pane);
+
     /// A setting changed. The engine reads most settings live, but the ones that
     /// only take effect on the next track are worth saying so about.
     Signal<std::string> settingChanged;
 
 private:
+    // The sidebar and its pages, kept so showPane() can move them together.
+    wxListBox*    categories_    = nullptr;
+    wxSimplebook* book_          = nullptr;
+    int           pitchTempoPage_ = 0;
+
     // One pane per screen, named and ordered after Cog's own
     // (Preferences/Preferences/GeneralPreferencesPlugin.m:44) minus the one
     // pane that has nothing to hold here: Hot Keys is
