@@ -8,13 +8,16 @@
 #    include <windows.h>
 //  After windows.h, which it needs.
 #    include <bcrypt.h>
-#elif defined(__APPLE__) || defined(__OpenBSD__)
-#    include <unistd.h>
 #else
-#    include <sys/random.h>
-#endif
-
-#if !defined(_WIN32)
+//  getentropy is declared in <unistd.h> on OpenBSD and in <sys/random.h> on
+//  glibc and on macOS -- Apple's man page is explicit about that, and getting it
+//  wrong is a build that only fails on the platform you are not on. Asking
+//  __has_include rather than enumerating platforms means the next libc does not
+//  need a line here.
+#    include <unistd.h>
+#    if __has_include(<sys/random.h>)
+#        include <sys/random.h>
+#    endif
 #    include <cstdio>
 #endif
 
