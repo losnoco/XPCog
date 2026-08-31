@@ -16,6 +16,7 @@
 #include "LucideIcon.hpp"
 #include "PlaylistDataModel.hpp"
 #include "SeekBar.hpp"
+#include "RemoteToken.hpp"
 #include "SettingEffect.hpp"
 #include "SpeedPanel.hpp"
 #include "Text.hpp"
@@ -272,6 +273,11 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
     // Restoring the saved playlist is not an edit the user made, so it must not
     // be the first thing Undo offers to take back.
     undo_.clear();
+
+    // Last, and after the playlist is loaded: a client that connects the instant
+    // the port opens should find the player it is about to be told about, not an
+    // empty one.
+    applyRemoteSettings();
 
     // The mini player, if that is where the listener left off. Cog restores it at
     // launch from the same key (AppController.m:314).
@@ -1090,6 +1096,10 @@ void MainFrame::onSettingChanged(const std::string& key) {
                 platform::stopCrashReporting();
             }
             settings_.sync();
+            break;
+
+        case Effect::RestartRemote:
+            applyRemoteSettings();
             break;
 
         case Effect::None:
@@ -2089,6 +2099,11 @@ void MainFrame::pumpScanQueue() {
     ScanRequest request = std::move(pendingScans_.front());
     pendingScans_.erase(pendingScans_.begin());
 
+    // Remembered for the duration of this scan, so the progress and finish
+    // handlers below can report to whoever started it over the API. Empty for a
+    // scan the window started, and every use of it is guarded on that.
+    scanJobId_ = request.jobId;
+
     // Read per scan rather than once, so unticking the box in Preferences applies
     // to the next folder added instead of the next launch.
     //
@@ -2108,6 +2123,9 @@ void MainFrame::pumpScanQueue() {
     subscriptions_.push_back(scan_->progress.connect([this](int done, int total) {
         // A range of zero is a busy indicator, which is the truthful display
         // while the expansion pass is still counting.
+        if (!scanJobId_.empty()) {
+            remoteJobs_.setRunning(scanJobId_, done, total);
+        }
         if (total > 0) {
             scanBar_->SetRange(total);
             scanBar_->SetValue(done);
@@ -2149,6 +2167,18 @@ void MainFrame::pumpScanQueue() {
 
             // Copied so the decorator can write to it. The signal hands out
             // a const reference because every other subscriber only reads.
+            if (!scanJobId_.empty()) {
+                // Reported before the entries are inserted, because
+                // addScannedEntries can start another scan through the queue and
+                // that overwrites scanJobId_.
+                if (cancelled) {
+                    remoteJobs_.fail(scanJobId_, "cancelled");
+                } else {
+                    remoteJobs_.finish(scanJobId_, entries.size());
+                }
+                scanJobId_.clear();
+            }
+
             std::vector<PlaylistEntry> decorated = entries;
             if (decorate) {
                 decorate(decorated);
@@ -3014,6 +3044,106 @@ void MainFrame::persistState() {
                                        toWx(library_->lastError())));
     }
     settings_.sync();
+}
+
+
+// --- the REST remote control ---------------------------------------------
+
+void MainFrame::applyRemoteSettings() {
+    // Stopped first whatever happens next. A port or address change is a restart,
+    // and stop() releases every request waiting on this thread before it joins,
+    // so this does not block for the gate's full timeout.
+    if (remoteServer_) {
+        remoteServer_->stop();
+        remoteServer_.reset();
+    }
+
+    if (!settings_.RemoteEnable()) {
+        return;
+    }
+    if (!remote::remoteServerAvailable()) {
+        // A build without XPCOG_WITH_REST. The pane greys itself and says so;
+        // this is the path where the setting was carried over from a build that
+        // had one.
+        return;
+    }
+
+    const std::string token = RemoteToken::ensure();
+    if (token.empty()) {
+        wxString why;
+        RemoteToken::storeAvailable(&why);
+        setStatusText(why.empty()
+                          ? _("The remote control could not create an access token.")
+                          : why);
+        return;
+    }
+
+    if (!remoteControl_) {
+        remoteControl_ = std::make_unique<AppPlayerControl>(
+            *playback_, playlist_, view_, commands_, settings_, remoteJobs_,
+            library_.get(),
+            [this](std::vector<std::string> urls, std::optional<std::size_t> at) {
+                return startRemoteScan(std::move(urls), at);
+            });
+
+        // The fourth publisher of settingChanged, beside the preferences dialog
+        // and the two panels, wired to the same handler. Without it a remote
+        // write would be stored and inert until the next launch.
+        subscriptions_.push_back(remoteControl_->settingChanged.connect(
+            [this](const std::string& key) { onSettingChanged(key); }));
+    }
+
+    remote::ServerConfig config;
+    config.address    = settings_.RemoteAddress();
+    config.port       = settings_.RemotePort();
+    config.token      = token;
+    config.allowWrite = settings_.RemoteAllowWrite();
+
+    remoteServer_ = std::make_unique<remote::RemoteServer>(
+        *remoteControl_, dispatch_, std::move(config));
+
+    std::string error;
+    if (!remoteServer_->start(&error)) {
+        // The ordinary failure is a port already taken, and it has to be visible:
+        // a switch that silently did nothing is worse than one that says why.
+        setStatusText(wxString::Format(_("Remote control unavailable: %s"),
+                                       toWx(error)));
+        remoteServer_.reset();
+        return;
+    }
+
+    setStatusText(wxString::Format(_("Remote control listening on http://%s:%d"),
+                                   toWx(settings_.RemoteAddress()),
+                                   remoteServer_->boundPort()));
+}
+
+std::string MainFrame::startRemoteScan(std::vector<std::string>   urls,
+                                       std::optional<std::size_t> at) {
+    std::vector<Url> inputs;
+    inputs.reserve(urls.size());
+    for (const std::string& text : urls) {
+        // A URL or a plain path, which is what the CLI accepts too -- a client
+        // that has a filename should not have to know how to spell it as a URL.
+        if (std::optional<Url> url = Url::parse(text); url && !url->scheme().empty()) {
+            inputs.push_back(*std::move(url));
+        } else {
+            inputs.push_back(Url::fromLocalPath(std::filesystem::path{text}));
+        }
+    }
+    if (inputs.empty()) {
+        return {};
+    }
+
+    const std::string jobId = remoteJobs_.start();
+
+    ScanRequest request;
+    request.inputs = std::move(inputs);
+    request.atRow  = at ? static_cast<int>(*at) : -1;
+    request.jobId  = jobId;
+    pendingScans_.push_back(std::move(request));
+    pumpScanQueue();
+
+    return jobId;
 }
 
 }  // namespace xpcog::app

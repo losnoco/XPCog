@@ -26,6 +26,8 @@
 #pragma once
 
 #include "AppCommands.hpp"
+#include "AppPlayerControl.hpp"
+#include "RemoteJobs.hpp"
 #include "PlaybackController.hpp"
 #include "StatusPresence.hpp"
 
@@ -41,6 +43,7 @@
 #include "xpcog/core/library/PlaylistView.hpp"
 #include "xpcog/core/library/PluginCache.hpp"
 #include "xpcog/core/library/ScanTask.hpp"
+#include "xpcog/core/remote/RemoteServer.hpp"
 #include "xpcog/platform/MediaIntegration.hpp"
 #include "xpcog/platform/TaskbarIntegration.hpp"
 
@@ -539,8 +542,15 @@ private:
         /// happen once the scanner has read the tags. Empty for every other
         /// scan, which wants the results exactly as they came.
         std::function<void(std::vector<PlaylistEntry>&)> decorate;
+
+        /// Set when the scan was started over the API, so its progress can be
+        /// reported back through GET /jobs/{id}. Empty for a scan the window
+        /// started, which has the progress bar instead.
+        std::string jobId;
     };
     std::unique_ptr<ScanTask> scan_;
+    /// The job id of the scan now running, if it came from the API.
+    std::string               scanJobId_;
     std::vector<ScanRequest>  pendingScans_;
 
     /// What the last Cog import matched, filled by the scan's decorator and read
@@ -556,6 +566,26 @@ private:
     /// Which entry is audible, so a mid-stream tag change can tell whether it
     /// affects the now-playing display or only a row.
     TrackId currentTrack_ = kInvalidTrackId;
+
+    // --- the REST remote control ----------------------------------------
+    //
+    // Declared after playback_, commands_ and library_, and that is a contract
+    // rather than tidiness: members are destroyed in reverse, so the server --
+    // whose stop() joins its listener and releases every request waiting on this
+    // thread -- goes first, and nothing it holds a reference to is gone while a
+    // worker might still be inside handle().
+    RemoteJobs                                   remoteJobs_;
+    std::unique_ptr<AppPlayerControl>            remoteControl_;
+    std::unique_ptr<remote::RemoteServer>        remoteServer_;
+
+    /// Starts or stops the server to match the settings. Called at startup and
+    /// whenever one of the `remote*` keys changes, so a port change takes effect
+    /// without a relaunch.
+    void applyRemoteSettings();
+
+    /// Begins a scan on behalf of the API and answers the job id to follow.
+    [[nodiscard]] std::string startRemoteScan(std::vector<std::string> urls,
+                                              std::optional<std::size_t> at);
 
     /// Declared last; see the class comment. Members are destroyed in reverse
     /// order, so this goes first.

@@ -48,6 +48,7 @@ enum class Effect {
     MiniFloating,     ///< The mini window's always-on-top flag.
     Scrobbler,        ///< Start or stop the submission worker.
     CrashReporter,    ///< Start or close the SDK, in both directions.
+    RestartRemote,    ///< Rebind the REST server, so a port change needs no relaunch.
     Internal,         ///< Session state, not a preference. Never written remotely.
 };
 

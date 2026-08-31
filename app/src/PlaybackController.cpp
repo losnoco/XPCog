@@ -76,6 +76,11 @@ PlaybackController::~PlaybackController() {
 
 // --- state --------------------------------------------------------------
 
+bool PlaybackController::busy() const {
+    return starting_.load(std::memory_order_acquire) ||
+           stopping_.load(std::memory_order_acquire);
+}
+
 bool PlaybackController::playing() const {
     // A start in flight is not playing yet, and the engine is being rebuilt
     // underneath it -- so this answers from the flag rather than from there.

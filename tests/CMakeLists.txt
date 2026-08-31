@@ -444,6 +444,7 @@ if(XPCOG_BUILD_APP)
         app/test_localization.cpp
         app/test_lyricspanel.cpp
         app/test_playlistmodel.cpp
+        app/test_remotejobs.cpp
         app/test_settingeffect.cpp
     )
 

@@ -69,6 +69,15 @@ public:
 
     [[nodiscard]] Playlist& playlist() noexcept { return playlist_; }
 
+    /// A start or a stop is in flight.
+    ///
+    /// The commands below silently decline while this is true -- which is right
+    /// for a menu item, where the gesture is cheap to repeat and a queued
+    /// second start would be worse than a dropped one. It is not right for a
+    /// caller that has to *report* what happened: the REST remote control
+    /// answers 409 on this rather than 200 for a command that did nothing.
+    [[nodiscard]] bool busy() const;
+
     [[nodiscard]] bool playing() const;
     [[nodiscard]] bool paused() const;
 

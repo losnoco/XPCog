@@ -136,6 +136,13 @@ SettingEffect effectOf(std::string_view key) {
         return {Effect::None, Applies::NextLaunch};
     }
 
+    // The server re-reads all four when it restarts, which is what the branch in
+    // MainFrame::onSettingChanged does -- so a port change takes effect without
+    // a relaunch.
+    if (key.starts_with("remote")) {
+        return {Effect::RestartRemote, Applies::Immediately};
+    }
+
     // Read when a notification is about to be posted.
     if (key.starts_with("notifications.")) {
         return {Effect::None, Applies::Immediately};

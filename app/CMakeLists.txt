@@ -10,6 +10,8 @@ set(XPCOG_APP_SOURCES
     src/AboutDialog.hpp
     src/AppCommands.cpp
     src/AppCommands.hpp
+    src/AppPlayerControl.cpp
+    src/AppPlayerControl.hpp
     src/AppIcon.cpp
     src/AppIcon.hpp
     src/Commands.cpp
@@ -40,6 +42,10 @@ set(XPCOG_APP_SOURCES
     src/PlaylistDataModel.hpp
     src/PreferencesDialog.cpp
     src/PreferencesDialog.hpp
+    src/RemoteJobs.cpp
+    src/RemoteJobs.hpp
+    src/RemoteToken.cpp
+    src/RemoteToken.hpp
     src/SeekBar.cpp
     src/SeekBar.hpp
     src/SettingEffect.cpp

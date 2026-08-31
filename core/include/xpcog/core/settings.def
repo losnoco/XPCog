@@ -702,6 +702,52 @@ XPCOG_SETTING(SentryConsented, bool, "sentryConsented", false)
 /// Set it back to false to see the prompt again.
 XPCOG_SETTING(SentryAskedConsent, bool, "sentryAskedConsent", false)
 
+// --- remote control -------------------------------------------------------
+
+/// Whether the REST remote control listens.
+///
+/// **No Cog counterpart.** Cog has an MCP server for an LLM client, over stdio
+/// and macOS-only; none of its code, its protocol or its transport travels here,
+/// and this is not a port of it.
+///
+/// False, and the default matters more than most. app/src/SingleInstance.hpp
+/// records a decision against this program owning a listening socket at all: on
+/// Windows the firewall asks the user to approve a *music player* wanting
+/// network access, which is "alarming, unanswerable and entirely
+/// self-inflicted". That argument stands, so this is opt-in twice over --
+/// XPCOG_WITH_REST decides whether a server is built at all, and this decides
+/// whether it ever binds. A loopback bind raises no firewall prompt.
+XPCOG_SETTING(RemoteEnable, bool, "remoteEnable", false)
+
+/// What address the remote control binds.
+///
+/// **No Cog counterpart.** Loopback, so that turning the feature on does not by
+/// itself put the player on the network. 0.0.0.0 reaches it from another
+/// machine, and the preferences pane says plainly what that means: the
+/// connection is not encrypted and the access token travels in a header on every
+/// request.
+///
+/// A default rather than a restriction. The token is required either way -- there
+/// is no exemption for loopback, because that would hand every process on the
+/// machine the transport.
+XPCOG_SETTING(RemoteAddress, std::string, "remoteAddress", "127.0.0.1")
+
+/// What port the remote control binds.
+///
+/// **No Cog counterpart.** 7799 is unassigned by IANA and not in the ephemeral
+/// range any platform uses, so it neither collides with a registered service nor
+/// gets taken by an outgoing connection while the player is not running.
+XPCOG_SETTING(RemotePort, int, "remotePort", 7799)
+
+/// Whether the remote control accepts anything but reads.
+///
+/// **No Cog counterpart.** True, because a remote control that cannot control is
+/// not one. False leaves the status, the playlist and the artwork readable and
+/// refuses every write with 403 -- which is what a now-playing display on a
+/// second screen wants, and it means such a display can be given a token without
+/// also being given the playlist.
+XPCOG_SETTING(RemoteAllowWrite, bool, "remoteAllowWrite", true)
+
 // --- bookkeeping ----------------------------------------------------------
 
 /// Bumped by SettingsMigration; see Settings::applyMigrations().
