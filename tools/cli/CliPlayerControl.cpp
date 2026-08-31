@@ -9,6 +9,7 @@
 #include "xpcog/core/remote/Token.hpp"
 
 #include <algorithm>
+#include <variant>
 #include <filesystem>
 #include <exception>
 #include <memory>
@@ -272,6 +273,23 @@ std::optional<remote::TrackDetail> CliPlayerControl::track(TrackId id) {
     detail.seekable      = properties.seekable;
     detail.lossless      = properties.lossless;
     detail.cuesheet      = properties.cuesheet.has_value();
+
+    // The same tags the application's host reports. An endpoint that answered
+    // with a metadata object here and an empty one there would be a difference
+    // nobody documented and everybody would eventually trip over.
+    for (const MetadataMap::Entry& tag : entry->metadata) {
+        if (const auto* text = std::get_if<std::vector<std::string>>(&tag.value)) {
+            std::string joined;
+            for (const std::string& one : *text) {
+                if (!joined.empty()) {
+                    joined += "; ";
+                }
+                joined += one;
+            }
+            detail.metadata.emplace_back(tag.key, std::move(joined));
+        }
+    }
+    detail.lyrics = entry->unsyncedLyrics.str();
     return detail;
 }
 

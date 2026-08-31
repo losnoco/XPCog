@@ -39,9 +39,17 @@
 // Signal are all unlocked and single-threaded by convention. So every call into
 // the player goes through a Dispatcher onto the interface thread and waits for
 // the answer -- see CallGate, which is where the interesting parts of that are.
-// GET /status is the exception and takes no hop at all: the interface pushes a
-// snapshot in through publishStatus(), the way MainFrame already pushes
-// setNowPlaying() into MediaIntegration.
+//
+// **Every** route hops, GET /status included. An earlier version of this comment
+// claimed that one was served from a snapshot the interface pushed in; no such
+// thing was ever built. The hop costs microseconds against an idle interface and
+// nothing polls hard enough for that to matter.
+//
+// What it does cost is availability: while the interface thread is busy -- a long
+// scan, a slow track opening -- /status and /nowplaying answer 503 like anything
+// else, so a display polling them goes blank rather than showing a stale-but-true
+// answer. A pushed snapshot would fix that, and that is the argument for building
+// one if it ever becomes worth it. Speed is not.
 //
 // Nothing on the interface thread may call handle(). It would wait on itself.
 

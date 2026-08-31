@@ -306,6 +306,61 @@ TrackSummary summary(TrackId id, std::string title) {
 
 }  // namespace
 
+TEST_CASE("now playing answers the whole question in one request", "[remote]") {
+    Harness harness;
+    harness.control().statusValue.playing      = true;
+    harness.control().statusValue.currentTrack = 42;
+    harness.control().statusValue.position     = 91.3;
+    harness.control().statusValue.duration     = 247.0;
+
+    TrackDetail detail;
+    detail.summary = summary(42, "So What");
+    detail.summary.artist = "Miles Davis";
+    detail.genre   = "Jazz";
+    harness.control().trackDetail = detail;
+
+    const nlohmann::json body =
+        Harness::parse(harness.send("GET", "/api/v1/nowplaying"));
+
+    CHECK(body.at("playing").get<bool>());
+    CHECK(body.at("position").get<double>() == 91.3);
+    CHECK(body.at("duration").get<double>() == 247.0);
+    // The tags, not just an id to go and look up.
+    CHECK(body.at("track").at("title").get<std::string>() == "So What");
+    CHECK(body.at("track").at("artist").get<std::string>() == "Miles Davis");
+    CHECK(body.at("track").at("genre").get<std::string>() == "Jazz");
+}
+
+TEST_CASE("now playing is one hop, not two", "[remote]") {
+    Harness harness;
+    harness.control().statusValue.currentTrack = 42;
+    harness.control().trackDetail              = TrackDetail{};
+
+    harness.send("GET", "/api/v1/nowplaying");
+
+    // Both reads happen inside a single gate call. Two would let a track change
+    // land between them, and the id from the first would miss in the second --
+    // "playing, no track", which the player is never actually in.
+    CHECK(harness.control().countOf("status") == 1);
+    CHECK(harness.control().countOf("track") == 1);
+}
+
+TEST_CASE("nothing playing is a null track, not a 404", "[remote]") {
+    Harness harness;
+    harness.control().statusValue.currentTrack = kInvalidTrackId;
+
+    const RawResponse response = harness.send("GET", "/api/v1/nowplaying");
+
+    // A display polling this once a second should not have to treat the ordinary
+    // idle case as an error.
+    REQUIRE(response.status == 200);
+    const nlohmann::json body = Harness::parse(response);
+    CHECK(body.at("track").is_null());
+    CHECK_FALSE(body.at("playing").get<bool>());
+    // And the track was never asked for, because there was none to ask about.
+    CHECK(harness.control().countOf("track") == 0);
+}
+
 TEST_CASE("the playlist is paged, and says how many matched", "[remote]") {
     Harness harness;
     for (TrackId id = 1; id <= 5; ++id) {

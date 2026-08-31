@@ -157,6 +157,46 @@ RawResponse getStatus(const Ctx& ctx) {
     return jsonResponse(toJson(*status));
 }
 
+/// What is playing, in one request.
+///
+/// A now-playing display is the commonest thing anybody builds against a player,
+/// and without this it takes two calls -- /status for an id, then /playlist/{id}
+/// for the title -- plus the branch for "nothing is playing" in between.
+///
+/// One hop, deliberately: asking the gate twice would let a track change land
+/// between the two, and the id from the first answer would then miss in the
+/// second. The client would see "playing, no track", which is not a state the
+/// player is ever in.
+RawResponse getNowPlaying(const Ctx& ctx) {
+    struct Snapshot {
+        Status                     status;
+        std::optional<TrackDetail> track;
+    };
+
+    const auto snapshot = ctx.gate.call([](IPlayerControl& player) {
+        Snapshot taken;
+        taken.status = player.status();
+        if (taken.status.currentTrack != kInvalidTrackId) {
+            taken.track = player.track(taken.status.currentTrack);
+        }
+        return taken;
+    });
+    if (!snapshot) {
+        return interfaceBusy();
+    }
+
+    // 200 with a null track rather than 404. "Nothing is playing" is a real
+    // answer to this question, not a missing resource, and a display polling it
+    // should not have to treat the ordinary idle case as an error.
+    nlohmann::json body;
+    body["playing"]  = snapshot->status.playing;
+    body["paused"]   = snapshot->status.paused;
+    body["position"] = snapshot->status.position;
+    body["duration"] = snapshot->status.duration;
+    body["track"]    = snapshot->track ? toJson(*snapshot->track) : nlohmann::json{};
+    return jsonResponse(body);
+}
+
 RawResponse postPlay(const Ctx& ctx) {
     std::optional<TrackId> id;
     if (ctx.body.is_object()) {
@@ -913,6 +953,21 @@ nlohmann::json schemaStatus() {
     return schema;
 }
 
+nlohmann::json schemaNowPlaying() {
+    nlohmann::json schema;
+    schema["type"]       = "object";
+    schema["properties"] = {
+        {"playing", {{"type", "boolean"}}},
+        {"paused", {{"type", "boolean"}}},
+        {"position", {{"type", "number"}, {"description", "Seconds."}}},
+        {"duration", {{"type", "number"}, {"description", "Seconds; 0 when unknown."}}},
+        {"track", {{"oneOf", nlohmann::json::array(
+                                 {{{"$ref", "#/components/schemas/TrackDetail"}},
+                                  {{"type", "null"}}})},
+                   {"description", "Null when nothing is playing."}}}};
+    return schema;
+}
+
 nlohmann::json schemaVersion() {
     nlohmann::json schema;
     schema["type"]       = "object";
@@ -1200,6 +1255,7 @@ nlohmann::json schemaJobAccepted() {
 constexpr std::array kSchemas = std::to_array<Schema>({
     {"Error", schemaError},
     {"Status", schemaStatus},
+    {"NowPlaying", schemaNowPlaying},
     {"Version", schemaVersion},
     {"Volume", schemaVolume},
     {"Order", schemaOrder},
@@ -1250,6 +1306,10 @@ constexpr std::array kRoutes = std::to_array<Route>({
     {Method::Get, "/openapi.json", "getOpenApi",
      "This document. Needs a token like everything else.", kNoParams, "", "",
      "application/json", false, false, getOpenApi},
+
+    {Method::Get, "/api/v1/nowplaying", "getNowPlaying",
+     "What is playing, with its tags, in one request.", kNoParams, "",
+     "NowPlaying", "application/json", false, false, getNowPlaying},
 
     {Method::Get, "/api/v1/status", "getStatus",
      "What is playing, where, and how the playlist is ordered.", kNoParams, "",

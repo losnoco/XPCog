@@ -60,9 +60,16 @@ posts the work and waits, with three details that are not decoration:
   modals pump a nested event loop, so `CallAfter` still runs — and the real
   causes are a long synchronous handler and shutdown.
 
-`GET /status` takes no hop at all: the interface pushes a snapshot in, the way
-`MainFrame` already pushes `setNowPlaying` into `MediaIntegration`. Polling it
-costs an atomic load.
+**Every route hops, including the read-only ones.** An earlier version of this
+document claimed `GET /status` was served from a snapshot pushed in by the
+interface; that was never built, and the claim was wrong. The hop costs
+microseconds against an idle interface.
+
+What it costs is availability rather than speed: while the interface thread is
+busy — a long scan, a slow track opening — the status endpoints answer 503 like
+everything else, so a display polling them goes blank instead of showing a
+stale-but-true answer. A pushed snapshot would fix that, and that is the reason
+to build one if it becomes worth it.
 
 **Nothing on the interface thread may call `handle()`.** It would wait on itself.
 
@@ -175,6 +182,7 @@ walking the same table the router dispatches from, so it cannot drift. In outlin
 
 | Group | Endpoints |
 | --- | --- |
+| Now playing | `GET nowplaying` |
 | Transport | `GET status`; `POST transport/{play,pause,playPause,stop,next,previous}`; `POST transport/seek`; `GET\|PUT transport/volume`; `GET\|PUT transport/order` |
 | Playlist | `GET playlist` (`offset`, `limit`, `q`); `GET\|PATCH playlist/{id}`; `GET playlist/{id}/artwork`; `POST\|DELETE playlist/tracks`; `POST playlist/{move,randomize,undo,redo}`; `DELETE playlist`; `POST\|DELETE playlist/queue` |
 | Jobs | `GET jobs/{id}` |
@@ -185,6 +193,25 @@ walking the same table the router dispatches from, so it cannot drift. In outlin
 Errors are uniformly `{"error":{"code":"…","message":"…","field":"…"}}` and are
 **untranslated**: core has no catalogue and never will, and JSON keys and error
 codes are protocol rather than interface text.
+
+### Now playing, in one request
+
+`GET /api/v1/nowplaying` is the endpoint a display wants: the transport state and
+the playing track's tags together.
+
+```json
+{ "playing": true, "paused": false, "position": 91.3, "duration": 247.0,
+  "track": { "id": 42, "title": "…", "artist": "…", "album": "…", "…": "…" } }
+```
+
+`track` is **null** when nothing is playing, and the status is still 200 — nothing
+playing is a real answer to the question rather than a missing resource, and a
+display polling once a second should not have to treat the idle case as an error.
+
+It is one hop, not two: asking for the status and then the track separately would
+let a track change land between them, and the id from the first answer would miss
+in the second. `GET /status` followed by `GET /playlist/{id}` still works and is
+what to use when you want the id for something else.
 
 A few behaviours worth knowing without reading the whole document:
 
