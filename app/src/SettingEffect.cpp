@@ -68,9 +68,12 @@ SettingEffect effectOf(std::string_view key) {
     if (key == "GraphicEQtrackgenre") {
         return {Effect::GenreEqualizer, Applies::Immediately};
     }
-    // The preset row writes the curve into the eq keys, which carry the reload.
+    // Written when a preset is chosen or a curve is set from outside the window,
+    // and never published by the equaliser panel itself -- which is what makes it
+    // safe to hang a refresh of that panel on. Doing that on a band key instead
+    // would re-read the sliders while one of them was being dragged.
     if (key == "GraphicEQpreset") {
-        return {Effect::None, Applies::Immediately};
+        return {Effect::EqualizerCurve, Applies::Immediately};
     }
 
     if (key == "repeat" || key == "shuffle" || key == "alwaysStopAfterCurrent") {

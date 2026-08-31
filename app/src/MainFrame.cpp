@@ -990,6 +990,17 @@ void MainFrame::onSettingChanged(const std::string& key) {
             playback_->reloadDsp();
             break;
 
+        case Effect::EqualizerCurve:
+            // A curve that arrived from somewhere other than these sliders --
+            // the remote control picking a preset. The engine has to re-read it
+            // and the sliders have to show it, or the window disagrees with what
+            // is coming out of the speakers.
+            playback_->reloadDsp();
+            if (equalizer_ != nullptr) {
+                equalizer_->refresh();
+            }
+            break;
+
         case Effect::RefreshSpeed:
             playback_->reloadDsp();
             // Either control may have moved these -- the popup on the strip or

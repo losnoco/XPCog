@@ -662,4 +662,43 @@ void applyEqualizerPreset(Settings& settings, const EqualizerPreset& preset) {
     }
 }
 
+
+bool applyEqualizerPresetByName(Settings& settings, std::string_view name) {
+    const EqualizerPresetLibrary& library = shippedEqualizerPresets();
+    const int                     index   = library.indexOf(name);
+    if (index < 0) {
+        return false;
+    }
+    const EqualizerPreset* preset = library.at(index);
+    if (preset == nullptr) {
+        return false;
+    }
+
+    settings.setGraphicEqPreset(index);
+    applyEqualizerPreset(settings, *preset);
+
+    if (preset->name != "Flat" && !settings.GraphicEqEnable()) {
+        settings.setGraphicEqEnable(true);
+    }
+    return true;
+}
+
+std::string equalizerPresetName(const Settings& settings) {
+    const int index = settings.GraphicEqPreset();
+    if (index < 0) {
+        return {};
+    }
+    if (const EqualizerPreset* preset = shippedEqualizerPresets().at(index);
+        preset != nullptr) {
+        return preset->name;
+    }
+    // One past the last preset is the Custom row, which names no curve.
+    return {};
+}
+
+void markEqualizerCustom(Settings& settings) {
+    settings.setGraphicEqPreset(
+        static_cast<int>(shippedEqualizerPresets().presets().size()));
+}
+
 }  // namespace xpcog

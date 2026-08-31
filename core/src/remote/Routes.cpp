@@ -3,6 +3,8 @@
 #include "Gzip.hpp"
 #include "Json.hpp"
 
+#include "xpcog/core/audio/Equalizer.hpp"
+
 #include "swagger_resources.hpp"
 
 #include "xpcog/core/Version.hpp"
@@ -767,12 +769,34 @@ RawResponse putEqualizer(const Ctx& ctx) {
         if (!found->is_array()) {
             return jsonError(400, "bad_request", "bands must be an array.", "bands");
         }
+        const std::span<const double> frequencies = Equalizer::bandFrequencies();
         for (const nlohmann::json& band : *found) {
             const std::optional<double> hz   = readNumber(band, "hz");
             const std::optional<double> gain = readNumber(band, "gain");
             if (!hz || !gain) {
                 return jsonError(400, "bad_request",
                                  "Every band needs hz and gain.", "bands");
+            }
+            // Checked here rather than only in the player, so the answer can say
+            // which value was wrong and what the alternatives are. The bands are
+            // a fixed table, and a client that guessed 32 for 31.5 otherwise gets
+            // "the player refused that value" and no way to find out why.
+            if (std::find(frequencies.begin(), frequencies.end(), *hz) ==
+                frequencies.end()) {
+                // Trimmed, because std::to_string on a double gives six decimal
+                // places and "No band at 32.000000 Hz" reads as a rounding
+                // problem rather than a wrong number.
+                std::string shown = std::to_string(*hz);
+                if (shown.find('.') != std::string::npos) {
+                    shown.erase(shown.find_last_not_of('0') + 1);
+                    if (shown.back() == '.') {
+                        shown.pop_back();
+                    }
+                }
+                const std::string message =
+                    "No band at " + shown + " Hz. GET this endpoint for the " +
+                    std::to_string(frequencies.size()) + " frequencies there are.";
+                return jsonError(400, "unknown_band", message, "bands");
             }
             bands.emplace_back(*hz, *gain);
         }
@@ -1135,6 +1159,11 @@ nlohmann::json schemaEqualizer() {
         {"enabled", {{"type", "boolean"}}},
         {"preamp", {{"type", "number"}, {"description", "dB."}}},
         {"trackGenre", {{"type", "boolean"}}},
+        {"preset", {{"type", nlohmann::json::array({"string", "null"})},
+                    {"description",
+                     "The preset this curve is, or null when it is not one of "
+                     "them. Applying a preset also switches the equaliser on, "
+                     "unless it is Flat."}}},
         {"bands", {{"type", "array"},
                    {"items", {{"type", "object"}}},
                    {"description", "31 bands, each with hz and a gain in dB."}}},

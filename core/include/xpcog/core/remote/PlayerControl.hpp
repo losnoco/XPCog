@@ -154,6 +154,13 @@ struct EqualizerState {
     /// Frequency and gain, in the fixed band order.
     std::vector<std::pair<double, double>> bands;
     bool                trackGenre = false;
+
+    /// The preset this curve is, or empty when it is not one of them.
+    ///
+    /// Reported because the curve alone does not say it, and a client that has
+    /// just applied "Rock" wants to see that it took rather than compare 31
+    /// numbers against a list.
+    std::string         preset;
 };
 
 /// A scan, which is the one thing here that can take minutes.

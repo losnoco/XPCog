@@ -480,6 +480,7 @@ remote::EqualizerState AppPlayerControl::equalizer() {
     state.enabled    = settings_.GraphicEqEnable();
     state.preamp     = settings_.EqPreamp();
     state.trackGenre = settings_.GraphicEqTrackGenre();
+    state.preset     = equalizerPresetName(settings_);
 
     const std::span<const double>      frequencies = Equalizer::bandFrequencies();
     const std::span<const char* const> keys        = Equalizer::bandSettingsKeys();
@@ -517,16 +518,23 @@ remote::Outcome AppPlayerControl::setEqualizer(
 
     if (enabled) {
         settings_.setRawValue("GraphicEQenable", *enabled ? "true" : "false");
-        settingChanged.publish("GraphicEQenable");
     }
     if (preamp) {
         settings_.setRawValue("eqPreamp", std::to_string(*preamp));
-        settingChanged.publish("eqPreamp");
     }
     for (const auto& [index, gain] : resolved) {
         settings_.setRawValue(keys[index], std::to_string(gain));
-        settingChanged.publish(keys[index]);
     }
+
+    // A curve set by hand is no longer whichever preset the dropdown still names,
+    // which is what EqualizerPanel::markCustom() says when a slider moves.
+    if (!resolved.empty() || preamp) {
+        markEqualizerCustom(settings_);
+    }
+
+    // Once, at the end, rather than per key: every one of them lands on the same
+    // reload, and this is the key that refreshes the window's sliders too.
+    settingChanged.publish("GraphicEQpreset");
     return Outcome::Ok;
 }
 
@@ -539,20 +547,18 @@ std::vector<std::string> AppPlayerControl::equalizerPresets() {
 }
 
 remote::Outcome AppPlayerControl::applyEqualizerPreset(std::string_view name) {
-    const EqualizerPresetLibrary& library = shippedEqualizerPresets();
-    const int                     index   = library.indexOf(name);
-    if (index < 0) {
-        return Outcome::NotFound;
-    }
-    const EqualizerPreset* preset = library.at(index);
-    if (preset == nullptr) {
+    // The whole of what choosing a preset means -- the curve, the index, and
+    // switching the equaliser on unless it is Flat -- lives beside the presets
+    // themselves, because the window does the same thing and a policy kept in
+    // two places drifts.
+    if (!applyEqualizerPresetByName(settings_, name)) {
         return Outcome::NotFound;
     }
 
-    xpcog::applyEqualizerPreset(settings_, *preset);
-    // The preset wrote the band keys; one announcement per key is what the DSP
-    // reload is hung off, and eqPreamp carries the prefix the handler matches.
-    settingChanged.publish("eqPreamp");
+    // One announcement, on the key the panel never publishes itself. It carries
+    // the DSP reload and the panel refresh together; publishing a band key would
+    // reload the engine and leave the window's sliders showing the old curve.
+    settingChanged.publish("GraphicEQpreset");
     return Outcome::Ok;
 }
 

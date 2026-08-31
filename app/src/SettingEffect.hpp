@@ -38,6 +38,7 @@ enum class Effect {
     /// whole of the work.
     None,
     ReloadDsp,        ///< The engine holds the DSP chain; make it re-read.
+    EqualizerCurve,   ///< Reload, and refresh the window's sliders with it.
     ReopenOutput,     ///< Move the running stream to the device now named.
     RefreshSpeed,     ///< The speed popup shows a stale number until told.
     RefreshPanels,    ///< Info and Lyrics decide what to show from this.

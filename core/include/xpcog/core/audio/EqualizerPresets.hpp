@@ -172,4 +172,36 @@ private:
 /// curve are the same kind of thing by the time the engine reads them.
 void applyEqualizerPreset(Settings& settings, const EqualizerPreset& preset);
 
+// --- choosing a preset, as opposed to writing its curve ---------------------
+//
+// applyEqualizerPreset() above writes a curve and nothing else, which is all its
+// callers wanted while the equaliser panel was the only one. It is not all that
+// *choosing* a preset means, and the three below are the rest of it. They live
+// here rather than in either front end because there are two now -- the window
+// and the remote control -- and a policy kept in two places is a policy that
+// drifts.
+
+/// Applies the preset called `name`: its curve, its index, and -- unless it is
+/// Flat -- switching the equaliser on.
+///
+/// The last part is the one that is easy to leave out and produces a preset that
+/// appears to do nothing: a curve is inaudible while the equaliser is off, so
+/// picking "Bass Booster" and hearing silence is the trap. Flat is the exception,
+/// because Flat is what somebody reaches for to *stop* hearing the equaliser and
+/// switching it on to deliver a curve that does nothing would be perverse. An
+/// equaliser already on is never switched off by this.
+///
+/// False when no preset has that name, having changed nothing.
+[[nodiscard]] bool applyEqualizerPresetByName(Settings& settings, std::string_view name);
+
+/// The name of the preset the stored curve is, or empty when it is not one.
+///
+/// From the stored index rather than by comparing gains, so this and whatever
+/// reads the index cannot disagree.
+[[nodiscard]] std::string equalizerPresetName(const Settings& settings);
+
+/// Records that the curve is no longer any preset, which is what a band set by
+/// hand makes it.
+void markEqualizerCustom(Settings& settings);
+
 }  // namespace xpcog

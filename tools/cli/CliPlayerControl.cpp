@@ -452,6 +452,7 @@ remote::EqualizerState CliPlayerControl::equalizer() {
     state.enabled    = settings_.GraphicEqEnable();
     state.preamp     = settings_.EqPreamp();
     state.trackGenre = settings_.GraphicEqTrackGenre();
+    state.preset     = equalizerPresetName(settings_);
 
     const std::span<const double>      frequencies = Equalizer::bandFrequencies();
     const std::span<const char* const> keys        = Equalizer::bandSettingsKeys();
@@ -493,6 +494,9 @@ remote::Outcome CliPlayerControl::setEqualizer(
     for (const auto& [index, gain] : resolved) {
         settings_.setRawValue(keys[index], std::to_string(gain));
     }
+    if (!resolved.empty() || preamp) {
+        markEqualizerCustom(settings_);
+    }
     engine_.reloadDsp();
     return Outcome::Ok;
 }
@@ -506,16 +510,9 @@ std::vector<std::string> CliPlayerControl::equalizerPresets() {
 }
 
 remote::Outcome CliPlayerControl::applyEqualizerPreset(std::string_view name) {
-    const EqualizerPresetLibrary& library = shippedEqualizerPresets();
-    const int                     index   = library.indexOf(name);
-    if (index < 0) {
+    if (!applyEqualizerPresetByName(settings_, name)) {
         return Outcome::NotFound;
     }
-    const EqualizerPreset* preset = library.at(index);
-    if (preset == nullptr) {
-        return Outcome::NotFound;
-    }
-    xpcog::applyEqualizerPreset(settings_, *preset);
     engine_.reloadDsp();
     return Outcome::Ok;
 }

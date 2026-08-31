@@ -661,14 +661,40 @@ TEST_CASE("the equaliser takes any of its three, and needs one", "[remote]") {
 
     CHECK(harness.send("PUT", "/api/v1/dsp/equalizer", R"({"enabled":true})").status == 200);
     CHECK(harness.send("PUT", "/api/v1/dsp/equalizer", R"({"preamp":-3})").status == 200);
+    // 31.5, not 32. The bands are a fixed table and this is the first one that
+    // is not a round number, so it is the one a client is most likely to guess
+    // wrong.
     CHECK(harness.send("PUT", "/api/v1/dsp/equalizer",
-                       R"({"bands":[{"hz":32,"gain":-1.5}]})").status == 200);
+                       R"({"bands":[{"hz":31.5,"gain":-1.5}]})").status == 200);
 
     CHECK(harness.send("PUT", "/api/v1/dsp/equalizer", "{}").status == 400);
     CHECK(harness.send("PUT", "/api/v1/dsp/equalizer", R"({"bands":"loud"})").status == 400);
     // A band missing half of itself is not a band.
     CHECK(harness.send("PUT", "/api/v1/dsp/equalizer",
-                       R"({"bands":[{"hz":32}]})").status == 400);
+                       R"({"bands":[{"hz":31.5}]})").status == 400);
+}
+
+TEST_CASE("a frequency that is not a band says so, and says where to look",
+          "[remote]") {
+    Harness harness;
+
+    // 32 is the plausible guess for the band that is actually at 31.5. Answering
+    // "the player refused that value" and stopping there leaves a client author
+    // with nothing to go on, so the route checks the frequency itself and names
+    // it.
+    const RawResponse response = harness.send(
+        "PUT", "/api/v1/dsp/equalizer", R"({"bands":[{"hz":32,"gain":6}]})");
+
+    REQUIRE(response.status == 400);
+    const nlohmann::json body = Harness::parse(response);
+    CHECK(body.at("error").at("code").get<std::string>() == "unknown_band");
+    CHECK(body.at("error").at("field").get<std::string>() == "bands");
+    CHECK(body.at("error").at("message").get<std::string>().find("32") !=
+          std::string::npos);
+
+    // Refused before it reached the player, so a request naming one good band
+    // and one bad one leaves the curve alone rather than half-applied.
+    CHECK(harness.control().countOf("setEqualizer") == 0);
 }
 
 TEST_CASE("presets are listed and applied", "[remote]") {

@@ -197,6 +197,14 @@ A few behaviours worth knowing without reading the whole document:
 - Session state — `settingsSchemaVersion`, `lastPlaybackStatus`, `miniMode` and
   the rest — is readable and **not writable**, the same rule the Advanced pane
   applies. What the last session did is not a preference.
+- **Applying a preset switches the equaliser on**, unless it is Flat — a curve is
+  inaudible while the equaliser is off, and a preset that stored 31 numbers and
+  changed nothing you could hear would be the same trap the player's own preset
+  dropdown already avoids. Flat is excepted because Flat is what somebody reaches
+  for to *stop* hearing the equaliser. It never switches one off.
+- `GET /dsp/equalizer` reports `preset`, which is the name the curve came from or
+  null once a band has been set by hand. Setting one marks it custom, so the
+  window's dropdown does not go on naming a curve that is no longer there.
 - Playlist edits go through the same undo stack the Edit menu drives, so a track
   deleted from a phone is undone with Ctrl+Z in the window. The label says
   `(remote)` so it is clear where it came from. The per-entry flags — queue,

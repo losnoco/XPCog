@@ -89,6 +89,8 @@ nlohmann::json toJson(const EqualizerState& equalizer) {
     out["enabled"]    = equalizer.enabled;
     out["preamp"]     = equalizer.preamp;
     out["trackGenre"] = equalizer.trackGenre;
+    out["preset"]     = equalizer.preset.empty() ? nlohmann::json{}
+                                                 : nlohmann::json(equalizer.preset);
 
     nlohmann::json bands = nlohmann::json::array();
     for (const auto& [hz, gain] : equalizer.bands) {
