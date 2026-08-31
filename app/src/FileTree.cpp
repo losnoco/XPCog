@@ -9,6 +9,7 @@
 #include <wx/bmpbuttn.h>
 #include <wx/dirctrl.h>
 #include <wx/dirdlg.h>
+#include <wx/filename.h>
 #include <wx/menu.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
@@ -54,6 +55,36 @@ enum : int {
 
 }  // namespace
 
+void RootedDirCtrl::SetupSections() {
+    if (root_.empty()) {
+        // No root chosen: the ordinary tree, home and desktop and every volume.
+        wxGenericDirCtrl::SetupSections();
+        return;
+    }
+
+    // The leaf name, so the top of the tree reads "Music" rather than the whole
+    // path. A volume root has no leaf, and there the path is the name.
+    const wxFileName folder = wxFileName::DirName(root_);
+    const wxString   name =
+        folder.GetDirs().IsEmpty() ? root_ : folder.GetDirs().Last();
+
+    // Image 1, which is what the base class gives the home directory -- an open
+    // folder rather than the drive icon it gives a volume.
+    AddSection(root_, name, 1);
+}
+
+void RootedDirCtrl::setRoot(const wxString& path) {
+    root_ = path;
+    // Expanded and selected once the tree is rebuilt: ExpandRoot() calls
+    // ExpandPath(m_defaultPath), so this is what stops the new root arriving
+    // collapsed and needing a click to show anything.
+    SetDefaultPath(path);
+    // CollapseDir(root) + ExpandRoot(), and the collapse is what clears
+    // m_isExpanded so PopulateNode() calls SetupSections() again rather than
+    // returning early.
+    ReCreateTree();
+}
+
 FileTree::FileTree(wxWindow* parent, const PluginRegistry& registry)
     : wxPanel(parent, wxID_ANY), registry_(registry) {
     root_ = new wxBitmapButton(this, kRootButtonId, lucideIcon("folder-open"));
@@ -62,10 +93,14 @@ FileTree::FileTree(wxWindow* parent, const PluginRegistry& registry)
     rootLabel_ = new wxStaticText(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
                                   wxDefaultSize, wxST_ELLIPSIZE_MIDDLE);
 
-    tree_ = new wxGenericDirCtrl(this, kTreeId, wxDirDialogDefaultFolderStr,
-                                 wxDefaultPosition, wxDefaultSize,
-                                 wxDIRCTRL_3D_INTERNAL | wxDIRCTRL_MULTIPLE,
-                                 buildFilter(registry_));
+    // The root is set afterwards, never here: SetupSections() is reached from
+    // the base class's own constructor, where a virtual call still dispatches to
+    // the base. Constructing with the whole filesystem and rerooting once the
+    // object is complete is the only order that works.
+    tree_ = new RootedDirCtrl(this, kTreeId, wxDirDialogDefaultFolderStr,
+                              wxDefaultPosition, wxDefaultSize,
+                              wxDIRCTRL_3D_INTERNAL | wxDIRCTRL_MULTIPLE,
+                              buildFilter(registry_));
 
     auto* header = new wxBoxSizer(wxHORIZONTAL);
     header->Add(root_, 0, wxALIGN_CENTER_VERTICAL | wxALL, FromDIP(2));
@@ -119,19 +154,19 @@ void FileTree::setRootPath(const std::string& path) {
         // explanation.
         return;
     }
-    tree_->SetPath(toWx(path));
+    tree_->setRoot(toWx(path));
     updateRootLabel();
 }
 
-std::string FileTree::rootPath() const { return toUtf8(tree_->GetPath()); }
+std::string FileTree::rootPath() const { return toUtf8(tree_->root()); }
 
 bool FileTree::chooseRootPath() {
-    const wxString chosen = wxDirSelector(_("Choose the folder to browse"), tree_->GetPath(),
+    const wxString chosen = wxDirSelector(_("Choose the folder to browse"), tree_->root(),
                                           wxDD_DEFAULT_STYLE, wxDefaultPosition, this);
     if (chosen.IsEmpty()) {
         return false;
     }
-    tree_->SetPath(chosen);
+    tree_->setRoot(chosen);
     updateRootLabel();
     return true;
 }

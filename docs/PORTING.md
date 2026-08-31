@@ -1571,6 +1571,18 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   Also on the context menu and in View, since a button at the top of a pane that
   can itself be hidden is not a reliable place to keep the only copy.
 
+  wxWidgets has no `setRootIndex()`, and the first wx version of this quietly
+  lost the feature: `wxGenericDirCtrl::SetPath()` expands and highlights a folder
+  inside the whole-filesystem tree rather than rerooting at it, so choosing a
+  root only moved the selection. The tree hangs off a hidden root item populated
+  by `SetupSections()`, which the base class fills with the home directory, the
+  desktop and every mounted volume; `RootedDirCtrl` in `app/src/FileTree.hpp`
+  overrides that one virtual to add a single section. `PopulateNode()` calls it
+  whenever the hidden root is expanded, so `ReCreateTree()` rebuilds from the
+  override. The one order that matters: the control is constructed unrooted and
+  rerooted afterwards, because `SetupSections()` is reached from the base class's
+  own constructor, where a virtual call still dispatches to the base.
+
 - **Archive source**, on libarchive: zip, rar, 7z, tar, gz, and Cog's renamed
   variants `rsn` (a RAR of SPC rips) and `vgm7z`. Port of Cog's ArchiveSource and
   ArchiveContainer. The third and last `ISource` -- the seam now has a local

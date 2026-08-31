@@ -5,6 +5,12 @@
 // shows music rather than cover art and log files. The filter comes from the
 // registry rather than a fixed list, so a new codec appears here with no edit.
 //
+// The root is a real root, not a selection. wxGenericDirCtrl shows the whole
+// filesystem and SetPath() only expands and highlights inside it, so "choose the
+// folder to browse" used to leave every other folder on the machine one scroll
+// away. RootedDirCtrl below overrides SetupSections(), which is what populates
+// the hidden root item, to put exactly one section there.
+//
 // One thing lost in the move from QFileSystemModel: it watched the filesystem,
 // and wxGenericDirCtrl does not. A file added by another program appears only
 // when the folder is collapsed and expanded again. wxFileSystemWatcher would
@@ -17,15 +23,48 @@
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/Url.hpp"
 
+// wx/defs.h first, and not for tidiness. wx/dirctrl.h guards its entire
+// contents with `#if wxUSE_DIRDLG || wxUSE_FILEDLG` but does not include the
+// header that defines them, so as the first wx include it expands to nothing
+// and wxGenericDirCtrl is simply not declared.
+#include <wx/defs.h>
+
+#include <wx/dirctrl.h>
 #include <wx/panel.h>
 
 #include <string>
 #include <vector>
 
 class wxBitmapButton;
-class wxGenericDirCtrl;
 
 namespace xpcog::app {
+
+/// wxGenericDirCtrl rooted at one folder.
+///
+/// wxGenericDirCtrl has no API for this: its tree hangs off a hidden root item
+/// populated by SetupSections(), which the base class fills with the home
+/// directory, the desktop and every mounted volume. Overriding that one virtual
+/// is the whole mechanism -- PopulateNode() calls it whenever the hidden root is
+/// expanded (src/generic/dirctrlg.cpp:658), so ReCreateTree() rebuilds from the
+/// override rather than from the drive list.
+class RootedDirCtrl : public wxGenericDirCtrl {
+public:
+    using wxGenericDirCtrl::wxGenericDirCtrl;
+
+    /// Shows `path` and nothing above it. Empty restores the ordinary
+    /// whole-filesystem tree.
+    void setRoot(const wxString& path);
+
+    /// The folder the tree is rooted at, which is *not* GetPath(): that is
+    /// whatever the reader last clicked, and persisting it would let the saved
+    /// root wander off as they browse.
+    [[nodiscard]] wxString root() const { return root_; }
+
+    void SetupSections() override;
+
+private:
+    wxString root_;
+};
 
 class FileTree : public wxPanel {
 public:
@@ -64,7 +103,7 @@ private:
     void updateRootLabel();
 
     const PluginRegistry& registry_;
-    wxGenericDirCtrl*     tree_ = nullptr;
+    RootedDirCtrl*        tree_ = nullptr;
     /// Shows the current root and opens the chooser. Its text is the folder's
     /// name, which is otherwise invisible: showing a folder's *contents* means
     /// the tree never says what it is showing.
