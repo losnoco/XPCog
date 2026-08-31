@@ -106,6 +106,53 @@ TEST_CASE("a bound server answers over a real socket", "[remote][socket]") {
         CHECK(control.countOf("seek") == 1);
     }
 
+    SECTION("the docs page is served without a token, and is usable") {
+        // The one deliberate hole, and it is forced: a browser cannot put an
+        // Authorization header on a top-level navigation, so a token-gated
+        // /docs is a page nobody can open.
+        auto page = client.Get("/docs");
+        REQUIRE(page);
+        CHECK(page->status == 200);
+        CHECK(page->get_header_value("Content-Type").find("text/html") !=
+              std::string::npos);
+        CHECK(page->body.find("swagger-ui-bundle.js") != std::string::npos);
+        // It has to be allowed to load its own two files and reach this server,
+        // and nothing else.
+        CHECK(page->get_header_value("Content-Security-Policy").find("default-src 'none'") !=
+              std::string::npos);
+
+        // The real script arrives, whichever side of the encoding negotiation
+        // this client happens to take -- httplib expands a gzip body itself when
+        // it can. Which branch the server picks, and that it never sends an
+        // encoding nobody asked for, is asserted deterministically in
+        // test_remote_router.cpp; here the question is only whether a client can
+        // fetch a working page over a socket.
+        auto script = client.Get("/docs/swagger-ui-bundle.js");
+        INFO("client error: " << httplib::to_string(script.error()));
+        REQUIRE(script);
+        CHECK(script->status == 200);
+        CHECK(script->body.size() > 1000000);
+
+        auto css = client.Get("/docs/swagger-ui.css");
+        REQUIRE(css);
+        CHECK(css->status == 200);
+        CHECK(css->body.find(".swagger-ui") != std::string::npos);
+    }
+
+    SECTION("the specification itself still needs a token") {
+        // The page is open; what it describes is not. Otherwise /docs would be a
+        // way to read the whole API surface without one.
+        auto refused = client.Get("/openapi.json");
+        REQUIRE(refused);
+        CHECK(refused->status == 401);
+
+        httplib::Headers headers{{"Authorization", std::string{"Bearer "} + kToken}};
+        auto             allowed = client.Get("/openapi.json", headers);
+        REQUIRE(allowed);
+        CHECK(allowed->status == 200);
+        CHECK(allowed->body.find("\"openapi\"") != std::string::npos);
+    }
+
     SECTION("a query string arrives") {
         httplib::Headers headers{{"Authorization", std::string{"Bearer "} + kToken}};
         auto response = client.Get("/api/v1/playlist?limit=5&q=blue", headers);

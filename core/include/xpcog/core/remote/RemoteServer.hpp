@@ -86,6 +86,9 @@ struct RawRequest {
     std::string body;
     std::string contentType;
     std::string authorization;
+    /// What the client says it can decode. The docs assets are stored gzipped,
+    /// and a client that did not offer to accept gzip is given them expanded.
+    std::string acceptEncoding;
     std::string peer;    ///< For rate limiting. Not logged.
 };
 

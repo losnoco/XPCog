@@ -1,6 +1,9 @@
 #include "Routes.hpp"
 
+#include "Gzip.hpp"
 #include "Json.hpp"
+
+#include "swagger_resources.hpp"
 
 #include "xpcog/core/Version.hpp"
 
@@ -55,6 +58,80 @@ RawResponse getVersion(const Ctx& /*ctx*/) {
     body["version"]    = kVersionString;
     body["apiVersion"] = 1;
     return jsonResponse(body);
+}
+
+// --- the docs page ---------------------------------------------------------
+//
+// These three are the only unauthenticated things the server has, and that is
+// forced rather than chosen: a browser cannot put an Authorization header on a
+// top-level navigation, so a token-gated /docs is a page nobody can open. What
+// is exposed by that is three static blobs describing the page's own chrome --
+// the specification and every endpoint still need the token, and the page asks
+// for one and attaches it itself.
+//
+// The residual risk is worth naming: a hostile page could, through DNS
+// rebinding, fetch these three files. It can reach nothing else, because there
+// are no CORS headers anywhere and no ambient credential to borrow.
+/// Does this request say it can read gzip?
+///
+/// Asked rather than assumed. The two big assets are committed compressed, and
+/// sending Content-Encoding: gzip to a client that never offered to accept it is
+/// a body it cannot read -- which is not hypothetical: cpp-httplib's own client
+/// is built without zlib in some configurations, offers no Accept-Encoding, and
+/// fails the response outright.
+bool acceptsGzip(const RawRequest& request) {
+    return request.acceptEncoding.find("gzip") != std::string::npos;
+}
+
+RawResponse serveDocsAsset(const Ctx& ctx, std::string_view name,
+                           std::string_view type, bool compressed) {
+    const std::span<const std::byte> bytes = resources::swagger(name);
+    if (bytes.empty()) {
+        // The embedder answers empty for a path it does not have, which is the
+        // cue that a file was renamed without the CMake list following.
+        return jsonError(404, "not_found", "That asset is not in this build.");
+    }
+
+    RawResponse response;
+    response.contentType = std::string{type};
+
+    if (compressed && !acceptsGzip(ctx.request)) {
+        // Expanded here rather than refused. Every browser accepts gzip, so this
+        // path is for the occasional script or client library that does not, and
+        // answering 406 would make those the one kind of client that cannot read
+        // the documentation.
+        std::string plain;
+        if (!inflateGzip(bytes, plain)) {
+            return jsonError(500, "internal", "That asset could not be expanded.");
+        }
+        response.body = std::move(plain);
+    } else {
+        response.body.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        if (compressed) {
+            response.headers.emplace_back("Content-Encoding", "gzip");
+        }
+    }
+    // The page may load its own two files and talk to this server, and nothing
+    // else at all. 'unsafe-inline' is for styles only, because SwaggerUIBundle
+    // injects them at runtime and there is no nonce to give it.
+    response.headers.emplace_back(
+        "Content-Security-Policy",
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'");
+    return response;
+}
+
+RawResponse getDocs(const Ctx& ctx) {
+    return serveDocsAsset(ctx, "index.html", "text/html; charset=utf-8", false);
+}
+
+RawResponse getDocsCss(const Ctx& ctx) {
+    return serveDocsAsset(ctx, "swagger-ui.css.gz", "text/css; charset=utf-8", true);
+}
+
+RawResponse getDocsScript(const Ctx& ctx) {
+    return serveDocsAsset(ctx, "swagger-ui-bundle.js.gz",
+                          "text/javascript; charset=utf-8", true);
 }
 
 RawResponse getOpenApi(const Ctx& /*ctx*/) {
@@ -1117,6 +1194,19 @@ constexpr std::array kSchemas = std::to_array<Schema>({
 constexpr std::array kRoutes = std::to_array<Route>({
     {Method::Get, "/api/v1/version", "getVersion", "The player's version.",
      kNoParams, "", "Version", "application/json", false, false, getVersion},
+
+    {Method::Get, "/docs", "getDocs",
+     "A browser page for trying the API. Served without a token, because a "
+     "browser cannot send one on a navigation; it asks for one itself.",
+     kNoParams, "", "", "text/html", false, false, getDocs},
+
+    {Method::Get, "/docs/swagger-ui.css", "getDocsStylesheet",
+     "The docs page's stylesheet.", kNoParams, "", "", "text/css", false, false,
+     getDocsCss},
+
+    {Method::Get, "/docs/swagger-ui-bundle.js", "getDocsScript",
+     "The docs page's script.", kNoParams, "", "", "text/javascript", false, false,
+     getDocsScript},
 
     {Method::Get, "/openapi.json", "getOpenApi",
      "This document. Needs a token like everything else.", kNoParams, "", "",

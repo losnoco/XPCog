@@ -174,13 +174,32 @@ if(XPCOG_WITH_REST)
         find_package(httplib CONFIG REQUIRED GLOBAL)
     endif()
     target_sources(xpcog-core PRIVATE
+        src/remote/Gzip.cpp
         src/remote/Json.cpp
         src/remote/OpenApi.cpp
         src/remote/Query.cpp
         src/remote/RemoteServer.cpp
         src/remote/Router.cpp
         src/remote/Routes.cpp)
-    target_link_libraries(xpcog-core PRIVATE httplib::httplib)
+    # zlib for the docs assets, which are committed gzipped and have to be
+    # expanded for a client that cannot accept them that way. Already a plain
+    # dependency of this project rather than a feature, so it is here to be used.
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(xpcog-core PRIVATE httplib::httplib ZLIB::ZLIB)
+
+    # The /docs page. Compiled in rather than staged beside the binary, on
+    # assets/CMakeLists.txt's own rule: this is part of the program, not
+    # configuration a listener might replace. The two vendored files are
+    # committed gzipped and served that way; index.html is ours and stays
+    # readable in the tree.
+    xpcog_embed_resources(
+        TARGET xpcog-core
+        NAME   swagger
+        BASE   "${CMAKE_SOURCE_DIR}/assets/swagger-ui"
+        FILES
+            "${CMAKE_SOURCE_DIR}/assets/swagger-ui/index.html"
+            "${CMAKE_SOURCE_DIR}/assets/swagger-ui/swagger-ui.css.gz"
+            "${CMAKE_SOURCE_DIR}/assets/swagger-ui/swagger-ui-bundle.js.gz")
 else()
     target_sources(xpcog-core PRIVATE src/remote/NullRemoteServer.cpp)
 endif()

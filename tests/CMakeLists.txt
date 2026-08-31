@@ -57,13 +57,19 @@ if(XPCOG_WITH_REST)
     # The gate is a private header beside the server, and the suite reaches it
     # directly: what it does is worth testing on its own, and going through
     # handle() would test the router instead.
-    target_sources(xpcog-tests PRIVATE core/test_remote_gate.cpp
+    target_sources(xpcog-tests PRIVATE core/test_remote_assets.cpp
+                                     core/test_remote_gate.cpp
                                      core/test_remote_openapi.cpp
                                      core/test_remote_router.cpp
                                      core/test_remote_socket.cpp)
     # The socket test speaks to the server with httplib's own client, which is
     # the same library the server uses and therefore already available.
     target_link_libraries(xpcog-tests PRIVATE httplib::httplib)
+    # The MANIFEST is read at run time rather than baked in, so the test fails
+    # when the file and the embedded bytes disagree rather than when someone
+    # remembers to update a constant.
+    target_compile_definitions(xpcog-tests PRIVATE
+        XPCOG_SWAGGER_DIR="${CMAKE_SOURCE_DIR}/assets/swagger-ui")
     target_include_directories(xpcog-tests PRIVATE "${CMAKE_SOURCE_DIR}/core/src/remote")
 endif()
 

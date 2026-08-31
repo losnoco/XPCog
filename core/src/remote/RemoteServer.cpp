@@ -179,7 +179,8 @@ bool RemoteServer::start(std::string* error) {
                                                     : in.target.substr(mark + 1);
         request.body          = in.body;
         request.contentType   = in.get_header_value("Content-Type");
-        request.authorization = in.get_header_value("Authorization");
+        request.authorization  = in.get_header_value("Authorization");
+        request.acceptEncoding = in.get_header_value("Accept-Encoding");
         request.peer          = in.remote_addr;
 
         const RawResponse answer = handle(request);
@@ -272,11 +273,24 @@ void RemoteServer::stop() {
 
 int RemoteServer::boundPort() const { return impl_ == nullptr ? 0 : impl_->port; }
 
+/// The docs page and its two assets, which are served without a token.
+///
+/// Not an exemption granted on principle -- a browser cannot put an
+/// Authorization header on a top-level navigation, so a token-gated /docs is a
+/// page nobody can open. The three files describe the page's own chrome and
+/// nothing about this player; the specification behind them, and every endpoint,
+/// still need the token.
+bool isDocsAsset(std::string_view path) {
+    return path == "/docs" || path == "/docs/" ||
+           path == "/docs/swagger-ui.css" || path == "/docs/swagger-ui-bundle.js";
+}
+
 RawResponse RemoteServer::handle(const RawRequest& request) {
     // Before anything else, and with no exemption for where the connection came
     // from. A loopback exemption would mean every process on the machine holds
     // the transport, which is not the promise the preferences pane makes.
-    if (!constantTimeEquals(bearerToken(request.authorization), impl_->config.token)) {
+    if (!isDocsAsset(request.path) &&
+        !constantTimeEquals(bearerToken(request.authorization), impl_->config.token)) {
         const std::chrono::milliseconds penalty = impl_->rateLimit.noteFailure(request.peer);
         if (penalty.count() > 0) {
             std::this_thread::sleep_for(penalty);

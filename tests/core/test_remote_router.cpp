@@ -55,6 +55,17 @@ public:
         return server_->handle(request);
     }
 
+    /// A GET saying what it can decode, for the docs assets.
+    RawResponse sendAccepting(std::string path, std::string encoding) {
+        RawRequest request;
+        request.method         = "GET";
+        request.path           = std::move(path);
+        request.acceptEncoding = std::move(encoding);
+        return server_->handle(request);
+    }
+
+    RawResponse handleRaw(const RawRequest& request) { return server_->handle(request); }
+
     static nlohmann::json parse(const RawResponse& response) {
         nlohmann::json body = nlohmann::json::parse(response.body, nullptr, false);
         REQUIRE_FALSE(body.is_discarded());
@@ -675,6 +686,59 @@ TEST_CASE("presets are listed and applied", "[remote]") {
     harness.control().outcome = Outcome::NotFound;
     CHECK(harness.send("POST", "/api/v1/dsp/equalizer/preset",
                        R"({"name":"Nope"})").status == 404);
+}
+
+// --- the docs assets --------------------------------------------------------
+
+TEST_CASE("the docs page needs no token, and the specification does", "[remote]") {
+    Harness harness;
+
+    // Forced rather than chosen: a browser cannot put an Authorization header on
+    // a top-level navigation, so a token-gated /docs is a page nobody can open.
+    RawRequest anonymous;
+    anonymous.method = "GET";
+    anonymous.path   = "/docs";
+    CHECK(harness.handleRaw(anonymous).status == 200);
+
+    // What it describes is still behind the token, or /docs would be a way to
+    // read the whole API surface without one.
+    RawRequest spec;
+    spec.method = "GET";
+    spec.path   = "/openapi.json";
+    CHECK(harness.handleRaw(spec).status == 401);
+}
+
+TEST_CASE("the docs assets are gzipped only for a client that said so",
+          "[remote]") {
+    Harness harness;
+
+    const RawResponse compressed =
+        harness.sendAccepting("/docs/swagger-ui-bundle.js", "gzip, deflate");
+    CHECK(compressed.status == 200);
+    CHECK(Harness::header(compressed, "Content-Encoding") == "gzip");
+
+    // No Accept-Encoding at all. Sending gzip anyway is a body the client cannot
+    // read -- cpp-httplib's own client, built without zlib, fails such a
+    // response outright -- so it is expanded instead.
+    const RawResponse plain = harness.sendAccepting("/docs/swagger-ui-bundle.js", "");
+    CHECK(plain.status == 200);
+    CHECK(Harness::header(plain, "Content-Encoding").empty());
+    CHECK(plain.body.size() > compressed.body.size());
+    // Really the script, not merely bigger.
+    CHECK(plain.body.find("swagger") != std::string::npos);
+}
+
+TEST_CASE("the docs page carries a policy that pins it to this server",
+          "[remote]") {
+    Harness           harness;
+    const RawResponse response = harness.sendAccepting("/docs", "gzip");
+
+    const std::string policy = Harness::header(response, "Content-Security-Policy");
+    CHECK(policy.find("default-src 'none'") != std::string::npos);
+    CHECK(policy.find("connect-src 'self'") != std::string::npos);
+    // What limits the damage if the vendored bundle were ever compromised: it
+    // can reach nothing but this server.
+    CHECK(policy.find("form-action 'none'") != std::string::npos);
 }
 
 #endif  // XPCOG_HAS_REST

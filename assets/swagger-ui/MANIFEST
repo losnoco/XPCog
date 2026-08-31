@@ -1,0 +1,34 @@
+# Swagger UI, vendored for the remote control's /docs page.
+#
+# Upstream:  https://github.com/swagger-api/swagger-ui
+# Version:   5.29.1
+# Licence:   Apache-2.0
+# Retrieved: https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.29.1/<file>
+#
+# Committed gzipped and served with Content-Encoding: gzip. The bundle is 1.4 MB
+# raw and 409 KB compressed, and doing it here costs no build-time compressor and
+# no runtime decompressor -- every browser accepts gzip.
+#
+# `gzip -9 -n`: -n leaves the modification time out of the header, so
+# recompressing the same input gives the same bytes and the hashes below are
+# something a reader can reproduce.
+#
+# Each section is named for the file committed here. Two hashes: `upstream` is of
+# the file as downloaded, *before* compression, so the download can be checked
+# against what was actually vendored. `committed` is of the
+# gzipped file in this directory, and it is the one
+# tests/core/test_remote_assets.cpp asserts the embedded bytes match -- a
+# committed minified blob is opaque to review, and that test is what makes an
+# accidental or malicious replacement loud rather than invisible.
+#
+# To update: download the two files at the new version, check them against the
+# upstream hashes the release publishes, `gzip -9 -n` them, and put the new
+# numbers here. The test fails until they agree.
+
+swagger-ui.css.gz
+  upstream   bc5e8d5c013477cf1f35e2fb8ba1dff66be0f72f24e669a509635657145e1acb
+  committed  e0b66152777d1613c451144048eae7353ac03529bc9c2f8f3241741e206996f0
+
+swagger-ui-bundle.js.gz
+  upstream   a600ebf8f885c92373e2210b1fd7422b24a4ff9cad93d3d7d6481f40b7704564
+  committed  6a5086f7bf8c26020e65281fbed227baab565335c98a4fd785609e1cca0c68c9

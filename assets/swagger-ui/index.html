@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XPCog remote control</title>
+<link rel="stylesheet" href="/docs/swagger-ui.css">
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; }
+  #token-bar {
+    display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+    padding: .75rem 1rem; background: #1b1b1b; color: #eee;
+  }
+  #token-bar input {
+    flex: 1 1 22rem; min-width: 12rem; padding: .4rem .5rem;
+    font-family: ui-monospace, monospace; border: 1px solid #444;
+    border-radius: 3px; background: #111; color: #eee;
+  }
+  #token-bar button {
+    padding: .4rem .9rem; border: 0; border-radius: 3px;
+    background: #4a7; color: #061; font-weight: 600; cursor: pointer;
+  }
+  #token-note { flex-basis: 100%; font-size: .85rem; color: #aaa; }
+</style>
+</head>
+<body>
+
+<!--
+  The token bar exists because a browser cannot put an Authorization header on a
+  top-level navigation. This page and its two assets are therefore the only
+  unauthenticated things the server serves; everything the page can actually do
+  needs the token typed in here.
+
+  sessionStorage rather than localStorage: it lasts as long as the tab and no
+  longer, which is the right lifetime for a credential pasted into a page to
+  poke at an API.
+-->
+<div id="token-bar">
+  <label for="token">Access token</label>
+  <input id="token" type="password" autocomplete="off" spellcheck="false"
+         placeholder="Preferences -> Remote -> Access token">
+  <button id="apply" type="button">Use</button>
+  <span id="token-note">Kept in this tab only. Sent as a bearer token with every
+    request, including the one that fetches this page's own specification.</span>
+</div>
+
+<div id="swagger-ui"></div>
+
+<script src="/docs/swagger-ui-bundle.js"></script>
+<script>
+(function () {
+  var KEY = 'xpcog-remote-token';
+  var field = document.getElementById('token');
+
+  try { field.value = sessionStorage.getItem(KEY) || ''; } catch (e) { /* private mode */ }
+
+  function currentToken() { return field.value.trim(); }
+
+  var ui = SwaggerUIBundle({
+    // Fetched with the token like everything else, so the document is not a way
+    // to learn the shape of the API without one.
+    url: '/openapi.json',
+    dom_id: '#swagger-ui',
+    presets: [SwaggerUIBundle.presets.apis],
+    layout: 'BaseLayout',
+    deepLinking: true,
+    tryItOutEnabled: true,
+    requestInterceptor: function (request) {
+      var token = currentToken();
+      if (token) { request.headers['Authorization'] = 'Bearer ' + token; }
+      return request;
+    }
+  });
+
+  document.getElementById('apply').addEventListener('click', function () {
+    try { sessionStorage.setItem(KEY, currentToken()); } catch (e) { /* private mode */ }
+    // Re-fetch, so a token typed in after the page loaded takes effect without
+    // a reload the user has to think to do.
+    ui.specActions.download('/openapi.json');
+  });
+
+  field.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') { document.getElementById('apply').click(); }
+  });
+})();
+</script>
+</body>
+</html>
