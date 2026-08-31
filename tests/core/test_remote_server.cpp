@@ -6,6 +6,8 @@
 // binding a port, and the one test that does bind is testing the socket rather
 // than the API. That is IHttpClient's arrangement pointed the other way.
 
+#include "../FakePlayerControl.hpp"
+
 #include "xpcog/core/Version.hpp"
 #include "xpcog/core/remote/PlayerControl.hpp"
 #include "xpcog/core/remote/RemoteServer.hpp"
@@ -26,11 +28,9 @@ namespace {
 
 constexpr std::string_view kToken = "0123456789abcdef";
 
-/// Answers nothing, because nothing is asked of it yet. The routes that reach
-/// the player bring the methods and the fake that scripts them.
-struct StubControl : IPlayerControl {};
+using xpcog::test::FakePlayerControl;
 
-RemoteServer makeServer(StubControl& control) {
+RemoteServer makeServer(FakePlayerControl& control) {
     ServerConfig config;
     config.token = std::string{kToken};
     // Runs inline. Nothing here hops yet, and when it does, an inline dispatcher
@@ -60,7 +60,7 @@ TEST_CASE("the build answers about whether it has a server", "[remote]") {
 #ifdef XPCOG_HAS_REST
 
 TEST_CASE("version is served as JSON", "[remote]") {
-    StubControl       control;
+    FakePlayerControl control;
     RemoteServer      server   = makeServer(control);
     const RawResponse response = server.handle(get("/api/v1/version"));
 
@@ -74,7 +74,7 @@ TEST_CASE("version is served as JSON", "[remote]") {
 }
 
 TEST_CASE("an unknown path is a JSON 404, not an empty body", "[remote]") {
-    StubControl       control;
+    FakePlayerControl control;
     RemoteServer      server   = makeServer(control);
     const RawResponse response = server.handle(get("/api/v1/nothing-here"));
 
@@ -92,7 +92,7 @@ TEST_CASE("an unknown path is a JSON 404, not an empty body", "[remote]") {
 TEST_CASE("a server with no token refuses to start", "[remote]") {
     // Not a convenience worth having. An empty token would mean every process
     // that can reach the port owns the transport.
-    StubControl  control;
+    FakePlayerControl control;
     ServerConfig config;
     config.token = "";
     RemoteServer server{control, [](std::function<void()> job) { job(); },
@@ -114,7 +114,7 @@ TEST_CASE("the OpenAPI document is 3.1 and carries this version", "[remote]") {
 }
 
 TEST_CASE("every way of failing to authenticate looks the same", "[remote]") {
-    StubControl  control;
+    FakePlayerControl control;
     RemoteServer server = makeServer(control);
 
     RawRequest missing;
@@ -160,7 +160,7 @@ TEST_CASE("every way of failing to authenticate looks the same", "[remote]") {
 }
 
 TEST_CASE("the scheme is matched case-insensitively", "[remote]") {
-    StubControl  control;
+    FakePlayerControl control;
     RemoteServer server = makeServer(control);
 
     // RFC 7235 says the scheme is case-insensitive, so a client that sends

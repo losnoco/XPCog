@@ -54,6 +54,11 @@ add_executable(xpcog-tests
 # this build has one is not.
 if(XPCOG_WITH_REST)
     target_compile_definitions(xpcog-tests PRIVATE XPCOG_HAS_REST=1)
+    # The gate is a private header beside the server, and the suite reaches it
+    # directly: what it does is worth testing on its own, and going through
+    # handle() would test the router instead.
+    target_sources(xpcog-tests PRIVATE core/test_remote_gate.cpp)
+    target_include_directories(xpcog-tests PRIVATE "${CMAKE_SOURCE_DIR}/core/src/remote")
 endif()
 
 # Guarded because the HTTP source is an option: without it the headers under
