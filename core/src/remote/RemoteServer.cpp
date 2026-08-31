@@ -1,6 +1,9 @@
 #include "xpcog/core/remote/RemoteServer.hpp"
 
+#include "RateLimit.hpp"
+
 #include "xpcog/core/Version.hpp"
+#include "xpcog/core/remote/Token.hpp"
 
 // Included here and nowhere a public header can see it. httplib.h pulls in
 // <winsock2.h> on Windows, and a core header dragging that into every
@@ -10,6 +13,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cctype>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -29,6 +34,44 @@ RawResponse jsonError(int status, std::string_view code, std::string_view messag
     return response;
 }
 
+/// The bearer token in an Authorization header, or empty when there is not one
+/// in the shape this accepts.
+///
+/// The scheme is compared case-insensitively because RFC 7235 says it is
+/// case-insensitive, and a client that sends "bearer" is not wrong.
+std::string_view bearerToken(std::string_view authorization) {
+    constexpr std::string_view kScheme = "bearer ";
+    if (authorization.size() <= kScheme.size()) {
+        return {};
+    }
+    for (std::size_t i = 0; i < kScheme.size(); ++i) {
+        const char given = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(authorization[i])));
+        if (given != kScheme[i]) {
+            return {};
+        }
+    }
+    std::string_view token = authorization.substr(kScheme.size());
+    while (!token.empty() && token.front() == ' ') {
+        token.remove_prefix(1);
+    }
+    return token;
+}
+
+/// The one answer for every way a request can fail to authenticate.
+///
+/// Missing, malformed and wrong are the same response down to the byte. A client
+/// that could tell them apart could learn whether a token exists, whether it is
+/// the right length, and eventually more; and none of that is worth the
+/// diagnostic. The realm names the player so a browser's prompt says who is
+/// asking.
+RawResponse unauthorized() {
+    RawResponse response = jsonError(401, "unauthorized", "A bearer token is required.");
+    response.headers.emplace_back("WWW-Authenticate",
+                                  R"(Bearer realm="XPCog", error="invalid_token")");
+    return response;
+}
+
 }  // namespace
 
 struct RemoteServer::Impl {
@@ -36,6 +79,7 @@ struct RemoteServer::Impl {
     Dispatcher      dispatch;
     ServerConfig    config;
 
+    RateLimit       rateLimit;
     httplib::Server server;
     std::thread     thread;
     int             port = 0;
@@ -122,6 +166,18 @@ void RemoteServer::stop() {
 int RemoteServer::boundPort() const { return impl_ == nullptr ? 0 : impl_->port; }
 
 RawResponse RemoteServer::handle(const RawRequest& request) {
+    // Before anything else, and with no exemption for where the connection came
+    // from. A loopback exemption would mean every process on the machine holds
+    // the transport, which is not the promise the preferences pane makes.
+    if (!constantTimeEquals(bearerToken(request.authorization), impl_->config.token)) {
+        const std::chrono::milliseconds penalty = impl_->rateLimit.noteFailure(request.peer);
+        if (penalty.count() > 0) {
+            std::this_thread::sleep_for(penalty);
+        }
+        return unauthorized();
+    }
+    impl_->rateLimit.noteSuccess(request.peer);
+
     if (request.method == "GET" && request.path == "/api/v1/version") {
         nlohmann::json body;
         body["version"]    = kVersionString;

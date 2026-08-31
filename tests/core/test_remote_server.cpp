@@ -16,6 +16,7 @@
 
 #include <functional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 using namespace xpcog;
@@ -23,13 +24,15 @@ using namespace xpcog::remote;
 
 namespace {
 
+constexpr std::string_view kToken = "0123456789abcdef";
+
 /// Answers nothing, because nothing is asked of it yet. The routes that reach
 /// the player bring the methods and the fake that scripts them.
 struct StubControl : IPlayerControl {};
 
 RemoteServer makeServer(StubControl& control) {
     ServerConfig config;
-    config.token = "0123456789abcdef";
+    config.token = std::string{kToken};
     // Runs inline. Nothing here hops yet, and when it does, an inline dispatcher
     // is the case that would deadlock a gate that took its lock first.
     return RemoteServer{control, [](std::function<void()> job) { job(); },
@@ -38,8 +41,9 @@ RemoteServer makeServer(StubControl& control) {
 
 RawRequest get(std::string path) {
     RawRequest request;
-    request.method = "GET";
-    request.path   = std::move(path);
+    request.method        = "GET";
+    request.path          = std::move(path);
+    request.authorization = std::string{"Bearer "} + std::string{kToken};
     return request;
 }
 
@@ -107,6 +111,66 @@ TEST_CASE("the OpenAPI document is 3.1 and carries this version", "[remote]") {
     CHECK(document.at("openapi").get<std::string>() == "3.1.0");
     CHECK(document.at("info").at("version").get<std::string>() ==
           std::string{kVersionString});
+}
+
+TEST_CASE("every way of failing to authenticate looks the same", "[remote]") {
+    StubControl  control;
+    RemoteServer server = makeServer(control);
+
+    RawRequest missing;
+    missing.method = "GET";
+    missing.path   = "/api/v1/version";
+
+    RawRequest malformed = missing;
+    malformed.authorization = "Basic aGVsbG86d29ybGQ=";
+
+    RawRequest wrong = missing;
+    wrong.authorization = "Bearer fedcba9876543210";
+
+    // Same length as the real one, differing in the last character: the case a
+    // timing side channel would be about.
+    RawRequest nearly = missing;
+    nearly.authorization = "Bearer 0123456789abcdee";
+
+    const RawResponse a = server.handle(missing);
+    const RawResponse b = server.handle(malformed);
+    const RawResponse c = server.handle(wrong);
+    const RawResponse d = server.handle(nearly);
+
+    for (const RawResponse* response : {&a, &b, &c, &d}) {
+        CHECK(response->status == 401);
+        // Byte-identical, deliberately. A client that could tell these apart
+        // could learn something about the token it should not.
+        CHECK(response->body == a.body);
+    }
+
+    const nlohmann::json body = nlohmann::json::parse(a.body, nullptr, false);
+    REQUIRE_FALSE(body.is_discarded());
+    CHECK(body.at("error").at("code").get<std::string>() == "unauthorized");
+
+    // A browser needs to be told what to ask for.
+    bool announced = false;
+    for (const auto& [name, value] : a.headers) {
+        if (name == "WWW-Authenticate") {
+            announced = true;
+            CHECK(value.find("Bearer") != std::string::npos);
+        }
+    }
+    CHECK(announced);
+}
+
+TEST_CASE("the scheme is matched case-insensitively", "[remote]") {
+    StubControl  control;
+    RemoteServer server = makeServer(control);
+
+    // RFC 7235 says the scheme is case-insensitive, so a client that sends
+    // "bearer" is not wrong and should not be told it is.
+    RawRequest request;
+    request.method        = "GET";
+    request.path          = "/api/v1/version";
+    request.authorization = "bearer 0123456789abcdef";
+
+    CHECK(server.handle(request).status == 200);
 }
 
 #endif  // XPCOG_HAS_REST

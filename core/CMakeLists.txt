@@ -179,6 +179,15 @@ else()
     target_sources(xpcog-core PRIVATE src/remote/NullRemoteServer.cpp)
 endif()
 
+# Compiled either way. It names no HTTP library, the application is what makes a
+# token, and a preferences pane that greys itself in a build without a server
+# should not also fail to link. bcrypt is where Windows keeps its cryptographic
+# generator; every other platform has getentropy() in libc.
+target_sources(xpcog-core PRIVATE src/remote/Token.cpp)
+if(WIN32)
+    target_link_libraries(xpcog-core PRIVATE bcrypt)
+endif()
+
 target_link_libraries(xpcog-core
     PUBLIC  vendor-miniaudio
     PRIVATE vendor-hdcd

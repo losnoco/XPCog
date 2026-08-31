@@ -45,6 +45,7 @@ add_executable(xpcog-tests
     codecs/test_gme_sidecar.cpp
     codecs/test_id3v2.cpp
     core/test_remote_server.cpp
+    core/test_remote_token.cpp
 )
 
 # The remote-control suite is compiled either way -- the null twin is worth a
