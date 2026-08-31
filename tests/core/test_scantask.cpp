@@ -238,9 +238,23 @@ TEST_CASE("nothing is published until the dispatcher runs it", "[core][scan]") {
     }
 
     REQUIRE(dispatcher.pending() > 0);
+    // The property under test, and it is asserted before anything is drained:
+    // the work is queued, and queued work has not run.
     CHECK_FALSE(published);
 
-    dispatcher.drain();
+    // Drained in a loop rather than once. `finished` is the *last* of three
+    // things ScanTask posts -- progress and activity go through the same
+    // dispatcher and are posted first (ScanTask.cpp:57, :74, :98) -- so the wait
+    // above returns as soon as any one of them lands, which need not be the one
+    // this is waiting for. Draining once assumed the first post was the last,
+    // which holds on a quiet machine and does not on a loaded CI runner.
+    const auto drained = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while (!published && std::chrono::steady_clock::now() < drained) {
+        dispatcher.drain();
+        if (!published) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
     CHECK(published);
 }
 
