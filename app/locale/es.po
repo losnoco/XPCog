@@ -422,6 +422,10 @@ msgstr "Espe&ctro"
 msgid "&Equalizer"
 msgstr "Ecuali&zador"
 
+#: app/src/Commands.cpp:98
+msgid "&Pitch && Tempo"
+msgstr "&Tono y tempo"
+
 #: app/src/Commands.cpp:97
 msgid "SC-55 &Panel"
 msgstr "&Panel del SC-55"
@@ -1341,6 +1345,14 @@ msgstr "Salida"
 #: app/src/PreferencesDialog.cpp:785
 msgid "Pitch & Tempo"
 msgstr "Tono y tempo"
+
+#: app/src/SpeedPanel.cpp:61
+msgid "Preferences…"
+msgstr "Preferencias…"
+
+#: app/src/SpeedPanel.cpp:73
+msgid "No engine is chosen, so these do nothing yet."
+msgstr "No se ha elegido ningún motor, así que esto todavía no hace nada."
 
 #: app/src/PreferencesDialog.cpp:786
 msgid "General"

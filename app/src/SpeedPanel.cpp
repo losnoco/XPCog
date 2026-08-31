@@ -54,9 +54,11 @@ SpeedPanel::SpeedPanel(wxWindow* parent, Settings& settings)
     lock_  = new wxCheckBox(this, wxID_ANY, _("Lock pitch and tempo together"));
     reset_ = new wxButton(this, wxID_ANY, trUtf8("Reset to 1.00\xC3\x97"));
     // The rest of Pitch & Tempo -- the engine and its knobs -- without making
-    // somebody find the pane. The ellipsis is the convention for a control that
-    // opens a window rather than doing something.
-    auto* settingsButton = new wxButton(this, wxID_ANY, trUtf8("Settings\xE2\x80\xA6"));
+    // somebody find the pane. "Preferences" rather than "Settings" because that
+    // is what this application calls that window everywhere else, and the
+    // ellipsis is the convention for a control that opens one.
+    auto* settingsButton =
+        new wxButton(this, wxID_ANY, trUtf8("Preferences\xE2\x80\xA6"));
     buttons->Add(lock_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(12));
     buttons->AddStretchSpacer();
     buttons->Add(reset_, 0, wxRIGHT, FromDIP(6));
