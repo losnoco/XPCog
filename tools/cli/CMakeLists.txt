@@ -5,6 +5,15 @@
 # better message; this is the one that cannot be forgotten to run.
 
 add_executable(xpcog-cli main.cpp)
+
+# The REST remote control, headless. It is here rather than only in the
+# application because that is the point of the seam: core defines
+# IPlayerControl, and if a route can be driven from a target that links no
+# toolkit at all, the layering holds.
+if(XPCOG_WITH_REST)
+    target_sources(xpcog-cli PRIVATE CliPlayerControl.cpp CliPlayerControl.hpp)
+    target_compile_definitions(xpcog-cli PRIVATE XPCOG_HAS_REST=1)
+endif()
 target_link_libraries(xpcog-cli PRIVATE xpcog-core xpcog-codecs XPCog::warnings)
 set_target_properties(xpcog-cli PROPERTIES FOLDER tools)
 
