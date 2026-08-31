@@ -34,6 +34,12 @@ public:
         /// twice.
         bool readCueSheets = true;
         bool readPlaylists = true;
+        /// Skip the `._name.flac` sidecars macOS writes beside a file on any
+        /// volume that cannot hold a resource fork -- a FAT stick, a network
+        /// share, most external drives. They carry the fork and nothing
+        /// playable, but they keep the extension of the file they shadow, so a
+        /// folder scan otherwise adds one unopenable error row per track.
+        bool skipAppleDoubleFiles = true;
     };
 
     // Not a defaulted argument: Options is still being defined at that point,

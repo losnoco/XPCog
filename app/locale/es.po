@@ -1398,6 +1398,16 @@ msgstr "Leer las hojas cue al añadir carpetas"
 msgid "Read playlists when adding folders"
 msgstr "Leer las listas de reproducción al añadir carpetas"
 
+#: app/src/PreferencesDialog.cpp:896
+msgid "Ignore AppleDouble files"
+msgstr "Ignorar los archivos AppleDouble"
+
+#: app/src/PreferencesDialog.cpp:897
+msgid ""
+"The \"._\" files macOS leaves beside the audio. They keep the track's extension but hold no audio."
+msgstr ""
+"Los archivos «._» que macOS deja junto al audio. Conservan la extensión de la pista, pero no contienen audio."
+
 #: app/src/PreferencesDialog.cpp:888
 msgid "Follow the system"
 msgstr "Seguir al sistema"

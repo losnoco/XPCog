@@ -195,6 +195,7 @@ constexpr std::array kMidiSynthChoices = {
 constexpr std::array kCuratedKeys = {
     // Playlist
     "alwaysStopAfterCurrent", "readCueSheetsInFolders", "readPlaylistsInFolders",
+    "skipAppleDoubleFiles",
     "selectionFollowsPlayback", "resumePlaybackOnStartup",
     // Owned by a control outside this dialog, and listed here so that Advanced
     // does not offer a second one that disagrees with it. `volume` is the
@@ -889,6 +890,12 @@ wxWindow* PreferencesDialog::buildPlaylistPane(wxWindow* parent) {
     // track twice -- once through the container and once as the file under it.
     row->toggle(_("Read cue sheets when adding folders"), "readCueSheetsInFolders");
     row->toggle(_("Read playlists when adding folders"), "readPlaylistsInFolders");
+    // On by default, unlike the two above: a "._" sidecar keeps the extension of
+    // the track it shadows, so a folder copied off a Mac-formatted disk adds an
+    // unopenable twin of every track.
+    row->toggle(_("Ignore AppleDouble files"), "skipAppleDoubleFiles",
+                _("The \"._\" files macOS leaves beside the audio. They keep the "
+                  "track's extension but hold no audio."));
 
     return finishPane(pane, form);
 }

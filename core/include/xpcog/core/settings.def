@@ -194,6 +194,22 @@ XPCOG_SETTING(ReadCueSheetsInFolders, bool, "readCueSheetsInFolders", false)
 /// the audit was looking for.
 XPCOG_SETTING(ReadPlaylistsInFolders, bool, "readPlaylistsInFolders", false)
 
+/// Skip the "._name.flac" sidecars macOS leaves beside the audio.
+///
+/// **No Cog counterpart** -- Cog runs where these files come from, and where
+/// the Finder and every framework that lists a directory hide them, so nobody
+/// there has to be asked. Off macOS nothing hides them: copy an album off a
+/// Mac-formatted stick and the folder holds a "._" twin of every track, each
+/// keeping the extension of the file it shadows and each opening as an
+/// AppleDouble header rather than as audio. Adding that folder gives one error
+/// row per track, interleaved with the tracks themselves.
+///
+/// On by default, which is the rarer thing here: these are filesystem
+/// bookkeeping rather than a user's files, and someone who wants to see them
+/// can untick the box. Only folder scans are filtered -- a sidecar named
+/// outright still opens, and still fails with a reason.
+XPCOG_SETTING(SkipAppleDoubleFiles, bool, "skipAppleDoubleFiles", true)
+
 /// Whether "Move to Trash" may go ahead without asking first.
 ///
 /// Cog's key (`trashAskedConsent`, PlaylistController.m:1341-1366) and Cog's

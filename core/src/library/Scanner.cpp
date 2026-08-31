@@ -27,6 +27,20 @@ constexpr std::string_view kCueExtension = "cue";
            extension == "xspf";
 }
 
+/// macOS writes an AppleDouble sidecar -- the name with "._" glued on the front
+/// -- next to any file whose resource fork the volume itself cannot hold: FAT
+/// sticks, network shares, most external drives. The sidecar keeps the
+/// extension of the file it shadows, so "._album.flac" reads as a FLAC to
+/// anything that looks at the name, and is an AppleDouble header rather than
+/// audio to anything that opens it.
+///
+/// Matched on the whole "._" prefix rather than on the leading dot: a hidden
+/// file is somebody's business and may well be playable, while this pair is
+/// filesystem bookkeeping that was never meant to be seen.
+[[nodiscard]] bool isAppleDoubleSidecar(const std::filesystem::path& path) {
+    return pathToUtf8Generic(path.filename()).starts_with("._");
+}
+
 /// Cog's ReplayGain tags arrive as strings: "-3.50 dB" for gains, "0.987654" for
 /// peaks. strtof stops at the space, which is what makes the suffix harmless.
 [[nodiscard]] std::optional<float> parseGain(std::string_view text) {
@@ -105,6 +119,14 @@ void Scanner::collectFiles(const Url& directory, std::vector<Url>& out) const {
     std::vector<std::filesystem::path> found;
     std::error_code                    error;
 
+    // A name test, so it costs nothing per file that a scan was not already
+    // paying. Only folder walks are filtered: a file named on the command line
+    // or dropped on the window was asked for by name, and the player says why it
+    // will not open rather than dropping it silently.
+    const auto isSkipped = [this](const std::filesystem::path& path) {
+        return options_.skipAppleDoubleFiles && isAppleDoubleSidecar(path);
+    };
+
     if (options_.recursive) {
         // skip_permission_denied rather than throwing: one unreadable folder in
         // a music library must not abort the whole scan.
@@ -115,7 +137,7 @@ void Scanner::collectFiles(const Url& directory, std::vector<Url>& out) const {
             if (cancelled()) {
                 return;
             }
-            if (iterator->is_regular_file(error)) {
+            if (iterator->is_regular_file(error) && !isSkipped(iterator->path())) {
                 found.push_back(iterator->path());
             }
         }
@@ -124,7 +146,7 @@ void Scanner::collectFiles(const Url& directory, std::vector<Url>& out) const {
             *root, std::filesystem::directory_options::skip_permission_denied, error};
         const auto end = std::filesystem::directory_iterator{};
         for (; !error && iterator != end; iterator.increment(error)) {
-            if (iterator->is_regular_file(error)) {
+            if (iterator->is_regular_file(error) && !isSkipped(iterator->path())) {
                 found.push_back(iterator->path());
             }
         }

@@ -268,6 +268,48 @@ TEST_CASE("cue sheets can be left out of a folder scan", "[scanner]") {
     REQUIRE(found[0].localPath()->filename() == "album.flac");
 }
 
+TEST_CASE("AppleDouble sidecars stay out of a folder scan", "[scanner]") {
+    const TempDir dir{"appledouble"};
+    dir.write("album.flac", "x");
+    // What a Mac leaves next to the audio on a volume with no resource forks.
+    // The extension is the track's, so nothing that looks at the name alone
+    // tells the two apart.
+    dir.write("._album.flac", "AppleDouble header, not audio");
+    // A leading dot on its own is somebody's hidden file, and playable.
+    dir.write(".hidden.flac", "x");
+
+    const Url root = Url::fromLocalPath(dir.path());
+
+    SECTION("skipped by default") {
+        const Scanner scanner{codecRegistry()};
+        const auto    found = scanner.expand({&root, 1});
+
+        REQUIRE(found.size() == 2);
+        REQUIRE(std::none_of(found.begin(), found.end(), [](const Url& url) {
+            return url.localPath()->filename().string().starts_with("._");
+        }));
+    }
+
+    SECTION("kept when the option is off") {
+        Scanner::Options options;
+        options.skipAppleDoubleFiles = false;
+        const Scanner scanner{codecRegistry(), options};
+        const auto    found = scanner.expand({&root, 1});
+
+        REQUIRE(found.size() == 3);
+    }
+
+    SECTION("a sidecar named outright is still opened") {
+        // Only folder walks are filtered. Asked for by name, the file comes
+        // back -- and fails later with a reason, rather than vanishing.
+        const Scanner scanner{codecRegistry()};
+        const Url     sidecar = Url::fromLocalPath(dir.file("._album.flac"));
+        const auto    found   = scanner.expand({&sidecar, 1});
+
+        REQUIRE(found.size() == 1);
+    }
+}
+
 TEST_CASE("an unopenable file becomes a visible error, not a gap", "[scanner]") {
     const TempDir dir{"broken"};
     dir.write("broken.flac", "this is not a FLAC file");

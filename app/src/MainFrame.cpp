@@ -2025,6 +2025,7 @@ void MainFrame::pumpScanQueue() {
     Scanner::Options scanOptions;
     scanOptions.readCueSheets = settings_.ReadCueSheetsInFolders();
     scanOptions.readPlaylists = settings_.ReadPlaylistsInFolders();
+    scanOptions.skipAppleDoubleFiles = settings_.SkipAppleDoubleFiles();
 
     scan_ = std::make_unique<ScanTask>(registry_, &cache_, std::move(request.inputs),
                                        dispatch_, scanOptions);
