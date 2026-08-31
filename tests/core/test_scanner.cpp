@@ -343,6 +343,69 @@ TEST_CASE("progress is reported once per entry", "[scanner]") {
     REQUIRE(reports[1] == std::pair<std::size_t, std::size_t>{2, 2});
 }
 
+TEST_CASE("the scan says what it is looking at, in both passes", "[scanner]") {
+    const TempDir dir{"activity"};
+    dir.write("a.flac", "x");
+    dir.write("b.flac", "x");
+
+    Scanner scanner{codecRegistry()};
+
+    struct Report {
+        Scanner::Phase phase;
+        std::string    name;
+        std::size_t    done;
+        std::size_t    total;
+    };
+    std::vector<Report> reports;
+    scanner.setActivityCallback([&reports](Scanner::Phase phase, const Url& url,
+                                           std::size_t done, std::size_t total) {
+        reports.push_back({phase, url.fileName(), done, total});
+    });
+
+    const Url root = Url::fromLocalPath(dir.path());
+    static_cast<void>(scanner.scan({&root, 1}));
+
+    const auto finding = std::count_if(reports.begin(), reports.end(), [](const Report& r) {
+        return r.phase == Scanner::Phase::Finding;
+    });
+    const auto reading = std::count_if(reports.begin(), reports.end(), [](const Report& r) {
+        return r.phase == Scanner::Phase::Reading;
+    });
+
+    // At least once each on the walk, and once each on the read. Not an exact
+    // count on the finding side: a FLAC may carry an embedded cue sheet, so the
+    // expansion pass opens it to look, and that look is reported too.
+    CHECK(finding >= 2);
+    REQUIRE(reading == 2);
+
+    // Both files are named while the walk is going on -- in whatever order the
+    // filesystem hands them over, which is before the natural sort.
+    const auto named = [&reports](const std::string& name) {
+        return std::any_of(reports.begin(), reports.end(), [&name](const Report& r) {
+            return r.phase == Scanner::Phase::Finding && r.name == name;
+        });
+    };
+    CHECK(named("a.flac"));
+    CHECK(named("b.flac"));
+
+    // The walk cannot know how many files there are -- working that out is what
+    // it is doing -- so its total is zero and the caller shows a busy indicator.
+    for (const Report& report : reports) {
+        if (report.phase == Scanner::Phase::Finding) {
+            CHECK(report.total == 0);
+        }
+    }
+
+    // And the read names the file it is about to open, counted against a total
+    // that is now known.
+    const auto first = std::find_if(reports.begin(), reports.end(), [](const Report& r) {
+        return r.phase == Scanner::Phase::Reading;
+    });
+    CHECK(first->name == "a.flac");
+    CHECK(first->done == 1);
+    CHECK(first->total == 2);
+}
+
 TEST_CASE("cancelling stops a scan without failing it", "[scanner]") {
     const TempDir dir{"cancel"};
     for (int i = 0; i < 6; ++i) {

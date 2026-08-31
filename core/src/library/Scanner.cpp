@@ -110,6 +110,13 @@ bool Scanner::isInteresting(const Url& url) const {
            registry_.isContainer(url);
 }
 
+void Scanner::report(Phase phase, const Url& url, std::size_t done,
+                     std::size_t total) const {
+    if (activity_) {
+        activity_(phase, url, done, total);
+    }
+}
+
 void Scanner::collectFiles(const Url& directory, std::vector<Url>& out) const {
     const auto root = directory.localPath();
     if (!root) {
@@ -139,6 +146,13 @@ void Scanner::collectFiles(const Url& directory, std::vector<Url>& out) const {
             }
             if (iterator->is_regular_file(error) && !isSkipped(iterator->path())) {
                 found.push_back(iterator->path());
+                // The Url is built only when somebody is listening: this is the
+                // hot loop of a walk over a whole music library, and a report
+                // nobody asked for should not cost it a percent-encode.
+                if (activity_) {
+                    report(Phase::Finding, Url::fromLocalPath(found.back()),
+                           found.size());
+                }
             }
         }
     } else {
@@ -148,6 +162,13 @@ void Scanner::collectFiles(const Url& directory, std::vector<Url>& out) const {
         for (; !error && iterator != end; iterator.increment(error)) {
             if (iterator->is_regular_file(error) && !isSkipped(iterator->path())) {
                 found.push_back(iterator->path());
+                // The Url is built only when somebody is listening: this is the
+                // hot loop of a walk over a whole music library, and a report
+                // nobody asked for should not cost it a percent-encode.
+                if (activity_) {
+                    report(Phase::Finding, Url::fromLocalPath(found.back()),
+                           found.size());
+                }
             }
         }
     }
@@ -200,6 +221,11 @@ void Scanner::expandInto(const Url& url, std::vector<Url>& out,
     // Mark the container itself as visited before recursing, so a playlist that
     // names itself terminates rather than recursing to the depth limit.
     seen.push_back(key);
+
+    // Only the containers are reported, not every file walked past: opening a
+    // cue sheet or a playlist is the part of this pass that costs anything, and
+    // it is the part where naming what is in hand tells the listener something.
+    report(Phase::Finding, url, out.size());
 
     const std::vector<Url> tracks = registry_.expandContainer(url);
     if (tracks.size() == 1 && tracks.front() == url) {
@@ -301,6 +327,10 @@ std::vector<PlaylistEntry> Scanner::scan(std::span<const Url> inputs) const {
         }
         PlaylistEntry entry;
         entry.url = urls[i];
+        // Before the read, not after: the point of saying which file is in hand
+        // is to name the one that is taking the time, and a file that hangs a
+        // decoder is exactly the one nobody would otherwise see.
+        report(Phase::Reading, urls[i], i + 1, urls.size());
         static_cast<void>(readMetadata(entry));
         entries.push_back(std::move(entry));
 

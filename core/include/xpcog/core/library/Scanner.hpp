@@ -13,6 +13,7 @@
 #pragma once
 
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/Url.hpp"
 #include "xpcog/core/library/PluginCache.hpp"
 #include "xpcog/core/library/PlaylistEntry.hpp"
 
@@ -56,6 +57,26 @@ public:
     using ProgressFn = std::function<void(std::size_t done, std::size_t total)>;
     void setProgressCallback(ProgressFn callback) { progress_ = std::move(callback); }
 
+    /// Which of the scan's two passes an activity report comes from. Finding
+    /// walks the folders and opens the containers, and has nothing to count
+    /// against because how many files there are is what it is working out;
+    /// Reading opens each file it found and knows the total from the start.
+    enum class Phase { Finding, Reading };
+
+    /// Called with the item in hand as the scan moves through it, so a status
+    /// line can say what is taking the time rather than only how much of it is
+    /// left. `done` is the item's place in the pass -- the file about to be
+    /// read is 12 of 400 -- and `total` is zero for the whole of Finding, where
+    /// what the total will turn out to be is the question being answered.
+    ///
+    /// Invoked on the calling thread, once per item and unthrottled -- a folder
+    /// walk reports thousands a second, and how many of those are worth showing
+    /// is the caller's decision, not this one's. Nothing is reported while no
+    /// callback is set, so a scan that nobody is watching pays nothing.
+    using ActivityFn = std::function<void(Phase phase, const Url& url, std::size_t done,
+                                          std::size_t total)>;
+    void setActivityCallback(ActivityFn callback) { activity_ = std::move(callback); }
+
     /// Asks an in-flight scan to stop. Safe to call from another thread; the
     /// scan returns what it has rather than failing.
     void cancel() noexcept { cancelled_.store(true, std::memory_order_relaxed); }
@@ -87,10 +108,15 @@ private:
     void expandInto(const Url& url, std::vector<Url>& out,
                     std::vector<std::string>& seen, int depth) const;
 
+    /// One activity report, if anybody asked for them.
+    void report(Phase phase, const Url& url, std::size_t done,
+                std::size_t total = 0) const;
+
     const PluginRegistry& registry_;
     Options               options_;
     PluginCache*          cache_ = nullptr;
     ProgressFn            progress_;
+    ActivityFn            activity_;
     mutable std::atomic<bool> cancelled_{false};
 };
 

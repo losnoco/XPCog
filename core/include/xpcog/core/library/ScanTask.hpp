@@ -68,6 +68,25 @@ public:
     /// meaningful percentage and the caller shows a busy indicator for it.
     Signal<int, int> progress;
 
+    /// What the scan has in hand right now: which of Scanner's two passes is
+    /// running, the item itself, and the counts `progress` carries.
+    ///
+    /// A struct rather than four signal parameters because the wording is the
+    /// caller's business and this is the material it words it from -- core has
+    /// no catalogue and cannot say "Reading" in the user's language.
+    struct Activity {
+        Scanner::Phase phase = Scanner::Phase::Finding;
+        Url            url;
+        int            done  = 0;
+        int            total = 0;
+    };
+
+    /// Published as the scan moves, thinned to a handful a second. Scanner
+    /// reports every file it touches, which on a folder walk is thousands a
+    /// second: a status line changing that fast is a blur rather than
+    /// information, and one hop per file would flood the interface's queue.
+    Signal<Activity> activity;
+
     /// Published once, whether the scan completed or was cancelled, on the
     /// interface's thread.
     Signal<std::vector<PlaylistEntry>, bool> finished;

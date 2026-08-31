@@ -333,7 +333,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-1.3.0-x64-setup.exe
+:: -> build\windows-release\XPCog-1.4.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -354,7 +354,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-1.3.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-1.4.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -438,7 +438,7 @@ want them.
 
 ```sh
 cmake --build build/linux-repo-release --target package
-tar tzf build/linux-repo-release/XPCog-1.3.0-x86_64.tar.gz
+tar tzf build/linux-repo-release/XPCog-1.4.0-x86_64.tar.gz
 ```
 
 **It is not an AppImage and does not pretend to be.** wxWidgets, GTK and most of

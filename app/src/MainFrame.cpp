@@ -103,6 +103,37 @@ enum : int {
     return std::to_string(minutes) + ":" + padded;
 }
 
+/// What the status line says while a scan is running.
+///
+/// The two passes have two different things worth saying. While the scan is
+/// still finding files there is no total to count against, and the names go past
+/// far faster than the eye follows, so the folder they are in is what says how
+/// far through a library the walk has got. Once it is reading tags the file
+/// itself is the slow thing -- a decoder stuck on one track is the case this is
+/// most worth having -- and the count is real.
+[[nodiscard]] wxString scanActivityText(const ScanTask::Activity& activity) {
+    const std::string name = activity.url.fileName();
+
+    if (activity.phase == Scanner::Phase::Finding) {
+        std::string where = name;
+        if (const auto path = activity.url.localPath();
+            path && path->has_parent_path()) {
+            where = pathToUtf8(path->parent_path().filename());
+        }
+        if (where.empty()) {
+            return trUtf8("Looking for files\xE2\x80\xA6");
+        }
+        return wxString::Format(trUtf8("Looking for files in %s\xE2\x80\xA6"),
+                                toWx(where));
+    }
+
+    if (activity.total > 0) {
+        return wxString::Format(trUtf8("Reading %s \xE2\x80\x94 %d of %d"), toWx(name),
+                                activity.done, activity.total);
+    }
+    return wxString::Format(_("Reading %s"), toWx(name));
+}
+
 /// Files dropped from the file manager onto the window.
 class PlaylistDropTarget : public wxFileDropTarget {
 public:
@@ -2089,6 +2120,15 @@ void MainFrame::pumpScanQueue() {
             scanBar_->Pulse();
         }
     }));
+
+    subscriptions_.push_back(scan_->activity.connect(
+        [this](const ScanTask::Activity& activity) {
+            // The summary field rather than the second one: the scan widgets sit
+            // over the second, and the summary this replaces is a number that
+            // cannot change while a scan is running anyway. addScannedEntries
+            // puts it back at the end.
+            setStatusText(scanActivityText(activity));
+        }));
 
     const int  atRow    = request.atRow;
     const bool reload   = request.reload;

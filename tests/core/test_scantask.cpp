@@ -18,6 +18,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -25,6 +26,7 @@
 #include <mutex>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <thread>
 #include <vector>
 
@@ -159,6 +161,56 @@ TEST_CASE("a scan delivers its entries through the dispatcher, not from its own 
     // The whole point: whatever thread read the files, the playlist is only
     // ever touched from this one.
     CHECK(deliveredOn == std::this_thread::get_id());
+}
+
+TEST_CASE("a scan reports what it is doing, through the same dispatcher",
+          "[core][scan]") {
+    TempDir folder{"activity"};
+    for (int i = 0; i < 40; ++i) {
+        folder.write("t" + std::to_string(i) + ".flac", "x");
+    }
+
+    TestDispatcher dispatcher;
+
+    bool                             done = false;
+    std::vector<ScanTask::Activity>  seen;
+    std::vector<std::pair<int, int>> progress;
+    std::thread::id                  reportedOn;
+
+    auto task = std::make_unique<ScanTask>(codecRegistry(), nullptr,
+                                           std::vector<Url>{folder.url()},
+                                           dispatcher.sink());
+
+    const Subscription watching =
+        task->activity.connect([&](const ScanTask::Activity& activity) {
+            seen.push_back(activity);
+            reportedOn = std::this_thread::get_id();
+        });
+    const Subscription counting = task->progress.connect(
+        [&](int finished, int total) { progress.emplace_back(finished, total); });
+    const Subscription subscription =
+        task->finished.connect([&](const std::vector<PlaylistEntry>&, bool) { done = true; });
+
+    task->start();
+    REQUIRE(drainUntil(dispatcher, done));
+
+    // Thinned by a clock, so how many arrive depends on how fast the disk is --
+    // but the first one always does, and it is the walk, which has no total.
+    REQUIRE_FALSE(seen.empty());
+    CHECK(seen.front().phase == Scanner::Phase::Finding);
+    CHECK(seen.front().total == 0);
+    CHECK_FALSE(seen.front().url.toString().empty());
+
+    // On the interface's thread, like everything else this class publishes.
+    CHECK(reportedOn == std::this_thread::get_id());
+
+    // The busy indicator the header promises for the first pass: a count with no
+    // total to count it against.
+    const auto busy = std::count_if(progress.begin(), progress.end(),
+                                    [](const std::pair<int, int>& report) {
+                                        return report.second == 0;
+                                    });
+    CHECK(busy > 0);
 }
 
 TEST_CASE("nothing is published until the dispatcher runs it", "[core][scan]") {
