@@ -923,6 +923,32 @@ one setting a Cog import deliberately does **not** carry across, because the
 credential cannot come with it and the switch alone would claim a connection that
 does not exist.
 
+## Remote control
+
+A REST API over the transport, the playlist, the equaliser, the settings and the
+cover art, with a generated OpenAPI 3.1 document and a Swagger UI page beside it.
+Preferences → Remote turns it on; `docs/REST.md` is the reference.
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" localhost:7799/api/v1/status
+xdg-open http://localhost:7799/docs
+```
+
+**Off in a default build, and off again at run time.** `app/src/SingleInstance.hpp`
+records a decision against this program owning a listening socket at all — on Windows
+the firewall asks the user to approve a *music player* wanting network access, which is
+alarming and unanswerable — so the feature is opt-in twice: `XPCOG_WITH_REST` decides
+whether a server is compiled (the presets turn it on), and `remoteEnable` decides
+whether it ever binds. The default bind is loopback, which raises no prompt.
+
+Every request needs a bearer token, with no exemption for local connections; the token
+is kept in the system password store rather than in settings. There is no TLS and none
+planned — a self-signed certificate on a LAN is theatre — so the connection is not
+encrypted and the pane says so before you bind it to the network.
+
+`xpcog-cli serve` runs the same API with no toolkit linked at all, which is what
+demonstrates that none of this reached below the interface layer.
+
 ## Languages
 
 The interface speaks **English** and **Spanish**, and follows the system by
@@ -978,9 +1004,14 @@ exactly that.
 ### Deliberately out of scope
 
 The Mac App Store sandbox (`SandboxBroker`, security-scoped bookmarks), AudioUnit MIDI
-instrument hosting, AppleScript, Spotlight integration and the MCP server are macOS-only
-and are not being ported. A no-op `IFileAccess` seam preserves the sandbox call sites in
-case that changes.
+instrument hosting, AppleScript and Spotlight integration are macOS-only and are not
+being ported. A no-op `IFileAccess` seam preserves the sandbox call sites in case that
+changes.
+
+This is a record of what did not travel rather than a boundary on what XPCog may do.
+Cog not having something is not a reason not to build it — it only means the result is
+new work rather than port work. The [remote control](#remote-control) is the first
+feature to land on those terms, and Cog's own MCP server was on this list until it did.
 
 AudioUnit hosting is one of Cog's four MIDI backends, not MIDI itself — `.mid` and
 its dozen relatives play here through the other three, all of which have landed:

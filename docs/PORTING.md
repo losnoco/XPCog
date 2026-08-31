@@ -3757,8 +3757,14 @@ All of these are also documented at the call site.
 
 **Not ported**
 
+This list is a record of what did not travel, and it stopped being a scope
+boundary. XPCog tracks Cog where that is worth doing and extends past it where it
+is not, so "Cog does not have it" is not an argument against building something
+here — it only means whatever gets built is new work rather than port work, and
+is judged on its own. Two entries have already come off this list on those terms.
+
 Mac App Store sandbox, AudioUnit MIDI instrument hosting, AppleScript, Spotlight,
-the MCP server, Sparkle. AudioUnit hosting is one of Cog’s four MIDI
+Sparkle. AudioUnit hosting is one of Cog’s four MIDI
 backends and not MIDI itself — the other three are portable and are staged in
 [MIDI.md](MIDI.md). Cog also does **not** write tags —
 `PluginController -putMetadataInURL:` is stubbed `return 0`, the facade has no
@@ -3780,13 +3786,18 @@ transaction, and the user-feedback window Cog shows after a crash. See
 
 ## Verification strategy
 
-`xpcog-cli` links no Qt, so it exercises core headlessly in CI on all three
-platforms — and it is **scaffolding, due to be deleted once the port lands**, so it
-is not worth extending. Note what that will cost when it goes: this document and the
-README both present its failure to link as *the* enforcement of the Qt-free rule.
-What actually survives is the `*-headless` presets, which build core and the tests
-with `XPCOG_BUILD_APP=OFF` and no Qt at all, plus `cmake/CheckNoQt.cmake`. Confirm
-those still fail on a `QtCore` leak before removing the target.
+`xpcog-cli` links no toolkit, so it exercises core headlessly in CI on all three
+platforms. It was described here as scaffolding due to be deleted once the port
+landed, and not worth extending; that is no longer the plan. It is installed
+beside the player on Linux, CLAUDE.md documents it as the headless way to exercise
+the engine, and it now carries `serve` — the REST remote control with no toolkit
+linked at all, which is the sharpest available demonstration that the layering
+holds.
+
+It is not the only enforcement, and that is worth knowing either way: the
+`*-headless` presets build core and the tests with `XPCOG_BUILD_APP=OFF` and no
+toolkit, and `cmake/CheckNoToolkit.cmake` reports a leak earlier and with a
+clearer message.
 
 - **Per-codec conformance** — one asymmetric reference signal (440 Hz left, 660 Hz
   right, different amplitudes) catches swapped, duplicated and silent channels, which

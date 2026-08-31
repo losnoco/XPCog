@@ -91,8 +91,8 @@ Preset families: `macos-*`, `linux-*`, `windows-*`, each with `-debug` and
   inside a plain `linux-*` tree, which is refused rather than obeyed.
 
 The presets turn on more than the option defaults do — FFmpeg, vgmstream, PSF,
-SID, MIDI, AdPlug, libvgm, Sentry are all `OFF` for a bare `cmake` and `ON` in
-`base`. Configure with a preset unless you specifically want a minimal build.
+SID, MIDI, AdPlug, libvgm, Sentry and the REST remote control are all `OFF` for a
+bare `cmake` and `ON` in `base`. Configure with a preset unless you specifically want a minimal build.
 
 Two test binaries, both Catch2 v3 and both registered with ctest through
 `catch_discover_tests`: `xpcog-tests` (core and codecs) and `xpcog-app-tests`
@@ -115,7 +115,10 @@ ctest --preset macos-debug -R Gapless          # by ctest test name
 ```
 
 Tags follow the subsystem (`[dsp]`, `[playlist]`, `[library]`, `[cogimport]`,
-`[lastfm]`, `[scrobbler]`, `[timestretch]`, `[gapless]`, `[hls]`, `[midi]`…).
+`[lastfm]`, `[scrobbler]`, `[timestretch]`, `[gapless]`, `[hls]`, `[midi]`,
+`[remote]`…). `[remote][socket]` binds an ephemeral loopback port and runs by
+default; `XPCOG_NO_SOCKET_TESTS=1` skips it loudly for an environment that
+forbids listening.
 Tags starting with a dot are hidden and only run when named: `[.lastfmlive]`
 (hits the real Last.fm API), `[.ratedevice]` and `[.integerdevice]` (want real
 hardware).
@@ -155,7 +158,9 @@ SoundFont) and are pointed at it by environment variable: `XPCOG_PSF_CORPUS`,
 `XPCOG_SHORTEN_FILE`, `XPCOG_DSD_FILE`.
 
 `xpcog-cli` is the headless way to exercise the engine: `codecs`, `info`,
-`expand`, `decode`, `play`.
+`expand`, `decode`, `play`, `serve`. The last is the REST remote control with no
+toolkit linked, which is the sharpest demonstration that the layering holds; see
+`docs/REST.md` for what it deliberately cannot do.
 
 `tools/ci-watch/ci-watch.sh` watches a GitHub Actions run and prints one line per
 job as it finishes — the run for the checked-out commit with no argument, or a
@@ -203,6 +208,14 @@ dedicated decoders win. Adding a format is one `xpcog_add_codec()` call plus a
 row in the conformance table in `tests/codecs/test_conformance.cpp`, which checks
 every codec against one asymmetric reference signal (440 Hz left, 660 Hz right,
 different levels) to catch swapped, duplicated or silent channels.
+
+**The remote control is a seam, not a layer.** `core/src/remote/` holds an HTTP
+server, a route table that also generates the OpenAPI document, and `CallGate`,
+which is how a socket thread gets an answer out of the interface thread. It calls
+`IPlayerControl` (`core/include/xpcog/core/remote/PlayerControl.hpp`), which
+`app/` implements over `PlaybackController` and `AppCommands` and `xpcog-cli`
+implements over an `AudioEngine`. Behind `XPCOG_WITH_REST`, off at run time as
+well, and `docs/REST.md` explains why both.
 
 **Settings are an X-macro.** `core/include/xpcog/core/settings.def` is the single
 source of truth — `XPCOG_SETTING(Ident, Type, "cogKey", default)` — included
@@ -256,7 +269,10 @@ and a *Where to pick up next* section at the end. Consult it before changing
 behaviour that mirrors Cog — differences are meant to be documented, not
 accidental. `docs/MIDI.md` covers the three MIDI backends, `docs/COGIMPORT.md` the
 Cog library import, `docs/HIGHLYCOMPLETE.md` the eight PSF emulator cores, and
-`docs/WXPORT.md` the Qt→wxWidgets move.
+`docs/WXPORT.md` the Qt→wxWidgets move, and `docs/REST.md` the remote control.
 
-Deliberately out of scope and not to be ported: the Mac App Store sandbox,
-AudioUnit MIDI instrument hosting, AppleScript, Spotlight, the MCP server.
+Not ported, and macOS-only: the Mac App Store sandbox, AudioUnit MIDI instrument
+hosting, AppleScript, Spotlight. That list records what did not travel; it is not
+a boundary on what XPCog may do. Cog not having a thing is not an argument against
+building it — it means the result is new work rather than port work, judged on its
+own. `docs/REST.md` is the first feature to land on those terms.
