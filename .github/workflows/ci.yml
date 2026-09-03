@@ -313,7 +313,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          key: vcpkg-v3-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: vcpkg-v3-${{ matrix.preset }}-
 
       # vcpkg creates this itself, but not if configure fails before it gets
@@ -446,7 +446,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-linux-repo-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          key: vcpkg-v3-linux-repo-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: vcpkg-v3-linux-repo-
 
       # See the matrix job: vcpkg creates this, but not if configure dies first.
@@ -571,7 +571,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-linux-headless-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          key: vcpkg-v3-linux-headless-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: vcpkg-v3-linux-headless-
 
       # vcpkg creates this itself, but not if configure fails before it gets
@@ -718,7 +718,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-windows-app-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          key: vcpkg-v3-windows-app-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: |
             vcpkg-v3-windows-app-release-
             vcpkg-v3-windows-debug-
@@ -901,7 +901,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-macos-app-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          key: vcpkg-v3-macos-app-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: |
             vcpkg-v3-macos-app-release-
             vcpkg-v3-macos-debug-
@@ -1227,7 +1227,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-linux-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'CMakePresets.json') }}
+          key: vcpkg-v3-linux-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: |
             vcpkg-v3-linux-release-
             vcpkg-v3-linux-debug-

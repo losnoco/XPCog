@@ -251,8 +251,21 @@ cannot exercise wall-clock timing.
 **Where things live**: `core/` (engine, plugin registry, SQLite library, playlist
 model, settings, HTTP, scrobbling), `codecs/` (one directory per decoder),
 `platform/` (per-OS integration behind toolkit-free headers), `app/` (wxWidgets
-UI), `tools/cli/`, `tests/`, `assets/`, `packaging/windows/`,
+UI), `tools/cli/`, `tests/`, `assets/`, `triplets/`, `packaging/windows/`,
 `packaging/macos/`, `packaging/linux/`.
+
+**`triplets/` is registered as `overlay-triplets`** and holds `arm64-osx` and
+`x64-osx`: vcpkg's own triplets of those names plus `cmake/XPCogOsxTriplet.cmake`.
+It exists because vcpkg's build of the dependencies inherits nothing from
+XPCog's build of itself, so a macOS deployment target set only in
+`CMakeLists.txt` left every dependency targeting the build machine — which is
+how 1.5.1 shipped a bundle whose executable said macOS 13 and whose bundled
+`libvgmstream.dylib` said macOS 26, dead at launch on 13 with all of CI green.
+The number lives in `cmake/XPCogOsxDeploymentTarget.cmake`, which both builds
+read and neither may restate. The same file puts vcpkg's `.pc` files ahead of
+Homebrew's, without which a CMake-based port calling `pkg_check_modules()` finds
+Homebrew first and bakes a Cellar path into the bundle. `triplets/README.md` has the
+detail; editing any of it rebuilds every cached macOS binary, on purpose.
 
 **`vendor/` vs `ports/`**: `ports/` holds vcpkg overlay ports for dependencies
 with a real upstream release or pinned commit (vgmstream, libsidplayfp, mGBA,

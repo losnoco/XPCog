@@ -58,13 +58,11 @@
       "name": "macos",
       "hidden": true,
       "inherits": "base",
+      "description": "CMAKE_OSX_DEPLOYMENT_TARGET used to be set here, and is not any more. It has a second reader -- the overlay triplets in triplets/, which govern the separate CMake build vcpkg runs for every dependency and inherit nothing from this one -- so it moved to cmake/XPCogOsxDeploymentTarget.cmake, which the root CMakeLists includes before project() and the triplets include too. Setting it here as well would be a second place to change and a second place to forget; 1.5.1 shipped a bundle whose executable said 13.0 and whose bundled dylib said 26.0 for exactly that reason.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Darwin"
-      },
-      "cacheVariables": {
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0"
       }
     },
     {

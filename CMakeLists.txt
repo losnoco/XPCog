@@ -9,9 +9,21 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(XPCogSystemDeps)
 xpcog_probe_system_deps()
 
+# Before project() as well, and for the same kind of reason: project() is what
+# reads CMAKE_OSX_DEPLOYMENT_TARGET, so a value set after it is a value that did
+# nothing. Not in CMakePresets.json, where it used to be, because the number has
+# a second reader -- the overlay triplets in triplets/, which govern the entirely
+# separate CMake build vcpkg runs for every dependency. See the file for what
+# the two of them disagreeing shipped.
+#
+# CACHE without FORCE, so -D and a preset still win, and so `cmake -LH` shows it.
+include(XPCogOsxDeploymentTarget)
+set(CMAKE_OSX_DEPLOYMENT_TARGET "${XPCOG_OSX_DEPLOYMENT_TARGET}" CACHE STRING
+    "Oldest macOS this build runs on")
+
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 1.5.1
+    VERSION 1.5.2
     DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
     LANGUAGES C CXX)
 
