@@ -3015,6 +3015,32 @@ already running, because a shared stream never moves it. A backend that will not
 say keeps the caller's rate, since guessing for a device that could not be
 described is worse than the resampling this exists to avoid.
 
+Getting "the rate it is already running" turned out to be the hard half.
+`preferredSampleRate()` originally read `ma_device_info::nativeDataFormats[0]`,
+which is right on WASAPI — there the list is built from the mix format, so its
+first entry really is what the device is doing — and wrong everywhere else. On
+CoreAudio that list is every miniaudio-standard rate falling inside the ranges
+the device reports, ordered as CoreAudio happened to report the ranges. A
+Bluetooth headset advertises its hands-free rate alongside its music one
+whichever profile it is actually in, so a MOMENTUM 4 sitting in A2DP at 44,100
+listed 16,000 first: the engine resampled the album to 16 kHz and opened the
+device there, and since CoreAudio's 16 kHz description for that device is
+*mono*, miniaudio set the audio unit to one channel and folded the mix down
+behind `negotiatedFormat()`'s back. Mono, band-limited to 8 kHz, on a headset
+that never left A2DP — and nothing in the engine could see it, because every
+number it can reach is the one it asked for.
+
+The honest form of the question is a native open: initialise a device with rate
+0 and channels 0, read `internalSampleRate`, and uninit it without ever starting
+it. That works on every backend rather than one, costs a couple of milliseconds
+once per `play()` and per device switch, and never touches the audio thread.
+`tests/core/test_audio.cpp` pins it under `[.ratedevice]`, and the pinning is
+the point: the older case there compares `effectiveSampleRate()` against
+`preferredSampleRate()` and so passed throughout, because it was comparing the
+wrong answer with itself. The new one opens the device at the named rate and
+asserts miniaudio has nothing left to convert — same rate, no narrower than the
+device natively runs.
+
 So the conversion did not disappear -- it moved to `AudioConverter`, which is
 where soxr is. Which is also Cog's arrangement, reached from the other
 direction: its device keeps its own format and everything is resampled into it

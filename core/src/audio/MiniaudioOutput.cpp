@@ -262,20 +262,44 @@ public:
             which = &resolved;
         }
 
-        ma_device_info info{};
-        if (ma_context_get_device_info(&self->context_, ma_device_type_playback,
-                                       which, &info) != MA_SUCCESS) {
+        // Opened to be asked, and never started. The question is what rate this
+        // device is *running*, and no backend-independent property says so:
+        // ma_device_info::nativeDataFormats is a list of what the device would
+        // accept, not what it is doing. Asking it was a WASAPI habit -- there
+        // the list is built from the mix format, so its first entry really is
+        // the current rate -- and it does not travel. On CoreAudio the list is
+        // every miniaudio-standard rate that falls inside the ranges the device
+        // reports, in the order CoreAudio happened to give the ranges
+        // (miniaudio.h, ma_context_get_device_info__coreaudio).
+        //
+        // A Bluetooth headset is where that goes wrong, because it advertises
+        // its hands-free rate alongside its music one whichever profile it is
+        // actually in. A MOMENTUM 4 sitting in A2DP at 44,100 lists 16,000
+        // first, so this returned 16,000, the engine resampled the album to it
+        // and opened the device there -- and CoreAudio's 16 kHz stream
+        // description is *mono*, so miniaudio set the audio unit to one channel
+        // and folded the mix down behind negotiatedFormat()'s back. Mono, band
+        // limited to 8 kHz, on a headset that never left A2DP.
+        //
+        // A native open -- rate 0, channels 0 -- is the honest form of the
+        // question on every backend: miniaudio fills internalSampleRate with
+        // whatever the device is set to. It costs a couple of milliseconds and
+        // happens once per play() and per device switch, never on the audio
+        // thread.
+        ma_device_config probeConfig   = ma_device_config_init(ma_device_type_playback);
+        probeConfig.playback.format    = ma_format_f32;
+        probeConfig.playback.channels  = 0;
+        probeConfig.playback.pDeviceID = which;
+        probeConfig.sampleRate         = 0;
+        probeConfig.dataCallback       = &MiniaudioOutput::probeCallback;
+
+        ma_device probe;
+        if (ma_device_init(&self->context_, &probeConfig, &probe) != MA_SUCCESS) {
             return 0.0;
         }
-        // The first native format is the one the backend is actually running --
-        // on a shared-mode WASAPI device that is the mix format, which is what
-        // the listener has set in Windows.
-        for (ma_uint32 i = 0; i < info.nativeDataFormatCount; ++i) {
-            if (info.nativeDataFormats[i].sampleRate != 0) {
-                return static_cast<double>(info.nativeDataFormats[i].sampleRate);
-            }
-        }
-        return 0.0;
+        const double rate = static_cast<double>(probe.playback.internalSampleRate);
+        ma_device_uninit(&probe);
+        return rate;
     }
 
     [[nodiscard]] double effectiveSampleRate(double wanted, std::string_view deviceId,
@@ -302,9 +326,9 @@ public:
 
         // Shared. The device stays where it is and miniaudio converts into it,
         // so the rate that matters is the one it is already running -- which is
-        // what preferredSampleRate() reports, the first native format. On the
-        // same machine every shared open came back at 44,100 whatever was asked
-        // for, which is the measurement this is built on.
+        // what preferredSampleRate() reports. On the same machine every shared
+        // open came back at 44,100 whatever was asked for, which is the
+        // measurement this is built on.
         //
         // Not locked here: preferredSampleRate() takes deviceMutex_ itself, and
         // it is not recursive.
@@ -372,6 +396,11 @@ public:
     }
 
 private:
+    /// Never called. miniaudio requires a data callback to init a device, and
+    /// preferredSampleRate() inits one only to read the rate back off it -- the
+    /// probe device is uninited without ever being started.
+    static void probeCallback(ma_device*, void*, const void*, ma_uint32) {}
+
     // --- real-time path ---------------------------------------------------
 
     static void dataCallback(ma_device* device, void* output, const void* /*input*/,

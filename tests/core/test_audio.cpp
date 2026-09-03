@@ -3,6 +3,8 @@
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
+#include <miniaudio.h>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -426,6 +428,82 @@ TEST_CASE("the real backend says what rate it will really run", "[.ratedevice]")
     // A rate of zero is not a question, and must not become an answer -- the
     // engine guards on `> 0.0`, and this is the other side of that contract.
     CHECK(output->effectiveSampleRate(0.0, {}, false) == 0.0);
+}
+
+// The case above pins that the engine is told a *consistent* story; this one
+// pins that the story is true. It is a different question, and the difference
+// is where a Bluetooth headset went mono.
+//
+// preferredSampleRate() used to read ma_device_info::nativeDataFormats[0],
+// which on WASAPI is the mix format and on CoreAudio is merely the first rate
+// in a list of everything the device would accept. A MOMENTUM 4 sitting in
+// A2DP at 44,100 lists its 16,000 Hz hands-free rate first, so the engine
+// resampled the album to 16,000 and opened the device there -- and CoreAudio's
+// 16 kHz description for that device is mono, so miniaudio quietly set the
+// audio unit to one channel. Every assertion in the case above still passed,
+// because they all compare the answer against itself.
+//
+// So this one goes outside the seam and asks the hardware. Opening at the rate
+// preferredSampleRate() named must leave miniaudio with nothing to convert:
+// the same rate it was asked for, and no narrower than the device natively
+// runs. Talking to miniaudio directly is the point -- internalSampleRate and
+// internalChannels are the fields IAudioOutput deliberately does not expose,
+// and they are the only place the silent conversion is visible. Same reasoning
+// as tools/ma-rate-probe.
+//
+// Default device only, which is the one that bit. Reaching a named device would
+// need MiniaudioOutput's private id encoding.
+TEST_CASE("the rate the real backend names is one the device runs",
+          "[.ratedevice]") {
+    if (enumerateOutputDevices().empty()) {
+        SKIP("no output device on this machine");
+    }
+
+    RingBuffer ring(1U << 12);
+    auto       output = makeMiniaudioOutput(ring);
+    REQUIRE(output != nullptr);
+
+    const double named = output->preferredSampleRate({});
+    if (named <= 0.0) {
+        SKIP("this backend will not say what the device is running");
+    }
+
+    // Never started, so neither open makes a sound.
+    const auto silence = [](ma_device*, void*, const void*, ma_uint32) {};
+
+    // What the device runs when nothing is asked of it. The baseline for
+    // "narrower", so that a genuinely mono output still passes.
+    ma_device_config nativeConfig = ma_device_config_init(ma_device_type_playback);
+    nativeConfig.playback.format   = ma_format_f32;
+    nativeConfig.playback.channels = 0;
+    nativeConfig.sampleRate        = 0;
+    nativeConfig.dataCallback      = silence;
+
+    ma_device native;
+    if (ma_device_init(nullptr, &nativeConfig, &native) != MA_SUCCESS) {
+        SKIP("the default device would not open");
+    }
+    const ma_uint32 nativeChannels = native.playback.internalChannels;
+    ma_device_uninit(&native);
+
+    // And now the open the engine would really do, at the rate it was told.
+    ma_device_config askedConfig = ma_device_config_init(ma_device_type_playback);
+    askedConfig.playback.format   = ma_format_f32;
+    askedConfig.playback.channels = 2;
+    askedConfig.sampleRate        = static_cast<ma_uint32>(named);
+    askedConfig.dataCallback      = silence;
+
+    ma_device asked;
+    REQUIRE(ma_device_init(nullptr, &askedConfig, &asked) == MA_SUCCESS);
+    const ma_uint32 askedRate     = asked.playback.internalSampleRate;
+    const ma_uint32 askedChannels = asked.playback.internalChannels;
+    ma_device_uninit(&asked);
+
+    INFO("preferredSampleRate said " << named << " Hz; the device ran at "
+                                     << askedRate << " Hz, " << askedChannels
+                                     << " ch (natively " << nativeChannels << " ch)");
+    CHECK(static_cast<double>(askedRate) == named);
+    CHECK(askedChannels == nativeChannels);
 }
 
 TEST_CASE("a device opens in an integer format and runs", "[.integerdevice]") {
