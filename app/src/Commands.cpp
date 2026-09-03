@@ -264,28 +264,20 @@ const std::vector<ToolbarItem>& toolbarLayout() {
     static const std::vector<ToolbarItem> table = [] {
         std::vector<ToolbarItem> rows;
 
+        // The transport, and nothing else.
+        //
+        // It used to carry check tools for the file browser, Info, Spectrum and
+        // the equaliser as well. They are panes: they stay open once opened, so
+        // each button was earning its width about once a session, and a toolbar
+        // that lists every pane is a second View menu drawn wider. All four are
+        // still in the View menu with the accelerators they always had.
+        //
+        // What is left is what somebody reaches for *while* listening, which is
+        // also why there is no separator any more -- there is one group now, and
+        // a divider needs two.
         for (const CommandId id : transportLayout()) {
             rows.push_back({id, ItemKind::Normal, false});
         }
-
-        // The four panes that are worth a click, and they are exactly the four
-        // View commands the icon table already has a glyph for -- which is not a
-        // coincidence to be tidied away: a command with no icon has no business
-        // on a toolbar showing icons alone, so the two lists agreeing is the
-        // check that this one is complete rather than merely short.
-        //
-        // Check tools, so each one stays pressed while its pane is open. Nothing
-        // has to push that state: EVT_UPDATE_UI already answers these four ids
-        // for the View menu's ticks, and wxToolBarBase::UpdateWindowUI asks the
-        // same handler every idle.
-        //
-        // Lyrics and the SC-55 panel are deliberately absent. Neither has a
-        // glyph, and a toolbar that lists every pane is a second View menu drawn
-        // wider; these are the ones somebody reaches for while listening.
-        rows.push_back({ViewFileTree, ItemKind::Check, true});
-        rows.push_back({ViewInfo, ItemKind::Check, false});
-        rows.push_back({ViewSpectrum, ItemKind::Check, false});
-        rows.push_back({ViewEqualizer, ItemKind::Check, false});
 
         return rows;
     }();

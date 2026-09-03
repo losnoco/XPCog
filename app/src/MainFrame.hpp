@@ -494,12 +494,11 @@ private:
     wxGauge*      scanBar_    = nullptr;
     wxBitmapButton* scanCancel_ = nullptr;
 
-    /// The transport and the pane toggles. A real toolbar rather than a row of
-    /// wxBitmapButtons: a tool posts wxEVT_TOOL, which *is* wxEVT_MENU, so it
-    /// reaches the same handler the menu item does with nothing translating for
-    /// it -- and wxToolBarBase::UpdateWindowUI walks its own tools every idle,
-    /// which is what puts the pane toggles' pressed state on the same
-    /// EVT_UPDATE_UI handlers the View menu's ticks already come from.
+    /// The transport. A real toolbar rather than a row of wxBitmapButtons: a
+    /// tool posts wxEVT_TOOL, which *is* wxEVT_MENU, so it reaches the same
+    /// handler the menu item does with nothing translating for it -- and
+    /// wxToolBarBase::UpdateWindowUI walks its own tools every idle, which is
+    /// where their enabled state comes from, with nothing pushing it.
     ///
     /// The frame's own toolbar, so the frame places it above the client area and
     /// nothing in the sizer shares a row with it. Borrowed, not owned: the frame

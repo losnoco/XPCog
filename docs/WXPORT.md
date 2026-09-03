@@ -452,15 +452,18 @@ to start playback and no obvious way back, which is why the Qt build removed the
 transport from its own context menu too; here it simply is not something a layout
 can hide.
 
-So the window is three bands. `CreateToolBar()` carries everything that is a
-button — the transport, then check tools for the file browser, Info, Spectrum and
-the equaliser — a `wxPanel` under it carries the seek bar, the clock, the volume
+So the window is three bands. `CreateToolBar()` carries the transport and nothing
+else, a `wxPanel` under it carries the seek bar, the clock, the volume
 and the filter, and the docks fill what is left. The split between the first two is
 not cosmetic. A tool raises `wxEVT_TOOL`, which is `wxEVT_MENU` under another name,
 so it arrives at the handler the menu item already has; `wxToolBarBase::UpdateWindowUI`
-walks its own tools every idle, so the four check tools take their pressed state
-from the `EVT_UPDATE_UI` handlers the View menu's ticks were already coming from,
-with nothing pushing it. Those four controls could go on the toolbar too, via
+walks its own tools every idle, so their enabled state comes from the
+`EVT_UPDATE_UI` handlers the menu items were already using, with nothing pushing it.
+
+The toolbar carried check tools for the file browser, Info, Spectrum and the
+equaliser until 1.5.3, and does not any more. Those four are panes, they stay open
+once opened, and a toolbar that lists every pane is a second View menu drawn wider;
+all four keep their View menu entries and accelerators. Those four controls could go on the toolbar too, via
 `AddControl()`, and should not: a toolbar sizes a control to the tool height and
 centres it, which is the wrong answer for a bar that has to stretch, and an item on
 a native `NSToolbar` is something the toolbar may push into an overflow menu, which

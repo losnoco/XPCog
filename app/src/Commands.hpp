@@ -162,7 +162,7 @@ struct ToolbarItem {
     bool     separatorBefore = false;
 };
 
-/// The main window's toolbar: the transport, then the panes worth one click.
+/// The main window's toolbar: the transport, and nothing else.
 ///
 /// Built from transportLayout() rather than repeating it, so the order of the
 /// transport is stated once and the mini player cannot drift from the toolbar.
