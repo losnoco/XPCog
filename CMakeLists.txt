@@ -23,7 +23,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "${XPCOG_OSX_DEPLOYMENT_TARGET}" CACHE STRING
 
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 1.5.2
+    VERSION 1.5.3
     DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
     LANGUAGES C CXX)
 

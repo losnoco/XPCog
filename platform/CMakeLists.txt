@@ -25,6 +25,7 @@
 #   FileManager    revealing a file and moving it to the trash
 #   Foreground     AllowSetForegroundWindow, Windows only
 #   CrashReporter  sentry-native, and only once the listener has said yes
+#   AccentColour   the desktop's accent colour; nothing to read on Linux
 
 add_library(xpcog-platform STATIC
     src/common/FileSettingsStore.cpp
@@ -60,6 +61,7 @@ if(WIN32)
         src/windows/FileAssociations.cpp
         src/windows/WindowsSettings.cpp
         src/windows/WindowsFileManager.cpp
+        src/windows/WindowsAccentColour.cpp
         src/common/CommonPropertyList.cpp
         src/common/NullTrayIcon.cpp
         src/common/NullDesktopIdentity.cpp
@@ -89,9 +91,11 @@ elseif(APPLE)
         src/common/NullTrayIcon.cpp
         src/common/NullDesktopIdentity.cpp
         src/mac/MacFileManager.mm
+        src/mac/MacAccentColour.mm
         src/mac/MacMediaIntegration.mm)
     # ARC, so the Objective-C objects there need no manual retain or release.
     set_source_files_properties(src/mac/MacMediaIntegration.mm src/mac/MacFileManager.mm
+        src/mac/MacAccentColour.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     # CoreFoundation is for the settings store, which talks to CFPreferences
     # directly rather than through any config library -- see MacSettings.cpp for
@@ -106,6 +110,7 @@ elseif(UNIX)
         src/common/NullTaskbarIntegration.cpp
         src/common/CommonSettings.cpp
         src/common/CommonPropertyList.cpp
+        src/common/NullAccentColour.cpp
         src/linux/GioFileManager.cpp
         src/linux/GDbusMediaIntegration.cpp
         src/linux/SniTrayIcon.cpp
@@ -146,6 +151,7 @@ else()
         src/common/NullTrayIcon.cpp
         src/common/NullDesktopIdentity.cpp
         src/common/NullFileManager.cpp
+        src/common/NullAccentColour.cpp
         src/common/CommonSettings.cpp)
 endif()
 
