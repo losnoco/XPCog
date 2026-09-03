@@ -479,8 +479,29 @@ TEST_CASE("the rate the real backend names is one the device runs",
     nativeConfig.sampleRate        = 0;
     nativeConfig.dataCallback      = silence;
 
+    // Through one context, the way MiniaudioOutput does, rather than passing
+    // nullptr and letting miniaudio stand a temporary one up and tear it down
+    // around every open. That difference is not cosmetic: on PulseAudio this
+    // case aborted the whole binary once in twenty-two runs on ruxtower --
+    //
+    //   Assertion 'pa_channels_valid(channels)' failed at channelmap.c:400,
+    //   function pa_channel_map_init_extend(). Aborting.
+    //
+    // -- and never reproduced, including under gdb and on the failing seed. It
+    // was not pinned to a cause, so this is not a fix being claimed; it removes
+    // the one structural difference between the code that aborted and the
+    // production path that did not, which is the change worth making whether or
+    // not it turns out to have been the trigger. A SIGABRT takes the process
+    // down rather than failing an assertion, and this case is hidden behind
+    // [.ratedevice], so CI would never have seen it.
+    ma_context context;
+    if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
+        SKIP("no audio backend on this machine");
+    }
+
     ma_device native;
-    if (ma_device_init(nullptr, &nativeConfig, &native) != MA_SUCCESS) {
+    if (ma_device_init(&context, &nativeConfig, &native) != MA_SUCCESS) {
+        ma_context_uninit(&context);
         SKIP("the default device would not open");
     }
     const ma_uint32 nativeChannels = native.playback.internalChannels;
@@ -493,11 +514,20 @@ TEST_CASE("the rate the real backend names is one the device runs",
     askedConfig.sampleRate        = static_cast<ma_uint32>(named);
     askedConfig.dataCallback      = silence;
 
-    ma_device asked;
-    REQUIRE(ma_device_init(nullptr, &askedConfig, &asked) == MA_SUCCESS);
-    const ma_uint32 askedRate     = asked.playback.internalSampleRate;
-    const ma_uint32 askedChannels = asked.playback.internalChannels;
-    ma_device_uninit(&asked);
+    // Read out and torn down before anything is asserted, because REQUIRE
+    // throws: asserting with the context still open would leak it on the one
+    // run that matters, the failing one.
+    ma_device       asked;
+    const bool      opened        = ma_device_init(&context, &askedConfig, &asked) == MA_SUCCESS;
+    ma_uint32       askedRate     = 0;
+    ma_uint32       askedChannels = 0;
+    if (opened) {
+        askedRate     = asked.playback.internalSampleRate;
+        askedChannels = asked.playback.internalChannels;
+        ma_device_uninit(&asked);
+    }
+    ma_context_uninit(&context);
+    REQUIRE(opened);
 
     INFO("preferredSampleRate said " << named << " Hz; the device ran at "
                                      << askedRate << " Hz, " << askedChannels
