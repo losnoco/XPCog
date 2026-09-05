@@ -173,6 +173,12 @@ add_custom_target(notarize
 add_dependencies(sign xpcog-app)
 add_dependencies(dmg xpcog-app)
 
+# And on the plist being finished. xpcog-bundle-plist (app/CMakeLists.txt) fills
+# the document types in after the link, and a signature covers Info.plist, so
+# it has to have run before codesign reads the bundle rather than after.
+add_dependencies(sign xpcog-bundle-plist)
+add_dependencies(dmg xpcog-bundle-plist)
+
 set_target_properties(sign dmg notarize PROPERTIES FOLDER packaging)
 
 if(XPCOG_CODESIGN_IDENTITY)

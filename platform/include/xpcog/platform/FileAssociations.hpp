@@ -21,7 +21,9 @@
 // A no-op off Windows. Linux associations are a `.desktop` file plus shared-MIME
 // XML installed into the right prefix, and macOS reads `CFBundleDocumentTypes`
 // out of the bundle's Info.plist -- both are packaging, done by whatever installs
-// the application, not by the application at run time.
+// the application, not by the application at run time. The same rule about the
+// list holds there too: the macOS entries are written at build time by
+// tools/doctypes from the same registry, not by hand.
 
 #pragma once
 

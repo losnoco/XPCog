@@ -4050,6 +4050,19 @@ asserted a property Qt provides rather than the one the code was responsible for
   XPCog available to choose, and choosing it is the user's step. The extension list
   comes from `PluginRegistry::allExtensions()` rather than being written out
   anywhere, so it cannot fall behind the codecs.
+
+  macOS gets the same list by the route a bundle allows, which is the plist and
+  not a run-time call. `xpcog-doctypes` (`tools/doctypes/`) runs after every
+  build, reads the registry, and writes `CFBundleDocumentTypes` plus one imported
+  type declaration per extension macOS has no type of its own for;
+  `app/SpliceDocumentTypes.cmake` puts them into `Info.plist` between two markers.
+  Cog's `Info.plist.template` carries the same content by hand — seventy entries
+  generated once by a disabled block in `PluginController.mm` and kept in step by
+  eye ever since. Two deliberate differences from Windows: the rank is
+  `Alternate` everywhere, since a Mac *can* be told to take a default and this
+  declines to, and an extension the system already knows as something other than
+  audio (`.m`, `.svg`, `.raw`…) is left out rather than offered, where Windows
+  offers XPCog for all of them.
 - **The interface is English only, on purpose.** The `tr()` calls are all there
   and cost nothing, but the catalogues, `qt_add_translations()`, the `QTranslator`
   at startup and the `:/i18n` resource have been taken back out until the strings

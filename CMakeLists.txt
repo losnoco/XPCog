@@ -23,7 +23,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "${XPCOG_OSX_DEPLOYMENT_TARGET}" CACHE STRING
 
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 1.6.0
+    VERSION 1.7.0
     DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
     LANGUAGES C CXX)
 
@@ -106,6 +106,12 @@ endif()
 
 if(XPCOG_BUILD_APP)
     add_subdirectory(platform)
+    if(APPLE)
+        # Before app, which runs it while assembling the bundle: it writes the
+        # document types Info.plist declares. tools/doctypes/main.cpp says why
+        # that is a program and not a list.
+        add_subdirectory(tools/doctypes)
+    endif()
     add_subdirectory(app)
 
     # Packaging, after the thing being packaged. None of what these add is ever

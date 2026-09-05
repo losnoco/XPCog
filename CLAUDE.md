@@ -124,8 +124,10 @@ Tags starting with a dot are hidden and only run when named: `[.lastfmlive]`
 hardware).
 
 Other targets: `xpcog-no-toolkit` (layering check, runs as part of `ALL`),
-`installer` on Windows (needs NSIS; use a **release** tree), and on macOS `sign`,
-`dmg` and `notarize` (`packaging/macos/`; the identity comes from
+`installer` on Windows (needs NSIS; use a **release** tree), and on macOS
+`xpcog-doctypes` plus `xpcog-bundle-plist` (in `ALL`; write the document types
+into the bundle's `Info.plist` from the codec registry — never edit them by
+hand), and `sign`, `dmg` and `notarize` (`packaging/macos/`; the identity comes from
 `XPCOG_CODESIGN_IDENTITY` and the notary credentials from the environment only —
 see the README section).
 

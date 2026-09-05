@@ -235,6 +235,23 @@ creating a writable image, mounting it, driving the Finder to arrange the icons
 and converting the result, on a machine with a logged-in window server. That is
 the most fragile machinery in a macOS release and it buys a prettier window.
 
+**The bundle declares what it opens**, so the Finder's *Open With* menu, the
+Dock icon and a double-click on a game-music file all reach XPCog. The
+declarations are not written by hand: `xpcog-doctypes` (`tools/doctypes/`) runs
+after every build, reads the codec registry, and writes `CFBundleDocumentTypes`
+and `UTImportedTypeDeclarations` for every extension this build decodes; a
+splice step puts them into the bundle's `Info.plist` between two markers
+`app/Info.plist.in` carries, and `plutil` checks the result. Every entry ranks
+XPCog as an *alternate* handler, which is the plist's way of saying what
+`--register` says on Windows: XPCog is offered, and takes nothing from whatever
+opened these files before. Where XPCog is the only application to declare a
+type at all — most of the game-music formats — that still makes it the one a
+double-click opens. To make it the default for a type it is not alone in, use
+Get Info → *Open with* → *Change All…*, which is the user's step, as it is on
+Windows. A handful of vgmstream's extensions are left out on purpose, because
+macOS already knows them as something that is not audio (`.m` is Objective-C
+source, `.svg` is an image); the build log names them.
+
 **Signing is inside out**, and the order is the substance of it. A nested
 signature is part of the bytes the enclosing one covers, so `libvgmstream.dylib`
 and `crashpad_handler` are signed first, then the bundle, then the image. This
@@ -338,7 +355,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-1.6.0-x64-setup.exe
+:: -> build\windows-release\XPCog-1.7.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -359,7 +376,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-1.6.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-1.7.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode

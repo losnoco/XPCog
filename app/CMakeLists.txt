@@ -507,6 +507,45 @@ if(APPLE AND TARGET vgmstream::vgmstream)
 endif()
 
 # ---------------------------------------------------------------------------
+# The document types -- what the Finder, the Dock and "Open With" offer XPCog
+# for.
+#
+# Written by xpcog-doctypes (tools/doctypes/) from the codec registry, so the
+# plist claims exactly what this build decodes and cannot fall behind it, which
+# is the rule --register follows on Windows. That needs a program of this build
+# to have run, and CMake writes Info.plist while generating, before anything
+# has been compiled -- so the plist is generated with an empty pair of markers
+# and filled in afterwards, by SpliceDocumentTypes.cmake, which says how.
+#
+# A target rather than a POST_BUILD step on xpcog-app, and one that is in ALL
+# and runs every build: a reconfigure rewrites Info.plist without relinking
+# anything, and a POST_BUILD step would leave the fresh plist empty until the
+# next link. The splice is idempotent and costs a plutil, so running it again
+# is cheap; missing it once would ship a bundle that opens nothing by
+# double-click. `sign` and `dmg` depend on it, because a signature covers the
+# plist and would be broken by writing into it afterwards.
+# ---------------------------------------------------------------------------
+if(APPLE)
+    set(XPCOG_DOCUMENT_TYPES "${CMAKE_CURRENT_BINARY_DIR}/DocumentTypes.plist.in")
+    add_custom_command(
+        OUTPUT "${XPCOG_DOCUMENT_TYPES}"
+        COMMAND xpcog-doctypes "${XPCOG_DOCUMENT_TYPES}"
+        DEPENDS xpcog-doctypes
+        COMMENT "Listing the file types XPCog.app opens"
+        VERBATIM)
+    add_custom_target(xpcog-bundle-plist ALL
+        COMMAND "${CMAKE_COMMAND}"
+                -D "PLIST=$<TARGET_BUNDLE_CONTENT_DIR:xpcog-app>/Info.plist"
+                -D "FRAGMENT=${XPCOG_DOCUMENT_TYPES}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/SpliceDocumentTypes.cmake"
+        DEPENDS "${XPCOG_DOCUMENT_TYPES}"
+        COMMENT "Declaring the document types in Info.plist"
+        VERBATIM)
+    add_dependencies(xpcog-bundle-plist xpcog-app)
+    set_target_properties(xpcog-bundle-plist PROPERTIES FOLDER app)
+endif()
+
+# ---------------------------------------------------------------------------
 # Deployment: there is none, and that is the point.
 #
 # The Qt build needed `cmake --build <dir> --target deploy` before the binary

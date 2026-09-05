@@ -230,6 +230,12 @@ public:
         return decoders_;
     }
 
+    /// What allExtensions() leaves out: the extensions containers claim, which
+    /// the bundle's document types on macOS want beside the decoders'.
+    [[nodiscard]] std::span<const ContainerDescriptor> containers() const noexcept {
+        return containers_;
+    }
+
     /// Every extension claimed by a registered decoder, lowercase and deduplicated.
     /// Drives the app's file-open filter, replacing Cog's generated
     /// CFBundleDocumentTypes (Audio/PluginController.mm -printPluginInfo).

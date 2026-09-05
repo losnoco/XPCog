@@ -55,6 +55,18 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 
+	<!--
+	    The document types, filled in by the build. Nothing between the two
+	    markers is written by hand: after every build, app/SpliceDocumentTypes.cmake
+	    replaces what lies between them with the output of xpcog-doctypes, which
+	    is the extension list of this build's codec registry rendered as
+	    CFBundleDocumentTypes and UTImportedTypeDeclarations. Both markers stay,
+	    so the next build can find the pair again. tools/doctypes/main.cpp says
+	    what is written and why it is generated.
+	-->
+	<!-- XPCOG_DOCUMENT_TYPES_BEGIN -->
+	<!-- XPCOG_DOCUMENT_TYPES_END -->
+
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 
