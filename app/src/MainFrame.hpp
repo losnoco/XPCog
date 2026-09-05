@@ -276,7 +276,19 @@ private:
     void addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled);
 
     void onPositionChanged(double seconds, double duration);
-    void onCurrentTrackChanged(TrackId id);
+
+    /// Why the current track is being announced, which the two listening
+    /// thresholds need and nothing else does.
+    enum class ListenChange {
+        /// The seam reached the speaker. The same id arriving twice running is
+        /// the same entry looping -- repeat-one, or a playlist of one under
+        /// repeat-all -- rather than a second listen.
+        Announced,
+        /// The entry did not change but the song did: a stream renamed itself.
+        /// A new listen, on a row that was already current.
+        NewSong,
+    };
+    void onCurrentTrackChanged(TrackId id, ListenChange change = ListenChange::Announced);
     void onPlaybackStateChanged(bool playing, bool paused);
 
     void removeSelected();
@@ -426,7 +438,8 @@ private:
     void wireScrobbling();
 
     /// Starts the monitor for `id`, and announces it as now playing.
-    void beginScrobbleTrack(TrackId id);
+    /// `looping` is the same entry coming round again; see PlayMonitor.
+    void beginScrobbleTrack(TrackId id, bool looping);
 
     /// The docking manager. Declared before the panes it manages so it is
     /// destroyed after them -- though UnInit() in the destructor is what

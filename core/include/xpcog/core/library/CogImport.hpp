@@ -97,10 +97,21 @@ struct CogPlayCount {
     std::int64_t count  = 0;
     double       rating = 0.0;
 
-    /// Apple epoch seconds (2001-01-01), left unconverted: nothing here reads
-    /// them, and a conversion nobody checks is a conversion that is wrong.
+    /// Apple epoch seconds (2001-01-01), exactly as Core Data wrote them.
+    /// Zero where Cog recorded no date -- both columns are optional, and a row
+    /// created but never played carries neither -- which stays distinguishable
+    /// from 1 January 2001 on purpose: an import writes only a date it was
+    /// actually given.
+    ///
+    /// Left in Cog's units, with the conversion in the two accessors below, so
+    /// that the thirty-one year offset lives in one place with a test on it
+    /// rather than at each call site that wants a timestamp.
     double firstSeen  = 0.0;
     double lastPlayed = 0.0;
+
+    /// The same two dates in Unix seconds, and 0 for a date Cog never recorded.
+    [[nodiscard]] std::int64_t firstSeenUnix() const noexcept;
+    [[nodiscard]] std::int64_t lastPlayedUnix() const noexcept;
 };
 
 /// Play counts, indexed for the lookup Cog's own keying forces.
@@ -290,9 +301,36 @@ struct CogPlaylistImport {
 std::size_t mergeCogStoreData(std::span<const PlaylistEntry> fromStore,
                               std::span<PlaylistEntry>       scanned);
 
+/// One entry that matched a store row, with everything the row had to say.
+///
+/// A copy rather than a pointer into the CogPlayCounts it came from, and only
+/// of the numbers: the strings are already on the entry, and the caller is
+/// writing these into a library row keyed on that entry.
+struct CogPlayCountMatch {
+    /// Index into the span that was passed to applyCogPlayCounts().
+    std::size_t entry = 0;
+
+    std::int64_t count = 0;
+
+    /// Unix seconds, zero where Cog recorded no date. See CogPlayCount.
+    std::int64_t firstSeen  = 0;
+    std::int64_t lastPlayed = 0;
+
+    /// Zero where Cog recorded no rating, which is how Cog itself says "unrated".
+    double rating = 0.0;
+};
+
 /// What matching Cog's play counts onto scanned entries produced.
 struct CogPlayCountReport {
-    /// Entries that received a count.
+    /// The entries that received a count, in the order they were passed.
+    ///
+    /// The dates and the rating ride along here rather than on the entry
+    /// because a PlaylistEntry has nowhere to put them: they belong to the
+    /// library's play-count row, and the caller is what has a library.
+    std::vector<CogPlayCountMatch> matches;
+
+    /// How many entries received a count -- `matches.size()`, kept as a number
+    /// because that is all most callers want from this.
     std::size_t matched = 0;
 
     /// Entries that did not. Counted per *entry* rather than per store row, so
@@ -316,6 +354,9 @@ struct CogPlayCountReport {
 /// Cog's own key is (filename, title, artist, album), where the filename keeps
 /// its fragment so cue sheet tracks stay apart -- which is exactly what
 /// `PlaylistEntry::filename()` returns.
+///
+/// The count lands on the entry; the dates and the rating come back in the
+/// report, for a caller with a library to merge them into.
 CogPlayCountReport applyCogPlayCounts(const CogPlayCounts&     counts,
                                       std::span<PlaylistEntry> entries);
 

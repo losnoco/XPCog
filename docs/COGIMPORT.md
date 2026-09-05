@@ -234,6 +234,32 @@ Matching happens *after* a rescan, and that is forced by the first decision: the
 title and artist to match on are the ones the scanner read from the file, not
 ones carried out of the store.
 
+**A count is not the only thing on the row.** `ZPLAYCOUNT` also carries the date
+the track was first seen, the date it was last played, and Cog's rating, and all
+four go into XPCog's own `play_count` row through `Library::importPlayCount()`.
+Two details make that safe to run twice, which matters because a listener whose
+first attempt matched badly will run it again:
+
+- **The tallies merge by taking the larger, never by adding.** Cog's count and
+  XPCog's are two records of the same listening rather than two halves of it.
+- **Zero means "Cog did not record this".** All three of those fields are
+  optional in Cog's model, and a row created but never played carries none of
+  them, so a zero must not overwrite a date or a rating already here. The dates
+  otherwise merge the way they read -- the earlier first-seen, the later
+  last-played -- and a rating set in XPCog outranks the imported one.
+
+The dates arrive as Core Data wrote them, in seconds since **2001-01-01**;
+`CogPlayCount::firstSeenUnix()` and `lastPlayedUnix()` apply the 978307200-second
+offset, so a caller cannot forget it. Getting that wrong is the quiet kind of
+wrong: both numbers are plausible timestamps, and the only symptom is a library
+that thinks every track was first heard in 1992.
+
+Writing to the play-count table rather than only to the entries is what makes an
+imported count survive being listened to. The tally shown in the playlist is the
+entry's, but the number the next play increments is the table's -- so a count
+that reached the entry and not the table lasted exactly until the track was
+played, and then read 1.
+
 ## The import
 
 **File > Import from Cog...** takes a path to a `DataModel.sqlite`, reads it,
@@ -244,7 +270,7 @@ work, all portable and all tested on every platform:
 |---|---|
 | `cogLibraryToPlaylist()` | a `CogLibrary` becomes `PlaylistEntry` values, in Cog's order |
 | `mergeCogStoreData()` | puts the store's knowledge back after the scan |
-| `applyCogPlayCounts()` | matches the counts onto scanned entries |
+| `applyCogPlayCounts()` | matches the counts onto scanned entries, and reports the dates and ratings that came with them |
 
 The order is forced rather than chosen. Entries come out of the first with **no
 tags at all** -- `metadataLoaded` is false, because the metadata blob is

@@ -215,6 +215,20 @@ TEST_CASE("a play count matches on every field Cog recorded", "[cogimport]") {
     CHECK(first->count == 7);
     CHECK(first->rating == Approx(4.5));
 
+    // The dates arrive as Unix seconds. Cog keeps them as Core Data does, in
+    // seconds since 2001-01-01, so a reader that forgot the offset would date
+    // every listen thirty-one years early -- and be believed, because both
+    // numbers are plausible timestamps.
+    CHECK(first->firstSeen == Approx(706232000.0));
+    CHECK(first->firstSeenUnix() == 706232000 + 978307200);
+    CHECK(first->lastPlayedUnix() == 712000000 + 978307200);
+
+    // A date Cog never recorded stays sayable: zero rather than a timestamp
+    // thirty-one years in the past.
+    const CogPlayCount undated;
+    CHECK(undated.firstSeenUnix() == 0);
+    CHECK(undated.lastPlayedUnix() == 0);
+
     // A field that disagrees is a different track, even when the filename is
     // the one that would have matched. This is the collision the full tuple was
     // chosen to avoid: the same "01 First.flac" under a different album.
@@ -489,6 +503,21 @@ TEST_CASE("play counts land on a scanned entry", "[cogimport]") {
     CHECK(report.matched >= 1);
     // Per entry, not per store row, so the two sum to what was passed in.
     CHECK(report.matched + report.unmatched == imported.entries.size());
+    CHECK(report.matched == report.matches.size());
+
+    // The dates and the rating come back in the report rather than on the
+    // entry, because a PlaylistEntry has nowhere to put them: they belong to
+    // the library's play-count row, which is what the caller writes them to.
+    const auto match = std::find_if(report.matches.begin(), report.matches.end(),
+                                    [&](const CogPlayCountMatch& m) {
+                                        return imported.entries[m.entry].filename() ==
+                                               "01 First.flac";
+                                    });
+    REQUIRE(match != report.matches.end());
+    CHECK(match->count == 7);
+    CHECK(match->firstSeen == 706232000 + 978307200);
+    CHECK(match->lastPlayed == 712000000 + 978307200);
+    CHECK(match->rating == Approx(4.5));
 }
 
 TEST_CASE("a play count needs every field Cog recorded to agree", "[cogimport]") {

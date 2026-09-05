@@ -537,6 +537,105 @@ TEST_CASE("a first-seen note carries the count the entry arrived with",
     CHECK(record->count == 13);
 }
 
+TEST_CASE("an import raises a tally the library already has", "[library]") {
+    Library library = openMemoryLibrary();
+
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath("/music/sheep.flac");
+    entry.artist   = "Pink Floyd";
+    entry.album    = "Animals";
+    entry.rawTitle = "Sheep";
+
+    // Known here first -- added, played once -- which is the case the import
+    // used to lose: the row exists, so seeding it on the way in does nothing,
+    // and the first play afterwards counted up from one.
+    REQUIRE(library.noteFirstSeen(entry, 5000).has_value());
+    REQUIRE(library.recordPlay(entry, 6000));
+
+    Library::PlayCountImport imported;
+    imported.count      = 12;
+    imported.firstSeen  = 1000;
+    imported.lastPlayed = 4000;
+    imported.rating     = 4.5;
+    REQUIRE(library.importPlayCount(entry, imported));
+
+    const auto record = library.playCount("Pink Floyd", "Animals", "Sheep");
+    REQUIRE(record.has_value());
+    // The larger tally, not the sum: the two are records of the same listening,
+    // and importing the same store twice must not double it.
+    CHECK(record->count == 12);
+    CHECK(record->firstSeen == 1000);   // the earlier of the two
+    CHECK(record->lastPlayed == 6000);  // the later
+    CHECK(record->rating == 4.5F);
+
+    // Importing it again changes nothing, which is what makes a second attempt
+    // at an import safe.
+    REQUIRE(library.importPlayCount(entry, imported));
+    CHECK(library.playCount("Pink Floyd", "Animals", "Sheep")->count == 12);
+
+    // And the next play continues the imported history instead of restarting it.
+    REQUIRE(library.recordPlay(entry, 7000));
+    CHECK(library.playCount("Pink Floyd", "Animals", "Sheep")->count == 13);
+}
+
+TEST_CASE("an import adds only what it was given", "[library]") {
+    Library library = openMemoryLibrary();
+
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath("/music/dogs.flac");
+    entry.artist   = "Pink Floyd";
+    entry.album    = "Animals";
+    entry.rawTitle = "Dogs";
+
+    REQUIRE(library.noteFirstSeen(entry, 5000).has_value());
+    REQUIRE(library.recordPlay(entry, 6000));
+    REQUIRE(library.setRating(entry, 3.0F));
+
+    // A Cog row that was created and never played: a count, and none of the
+    // three optional fields. Zero means "not recorded" rather than "1 January
+    // 2001" and "unrated", so none of them may overwrite what is here.
+    Library::PlayCountImport imported;
+    imported.count = 2;
+    REQUIRE(library.importPlayCount(entry, imported));
+
+    const auto record = library.playCount("Pink Floyd", "Animals", "Dogs");
+    REQUIRE(record.has_value());
+    CHECK(record->count == 2);
+    CHECK(record->firstSeen == 5000);
+    CHECK(record->lastPlayed == 6000);
+    CHECK(record->rating == 3.0F);
+}
+
+TEST_CASE("an import of a track this library has never seen", "[library]") {
+    Library library = openMemoryLibrary();
+
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath("/music/pigs.flac");
+    entry.artist   = "Pink Floyd";
+    entry.album    = "Animals";
+    entry.rawTitle = "Pigs";
+
+    Library::PlayCountImport imported;
+    imported.count      = 3;
+    imported.firstSeen  = 1000;
+    imported.lastPlayed = 2000;
+    REQUIRE(library.importPlayCount(entry, imported));
+
+    const auto record = library.playCount("Pink Floyd", "Animals", "Pigs");
+    REQUIRE(record.has_value());
+    CHECK(record->count == 3);
+    CHECK(record->firstSeen == 1000);
+    CHECK(record->lastPlayed == 2000);
+    CHECK(record->filename == "pigs.flac");
+
+    // Adding it to a playlist afterwards keeps the imported dates and tally,
+    // rather than restamping the track as first seen today.
+    const auto added = library.noteFirstSeen(entry, 9000);
+    REQUIRE(added.has_value());
+    CHECK(added->firstSeen == 1000);
+    CHECK(added->count == 3);
+}
+
 TEST_CASE("ratings attach to the play count row", "[library]") {
     Library library = openMemoryLibrary();
 

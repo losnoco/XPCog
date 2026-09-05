@@ -1220,15 +1220,18 @@ std::optional<PlayCountRecord> Library::noteFirstSeen(const PlaylistEntry& entry
     }
 
     // The same natural key and the same upsert as recordPlay, minus the counting:
-    // a track being added to the playlist is not a play. On conflict only the
-    // filename moves, so re-adding a track keeps both the date it was first seen
-    // and everything that has been counted against it since.
+    // a track being added to the playlist is not a play. On conflict the
+    // filename moves and the count rises to whichever tally is larger, so
+    // re-adding a track keeps both the date it was first seen and everything
+    // that has been counted against it since -- and an entry arriving with more
+    // than the row holds, which is what a Cog import produces, hands its history
+    // to the row rather than having it silently dropped.
     sql::Statement statement{
         impl_->database,
         "INSERT INTO play_count (artist, album, title, filename, count, first_seen) "
         "VALUES (?,?,?,?,?,?) "
         "ON CONFLICT(artist, album, title) DO UPDATE SET "
-        "filename = excluded.filename;"};
+        "count = max(count, excluded.count), filename = excluded.filename;"};
     if (!statement.valid()) {
         static_cast<void>(impl_->fail("cannot prepare the first-seen upsert"));
         return std::nullopt;
@@ -1250,6 +1253,53 @@ std::optional<PlayCountRecord> Library::noteFirstSeen(const PlaylistEntry& entry
     }
     impl_->error.clear();
     return playCount(entry.artist, entry.album, entry.title());
+}
+
+bool Library::importPlayCount(const PlaylistEntry&   entry,
+                              const PlayCountImport& imported) {
+    if (!isOpen()) {
+        return impl_->fail("no database");
+    }
+
+    // Every branch below reads "zero means the import had nothing to say",
+    // which is the shape of Cog's own model: ZFIRSTSEEN, ZLASTPLAYED and
+    // ZRATING are all optional, and a row Cog created but never played carries
+    // none of them. An import may add to what this library knows and may not
+    // take anything away.
+    //
+    // The dates merge the way they are named -- the earlier first-seen, the
+    // later last-played -- and first_seen is additionally guarded on the stored
+    // value being set at all, or a row that has never carried a date would keep
+    // its zero forever under a plain min().
+    sql::Statement statement{
+        impl_->database,
+        "INSERT INTO play_count (artist, album, title, filename, count, "
+        "first_seen, last_played, rating) VALUES (?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(artist, album, title) DO UPDATE SET "
+        "count = max(count, excluded.count), "
+        "first_seen = CASE WHEN excluded.first_seen > 0 AND "
+        "(first_seen = 0 OR excluded.first_seen < first_seen) "
+        "THEN excluded.first_seen ELSE first_seen END, "
+        "last_played = max(last_played, excluded.last_played), "
+        "rating = CASE WHEN rating > 0 THEN rating ELSE excluded.rating END, "
+        "filename = excluded.filename;"};
+    if (!statement.valid()) {
+        return impl_->fail("cannot prepare the play count import");
+    }
+
+    statement.bind(1, entry.artist);
+    statement.bind(2, entry.album);
+    statement.bind(3, entry.title());
+    statement.bind(4, entry.filename());
+    statement.bind(5, imported.count);
+    statement.bind(6, imported.firstSeen);
+    statement.bind(7, imported.lastPlayed);
+    statement.bind(8, imported.rating);
+    if (!statement.run()) {
+        return impl_->fail("cannot import the play count");
+    }
+    impl_->error.clear();
+    return true;
 }
 
 bool Library::recordPlay(const PlaylistEntry& entry, std::int64_t whenUnixSeconds) {

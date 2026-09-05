@@ -3780,6 +3780,15 @@ All of these are also documented at the call site.
   on unrelated audio, so the two sides add in power and linear complements lose 3 dB
   through the middle. Sine and cosine legs hold the sum of squares at one. The cost is
   that identical audio either side — a very short seek — swells up to 3 dB instead.
+- **Repeat-one counts one play, not one a minute.** Cog's accumulator restarts
+  with each stream, and repeat-one starts a new stream of the same file every
+  lap, so a track left looping reports a play for every minute it runs. Here the
+  seam that hands the same entry back keeps the play-count threshold spent
+  (`PlayMonitor::repeatTrack`): the tally answers "how many tracks were listened
+  to", and a track nobody chose again is one. Scrobbling is untouched and does
+  fire per lap, which is Last.fm's own rule and the reason the two thresholds
+  part company here at all. Starting the same track over by hand still counts,
+  and is told apart by the engine's clock restarting at zero.
 
 **Not ported**
 

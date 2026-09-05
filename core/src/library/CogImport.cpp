@@ -6,6 +6,7 @@
 #include "xpcog/core/Settings.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <unordered_map>
 #include <utility>
 
@@ -53,7 +54,34 @@ enum Column {
     return !statement.isNull(column) && statement.columnInt(column) != 0;
 }
 
+/// Core Data writes an NSDate as seconds since **2001-01-01**, so a date out of
+/// a Cog store is thirty-one years short of a Unix timestamp. The offset is
+/// exact: both epochs begin at midnight UTC, and neither counts the leap
+/// seconds between them.
+constexpr std::int64_t kAppleEpochToUnix = 978307200;
+
+/// A stored date as Unix seconds, and 0 for a date Cog never recorded.
+///
+/// Both date columns are optional in Cog's model, and a row created but never
+/// played has a null ZLASTPLAYED, which SQLite reads back as 0.0. Keeping that
+/// zero is what lets an import say "no date" instead of dating every untouched
+/// row to 1 January 2001.
+[[nodiscard]] std::int64_t appleTimeToUnix(double appleSeconds) {
+    if (appleSeconds == 0.0) {
+        return 0;
+    }
+    return static_cast<std::int64_t>(appleSeconds) + kAppleEpochToUnix;
+}
+
 }  // namespace
+
+std::int64_t CogPlayCount::firstSeenUnix() const noexcept {
+    return appleTimeToUnix(firstSeen);
+}
+
+std::int64_t CogPlayCount::lastPlayedUnix() const noexcept {
+    return appleTimeToUnix(lastPlayed);
+}
 
 bool isCogFileReferenceUrl(std::string_view urlString) {
     // Both spellings Cog tests for, from Utils/CogURLNormalization.h: the
@@ -460,10 +488,13 @@ CogPlayCountReport applyCogPlayCounts(const CogPlayCounts&     counts,
                                       std::span<PlaylistEntry> entries) {
     CogPlayCountReport report;
     if (counts.empty()) {
+        report.unmatched = entries.size();
         return report;
     }
 
-    for (PlaylistEntry& entry : entries) {
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        PlaylistEntry& entry = entries[i];
+
         // filename() is the last path component with the fragment still on it,
         // which is exactly the key Cog stored -- "Album.cue#01" keeps the tracks
         // of one cue sheet apart.
@@ -474,6 +505,14 @@ CogPlayCountReport applyCogPlayCounts(const CogPlayCounts&     counts,
             continue;
         }
         entry.playCount = match->count;
+
+        CogPlayCountMatch matched;
+        matched.entry      = i;
+        matched.count      = match->count;
+        matched.firstSeen  = match->firstSeenUnix();
+        matched.lastPlayed = match->lastPlayedUnix();
+        matched.rating     = match->rating;
+        report.matches.push_back(matched);
         report.matched += 1;
     }
     return report;

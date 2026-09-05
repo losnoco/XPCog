@@ -26,6 +26,10 @@
 // as negative time, so a track beginning is never credited with the previous
 // session's total.
 //
+// That same backwards step is what tells a repeat-one lap apart from the
+// listener starting a track over by hand, which is the one place the two
+// thresholds part company: see repeatTrack().
+//
 // Nothing here reads a clock of its own. The caller supplies the engine's, which
 // is what lets the whole class be tested by calling advance() with numbers.
 
@@ -91,6 +95,19 @@ public:
     /// not scrobbling it.
     void beginTrack(double clockSeconds, double durationSeconds);
 
+    /// The *same* track is audible again, because repeat-one handed the entry
+    /// back at the seam. The scrobble side restarts -- a second listen is a
+    /// second scrobble, which is Last.fm's own rule -- while the play count
+    /// stays where it is, so a track left looping is counted once rather than
+    /// once a minute.
+    ///
+    /// Which of the two this is, is decided here rather than by the caller: a
+    /// seam leaves the engine's clock running, while starting the track over by
+    /// hand restarts it at zero. A clock that went backwards is therefore a new
+    /// listen, and this behaves as beginTrack() -- the listener who plays a
+    /// track twice under repeat-one has played it twice.
+    void repeatTrack(double clockSeconds, double durationSeconds);
+
     /// Nothing is audible. Leaves the clock base alone, so a later beginTrack()
     /// re-bases from wherever the engine has got to.
     void clear();
@@ -109,6 +126,8 @@ public:
     [[nodiscard]] bool scrobbleReported() const noexcept { return scrobbleDone_; }
 
 private:
+    void begin(double clockSeconds, double durationSeconds, bool freshListen);
+
     Rules  rules_;
     Notify playCountReached_;
     Notify scrobbleReached_;

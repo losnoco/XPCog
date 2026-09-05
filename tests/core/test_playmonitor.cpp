@@ -197,3 +197,66 @@ TEST_CASE("A short track can cross both thresholds at once", "[playmonitor]") {
     CHECK(counters.scrobble == 1);
     CHECK(counters.playCount == 1);
 }
+
+TEST_CASE("A track looping under repeat-one is counted once", "[playmonitor]") {
+    Counters    counters;
+    PlayMonitor monitor = monitorFor(counters);
+
+    // Three minutes, played through.
+    monitor.beginTrack(0.0, 180.0);
+    monitor.advance(180.0);
+    CHECK(counters.playCount == 1);
+    CHECK(counters.scrobble == 1);
+
+    // Repeat-one hands the same entry back, so the seam announces a track that
+    // never stopped. The engine's clock runs on across it -- that is what says
+    // this is a lap rather than the listener starting the track again.
+    monitor.repeatTrack(180.0, 180.0);
+    monitor.advance(360.0);
+    CHECK(counters.playCount == 1);
+
+    // The scrobble does fire again, and that is the deliberate half: Last.fm
+    // counts a repeat as a listen, while the library's tally is asking how many
+    // tracks were listened to rather than how long one was left running.
+    CHECK(counters.scrobble == 2);
+
+    // And on, for as long as it is left looping.
+    monitor.repeatTrack(360.0, 180.0);
+    monitor.advance(540.0);
+    CHECK(counters.playCount == 1);
+    CHECK(counters.scrobble == 3);
+}
+
+TEST_CASE("Starting the same track over again counts again", "[playmonitor]") {
+    Counters    counters;
+    PlayMonitor monitor = monitorFor(counters);
+
+    monitor.beginTrack(0.0, 180.0);
+    monitor.advance(180.0);
+    CHECK(counters.playCount == 1);
+
+    // The listener pressed play on the track that was already playing. A new
+    // play() restarts the engine's clock, and a clock that went backwards is
+    // the one thing that tells this apart from a repeat-one seam.
+    monitor.repeatTrack(0.0, 180.0);
+    monitor.advance(60.0);
+    CHECK(counters.playCount == 2);
+}
+
+TEST_CASE("A repeat lap of a short track never reaches the threshold",
+          "[playmonitor]") {
+    Counters    counters;
+    PlayMonitor monitor = monitorFor(counters);
+
+    // Forty seconds, so a lap is never a minute of listening. Cog would not
+    // count this either -- its accumulator restarts per stream as well -- and
+    // adding laps together would count a play of a track nobody played through
+    // once.
+    monitor.beginTrack(0.0, 40.0);
+    monitor.advance(40.0);
+    monitor.repeatTrack(40.0, 40.0);
+    monitor.advance(80.0);
+    monitor.repeatTrack(80.0, 40.0);
+    monitor.advance(120.0);
+    CHECK(counters.playCount == 0);
+}

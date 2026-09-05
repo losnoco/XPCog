@@ -5,11 +5,26 @@
 namespace xpcog {
 
 void PlayMonitor::beginTrack(double clockSeconds, double durationSeconds) {
-    active_        = true;
-    lastClock_     = clockSeconds;
-    played_        = 0.0;
-    playCountDone_ = false;
-    scrobbleDone_  = false;
+    begin(clockSeconds, durationSeconds, true);
+}
+
+void PlayMonitor::repeatTrack(double clockSeconds, double durationSeconds) {
+    // A seam leaves the engine's clock running; a new play() restarts it. So a
+    // clock that has not gone backwards is the track looping, and one that has
+    // is the listener starting it again -- which counts, repeat-one or not.
+    const bool looping = active_ && clockSeconds >= lastClock_;
+    begin(clockSeconds, durationSeconds, !looping);
+}
+
+void PlayMonitor::begin(double clockSeconds, double durationSeconds,
+                        bool freshListen) {
+    active_       = true;
+    lastClock_    = clockSeconds;
+    played_       = 0.0;
+    scrobbleDone_ = false;
+    if (freshListen) {
+        playCountDone_ = false;
+    }
 
     // Cog's rule exactly (PlaybackController.m:900-905): below the minimum there
     // is no threshold at all, and 0 means never rather than immediately.

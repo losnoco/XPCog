@@ -131,7 +131,10 @@ public:
     /// row as it now stands. A track with no row gets one, tallying whatever
     /// count the entry already carries -- zero for an ordinary add, an imported
     /// number after a Cog import -- and `whenUnixSeconds` as its first-seen
-    /// date. A track that already has a row keeps its date and its tally.
+    /// date. A track that already has a row keeps its date, and keeps the
+    /// larger of the two tallies: an entry arriving with a count the row has
+    /// never heard of is an import, and dropping it would leave the count on
+    /// screen contradicting the one the next play increments.
     ///
     /// This is what makes `first_seen` mean what it says. Without it the row is
     /// created by the first recordPlay(), so a date that should read "when this
@@ -141,6 +144,33 @@ public:
     /// Returns nullopt only on failure; see lastError().
     [[nodiscard]] std::optional<PlayCountRecord> noteFirstSeen(
         const PlaylistEntry& entry, std::int64_t whenUnixSeconds);
+
+    /// A tally another player kept for this track, ready to be merged in.
+    /// Zero means "the source did not record this", for every field: Cog's
+    /// dates and rating are all optional, and a zero one must not overwrite
+    /// something this library already knows.
+    struct PlayCountImport {
+        std::int64_t count      = 0;
+        std::int64_t firstSeen  = 0;  ///< Unix seconds.
+        std::int64_t lastPlayed = 0;  ///< Unix seconds.
+        double       rating     = 0.0;
+    };
+
+    /// Merges an imported tally into this track's row, creating it if needed.
+    ///
+    /// **The counts are merged by taking the larger, not by adding.** Cog's
+    /// tally and XPCog's are two records of the same listening rather than two
+    /// disjoint halves of it, so adding them would double a history that was
+    /// only ever lived once -- and importing the same store twice, which is a
+    /// thing a listener does when the first attempt matched badly, would double
+    /// it again. Taking the larger is idempotent and never loses a count.
+    ///
+    /// The dates merge the way they read: the earliest first-seen and the
+    /// latest last-played win, because that is what those words mean across two
+    /// libraries. A rating already set here outranks the import -- it is the
+    /// listener's own judgement, entered in this player.
+    [[nodiscard]] bool importPlayCount(const PlaylistEntry&   entry,
+                                       const PlayCountImport& imported);
 
     /// Increments the count for this entry, creating the row if needed.
     /// `whenUnixSeconds` is passed in rather than read from the clock, so the

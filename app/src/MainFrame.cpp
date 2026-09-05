@@ -706,7 +706,7 @@ void MainFrame::wireUp() {
         // line and the OS's card, all of which read the entry rather than the
         // change.
         if (id == currentTrack_) {
-            onCurrentTrackChanged(id);
+            onCurrentTrackChanged(id, ListenChange::NewSong);
         }
     });
 
@@ -2060,13 +2060,25 @@ void MainFrame::importFromCog() {
         // this import deliberately never opened Cog's metadata blob.
         const CogPlayCountReport matched = applyCogPlayCounts(*counts, entries);
 
-        // Written to the library as well as to the rows, or the counts would
-        // last only as long as this playlist.
+        // Written into the library's own play-count rows, not just onto the
+        // entries: the tally, the two dates and the rating all live there, and
+        // an entry has nowhere to carry the last three. Without this the first
+        // play of an imported track would find a row that had never heard of
+        // it and count from one, which is the import undone by listening to it.
+        //
+        // saveEntry() is what this used to do, and it was writing playlist rows
+        // for entries that have no id yet -- the scan is finished but the
+        // insert has not happened, so every one of them was id 0. The playlist
+        // is saved with its real ids once the entries land.
         if (library_) {
-            for (const PlaylistEntry& entry : entries) {
-                if (entry.playCount > 0) {
-                    static_cast<void>(library_->saveEntry(entry));
-                }
+            for (const CogPlayCountMatch& match : matched.matches) {
+                Library::PlayCountImport imported;
+                imported.count      = match.count;
+                imported.firstSeen  = match.firstSeen;
+                imported.lastPlayed = match.lastPlayed;
+                imported.rating     = match.rating;
+                static_cast<void>(
+                    library_->importPlayCount(entries[match.entry], imported));
             }
         }
 
@@ -2743,7 +2755,7 @@ void MainFrame::wireScrobbling() {
     });
 }
 
-void MainFrame::beginScrobbleTrack(TrackId id) {
+void MainFrame::beginScrobbleTrack(TrackId id, bool looping) {
     const PlaylistEntry* entry = (id == kInvalidTrackId) ? nullptr : playlist_.find(id);
     if (entry == nullptr) {
         monitor_.clear();
@@ -2766,21 +2778,34 @@ void MainFrame::beginScrobbleTrack(TrackId id) {
             std::chrono::system_clock::now().time_since_epoch())
             .count();
 
-    monitor_.beginTrack(playback_->playedSeconds(), entry->duration());
+    if (looping) {
+        monitor_.repeatTrack(playback_->playedSeconds(), entry->duration());
+    } else {
+        monitor_.beginTrack(playback_->playedSeconds(), entry->duration());
+    }
 
     if (scrobbler_) {
         scrobbler_->nowPlaying(pendingScrobble_);
     }
 }
 
-void MainFrame::onCurrentTrackChanged(TrackId id) {
+void MainFrame::onCurrentTrackChanged(TrackId id, ListenChange change) {
+    // Repeat-one asks the playlist what follows a track and is told the same
+    // track, so the seam announces an entry that never stopped playing. That is
+    // one listen, not one a minute: without this a track left looping overnight
+    // would report several hundred plays of itself. Cog counts each lap
+    // (OutputNode.m resets its accumulator per stream); this deliberately does
+    // not -- see docs/PORTING.md.
+    const bool looping = change == ListenChange::Announced &&
+                         id != kInvalidTrackId && id == currentTrack_;
+
     currentTrack_ = id;
     view_.setCurrentTrack(id);
 
     // Before anything that can fail below it: this is the point the seam reached
     // the speaker, and it is the only moment at which "a new track started" is
     // true exactly once.
-    beginScrobbleTrack(id);
+    beginScrobbleTrack(id, looping);
 
     // Cog moves the selection as each next entry is *chosen*, inside
     // -getNextEntry: (PlaylistController.m:1448-1522, six call sites). Done here
