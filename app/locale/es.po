@@ -736,6 +736,10 @@ msgstr "Reproducciones"
 msgid "Comment"
 msgstr "Comentario"
 
+#: app/src/InfoPanel.cpp:268
+msgid "&Copy"
+msgstr "&Copiar"
+
 #: app/src/InfoPanel.cpp:379
 msgid "yes"
 msgstr "sí"

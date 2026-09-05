@@ -465,15 +465,15 @@ msgstr ""
 msgid "&Edit"
 msgstr ""
 
-#: app/src/Commands.cpp:116 app/src/MainFrame.cpp:1660
+#: app/src/Commands.cpp:116 app/src/MainFrame.cpp:1672
 msgid "&Undo"
 msgstr ""
 
-#: app/src/Commands.cpp:117 app/src/MainFrame.cpp:1667
+#: app/src/Commands.cpp:117 app/src/MainFrame.cpp:1679
 msgid "&Redo"
 msgstr ""
 
-#: app/src/Commands.cpp:118
+#: app/src/Commands.cpp:118 app/src/InfoPanel.cpp:269
 msgid "Select &All"
 msgstr ""
 
@@ -505,7 +505,7 @@ msgstr ""
 msgid "&Next"
 msgstr ""
 
-#: app/src/Commands.cpp:126 app/src/Commands.cpp:170 app/src/MainFrame.cpp:1783
+#: app/src/Commands.cpp:126 app/src/Commands.cpp:170 app/src/MainFrame.cpp:1795
 msgid "Add to &Queue"
 msgstr ""
 
@@ -626,11 +626,11 @@ msgstr ""
 msgid "Preset"
 msgstr ""
 
-#: app/src/FileTree.cpp:51 app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1828 app/src/MainFrame.cpp:1997 app/src/PreferencesDialog.cpp:1317 app/src/PreferencesDialog.cpp:1319
+#: app/src/FileTree.cpp:51 app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1840 app/src/MainFrame.cpp:2009 app/src/PreferencesDialog.cpp:1317 app/src/PreferencesDialog.cpp:1319
 msgid "All Files"
 msgstr ""
 
-#: app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1828
+#: app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1840
 msgid "Audio Files"
 msgstr ""
 
@@ -674,91 +674,95 @@ msgstr ""
 msgid "Last played: %s"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:147
+#: app/src/InfoPanel.cpp:192
 msgid "Album Artist"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:147
+#: app/src/InfoPanel.cpp:192
 msgid "Artist"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:148
+#: app/src/InfoPanel.cpp:193
 msgid "Composer"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:148
+#: app/src/InfoPanel.cpp:193
 msgid "Album"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:149
+#: app/src/InfoPanel.cpp:194
 msgid "Title"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:149
+#: app/src/InfoPanel.cpp:194
 msgid "Track"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:150
+#: app/src/InfoPanel.cpp:195
 msgid "Length"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:150
+#: app/src/InfoPanel.cpp:195
 msgid "Date"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:151
+#: app/src/InfoPanel.cpp:196
 msgid "Genre"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:151
+#: app/src/InfoPanel.cpp:196
 msgid "Filename"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:152
+#: app/src/InfoPanel.cpp:197
 msgid "Sample Rate"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:152 app/src/PreferencesDialog.cpp:1277
+#: app/src/InfoPanel.cpp:197 app/src/PreferencesDialog.cpp:1277
 msgid "Channels"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:153
+#: app/src/InfoPanel.cpp:198
 msgid "Bitrate"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:153
+#: app/src/InfoPanel.cpp:198
 msgid "Bits"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:154
+#: app/src/InfoPanel.cpp:199
 msgid "Codec"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:154
+#: app/src/InfoPanel.cpp:199
 msgid "Encoding"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:155
+#: app/src/InfoPanel.cpp:200
 msgid "Cuesheet"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:155
+#: app/src/InfoPanel.cpp:200
 msgid "Replay Gain"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:156
+#: app/src/InfoPanel.cpp:201
 msgid "Play Count"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:156
+#: app/src/InfoPanel.cpp:201
 msgid "Comment"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:379
+#: app/src/InfoPanel.cpp:268
+msgid "&Copy"
+msgstr ""
+
+#: app/src/InfoPanel.cpp:336
 msgid "yes"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:380
+#: app/src/InfoPanel.cpp:337
 msgid "no"
 msgstr ""
 
@@ -841,272 +845,272 @@ msgstr ""
 msgid "Library unavailable: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:561
+#: app/src/MainFrame.cpp:562
 msgid "Stop reading files"
 msgstr ""
 
-#: app/src/MainFrame.cpp:652 app/src/MiniFrame.cpp:90
+#: app/src/MainFrame.cpp:653 app/src/MiniFrame.cpp:90
 msgid "Volume"
 msgstr ""
 
-#: app/src/MainFrame.cpp:658
+#: app/src/MainFrame.cpp:659
 msgid "Filter"
 msgstr ""
 
-#: app/src/MainFrame.cpp:661
+#: app/src/MainFrame.cpp:662
 msgid "Filter the playlist"
 msgstr ""
 
-#: app/src/MainFrame.cpp:689
+#: app/src/MainFrame.cpp:690
 msgid "Connecting to %s..."
 msgstr ""
 
-#: app/src/MainFrame.cpp:691
+#: app/src/MainFrame.cpp:692
 msgid "Connecting..."
 msgstr ""
 
-#: app/src/MainFrame.cpp:927
+#: app/src/MainFrame.cpp:928
 msgid "XPCog is still running"
 msgstr ""
 
-#: app/src/MainFrame.cpp:928
+#: app/src/MainFrame.cpp:929
 msgid ""
 "Playback continues. Use the tray icon to bring the window back or to quit."
 msgstr ""
 
-#: app/src/MainFrame.cpp:1372
+#: app/src/MainFrame.cpp:1384
 msgid "Now Playing"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1503 app/src/MiniFrame.cpp:195 app/src/StatusPresence.cpp:182
+#: app/src/MainFrame.cpp:1515 app/src/MiniFrame.cpp:195 app/src/StatusPresence.cpp:182
 msgid "Pause"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1503 app/src/MiniFrame.cpp:195 app/src/StatusPresence.cpp:182
+#: app/src/MainFrame.cpp:1515 app/src/MiniFrame.cpp:195 app/src/StatusPresence.cpp:182
 msgid "Play"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1659
+#: app/src/MainFrame.cpp:1671
 msgid "&Undo %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1666
+#: app/src/MainFrame.cpp:1678
 msgid "&Redo %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1686
+#: app/src/MainFrame.cpp:1698
 msgid "&Pause"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1686
+#: app/src/MainFrame.cpp:1698
 msgid "&Play"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1785
+#: app/src/MainFrame.cpp:1797
 msgid "Remove from &Queue"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1787
+#: app/src/MainFrame.cpp:1799
 msgid "&Toggle Queued"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1830
+#: app/src/MainFrame.cpp:1842
 msgid "Open Files"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1849
+#: app/src/MainFrame.cpp:1861
 msgid "Open Folder"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1889
+#: app/src/MainFrame.cpp:1901
 msgid "Save Playlist"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1891
+#: app/src/MainFrame.cpp:1903
 msgid "M3U Playlist (*.m3u8)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1892
+#: app/src/MainFrame.cpp:1904
 msgid "PLS Playlist (*.pls)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1893
+#: app/src/MainFrame.cpp:1905
 msgid "XSPF Playlist (*.xspf)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1950
+#: app/src/MainFrame.cpp:1962
 msgid "Could not write the playlist."
 msgstr ""
 
-#: app/src/MainFrame.cpp:1963
+#: app/src/MainFrame.cpp:1975
 msgid "Playlist saved: %zu selected track."
 msgid_plural "Playlist saved: %zu selected tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:1969
+#: app/src/MainFrame.cpp:1981
 msgid "Playlist saved: %zu of %zu tracks, the rest hidden by the filter."
 msgstr ""
 
-#: app/src/MainFrame.cpp:1972
+#: app/src/MainFrame.cpp:1984
 msgid "Playlist saved."
 msgstr ""
 
-#: app/src/MainFrame.cpp:1993
+#: app/src/MainFrame.cpp:2005
 msgid "Open a Cog library"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1995
+#: app/src/MainFrame.cpp:2007
 msgid "Cog library (DataModel.sqlite)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1996
+#: app/src/MainFrame.cpp:2008
 msgid "SQLite databases (*.sqlite)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2007
+#: app/src/MainFrame.cpp:2019
 msgid ""
 "That file could not be read as a Cog library.\n"
 "\n"
 "Cog's is DataModel.sqlite, under Application Support/Cog. If Cog is running, copy it along with its -wal and -shm files, or the most recent tracks will be missing."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2011 app/src/MainFrame.cpp:2018
+#: app/src/MainFrame.cpp:2023 app/src/MainFrame.cpp:2030
 msgid "Import from Cog"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2017
+#: app/src/MainFrame.cpp:2029
 msgid "That Cog library has no playlist entries in it."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2068
+#: app/src/MainFrame.cpp:2092
 msgid "Importing %zu track from Cog..."
 msgid_plural "Importing %zu tracks from Cog..."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2080
+#: app/src/MainFrame.cpp:2104
 msgid "(%zu row Cog would not have shown either)"
 msgid_plural "(%zu rows Cog would not have shown either)"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2203
+#: app/src/MainFrame.cpp:2227
 msgid "Nothing was added."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2204
+#: app/src/MainFrame.cpp:2228
 msgid "Nothing playable was found."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2253
+#: app/src/MainFrame.cpp:2277
 msgid "Imported %zu track from Cog"
 msgid_plural "Imported %zu tracks from Cog"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2257
+#: app/src/MainFrame.cpp:2281
 msgid ", %zu with play counts"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2261
+#: app/src/MainFrame.cpp:2285
 msgid "; %zu could not be resolved off a Mac"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2463
+#: app/src/MainFrame.cpp:2487
 msgid "Nothing could be read."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2521
+#: app/src/MainFrame.cpp:2545
 msgid "Re-read %zu track."
 msgid_plural "Re-read %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2530
+#: app/src/MainFrame.cpp:2554
 msgid "Play count reset for %zu track."
 msgid_plural "Play count reset for %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2545
+#: app/src/MainFrame.cpp:2569
 msgid "Rating removed from %zu track."
 msgid_plural "Rating removed from %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2559
+#: app/src/MainFrame.cpp:2583
 msgid "Could not show the file."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2585
+#: app/src/MainFrame.cpp:2609
 msgid ""
 "Undo puts the rows back in the playlist. It does not bring the files back -- restore those from the trash itself."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2587
+#: app/src/MainFrame.cpp:2611
 msgid "Move %u file to the trash?"
 msgid_plural "Move %u files to the trash?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2593
+#: app/src/MainFrame.cpp:2617
 msgid "Do not ask again"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2619
+#: app/src/MainFrame.cpp:2643
 msgid "%zu file could not be moved to the trash."
 msgid_plural "%zu files could not be moved to the trash."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2685
+#: app/src/MainFrame.cpp:2709
 msgid "Last.fm access was withdrawn. Reconnect in Preferences."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2889
+#: app/src/MainFrame.cpp:2926
 msgid "%zu track — %s"
 msgid_plural "%zu tracks — %s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2902 app/src/PreferencesDialog.cpp:807
+#: app/src/MainFrame.cpp:2939 app/src/PreferencesDialog.cpp:807
 msgid "Spectrum"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2903
+#: app/src/MainFrame.cpp:2940
 msgid "Equalizer"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2904 app/src/PreferencesDialog.cpp:785
+#: app/src/MainFrame.cpp:2941 app/src/PreferencesDialog.cpp:785
 msgid "Pitch & Tempo"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2905
+#: app/src/MainFrame.cpp:2942
 msgid "Info"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2906
+#: app/src/MainFrame.cpp:2943
 msgid "Lyrics"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2908
+#: app/src/MainFrame.cpp:2945
 msgid "SC-55 Panel"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3043
+#: app/src/MainFrame.cpp:3080
 msgid "Could not save the playlist: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3076
+#: app/src/MainFrame.cpp:3113
 msgid "The remote control could not create an access token."
 msgstr ""
 
-#: app/src/MainFrame.cpp:3109
+#: app/src/MainFrame.cpp:3146
 msgid "Remote control unavailable: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3115
+#: app/src/MainFrame.cpp:3152
 msgid "Remote control listening on http://%s:%d"
 msgstr ""
 

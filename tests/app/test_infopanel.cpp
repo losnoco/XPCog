@@ -113,3 +113,30 @@ TEST_CASE("play count reports the count even with no dates", "[wx][info]") {
     // thing that must not leak through.
     CHECK(split[1].find("1700000000") == std::string::npos);
 }
+
+TEST_CASE("a tag that looks like markup reaches the page as text", "[wx][info]") {
+    // The panel is a wxHtmlWindow now, so a value goes into a document rather
+    // than into a text control. An unescaped `<` opens an element the parser then
+    // swallows the rest of the line into -- and it arrives from a tag, so no
+    // fixture written in English will ever contain one.
+    CHECK(escapeHtml("<3") == "&lt;3");
+    CHECK(escapeHtml("Simon & Garfunkel") == "Simon &amp; Garfunkel");
+    CHECK(escapeHtml("2 > 1") == "2 &gt; 1");
+    CHECK(escapeHtml("say \"yes\"") == "say &quot;yes&quot;");
+
+    // Ordinary text is left exactly alone, non-ASCII included: this runs on
+    // every value in the panel, and a tag is UTF-8 by the time it gets here.
+    CHECK(escapeHtml("Sigur R\xC3\xB3s") == "Sigur R\xC3\xB3s");
+    CHECK(escapeHtml("").empty());
+}
+
+TEST_CASE("a multi-line value keeps its lines in the page", "[wx][info]") {
+    // Replay gain and play count are blocks of lines, and HTML does not care
+    // about newlines -- without this they would run together into one sentence.
+    CHECK(escapeHtml("Track Gain: +0.00 dB\nTrack Peak: 1.000000") ==
+          "Track Gain: +0.00 dB<br>Track Peak: 1.000000");
+
+    // CRLF is one break rather than two, and a bare CR is not drawn as a box.
+    CHECK(escapeHtml("one\r\ntwo") == "one<br>two");
+    CHECK(escapeHtml("one\rtwo") == "onetwo");
+}

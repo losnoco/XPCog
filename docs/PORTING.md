@@ -1555,13 +1555,39 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   file during a scan, and twenty labels per file for a panel nobody has open is
   pure waste; opening the dock refreshes it, so it is never stale.
 
+  **It is a `wxHtmlWindow`, and the page is rebuilt from the strings it kept.**
+  What that replaced was twenty read-only `wxTextCtrl`s in a `wxFlexGridSizer`
+  inside a `wxScrolled`, each given a minimum height computed from its own line
+  count, plus a custom control that drew the cover and a relayout that pinned the
+  virtual width to the client width so nothing could be laid out where no
+  scrollbar could reach it. That is a lot of arithmetic in service of a document,
+  and wxHTML lays out documents.
+
+  Three consequences, and the second is a real loss rather than a tidying.
+  Selection survives -- wxHTML selects across cells and copies with Ctrl+C, which
+  is Cmd+C on macOS since that is what `wxMOD_CONTROL` means there, and a
+  right-click menu offers Copy and Select All because nothing on screen otherwise
+  says a page can be selected -- but there is no caret, and a selection dragged
+  across rows carries the labels with it. **A long path no longer wraps**: wxHTML
+  breaks lines at whitespace and nowhere else (`winpars.cpp` splits on space, tab,
+  CR and LF, and that is the whole list), so a path, which has none, makes the
+  page wider than the pane and takes a horizontal scrollbar. Breaking it for
+  display would mean either eliding it or copying it back out with a newline in
+  the middle, and this is the field people copy. And the cover reaches the page
+  through the **memory filesystem**, scaled here rather than by a `WIDTH`
+  attribute, with a second copy registered under `@2x` -- the name wxHTML's `IMG`
+  handler looks for first on a Retina screen (`m_image.cpp`).
+
   The formatting Cog does in `PlaylistEntry`'s derived accessors (`trackText`,
   `lengthInfo`, `gainInfo`, `playCountInfo`) is free functions here, because the
   app test binary has no `QApplication` and cannot build a widget but can check a
   function. That is also the only reason those four are testable at all, and they
   hold the non-obvious rules: a disc number changes how a track number is
   written, `+0.00 dB` has to stay distinguishable from no gain tag at all, and a
-  volume scale of exactly 1.0 is not a gain.
+  volume scale of exactly 1.0 is not a gain. `escapeHtml` joined them with the
+  move to wxHTML, and for the same reason: a title of `<3` is markup a parser
+  drops, so the track reads as having no title rather than an odd one, and the
+  character can only ever arrive from a tag -- never from a fixture.
 
 - **The file browser's root can be chosen.** It was always persisted
   (`fileTree/root`) and never settable, so it sat wherever `QStandardPaths` first

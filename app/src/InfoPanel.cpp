@@ -6,11 +6,11 @@
 #include "xpcog/core/library/Library.hpp"
 
 #include <wx/datetime.h>
-#include <wx/dcbuffer.h>
+#include <wx/filesys.h>
+#include <wx/fs_mem.h>
+#include <wx/menu.h>
 #include <wx/mstream.h>
-#include <wx/sizer.h>
-#include <wx/stattext.h>
-#include <wx/textctrl.h>
+#include <wx/settings.h>
 #include <wx/translation.h>
 
 #include <algorithm>
@@ -130,19 +130,64 @@ std::string playCountText(std::int64_t count, std::int64_t firstSeen,
     return join(lines);
 }
 
+std::string escapeHtml(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char character : text) {
+        switch (character) {
+            case '&':
+                out += "&amp;";
+                break;
+            case '<':
+                out += "&lt;";
+                break;
+            case '>':
+                out += "&gt;";
+                break;
+            case '"':
+                out += "&quot;";
+                break;
+            case '\r':
+                // The LF of a CRLF pair carries the break; a bare CR is dropped
+                // rather than drawn, which is what a tagger that writes them
+                // means by it.
+                break;
+            case '\n':
+                out += "<br>";
+                break;
+            default:
+                out += character;
+                break;
+        }
+    }
+    return out;
+}
+
 }  // namespace info
 
 namespace {
 
-/// The height the cover art is scaled to.
+/// The height, in DIP, the cover art is drawn at when there is room for it.
 constexpr int kArtHeight = 180;
+
+/// The margin the page is drawn inside, in DIP.
+constexpr int kBorder = 8;
+
+/// The step the cover's size moves in, in DIP.
+///
+/// Dragging the pane narrower changes the width a pixel at a time, and every
+/// change that reaches the cover costs two rescales, two PNG encodes and a
+/// reparse. Rounding the room down to a step means at most one of those per eight
+/// pixels of drag, and the cover is never more than a step smaller than it could
+/// be -- which is not visible and would not be worth seeing if it were.
+constexpr int kArtStep = 8;
 
 /// Cog's labels, in Cog's order.
 ///
 /// Marked rather than translated: this is a file-scope table, so the lookup
-/// happens where the captions are built. Several of them are also playlist
-/// column headings -- Title, Artist, Album -- and share a msgid with those on
-/// purpose: one word, one translation, whichever surface shows it.
+/// happens where the page is built. Several of them are also playlist column
+/// headings -- Title, Artist, Album -- and share a msgid with those on purpose:
+/// one word, one translation, whichever surface shows it.
 constexpr std::array<const char*, 20> kLabels = {
     wxTRANSLATE("Album Artist"), wxTRANSLATE("Artist"),
     wxTRANSLATE("Composer"),     wxTRANSLATE("Album"),
@@ -156,186 +201,99 @@ constexpr std::array<const char*, 20> kLabels = {
     wxTRANSLATE("Play Count"),   wxTRANSLATE("Comment"),
 };
 
+/// The memory filesystem is global and registered once.
+///
+/// wxWidgets has no way to ask whether a handler is already installed and adding
+/// a second one is not an error, only waste, so the flag is the check.
+void ensureMemoryFilesystem() {
+    static const bool once = [] {
+        wxFileSystem::AddHandler(new wxMemoryFSHandler);
+        return true;
+    }();
+    (void)once;
+}
+
+/// The name wxHTML's IMG handler tries first on a Retina screen, which is the
+/// base name with `@2x` before the extension (src/html/m_image.cpp).
+[[nodiscard]] wxString hidpiName(const wxString& name) {
+    return name.BeforeLast('.') + "@2x." + name.AfterLast('.');
+}
+
+/// A colour as `#rrggbb`, which is all wxHTML's parser reads.
+[[nodiscard]] wxString htmlColour(wxSystemColour which) {
+    return wxSystemSettings::GetColour(which).GetAsString(wxC2S_HTML_SYNTAX);
+}
+
 }  // namespace
 
-/// The cover, drawn to fit.
-///
-/// This replaces a wxStaticBitmap, and the difference is the whole of the
-/// artwork fix. wxStaticBitmap draws its bitmap at the bitmap's own size and
-/// lets the window clip whatever does not fit, so getting a cover on screen
-/// intact means computing exactly the right size for it in advance, every time,
-/// from a client width that is itself still settling. Get that arithmetic wrong
-/// by a pixel in the wrong direction and the result is not a slightly-too-big
-/// cover, it is a cropped one.
-///
-/// Drawing it instead inverts the dependency. Whatever rectangle the sizer ends
-/// up handing over, the cover is scaled into it with its aspect ratio kept and
-/// centred in what is left. There is no size this can be given that crops
-/// anything, which makes the height asked for outside a question of taste rather
-/// than a correctness requirement.
-class ArtworkView : public wxWindow {
-public:
-    ArtworkView(wxWindow* parent, int maxHeight)
-        : wxWindow(parent, wxID_ANY), maxHeight_(maxHeight) {
-        // wxAutoBufferedPaintDC needs this, and a cover that is rescaled on its
-        // way to the screen is exactly the case where a flickering background
-        // would show.
-        SetBackgroundStyle(wxBG_STYLE_PAINT);
-        Bind(wxEVT_PAINT, &ArtworkView::onPaint, this);
-    }
+InfoPanel::InfoPanel(wxWindow* parent, const Library* library)
+    : wxHtmlWindow(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                   wxHW_SCROLLBAR_AUTO),
+      library_(library) {
+    static_assert(kLabels.size() == static_cast<std::size_t>(FieldCount),
+                  "every field needs a label, and in the same order");
 
-    /// Takes the cover at its own size. An invalid image clears it.
-    ///
-    /// The original is kept rather than a scaled copy, so every resize scales
-    /// once from the source instead of losing a little more detail each time the
-    /// pane is dragged somewhere new.
-    void setImage(const wxImage& image) {
-        source_   = image;
-        scaled_   = wxBitmap{};
-        scaledAt_ = wxSize{};
-        Refresh();
-    }
+    ensureMemoryFilesystem();
 
-    [[nodiscard]] bool hasImage() const { return source_.IsOk(); }
+    // wxHTML's own defaults are a web browser's -- a serif face at a size of its
+    // own choosing, which in a dock beside native controls looks like a page that
+    // failed to load its stylesheet rather than like part of the application.
+    // Only the size is given: an empty face means wxNORMAL_FONT's, which is the
+    // system's, and is what the rest of the window is drawn in.
+    SetStandardFonts(GetFont().GetPointSize());
+    SetBorders(FromDIP(kBorder));
 
-    /// Asks the sizer for the height this cover wants, given `room` of width.
-    ///
-    /// The minimum width stays small on purpose: the cover must never be the
-    /// thing that decides how narrow the pane is allowed to get.
-    void fitTo(int room) {
-        if (!source_.IsOk()) {
-            SetMinSize(wxSize(0, 0));
-            return;
-        }
-        const int width  = std::max(1, room);
-        int       height = maxHeight_;
-        if ((source_.GetWidth() * height) / source_.GetHeight() > width) {
-            height = std::max(1, (source_.GetHeight() * width) / source_.GetWidth());
-        }
-        SetMinSize(wxSize(FromDIP(24), height));
-    }
-
-private:
-    void onPaint(wxPaintEvent&) {
-        wxAutoBufferedPaintDC dc(this);
-        dc.SetBackground(wxBrush(GetParent()->GetBackgroundColour()));
-        dc.Clear();
-
-        const wxSize room = GetClientSize();
-        if (!source_.IsOk() || room.GetWidth() <= 0 || room.GetHeight() <= 0) {
-            return;
-        }
-
-        // Fit inside rather than fill: whichever ratio is smaller wins, so
-        // neither edge runs over.
-        int width = std::min(room.GetWidth(),
-                             (source_.GetWidth() * room.GetHeight()) / source_.GetHeight());
-        width     = std::max(1, width);
-        int height = std::min(room.GetHeight(),
-                              (source_.GetHeight() * width) / source_.GetWidth());
-        height     = std::max(1, height);
-
-        if (scaledAt_ != wxSize(width, height)) {
-            scaledAt_ = wxSize(width, height);
-            scaled_   = wxBitmap(source_.Scale(width, height, wxIMAGE_QUALITY_HIGH));
-        }
-        dc.DrawBitmap(scaled_, (room.GetWidth() - width) / 2,
-                      (room.GetHeight() - height) / 2, true);
-    }
-
-    wxImage  source_;
-    wxBitmap scaled_;
-    wxSize   scaledAt_;
-    int      maxHeight_;
-};
-
-InfoPanel::InfoPanel(wxWindow* parent, const Library* library) : library_(library) {
-    Create(parent, wxID_ANY);
-    // Vertical only, and that is the whole of the art-sizing fix.
-    //
-    // Turning horizontal scrolling on was the wrong answer to "the cover overruns
-    // a narrow pane": it let the content stay wide and gave the reader a
-    // scrollbar to chase it with, when what a cover should do in a narrower pane
-    // is get smaller. With the horizontal rate at zero the virtual width is the
-    // client width, so nothing can be wider than the pane -- which makes shrinking
-    // the only thing updateArt() can do, rather than one of two options.
-    //
-    // The text fields wrap instead of extending, which is why they are multiline.
-    SetScrollRate(0, FromDIP(8));
-
+    // The cover is the only thing in the page whose size depends on the pane's,
+    // and it is sized here rather than by a WIDTH attribute so that what wxHTML
+    // scales is an image already close to its final size.
     Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
         event.Skip();
-        updateArt();
+        if (artSize() != artSize_) {
+            render();
+        }
     });
 
-    auto* layout = new wxBoxSizer(wxVERTICAL);
+    // Every colour in the page was read when it was built, so without this a
+    // switch to dark mode leaves black text on a dark background -- the same
+    // reason the toolbar restrokes its icons.
+    Bind(wxEVT_SYS_COLOUR_CHANGED, [this](wxSysColourChangedEvent& event) {
+        event.Skip();
+        render();
+    });
 
-    art_ = new ArtworkView(this, FromDIP(kArtHeight));
-    art_->Hide();
-    // wxEXPAND rather than a centring flag: the control takes the whole width of
-    // the row and centres the cover inside itself. Centring the *control* would
-    // mean its width had to be exactly right, which is the arithmetic this is
-    // getting away from.
-    layout->Add(art_, 0, wxEXPAND | wxALL, FromDIP(8));
+    // Nothing on screen says a page can be selected, and this is a panel people
+    // open to copy a path out of. Ctrl+C -- Cmd+C on macOS -- already works;
+    // wxHtmlWindow's own table handles wxID_COPY, so only Select All is bound.
+    Bind(wxEVT_CONTEXT_MENU, [this](wxContextMenuEvent&) {
+        wxMenu menu;
+        menu.Append(wxID_COPY, _("&Copy") + "\tCtrl+C");
+        menu.Append(wxID_SELECTALL, _("Select &All"));
+        menu.Enable(wxID_COPY, !SelectionToText().IsEmpty());
+        PopupMenu(&menu);
+    });
+    Bind(wxEVT_MENU, [this](wxCommandEvent&) { SelectAll(); }, wxID_SELECTALL);
 
-    // Two columns: a bold caption and a selectable value. wxFlexGridSizer with
-    // the value column growable is what a form layout is here.
-    auto* form = new wxFlexGridSizer(2, FromDIP(4), FromDIP(8));
-    form->AddGrowableCol(1, 1);
+    render();
+}
 
-    values_.reserve(FieldCount);
-    for (std::size_t field = 0; field < kLabels.size(); ++field) {
-        auto* caption =
-            new wxStaticText(this, wxID_ANY, trUtf8(kLabels[field]));
-        wxFont bold = caption->GetFont();
-        bold.SetWeight(wxFONTWEIGHT_BOLD);
-        caption->SetFont(bold);
-
-        // Read-only and borderless so it reads as a label, multiline so a
-        // cuesheet or a replay-gain block is not one long line -- and selectable,
-        // which is the reason it is a text control at all.
-        auto* value = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
-                                     wxDefaultSize,
-                                     wxTE_READONLY | wxTE_MULTILINE | wxTE_NO_VSCROLL |
-                                         wxBORDER_NONE);
-        value->SetBackgroundColour(GetBackgroundColour());
-        // Narrow, so the form can be. A text control's default best width is
-        // around a hundred pixels, and twenty of them in a growable column set a
-        // floor the pane cannot go below -- which with horizontal scrolling off
-        // would clip rather than wrap.
-        value->SetMinSize(wxSize(FromDIP(48), -1));
-
-        form->Add(caption, 0, wxALIGN_TOP);
-        form->Add(value, 1, wxEXPAND);
-        values_.push_back(value);
-    }
-
-    layout->Add(form, 1, wxEXPAND | wxALL, FromDIP(8));
-    SetSizer(layout);
+InfoPanel::~InfoPanel() {
+    // The memory filesystem outlives the panel and is shared with everything
+    // else in the process, so what this put in it has to come back out.
+    publishArt(wxSize(0, 0));
 }
 
 void InfoPanel::set(Field field, const std::string& value) {
     const auto index = static_cast<std::size_t>(field);
-    if (index >= values_.size()) {
-        return;
+    if (index < values_.size()) {
+        values_[index] = value;
     }
-    values_[index]->SetValue(toWx(value));
-
-    // One line per newline, so a block grows rather than scrolling inside a
-    // one-line box. Nothing here is tall enough to want a scrollbar of its own.
-    const int lines = 1 + static_cast<int>(std::count(value.begin(), value.end(), '\n'));
-    values_[index]->SetMinSize(
-        wxSize(-1, values_[index]->GetCharHeight() * lines + FromDIP(4)));
 }
 
 void InfoPanel::showEntry(const PlaylistEntry* entry) {
     if (entry == nullptr) {
-        for (wxTextCtrl* value : values_) {
-            value->ChangeValue(wxEmptyString);
-        }
-        art_->setImage(wxImage{});
-        art_->Hide();
-        relayout();
+        values_.fill(std::string{});
+        cover_ = wxImage{};
+        render();
         return;
     }
 
@@ -412,57 +370,117 @@ void InfoPanel::showEntry(const PlaylistEntry* entry) {
             }
         }
     }
-    art_->setImage(cover);
+    cover_ = cover;
 
-    updateArt();
-    relayout();
+    render();
 }
 
-void InfoPanel::updateArt() {
-    if (art_ == nullptr) {
-        return;
-    }
-    if (!art_->hasImage()) {
-        art_->Hide();
-        return;
+wxSize InfoPanel::artSize() {
+    if (!cover_.IsOk() || cover_.GetWidth() <= 0 || cover_.GetHeight() <= 0) {
+        return {0, 0};
     }
 
-    // Whichever constraint binds first: the height a cover is worth showing at,
-    // or the width there actually is. The second is what makes it shrink in a
-    // narrow pane rather than stay tall.
+    // What is left of the pane once the page's own margins and a vertical
+    // scrollbar are taken out.
     //
-    // The margin is not only tidiness -- it absorbs the vertical scrollbar
-    // appearing and disappearing. Without it a cover sized to exactly the client
-    // width can add enough height to need a scrollbar, which narrows the client,
-    // which resizes the cover, which removes the scrollbar again.
-    const int margin = FromDIP(16);
-    const int room   = std::max(FromDIP(48), GetClientSize().GetWidth() - margin);
+    // Measured from the window rather than from the client area, and with the
+    // scrollbar subtracted whether or not one is there, because the client area
+    // is downstream of the answer: a cover sized to the full client width can add
+    // the height that summons a scrollbar, which narrows the client, which
+    // shrinks the cover, which dismisses the scrollbar. The outer width does not
+    // move, so nothing here can oscillate.
+    const int scrollbar = std::max(0, wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, this));
+    int       room =
+        ToDIP(std::max(0, GetSize().GetWidth() - scrollbar)) - (2 * kBorder);
+    room = std::max(kArtStep, (room / kArtStep) * kArtStep);
 
-    const wxSize before = art_->GetMinSize();
-    art_->fitTo(room);
-    art_->Show();
+    int height = kArtHeight;
+    if ((cover_.GetWidth() * height) / cover_.GetHeight() > room) {
+        height = std::max(1, (cover_.GetHeight() * room) / cover_.GetWidth());
+    }
+    return {std::max(1, (cover_.GetWidth() * height) / cover_.GetHeight()), height};
+}
 
-    // A resize sends a stream of these, and only the ones that actually move the
-    // cover are worth a relayout. That test is also what stops this looping:
-    // relayout() can change the client width, which sends another size event
-    // straight back here.
-    if (art_->GetMinSize() != before) {
-        relayout();
+void InfoPanel::publishArt(wxSize size) {
+    if (!artFile_.IsEmpty()) {
+        wxMemoryFSHandler::RemoveFile(artFile_);
+        if (retina_) {
+            wxMemoryFSHandler::RemoveFile(hidpiName(artFile_));
+        }
+        artFile_.clear();
+    }
+    artSize_ = size;
+    retina_  = false;
+    if (!cover_.IsOk() || size.GetWidth() <= 0 || size.GetHeight() <= 0) {
+        return;
+    }
+
+    // A name nothing else is using, and a new one every time: wxHTML holds the
+    // image it parsed, and reusing a name would make "did this page change?" a
+    // question about the filesystem's contents rather than about the page.
+    static unsigned serial = 0;
+    const wxString  name   = wxString::Format("xpcog-info-%u.png", ++serial);
+
+    wxImage scaled =
+        cover_.Scale(size.GetWidth(), size.GetHeight(), wxIMAGE_QUALITY_HIGH);
+    wxMemoryFSHandler::AddFile(name, scaled, wxBITMAP_TYPE_PNG);
+    artFile_ = name;
+
+    // Only where wxHTML will go looking for it, which is a Retina screen: on
+    // anything else the second encode is pure waste, and this runs on every step
+    // of a drag.
+    if (GetContentScaleFactor() > 1.0) {
+        wxImage doubled = cover_.Scale(size.GetWidth() * 2, size.GetHeight() * 2,
+                                       wxIMAGE_QUALITY_HIGH);
+        wxMemoryFSHandler::AddFile(hidpiName(name), doubled, wxBITMAP_TYPE_PNG);
+        retina_ = true;
     }
 }
 
-void InfoPanel::relayout() {
-    wxSizer* sizer = GetSizer();
-    if (sizer == nullptr) {
+void InfoPanel::render() {
+    if (const wxSize wanted = artSize(); wanted != artSize_) {
+        publishArt(wanted);
+    }
+
+    // wxHtmlWindow paints the background itself from wxSYS_COLOUR_WINDOW, but
+    // nothing sets the text colour, and its default is black: on a dark theme
+    // that is the whole panel unreadable.
+    wxString html = "<html><body bgcolor=\"" + htmlColour(wxSYS_COLOUR_WINDOW) +
+                    "\" text=\"" + htmlColour(wxSYS_COLOUR_WINDOWTEXT) + "\">";
+
+    if (!artFile_.IsEmpty()) {
+        html += "<p align=\"center\"><img src=\"memory:" + artFile_ + "\"></p>";
+    }
+
+    // The value column takes what the labels leave, which is what `width=100%`
+    // on the table means to wxHTML's table layout.
+    html += "<table width=\"100%\" cellpadding=\"2\" cellspacing=\"0\">";
+    for (std::size_t field = 0; field < kLabels.size(); ++field) {
+        // The label goes through the same escape as the value: it is translated,
+        // and a translator's ampersand would otherwise be an entity.
+        const wxString label =
+            toWx(info::escapeHtml(toUtf8(trUtf8(kLabels[field]))));
+        wxString value = toWx(info::escapeHtml(values_[field]));
+        if (value.IsEmpty()) {
+            // An empty cell is a row of no height, and a field that is simply
+            // absent should read as blank rather than as missing.
+            value = "&nbsp;";
+        }
+        html += "<tr><td valign=\"top\" align=\"right\"><b>" + label +
+                "</b></td><td valign=\"top\">" + value + "</td></tr>";
+    }
+    html += "</table></body></html>";
+
+    if (html == page_) {
         return;
     }
-    const wxSize client = GetClientSize();
-    // The width is the client width, deliberately, and never the sizer's
-    // minimum: horizontal scrolling is off, so anything laid out wider than this
-    // is unreachable rather than merely off-screen.
-    SetVirtualSize(client.GetWidth(),
-                   std::max(sizer->CalcMin().GetHeight(), client.GetHeight()));
-    Layout();
+    page_ = html;
+
+    // SetPage() scrolls back to the top, and this is called on every selection
+    // change and every piece of metadata that arrives during a scan.
+    const int scroll = GetViewStart().y;
+    SetPage(html);
+    Scroll(0, scroll);
 }
 
 }  // namespace xpcog::app
