@@ -1568,12 +1568,15 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   is Cmd+C on macOS since that is what `wxMOD_CONTROL` means there, and a
   right-click menu offers Copy and Select All because nothing on screen otherwise
   says a page can be selected -- but there is no caret, and a selection dragged
-  across rows carries the labels with it. **A long path no longer wraps**: wxHTML
-  breaks lines at whitespace and nowhere else (`winpars.cpp` splits on space, tab,
-  CR and LF, and that is the whole list), so a path, which has none, makes the
-  page wider than the pane and takes a horizontal scrollbar. Breaking it for
-  display would mean either eliding it or copying it back out with a newline in
-  the middle, and this is the field people copy. And the cover reaches the page
+  across rows carries the labels with it. **Wrapping is done here, at the
+  separators**: wxHTML breaks lines at whitespace and nowhere else (`winpars.cpp`
+  splits on space, tab, CR and LF, and that is the whole list), so a path, which
+  has none, would make the page wider than the pane. The value is measured
+  against the width its column will have and broken after the separators a line
+  runs past -- the platform's separator and no other, since a backslash is a legal
+  character in a POSIX filename and breaking at one there would show a directory
+  that is not in the path. A copied path can carry a newline where it wrapped,
+  which is the price of it fitting. And the cover reaches the page
   through the **memory filesystem**, scaled here rather than by a `WIDTH`
   attribute, with a second copy registered under `@2x` -- the name wxHTML's `IMG`
   handler looks for first on a Retina screen (`m_image.cpp`).
@@ -1588,6 +1591,15 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   move to wxHTML, and for the same reason: a title of `<3` is markup a parser
   drops, so the track reads as having no title rather than an odd one, and the
   character can only ever arrive from a tag -- never from a fixture.
+  `breakPieces` joined them for the wrapping, and is pure for the same reason:
+  the measuring needs a display, the question of where a path *may* break does
+  not.
+
+  **A field the file says nothing about takes no row.** Cog's HUD is a fixed form
+  and shows all twenty labels whatever is behind them, which is what a window
+  sized once at design time can afford. A dock is not fixed, and on an ordinary
+  MP3 twelve of those rows are empty -- twelve rows of nothing between the reader
+  and the two they opened the panel to read.
 
 - **The file browser's root can be chosen.** It was always persisted
   (`fileTree/root`) and never settable, so it sat wherever `QStandardPaths` first

@@ -140,3 +140,49 @@ TEST_CASE("a multi-line value keeps its lines in the page", "[wx][info]") {
     CHECK(escapeHtml("one\r\ntwo") == "one<br>two");
     CHECK(escapeHtml("one\rtwo") == "onetwo");
 }
+
+TEST_CASE("a path offers its separators as places to break", "[wx][info]") {
+    // wxHTML breaks lines at whitespace and nowhere else, so a path has to be
+    // measured and broken here or it takes a horizontal scrollbar. These are the
+    // pieces that measuring works on, and concatenating them has to give the
+    // input back exactly -- what is measured is what is drawn.
+    const auto joined = [](const std::vector<std::string>& pieces) {
+        std::string all;
+        for (const std::string& piece : pieces) {
+            all += piece;
+        }
+        return all;
+    };
+
+    const std::string path = "/Users/kevin/Music/Album/01 Track.flac";
+    const std::vector<std::string> pieces = breakPieces(path);
+    CHECK(joined(pieces) == path);
+    // The separator stays on the line it ended, which is where a reader would
+    // break a path themselves.
+    CHECK(pieces.front() == "/");
+    CHECK(pieces[1] == "Users/");
+    // A space is a break wxHTML would take anyway, and is counted so the
+    // measuring stays in step with what the renderer does.
+    CHECK(pieces[5] == "01 ");
+    CHECK(pieces.back() == "Track.flac");
+
+    // A value with nothing to break on is one piece, and an empty one is one
+    // empty piece rather than none -- the caller writes every piece it is given.
+    CHECK(breakPieces("Vorbis").size() == 1);
+    REQUIRE(breakPieces("").size() == 1);
+    CHECK(breakPieces("")[0].empty());
+}
+
+TEST_CASE("a backslash breaks a path only where it is a separator", "[wx][info]") {
+    // A backslash is a legal character in a POSIX filename, so breaking there
+    // would draw a directory that is not in the path. On Windows it is the
+    // separator and has to break.
+    const std::vector<std::string> pieces = breakPieces("a\\b");
+#ifdef _WIN32
+    REQUIRE(pieces.size() == 2);
+    CHECK(pieces[0] == "a\\");
+#else
+    REQUIRE(pieces.size() == 1);
+    CHECK(pieces[0] == "a\\b");
+#endif
+}

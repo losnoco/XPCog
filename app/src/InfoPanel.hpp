@@ -35,13 +35,16 @@
 //   labels with it. A right-click menu offers Copy and Select All, because
 //   nothing on screen otherwise says selecting is possible.
 //
-//   Wrapping. wxHTML breaks lines at whitespace and nowhere else (winpars.cpp
-//   only ever splits on space, tab, CR and LF), so a long path -- which has no
-//   spaces -- cannot wrap. It makes the page wider than the pane and a horizontal
-//   scrollbar appears. The wxTextCtrl before it wrapped mid-word instead. This is
-//   a real difference and it is deliberate: breaking a path for display means
-//   either lying about it or copying it back out with a newline in the middle,
-//   and this is the field people copy.
+//   Wrapping is done here, at the separators. wxHTML breaks lines at whitespace
+//   and nowhere else (winpars.cpp only ever splits on space, tab, CR and LF), so
+//   a path -- which has none -- would make the page wider than the pane and take
+//   a horizontal scrollbar. So the value is measured against the width the value
+//   column will have and broken after the separators a line runs past, which is
+//   where a reader would break it themselves. It is the platform's separator and
+//   no other: a backslash is a legal character in a POSIX filename, and breaking
+//   at one there would show a directory that is not in the path. The cost is that
+//   a copied path can carry a newline where it wrapped, which is the price of it
+//   fitting at all.
 //
 //   The cover goes through the memory filesystem, because that is how an image
 //   reaches wxHTML. It is scaled here rather than by a WIDTH attribute so the
@@ -52,6 +55,7 @@
 
 #include "xpcog/core/library/PlaylistEntry.hpp"
 
+#include <wx/dc.h>
 #include <wx/html/htmlwin.h>
 #include <wx/image.h>
 #include <wx/string.h>
@@ -60,6 +64,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace xpcog {
 class Library;
@@ -87,6 +92,13 @@ namespace info {
 /// `lastPlayed` are Unix seconds; 0 means never set.
 [[nodiscard]] std::string playCountText(std::int64_t count, std::int64_t firstSeen,
                                         std::int64_t lastPlayed);
+
+/// The pieces a value may be broken between: after the platform's path
+/// separator, and after a space, which is a break wxHTML would take anyway.
+///
+/// Concatenating the result gives the input back exactly -- each piece keeps the
+/// character that ended it -- so what is measured is what is drawn.
+[[nodiscard]] std::vector<std::string> breakPieces(std::string_view text);
 
 /// One tag value as it goes into the page: the four characters that mean
 /// something to a parser escaped, and newlines turned into breaks.
@@ -157,6 +169,18 @@ private:
     /// else is using, and drops the one registered before it.
     void publishArt(wxSize size);
 
+    /// The width the caption column takes: the widest label, drawn bold.
+    [[nodiscard]] int labelWidth();
+
+    /// The width a value has to fit in, in pixels, rounded to a step.
+    ///
+    /// An estimate of a column wxHTML has not laid out yet, and it only has to be
+    /// a close one -- see the definition for which way it is wrong on purpose.
+    [[nodiscard]] int valueWidth();
+
+    /// `value` escaped, with a break inserted at each separator a line runs past.
+    [[nodiscard]] wxString wrapValue(const std::string& value, int width, wxDC& dc);
+
     /// Rebuilds the page and shows it, keeping the scroll position.
     ///
     /// A no-op when the HTML comes out identical, which is the common case:
@@ -178,6 +202,10 @@ private:
     wxString artFile_;
     wxSize   artSize_;
     bool     retina_ = false;
+
+    /// The width the page was last wrapped to. A resize that changes it is a
+    /// resize the page has to be rebuilt for.
+    int valueWidth_ = 0;
 
     wxString page_;
 };

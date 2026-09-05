@@ -6,6 +6,7 @@
 #include "xpcog/core/library/Library.hpp"
 
 #include <wx/datetime.h>
+#include <wx/dcclient.h>
 #include <wx/filesys.h>
 #include <wx/fs_mem.h>
 #include <wx/menu.h>
@@ -130,6 +131,37 @@ std::string playCountText(std::int64_t count, std::int64_t firstSeen,
     return join(lines);
 }
 
+std::vector<std::string> breakPieces(std::string_view text) {
+    // The platform's separator, and nowhere else. A backslash is a legal
+    // character in a POSIX filename, so breaking a line at one there would be
+    // inventing a directory that is not in the path -- which is why this is not
+    // simply "break at either slash".
+    const auto separates = [](char character) {
+#ifdef _WIN32
+        return character == '\\' || character == '/';
+#else
+        return character == '/';
+#endif
+    };
+
+    std::vector<std::string> pieces;
+    std::string              piece;
+    for (const char character : text) {
+        piece += character;
+        // A space is already a break wxHTML would take on its own, and counting
+        // it here is what keeps the measuring below in step with what the
+        // renderer will actually do with the same string.
+        if (separates(character) || character == ' ') {
+            pieces.push_back(piece);
+            piece.clear();
+        }
+    }
+    if (!piece.empty() || pieces.empty()) {
+        pieces.push_back(piece);
+    }
+    return pieces;
+}
+
 std::string escapeHtml(std::string_view text) {
     std::string out;
     out.reserve(text.size());
@@ -173,14 +205,15 @@ constexpr int kArtHeight = 180;
 /// The margin the page is drawn inside, in DIP.
 constexpr int kBorder = 8;
 
-/// The step the cover's size moves in, in DIP.
+/// The step the cover's size and the wrapping width move in, in DIP.
 ///
 /// Dragging the pane narrower changes the width a pixel at a time, and every
 /// change that reaches the cover costs two rescales, two PNG encodes and a
 /// reparse. Rounding the room down to a step means at most one of those per eight
 /// pixels of drag, and the cover is never more than a step smaller than it could
-/// be -- which is not visible and would not be worth seeing if it were.
-constexpr int kArtStep = 8;
+/// be -- which is not visible and would not be worth seeing if it were. The
+/// width a path is wrapped to is rounded the same way and for the same reason.
+constexpr int kStep = 8;
 
 /// Cog's labels, in Cog's order.
 ///
@@ -248,7 +281,9 @@ InfoPanel::InfoPanel(wxWindow* parent, const Library* library)
     // scales is an image already close to its final size.
     Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
         event.Skip();
-        if (artSize() != artSize_) {
+        // Two things in the page are measured against the pane rather than laid
+        // out by wxHTML: the cover's size, and the width a path is wrapped to.
+        if (artSize() != artSize_ || valueWidth() != valueWidth_) {
             render();
         }
     });
@@ -392,7 +427,7 @@ wxSize InfoPanel::artSize() {
     const int scrollbar = std::max(0, wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, this));
     int       room =
         ToDIP(std::max(0, GetSize().GetWidth() - scrollbar)) - (2 * kBorder);
-    room = std::max(kArtStep, (room / kArtStep) * kArtStep);
+    room = std::max(kStep, (room / kStep) * kStep);
 
     int height = kArtHeight;
     if ((cover_.GetWidth() * height) / cover_.GetHeight() > room) {
@@ -437,10 +472,63 @@ void InfoPanel::publishArt(wxSize size) {
     }
 }
 
+int InfoPanel::labelWidth() {
+    wxClientDC dc(this);
+    wxFont     bold = GetFont();
+    bold.SetWeight(wxFONTWEIGHT_BOLD);
+    dc.SetFont(bold);
+
+    int widest = 0;
+    for (const char* label : kLabels) {
+        widest = std::max(widest, dc.GetTextExtent(trUtf8(label)).GetWidth());
+    }
+    return widest;
+}
+
+int InfoPanel::valueWidth() {
+    // An estimate, and it only has to be a close one. wxHTML decides the real
+    // column widths after this has already chosen where the path breaks, so
+    // being a little under means a line wraps a little early -- where being over
+    // would mean the horizontal scrollbar this exists to avoid.
+    const int scrollbar = std::max(0, wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, this));
+    const int padding   = FromDIP(kStep);  // cellpadding, both cells, both sides
+    const int width     = GetSize().GetWidth() - scrollbar - (2 * FromDIP(kBorder)) -
+                      padding - labelWidth();
+    return std::max(FromDIP(48), (width / kStep) * kStep);
+}
+
+wxString InfoPanel::wrapValue(const std::string& value, int width, wxDC& dc) {
+    wxString out;
+    int      line = 0;
+    for (const std::string& piece : info::breakPieces(value)) {
+        const int pieceWidth = dc.GetTextExtent(toWx(piece)).GetWidth();
+        if (line > 0 && line + pieceWidth > width) {
+            out += "<br>";
+            line = 0;
+        }
+        out += toWx(info::escapeHtml(piece));
+
+        // A value that carries its own newlines -- a gain block, a play count --
+        // starts its line again where they are, or every line after the first
+        // would be measured as though it followed the ones before it.
+        if (const std::size_t last = piece.find_last_of('\n');
+            last == std::string::npos) {
+            line += pieceWidth;
+        } else {
+            line = dc.GetTextExtent(toWx(piece.substr(last + 1))).GetWidth();
+        }
+    }
+    return out;
+}
+
 void InfoPanel::render() {
     if (const wxSize wanted = artSize(); wanted != artSize_) {
         publishArt(wanted);
     }
+    valueWidth_ = valueWidth();
+
+    wxClientDC dc(this);
+    dc.SetFont(GetFont());
 
     // wxHtmlWindow paints the background itself from wxSYS_COLOUR_WINDOW, but
     // nothing sets the text colour, and its default is black: on a dark theme
@@ -456,18 +544,20 @@ void InfoPanel::render() {
     // on the table means to wxHTML's table layout.
     html += "<table width=\"100%\" cellpadding=\"2\" cellspacing=\"0\">";
     for (std::size_t field = 0; field < kLabels.size(); ++field) {
+        // A field the file says nothing about takes no row. Cog's HUD is a fixed
+        // form and shows all twenty labels whatever is behind them; a dock is not
+        // fixed, and twelve empty rows are twelve rows of nothing between the
+        // reader and the two they came to read.
+        if (values_[field].empty()) {
+            continue;
+        }
         // The label goes through the same escape as the value: it is translated,
         // and a translator's ampersand would otherwise be an entity.
         const wxString label =
             toWx(info::escapeHtml(toUtf8(trUtf8(kLabels[field]))));
-        wxString value = toWx(info::escapeHtml(values_[field]));
-        if (value.IsEmpty()) {
-            // An empty cell is a row of no height, and a field that is simply
-            // absent should read as blank rather than as missing.
-            value = "&nbsp;";
-        }
         html += "<tr><td valign=\"top\" align=\"right\"><b>" + label +
-                "</b></td><td valign=\"top\">" + value + "</td></tr>";
+                "</b></td><td valign=\"top\">" +
+                wrapValue(values_[field], valueWidth_, dc) + "</td></tr>";
     }
     html += "</table></body></html>";
 

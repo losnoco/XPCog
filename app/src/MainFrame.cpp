@@ -509,10 +509,10 @@ void MainFrame::buildUi() {
     // playlist wide and the panels narrow is refused for their own good.
     //
     // Both are now half what they were, and below about 140 DIP Info stops
-    // reading well: its labels wrap a word at a time and a long path takes the
-    // horizontal scrollbar. Nothing clips -- wxHTML wraps or scrolls, it does not
-    // cut -- so that is the point where dragging narrower stops being useful
-    // rather than the point where it has to stop.
+    // reading well: its labels wrap a word at a time and a path breaks into a
+    // line per directory. Nothing clips -- the panel is an HTML page and it wraps
+    // -- so that is the point where dragging narrower stops being useful rather
+    // than the point where it has to stop.
     auiManager_.AddPane(info_, wxAuiPaneInfo()
                                    .Name("info")
                                    .Right()
