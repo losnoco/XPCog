@@ -233,12 +233,23 @@ TEST_CASE("The queue survives a restart", "[scrobbler]") {
     LastFmClient client2{revived, "KEY", "SECRET"};
     revived.setDefaultReply(200, std::string{kAccepted});
 
-    auto scrobbler = connectedScrobbler(client2, queue.path());
-    CHECK(scrobbler->pending() == 2);
+    // Built rather than connected, and that is the whole reason this test does
+    // not use the helper: what was read off disk has to be counted before the
+    // scrobbler is allowed to send it. connectedScrobbler() enables the worker
+    // as it hands the scrobbler back, and the worker then has both plays away to
+    // a server that accepts them -- so the count below raced the send, read 0 on
+    // a fast enough machine, and failed a test in which everything the queue was
+    // for had in fact worked. A scrobbler with no session sends nothing, so this
+    // is the queue standing still to be looked at.
+    Scrobbler scrobbler{client2, queue.path(), [] { return kNow; }};
+    CHECK(scrobbler.pending() == 2);
 
-    scrobbler->wake();
-    REQUIRE(scrobbler->drain(kPatience));
-    CHECK(scrobbler->pending() == 0);
+    // setEnabled() wakes the worker itself, which is what the helper's own
+    // ordering relies on; there is nothing further to nudge.
+    scrobbler.setSession(Scrobbler::Session{"SESSIONKEY", "listener"});
+    scrobbler.setEnabled(true);
+    REQUIRE(scrobbler.drain(kPatience));
+    CHECK(scrobbler.pending() == 0);
 
     // Both went in one batch, which is the point of batching: an afternoon's
     // backlog is not an afternoon's worth of round trips.
