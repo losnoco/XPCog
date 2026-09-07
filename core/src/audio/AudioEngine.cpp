@@ -261,6 +261,13 @@ bool AudioEngine::play(const Url& url) {
 
     // Both stages start empty. The caller's ring is the shallow one the device
     // drains; the deep one is ours.
+    //
+    // And both are told how wide a frame is, which is what stops a short take at
+    // either end from moving an index by half a frame -- see setFrameSize(). The
+    // width is the device's, not the track's: everything in both rings has
+    // already been fitted to it.
+    ring_.setFrameSize(format_.channels);
+    preRing_.setFrameSize(format_.channels);
     ring_.clear();
     preRing_.clear();
 
@@ -1037,6 +1044,12 @@ void AudioEngine::adoptDeviceFormat(const AudioFormat& negotiated) {
                                 kChannelFrontCenter | kChannelLFE | kChannelBackLeft |
                                 kChannelBackRight;
     }
+
+    // The rings are re-told the width for the same reason play() tells them, and
+    // this is the other occasion their contract allows: the old device is
+    // stopped and the pump is parked, so nothing is draining either of them.
+    ring_.setFrameSize(format_.channels);
+    preRing_.setFrameSize(format_.channels);
 
     // Cannot fail here: it refuses only a zero rate or a zero width, and
     // startDeviceForSwitch() has already turned a device that negotiated either

@@ -42,6 +42,28 @@ public:
     [[nodiscard]] std::size_t availableToWrite() const noexcept;
     [[nodiscard]] std::size_t capacity() const noexcept { return capacity_ - 1; }
 
+    /// Samples per frame, so neither end can leave the stream half a frame out
+    /// of step.
+    ///
+    /// This ring counts samples, not frames, and one slot is reserved to tell
+    /// full from empty -- which makes the usable capacity odd, so a full ring
+    /// holding stereo *always* ends mid-frame. A producer that then commits only
+    /// what fits, or a consumer that takes only what is there, moves its index
+    /// by an odd number of samples, and from that moment every frame either side
+    /// reads one sample late: left comes out of the right speaker and stays
+    /// there. Nothing realigns it, because nothing downstream knows where a
+    /// frame began.
+    ///
+    /// Set this and a short take is rounded down to whole frames instead, the
+    /// odd sample staying put until the rest of its frame arrives. The default
+    /// of 1 leaves the ring exactly as it behaves without it.
+    ///
+    /// Producer side, and only while the consumer is known to be stopped -- the
+    /// same contract as clear(), and the same occasions: a device open or a
+    /// device reconfigure.
+    void                      setFrameSize(std::size_t samplesPerFrame) noexcept;
+    [[nodiscard]] std::size_t frameSize() const noexcept;
+
     /// Consumer side only, and only while the producer is known to be stopped
     /// (during a device reconfigure).
     void clear() noexcept;
@@ -66,6 +88,12 @@ private:
     const std::size_t  capacity_;  ///< power of two, one slot reserved
     const std::size_t  mask_;
     std::vector<float> data_;
+
+    /// Atomic because both threads read it, not because it changes under them:
+    /// it is written only while the consumer is stopped. Relaxed on the audio
+    /// path -- a value this thread may not have seen yet would be the *previous*
+    /// device's, and the ring is empty across that change either way.
+    std::atomic<std::size_t> frameSize_{1};
 
     // MSVC's C4324 reports that the alignas below pads the structure. It does,
     // and that is the entire point of writing it -- so the warning is noise, and

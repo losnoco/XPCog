@@ -17,6 +17,7 @@
 #include <numeric>
 #include <span>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using namespace xpcog;
@@ -80,6 +81,75 @@ TEST_CASE("RingBuffer wraps correctly", "[ring]") {
     std::vector<float> out(payload.size(), 0.0F);
     REQUIRE(ring.read(out.data(), out.size()) == payload.size());
     CHECK(out == payload);
+}
+
+TEST_CASE("a ring told its frame size never splits one", "[ring]") {
+    // The stereo swap that sticks. Usable capacity is one less than a power of
+    // two, so it is odd and a full ring of stereo always ends mid-frame. Without
+    // the frame size, the producer commits that odd sample and a starved
+    // consumer takes it, moving its index half a frame; every callback after
+    // that reads one sample late and left comes out of the right speaker for the
+    // rest of the stream. Nothing realigns it, which is why it is heard as
+    // permanent rather than as a click.
+    const auto run = [](std::size_t frameSize) {
+        RingBuffer ring(1024);
+        ring.setFrameSize(frameSize);
+
+        // Left is +n, right is -n, so a swap is visible in the sign alone.
+        std::vector<float> src(4096);
+        for (std::size_t f = 0; f < src.size() / 2; ++f) {
+            src[f * 2]     = static_cast<float>(f + 1);
+            src[f * 2 + 1] = -static_cast<float>(f + 1);
+        }
+
+        // The feeder fills the ring; only what fits is committed.
+        std::size_t written = ring.write(src.data(), src.size());
+
+        // Before its retry lands, the device asks for a whole period and finds
+        // less: an underrun, which is what a fade or a seek leaves behind.
+        std::vector<float> device(4096, 0.0F);
+        const std::size_t  starved = ring.read(device.data(), device.size());
+
+        // The feeder catches up. Everything from here is frame-aligned again --
+        // if the ring did not already lose alignment above.
+        while (written < src.size()) {
+            const std::size_t n = ring.write(src.data() + written, src.size() - written);
+            if (n == 0) {
+                break;
+            }
+            written += n;
+        }
+
+        ring.read(device.data(), 2);
+        return std::pair{starved, device[0] > 0.0F && device[1] < 0.0F};
+    };
+
+    // Unset, the ring behaves exactly as it always did -- an odd take, and the
+    // channels swapped from there on. Pinned here so the fix cannot be mistaken
+    // for the bug never having existed.
+    const auto [oddTake, oddIntact] = run(1);
+    CHECK(oddTake % 2 == 1);
+    CHECK_FALSE(oddIntact);
+
+    // Told a stereo frame is two samples, the odd sample waits for the rest of
+    // its frame instead of being handed out on its own.
+    const auto [evenTake, evenIntact] = run(2);
+    CHECK(evenTake % 2 == 0);
+    CHECK(evenIntact);
+}
+
+TEST_CASE("a frame size only rounds a take that was already short", "[ring]") {
+    // A caller whose own count is not a whole number of frames still gets what
+    // it asked for when the ring can satisfy it: the guard is against a *short*
+    // take, not against callers that deal in something other than frames.
+    RingBuffer ring(64);
+    ring.setFrameSize(2);
+
+    std::vector<float> src(7, 1.0F);
+    CHECK(ring.write(src.data(), src.size()) == 7);
+
+    std::vector<float> out(7, 0.0F);
+    CHECK(ring.read(out.data(), out.size()) == 7);
 }
 
 TEST_CASE("RingBuffer::clear discards pending data", "[ring]") {
