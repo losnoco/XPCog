@@ -17,10 +17,12 @@
 // ever listens, and it is false by default. The default bind is loopback, which
 // raises no firewall prompt.
 //
-// The token is not part of that: it is required on every request regardless of
-// where the connection came from. A loopback exemption would mean every process
-// on the machine can drive the player, which is a different promise from the one
-// the preferences pane makes.
+// The token is not part of that by default: it is required on every request
+// regardless of where the connection came from, because a loopback exemption
+// means every process on the machine can drive the player, which is a different
+// promise from the one the preferences pane makes. `allowLoopbackWithoutToken`
+// is that exemption offered as a choice rather than taken as a default -- see
+// its comment below for what it is for and what it costs.
 //
 // --- Why handle() is public -------------------------------------------------
 //
@@ -82,6 +84,22 @@ struct ServerConfig {
     /// now-playing display that has no business editing anything.
     bool allowWrite = true;
 
+    /// Whether a connection from this machine may skip the token.
+    ///
+    /// False, and the default is the argument above: an exemption here hands the
+    /// transport to every process on the machine, including a page in a browser
+    /// that a hostile site has talked into fetching `http://127.0.0.1:7799/`.
+    /// What it buys is a script or a `curl` on the same machine that need not be
+    /// given a credential first, which is the ordinary case for driving one's own
+    /// player, and that is a trade worth offering rather than making.
+    ///
+    /// Loopback and nothing else: the peer address is the one the socket reports
+    /// -- `getpeername()`, not a header -- so there is nothing here a proxy or a
+    /// client can claim, and a spoofed source address never completes a
+    /// handshake. Binding wider does not widen this; a request from another
+    /// machine needs the token whatever this says.
+    bool allowLoopbackWithoutToken = false;
+
     /// How long a request waits for the interface thread before answering 503.
     std::chrono::milliseconds callTimeout{2000};
 };
@@ -97,7 +115,10 @@ struct RawRequest {
     /// What the client says it can decode. The docs assets are stored gzipped,
     /// and a client that did not offer to accept gzip is given them expanded.
     std::string acceptEncoding;
-    std::string peer;    ///< For rate limiting. Not logged.
+    /// The address the socket reports for the other end. Rate limiting keys on
+    /// it, and `allowLoopbackWithoutToken` asks whether it is this machine.
+    /// Never logged, and never taken from a header.
+    std::string peer;
 };
 
 struct RawResponse {

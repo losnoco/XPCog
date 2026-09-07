@@ -96,6 +96,43 @@ TEST_CASE("the docs page is embedded and loads only its own files", "[remote]") 
     CHECK(page.find("https://cdn") == std::string::npos);
 }
 
+TEST_CASE("the docs page's script talks to controls the page has", "[remote]") {
+    // index.html and docs.js are two files that have to agree about a handful of
+    // ids, and nothing else would notice when they stop: a getElementById that
+    // answers null throws on the next line and the page dies silently, which is
+    // exactly the failure the inline-script test below exists because of.
+    const std::span<const std::byte> pageBytes = resources::swagger("index.html");
+    const std::span<const std::byte> appBytes  = resources::swagger("docs.js");
+    REQUIRE_FALSE(pageBytes.empty());
+    REQUIRE_FALSE(appBytes.empty());
+
+    const std::string page{reinterpret_cast<const char*>(pageBytes.data()),
+                           pageBytes.size()};
+    const std::string app{reinterpret_cast<const char*>(appBytes.data()),
+                          appBytes.size()};
+
+    const std::string call = "getElementById('";
+    std::size_t       at   = app.find(call);
+    REQUIRE(at != std::string::npos);
+    while (at != std::string::npos) {
+        const std::size_t start = at + call.size();
+        const std::size_t end   = app.find('\'', start);
+        REQUIRE(end != std::string::npos);
+        const std::string id = app.substr(start, end - start);
+        INFO("id: " << id);
+        CHECK(page.find("id=\"" + id + "\"") != std::string::npos);
+        at = app.find(call, end);
+    }
+
+    // The token outlives the tab on purpose, so there has to be a way to empty
+    // the store again.
+    CHECK(app.find("localStorage.") != std::string::npos);
+    // The call rather than the word: the comment above it explains what it is
+    // not, and that is worth keeping readable.
+    CHECK(app.find("sessionStorage.") == std::string::npos);
+    CHECK(app.find("removeItem") != std::string::npos);
+}
+
 TEST_CASE("the docs page has no inline script", "[remote]") {
     const std::span<const std::byte> bytes = resources::swagger("index.html");
     REQUIRE_FALSE(bytes.empty());

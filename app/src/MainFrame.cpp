@@ -3135,6 +3135,7 @@ void MainFrame::applyRemoteSettings() {
     config.port       = settings_.RemotePort();
     config.token      = token;
     config.allowWrite = settings_.RemoteAllowWrite();
+    config.allowLoopbackWithoutToken = settings_.RemoteLoopbackNoToken();
 
     remoteServer_ = std::make_unique<remote::RemoteServer>(
         *remoteControl_, dispatch_, std::move(config));

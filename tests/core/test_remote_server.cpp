@@ -16,6 +16,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -157,6 +158,100 @@ TEST_CASE("every way of failing to authenticate looks the same", "[remote]") {
         }
     }
     CHECK(announced);
+}
+
+TEST_CASE("the loopback exemption is off unless it is asked for", "[remote]") {
+    FakePlayerControl control;
+    RemoteServer      server = makeServer(control);
+
+    RawRequest request;
+    request.method = "GET";
+    request.path   = "/api/v1/version";
+    request.peer   = "127.0.0.1";
+
+    // The default. A request from this machine is a request like any other.
+    CHECK(server.handle(request).status == 401);
+}
+
+TEST_CASE("a request from this machine may skip the token when allowed", "[remote]") {
+    FakePlayerControl control;
+    ServerConfig      config;
+    config.token                     = std::string{kToken};
+    config.allowLoopbackWithoutToken = true;
+    RemoteServer server{control, [](std::function<void()> job) { job(); },
+                        std::move(config)};
+
+    // Every spelling a socket can report for "this machine": IPv4, anywhere in
+    // 127.0.0.0/8, IPv6, and the mapped form a dual-stack listener sees for an
+    // IPv4 client.
+    for (const char* peer : {"127.0.0.1", "127.0.0.53", "127.1.2.3", "::1",
+                             "::ffff:127.0.0.1", "::FFFF:127.0.0.1"}) {
+        INFO("peer: " << peer);
+        RawRequest request;
+        request.method = "GET";
+        request.path   = "/api/v1/version";
+        request.peer   = peer;
+        CHECK(server.handle(request).status == 200);
+    }
+
+    // The token still works, and is still what anything else needs.
+    RawRequest withToken;
+    withToken.method        = "GET";
+    withToken.path          = "/api/v1/version";
+    withToken.peer          = "192.168.1.20";
+    withToken.authorization = std::string{"Bearer "} + std::string{kToken};
+    CHECK(server.handle(withToken).status == 200);
+}
+
+TEST_CASE("the loopback exemption does not reach past loopback", "[remote]") {
+    FakePlayerControl control;
+    ServerConfig      config;
+    config.token                     = std::string{kToken};
+    config.allowLoopbackWithoutToken = true;
+    RemoteServer server{control, [](std::function<void()> job) { job(); },
+                        std::move(config)};
+
+    // Another machine; an address that merely starts with the right digits; a
+    // host name that contains one; an empty peer, which is what a caller that
+    // never filled the field in has. None of them is this machine.
+    //
+    // The last two are the reason the parse is strict rather than a prefix
+    // match: "127.0.0.1.example.com" is a name someone else controls.
+    for (const char* peer : {"192.168.1.20", "10.0.0.4", "1270.0.0.1", "12.7.0.1",
+                             "127.0.0.1.example.com", "127.0.0.1 ", " 127.0.0.1",
+                             "localhost", "::ffff:192.168.1.20", "2001:db8::1", ""}) {
+        INFO("peer: " << peer);
+        RawRequest request;
+        request.method = "GET";
+        request.path   = "/api/v1/version";
+        request.peer   = peer;
+        CHECK(request.peer == peer);
+        CHECK(server.handle(request).status == 401);
+    }
+}
+
+TEST_CASE("a loopback request the exemption allows is not rate limited", "[remote]") {
+    // The failure counter is per peer and shared with the token path, so a
+    // client that never sends one must not be walking it up towards a penalty.
+    FakePlayerControl control;
+    ServerConfig      config;
+    config.token                     = std::string{kToken};
+    config.allowLoopbackWithoutToken = true;
+    RemoteServer server{control, [](std::function<void()> job) { job(); },
+                        std::move(config)};
+
+    RawRequest request;
+    request.method = "GET";
+    request.path   = "/api/v1/version";
+    request.peer   = "127.0.0.1";
+
+    const auto started = std::chrono::steady_clock::now();
+    for (int i = 0; i < 20; ++i) {
+        CHECK(server.handle(request).status == 200);
+    }
+    // Twenty requests that each slept a quarter of a second would be five
+    // seconds; this is the loosest bound that still catches that.
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds{1});
 }
 
 TEST_CASE("the scheme is matched case-insensitively", "[remote]") {

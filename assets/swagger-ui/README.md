@@ -21,8 +21,9 @@ constraints. `/docs` is served with a Content-Security-Policy of `default-src
 'none'` plus `'self'` for scripts, styles and fetches, so the page can reach
 nothing but this server; there are no CORS headers anywhere, so no other origin
 can reach the API; and the token is typed into the page and kept in
-`sessionStorage` rather than being an ambient credential the browser would
-attach on its own.
+`localStorage` rather than being an ambient credential the browser would attach
+on its own. That store is per-origin — only a page this player served can read
+it — and the bar has a **Forget** button that empties it.
 
 ## The page itself
 
@@ -30,7 +31,7 @@ attach on its own.
 Swagger UI page in one way that matters: a browser cannot attach `Authorization:
 Bearer` to a top-level navigation, so `/docs` and the three files it loads are the
 only unauthenticated things the server has. The page asks for the token, keeps it
-in `sessionStorage`, and installs a `requestInterceptor` that attaches it to the
+in `localStorage`, and installs a `requestInterceptor` that attaches it to the
 spec fetch and to every try-it-out call. Everything the page can actually *do*
 still needs the token.
 

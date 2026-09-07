@@ -20,6 +20,7 @@
     padding: .4rem .9rem; border: 0; border-radius: 3px;
     background: #4a7; color: #061; font-weight: 600; cursor: pointer;
   }
+  #token-bar button.secondary { background: #333; color: #ddd; }
   #token-note { flex-basis: 100%; font-size: .85rem; color: #aaa; }
 </style>
 </head>
@@ -31,17 +32,22 @@
   unauthenticated things the server serves; everything the page can actually do
   needs the token typed in here.
 
-  sessionStorage rather than localStorage: it lasts as long as the tab and no
-  longer, which is the right lifetime for a credential pasted into a page to
-  poke at an API.
+  localStorage rather than sessionStorage: a token that had to be pasted in again
+  for every tab sent the reader back to the preferences pane to copy it each time,
+  and that friction is what makes a credential end up somewhere worse. The store
+  is per-origin -- only a page served by this player can read it -- and "Forget"
+  empties it.
 -->
 <div id="token-bar">
   <label for="token">Access token</label>
   <input id="token" type="password" autocomplete="off" spellcheck="false"
          placeholder="Preferences -> Remote -> Access token">
   <button id="apply" type="button">Use</button>
-  <span id="token-note">Kept in this tab only. Sent as a bearer token with every
-    request, including the one that fetches this page's own specification.</span>
+  <button id="forget" type="button" class="secondary">Forget</button>
+  <span id="token-note">Remembered in this browser until you forget it. Sent as a
+    bearer token with every request, including the one that fetches this page's own
+    specification. A server set to skip the token for this computer needs none of
+    it.</span>
 </div>
 
 <div id="swagger-ui"></div>

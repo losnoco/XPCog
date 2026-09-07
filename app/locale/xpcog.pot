@@ -1106,11 +1106,11 @@ msgstr ""
 msgid "The remote control could not create an access token."
 msgstr ""
 
-#: app/src/MainFrame.cpp:3146
+#: app/src/MainFrame.cpp:3147
 msgid "Remote control unavailable: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3152
+#: app/src/MainFrame.cpp:3153
 msgid "Remote control listening on http://%s:%d"
 msgstr ""
 
@@ -1740,101 +1740,114 @@ msgstr ""
 msgid "Allow changes, not just reading"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1602
+#: app/src/PreferencesDialog.cpp:1601
+msgid "Let programs on this computer connect without the token"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1604
+msgid ""
+"For a script or a command line driving your own player. Any program on this computer can then control it, including a web page that was told to try. Other computers still need the token."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1614
 msgid "Copy"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1603
+#: app/src/PreferencesDialog.cpp:1615
 msgid "Regenerate"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1609
+#: app/src/PreferencesDialog.cpp:1621
 msgid "Access token"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1635
+#: app/src/PreferencesDialog.cpp:1648
 msgid "This build has no remote-control server."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1638
+#: app/src/PreferencesDialog.cpp:1651
 msgid ""
 "The system password store is not available, so an access token cannot be kept safely."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1644
+#: app/src/PreferencesDialog.cpp:1657
 msgid "Off. Nothing is listening."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1652
+#: app/src/PreferencesDialog.cpp:1665
 msgid "Listening on %s -- open %s/docs in a browser to try it."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1660
+#: app/src/PreferencesDialog.cpp:1669
+msgid "Programs on this computer are connecting without the token."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1678
 msgid ""
 "Reachable from other machines. The connection is not encrypted and the access token is sent with every request, so use this on a network you trust."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1689
+#: app/src/PreferencesDialog.cpp:1711
 msgid ""
 "Every device using the current token will stop working until it is given the new one.\n"
 "\n"
 "Generate a new token?"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1692
+#: app/src/PreferencesDialog.cpp:1714
 msgid "Regenerate Access Token"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1714
+#: app/src/PreferencesDialog.cpp:1736
 msgid "Scrobble to Last.fm"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1724
+#: app/src/PreferencesDialog.cpp:1746
 msgid "Connect..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1725
+#: app/src/PreferencesDialog.cpp:1747
 msgid "Cancel"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1726
+#: app/src/PreferencesDialog.cpp:1748
 msgid "Disconnect"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1784
+#: app/src/PreferencesDialog.cpp:1806
 msgid ""
 "The system password store is not available, so a Last.fm session cannot be kept."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1788
+#: app/src/PreferencesDialog.cpp:1810
 msgid "Waiting for you to allow access in your browser..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1790
+#: app/src/PreferencesDialog.cpp:1812
 msgid "Connected as %s."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1793
+#: app/src/PreferencesDialog.cpp:1815
 msgid ""
 "Not connected. Connecting opens Last.fm in your browser; XPCog never sees your password."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1802
+#: app/src/PreferencesDialog.cpp:1824
 msgid "%zu play waiting to be sent."
 msgid_plural "%zu plays waiting to be sent."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/PreferencesDialog.cpp:1861
+#: app/src/PreferencesDialog.cpp:1883
 msgid ""
 "Plays are sent once you have heard half a track, or four minutes of it, whichever comes first. Tracks under 30 seconds are never scrobbled."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1864
+#: app/src/PreferencesDialog.cpp:1886
 msgid "Your Last.fm applications"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1866
+#: app/src/PreferencesDialog.cpp:1888
 msgid ""
 "Revoking access there stops scrobbling immediately, whatever this pane says."
 msgstr ""

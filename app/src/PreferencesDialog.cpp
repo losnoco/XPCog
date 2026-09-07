@@ -1594,6 +1594,18 @@ wxWindow* PreferencesDialog::buildRemotePane(wxWindow* parent) {
     row->number(_("Port"), "remotePort", 1024, 65535);
     row->toggle(_("Allow changes, not just reading"), "remoteAllowWrite");
 
+    // Said in full rather than left to a tooltip, because it is the one row on
+    // this pane that gives something away: a program on this computer includes a
+    // page in a browser that a site talked into fetching the port.
+    auto* local = static_cast<wxCheckBox*>(
+        row->toggle(_("Let programs on this computer connect without the token"),
+                    "remoteLoopbackNoToken")
+            .control);
+    row->note(_("For a script or a command line driving your own player. Any "
+                "program on this computer can then control it, including a web "
+                "page that was told to try. Other computers still need the "
+                "token."));
+
     // Read-only and selectable rather than hidden behind a button alone: the
     // token has to be got into another device somehow, and the usual way is to
     // look at it.
@@ -1616,12 +1628,13 @@ wxWindow* PreferencesDialog::buildRemotePane(wxWindow* parent) {
 
     // One closure decides what the pane says, as the Last.fm pane's does, so
     // there is no way for two paths to disagree about it.
-    const auto refresh = [this, pane, enable, token, copy, regenerate, status] {
+    const auto refresh = [this, pane, enable, local, token, copy, regenerate, status] {
         const bool built = remote::remoteServerAvailable();
         wxString   storeProblem;
         const bool store = RemoteToken::storeAvailable(&storeProblem);
 
         enable->Enable(built && store);
+        local->Enable(built && store);
         token->Enable(built && store);
         copy->Enable(built && store);
         regenerate->Enable(built && store);
@@ -1651,6 +1664,11 @@ wxWindow* PreferencesDialog::buildRemotePane(wxWindow* parent) {
                 text = wxString::Format(
                     _("Listening on %s -- open %s/docs in a browser to try it."),
                     where, where);
+                if (isTrue(settings_.rawValue("remoteLoopbackNoToken"))) {
+                    text += "\n\n";
+                    text += _("Programs on this computer are connecting without "
+                              "the token.");
+                }
                 if (address == "0.0.0.0") {
                     // Said plainly, because it is the one choice on this pane
                     // that puts the player on the network. The token is what
@@ -1668,12 +1686,16 @@ wxWindow* PreferencesDialog::buildRemotePane(wxWindow* parent) {
         pane->Layout();
     };
 
-    enable->Bind(wxEVT_CHECKBOX, [refresh](wxCommandEvent& event) {
-        event.Skip();
-        // After the toggle's own handler has stored the value, so the line below
-        // describes what the pane now is rather than what it was.
-        refresh();
-    });
+    // Both of them, and for the same reason: the status line below says what the
+    // server now is, and these two are what change it.
+    for (wxCheckBox* box : {enable, local}) {
+        box->Bind(wxEVT_CHECKBOX, [refresh](wxCommandEvent& event) {
+            event.Skip();
+            // After the toggle's own handler has stored the value, so the line
+            // describes what the pane now is rather than what it was.
+            refresh();
+        });
+    }
 
     copy->Bind(wxEVT_BUTTON, [token](wxCommandEvent&) {
         if (wxTheClipboard->Open()) {

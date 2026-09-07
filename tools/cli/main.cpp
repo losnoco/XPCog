@@ -67,6 +67,8 @@ int usage() {
               "    --token-file F    read the access token from F\n"
               "                      (else $XPCOG_REMOTE_TOKEN, else one is printed)\n"
               "    --read-only       serve reads and refuse every write\n"
+              "    --local-no-token  answer connections from this machine with no\n"
+              "                      token at all (127.0.0.0/8 and ::1 only)\n"
               "\n"
               "  What `serve` cannot do, and answers 501 for: skipping a track that\n"
               "  will not open, cover art, ratings, and any desktop integration. It\n"
@@ -309,6 +311,7 @@ int serve(const std::vector<std::string>& args) {
     int         port      = 7799;
     std::string tokenFile;
     bool        readOnly  = false;
+    bool        localFree = false;
     std::vector<std::string> files;
 
     for (std::size_t i = 0; i < args.size(); ++i) {
@@ -328,6 +331,8 @@ int serve(const std::vector<std::string>& args) {
             tokenFile = value("--token-file");
         } else if (arg == "--read-only") {
             readOnly = true;
+        } else if (arg == "--local-no-token") {
+            localFree = true;
         } else if (arg.rfind("--", 0) == 0) {
             std::fprintf(stderr, "xpcog-cli: unknown option '%s'\n", arg.c_str());
             return 2;
@@ -411,6 +416,7 @@ int serve(const std::vector<std::string>& args) {
     config.port       = port;
     config.token      = token;
     config.allowWrite = !readOnly;
+    config.allowLoopbackWithoutToken = localFree;
 
     xpcog::remote::RemoteServer server{
         control, [&executor](std::function<void()> job) { executor.post(std::move(job)); },
@@ -425,6 +431,12 @@ int serve(const std::vector<std::string>& args) {
     std::printf("listening on http://%s:%d%s\n", address.c_str(), server.boundPort(),
                 readOnly ? "  (read-only)" : "");
     std::printf("  docs: http://%s:%d/docs\n", address.c_str(), server.boundPort());
+    if (localFree) {
+        // Worth a line of its own: it is the one flag here that gives something
+        // away, and a token printed above it would otherwise read as the thing
+        // standing between the port and everything else on the machine.
+        std::puts("  no token required from this machine; other machines still need one");
+    }
     std::fflush(stdout);
 
     // How this stops depends on whether anybody is typing at it.

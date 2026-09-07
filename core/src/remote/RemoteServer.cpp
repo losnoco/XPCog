@@ -18,6 +18,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -105,6 +106,71 @@ std::string_view bearerToken(std::string_view authorization) {
         token.remove_prefix(1);
     }
     return token;
+}
+
+/// Is `text` a dotted-quad in 127.0.0.0/8?
+///
+/// Parsed by hand rather than with inet_pton, because this has to answer the
+/// same on three platforms without dragging a socket header into a file that
+/// otherwise has none, and because a strict parse is the whole point: anything
+/// with a character left over -- "127.0.0.1.example.com", "127.0.0.1 " -- is not
+/// an address and must not be read as one.
+bool isLoopbackIPv4(std::string_view text) {
+    unsigned    first = 0;
+    std::size_t at    = 0;
+    for (int octet = 0; octet < 4; ++octet) {
+        if (octet > 0) {
+            if (at >= text.size() || text[at] != '.') {
+                return false;
+            }
+            ++at;
+        }
+        const std::size_t start = at;
+        unsigned          value = 0;
+        while (at < text.size() && text[at] >= '0' && text[at] <= '9') {
+            value = value * 10 + static_cast<unsigned>(text[at] - '0');
+            if (value > 255) {
+                return false;
+            }
+            ++at;
+        }
+        if (at == start || at - start > 3) {
+            return false;
+        }
+        if (octet == 0) {
+            first = value;
+        }
+    }
+    return at == text.size() && first == 127;
+}
+
+/// Did this connection come from the machine the player is running on?
+///
+/// The peer is what the socket reports -- getpeername() by way of httplib's
+/// remote_addr -- rather than anything the client said, so there is nothing here
+/// to forge: a request carrying "X-Forwarded-For: 127.0.0.1" is not loopback,
+/// and a packet with a spoofed loopback source never completes a handshake
+/// because the answers go to the address it claimed.
+///
+/// Both families, and the mapped form in between: a socket bound to :: and
+/// connected to over IPv4 reports "::ffff:127.0.0.1".
+bool isLoopbackPeer(std::string_view peer) {
+    constexpr std::string_view kMapped = "::ffff:";
+    if (peer.size() > kMapped.size()) {
+        bool mapped = true;
+        for (std::size_t i = 0; i < kMapped.size(); ++i) {
+            const char given =
+                static_cast<char>(std::tolower(static_cast<unsigned char>(peer[i])));
+            if (given != kMapped[i]) {
+                mapped = false;
+                break;
+            }
+        }
+        if (mapped) {
+            peer.remove_prefix(kMapped.size());
+        }
+    }
+    return peer == "::1" || isLoopbackIPv4(peer);
 }
 
 /// The one answer for every way a request can fail to authenticate.
@@ -301,11 +367,20 @@ bool isDocsAsset(std::string_view path) {
 }
 
 RawResponse RemoteServer::handle(const RawRequest& request) {
-    // Before anything else, and with no exemption for where the connection came
-    // from. A loopback exemption would mean every process on the machine holds
-    // the transport, which is not the promise the preferences pane makes.
-    if (!isDocsAsset(request.path) &&
-        !constantTimeEquals(bearerToken(request.authorization), impl_->config.token)) {
+    // Before anything else. The exemption for a connection from this machine is
+    // off unless it was asked for -- granted by default it would mean every
+    // process on the machine holds the transport, which is not the promise the
+    // preferences pane makes.
+    //
+    // Checked after the token rather than before it, so a request that carries
+    // the right one is not answered differently depending on where it came from,
+    // and so the constant-time compare runs for every request that has a token
+    // at all.
+    const bool authenticated =
+        constantTimeEquals(bearerToken(request.authorization), impl_->config.token) ||
+        (impl_->config.allowLoopbackWithoutToken && isLoopbackPeer(request.peer));
+
+    if (!isDocsAsset(request.path) && !authenticated) {
         const std::chrono::milliseconds penalty = impl_->rateLimit.noteFailure(request.peer);
         if (penalty.count() > 0) {
             std::this_thread::sleep_for(penalty);

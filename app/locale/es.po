@@ -1938,6 +1938,16 @@ msgid "Allow changes, not just reading"
 msgstr "Permitir cambios, no solo lectura"
 
 #: app/src/PreferencesDialog.cpp
+msgid "Let programs on this computer connect without the token"
+msgstr "Permitir que los programas de este equipo se conecten sin el token"
+
+#: app/src/PreferencesDialog.cpp
+msgid ""
+"For a script or a command line driving your own player. Any program on this computer can then control it, including a web page that was told to try. Other computers still need the token."
+msgstr ""
+"Para manejar tu propio reproductor desde un script o una línea de órdenes. Con esto, cualquier programa de este equipo puede controlarlo, incluida una página web a la que le hayan dicho que lo intente. Los demás equipos siguen necesitando el token."
+
+#: app/src/PreferencesDialog.cpp
 msgid "Access token"
 msgstr "Token de acceso"
 
@@ -1978,6 +1988,10 @@ msgstr "Desactivado. No hay nada escuchando."
 #: app/src/PreferencesDialog.cpp
 msgid "Listening on %s -- open %s/docs in a browser to try it."
 msgstr "Escuchando en %s: abre %s/docs en un navegador para probarlo."
+
+#: app/src/PreferencesDialog.cpp
+msgid "Programs on this computer are connecting without the token."
+msgstr "Los programas de este equipo se están conectando sin el token."
 
 #: app/src/PreferencesDialog.cpp
 msgid "Reachable from other machines. The connection is not encrypted and the access token is sent with every request, so use this on a network you trust."

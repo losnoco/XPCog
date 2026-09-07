@@ -98,8 +98,10 @@ thing. `Status` carries a `sessionId`, random per launch, and a
 
 ## Authentication
 
-A bearer token on every request, checked in constant time, with **no exemption
-for loopback** — that would hand every process on the machine the transport.
+A bearer token on every request, checked in constant time, and by default with
+**no exemption for loopback** — granted unasked, that would hand every process on
+the machine the transport. It is offered as a setting rather than taken as a
+default; see *Skipping the token on this machine* below.
 
 Missing, malformed and wrong produce the same 401 down to the byte: a client that
 could tell them apart could learn about the token by asking. After five failures
@@ -116,14 +118,42 @@ falling back to `settings.def` is refused deliberately.
 `xpcog-cli serve` takes `--token-file`, then `$XPCOG_REMOTE_TOKEN`, then
 generates one and prints it.
 
+### Skipping the token on this machine
+
+`remoteLoopbackNoToken` (Preferences → Remote, *Let programs on this computer
+connect without the token*; `xpcog-cli serve --local-no-token`) answers a
+connection whose peer is in `127.0.0.0/8` or is `::1` without asking for one. Off
+by default.
+
+What it is for: driving your own player from a shell, a script or a hotkey
+without first getting a credential out of the system password store. What it
+costs is stated in the same breath — **every process on the machine can then
+control the player**, and that includes a page in a browser that some site talked
+into fetching `http://127.0.0.1:7799/`, which is the one way to reach a loopback
+server from outside it. The mitigations elsewhere in this document still hold
+(there are no CORS headers, so such a page can send a request but cannot read the
+answer), and they are not the same as needing a token.
+
+Loopback and nothing else. The peer is what the socket reports —
+`getpeername()`, never a header — so `X-Forwarded-For: 127.0.0.1` is not
+loopback, a spoofed source address never completes a handshake, and binding to
+`0.0.0.0` does not widen this: a request from another machine needs the token
+whatever the setting says. The address is parsed strictly, so
+`127.0.0.1.example.com` is not an address at all.
+
+It is the address that decides, not the machine: a program here that connects to
+this host's *LAN* address rather than to `127.0.0.1` is a peer like any other and
+still needs the token.
+
 ### What is *not* behind the token
 
 `/docs` and the three files it loads, and only those. A browser cannot put an
 `Authorization` header on a top-level navigation, so a token-gated documentation
 page is one nobody can open. What that exposes is four static files describing
 the page's own chrome; `/openapi.json` and every endpoint still need the token,
-and the page asks for one, keeps it in `sessionStorage` for the tab, and attaches
-it to the specification fetch and every try-it-out call itself.
+and the page asks for one, keeps it in `localStorage` for this browser — a
+per-origin store, emptied by the bar's **Forget** button — and attaches it to the
+specification fetch and every try-it-out call itself.
 
 The page's own script is a file rather than an inline block, because the page is
 served with `script-src 'self'` and that blocks inline execution outright.
@@ -137,6 +167,8 @@ CORS headers anywhere and no ambient credential to borrow.
 - **Off twice over.** Not built without `XPCOG_WITH_REST`; not listening without
   `remoteEnable`.
 - **Loopback by default.** Binding wider is a choice the pane offers and labels.
+- **A token from everywhere by default.** Skipping it for this machine is a
+  choice the pane offers and labels, and it never extends past loopback.
 - **No TLS, and none planned.** A self-signed certificate on a LAN is theatre —
   nothing verifies it, so it stops no one — and it would be a dependency and a
   certificate lifetime to manage for that. **The connection is not encrypted and

@@ -209,6 +209,39 @@ TEST_CASE("stopping releases the port", "[remote][socket]") {
     CHECK(successor.start(&error));
 }
 
+TEST_CASE("the loopback exemption reads the address the socket reports",
+          "[remote][socket]") {
+    // The one part of it handle() cannot show: whether the peer address arrives
+    // at all. Everything else drives handle() with the field filled in by hand,
+    // which would pass just as well if httplib's remote_addr were never read.
+    if (socketsForbidden()) {
+        SKIP("XPCOG_NO_SOCKET_TESTS is set");
+    }
+
+    FakePlayerControl control;
+
+    ServerConfig config;
+    config.token                     = kToken;
+    config.address                   = "127.0.0.1";
+    config.port                      = 0;
+    config.allowLoopbackWithoutToken = true;
+
+    RemoteServer server{control, [](std::function<void()> job) { job(); },
+                        std::move(config)};
+    REQUIRE(server.start());
+
+    httplib::Client client("127.0.0.1", server.boundPort());
+    client.set_connection_timeout(5, 0);
+
+    auto response = client.Get("/api/v1/status");
+    REQUIRE(response);
+    CHECK(response->status == 200);
+
+    // The other half of the pair is above: the same request against a server
+    // with the exemption off is a 401 over this same loopback connection, which
+    // is what "an unauthenticated request is refused over the wire too" checks.
+}
+
 TEST_CASE("a server that cannot bind says so rather than pretending",
           "[remote][socket]") {
     if (socketsForbidden()) {

@@ -727,9 +727,9 @@ XPCOG_SETTING(RemoteEnable, bool, "remoteEnable", false)
 /// connection is not encrypted and the access token travels in a header on every
 /// request.
 ///
-/// A default rather than a restriction. The token is required either way -- there
-/// is no exemption for loopback, because that would hand every process on the
-/// machine the transport.
+/// A default rather than a restriction. The token is required either way, unless
+/// `remoteLoopbackNoToken` was turned on -- and that exempts a connection from
+/// this machine, never one from another, whatever this is bound to.
 XPCOG_SETTING(RemoteAddress, std::string, "remoteAddress", "127.0.0.1")
 
 /// What port the remote control binds.
@@ -747,6 +747,22 @@ XPCOG_SETTING(RemotePort, int, "remotePort", 7799)
 /// second screen wants, and it means such a display can be given a token without
 /// also being given the playlist.
 XPCOG_SETTING(RemoteAllowWrite, bool, "remoteAllowWrite", true)
+
+/// Whether a request from this machine may skip the access token.
+///
+/// **No Cog counterpart.** False. The token is required from everywhere by
+/// default, because an exemption for loopback hands the transport to every
+/// process on the machine -- including a page in a browser that a hostile site
+/// has talked into fetching `http://127.0.0.1:7799/`, which is the one way to
+/// reach a loopback server from outside it.
+///
+/// True is for driving one's own player from a script or a `curl` on the same
+/// machine without first getting a credential out of the password store. It
+/// applies to connections from 127.0.0.0/8 and ::1 and to nothing else: the
+/// address is the one the socket reports rather than anything a client can
+/// claim, so binding to 0.0.0.0 does not widen it -- another machine still needs
+/// the token.
+XPCOG_SETTING(RemoteLoopbackNoToken, bool, "remoteLoopbackNoToken", false)
 
 // --- bookkeeping ----------------------------------------------------------
 
