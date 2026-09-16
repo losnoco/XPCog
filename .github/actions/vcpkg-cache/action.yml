@@ -1,0 +1,84 @@
+name: Connect vcpkg to the binary cache
+description: >-
+  Points vcpkg's binary caching at the Cloudflare R2 bucket, through the AWS
+  CLI the runner images already carry. With no credentials it leaves vcpkg to
+  build from source and says so.
+
+# The cache is an S3-compatible bucket on Cloudflare R2, and vcpkg reaches it
+# with its `x-aws` provider: `aws s3 ls` to ask whether a package is there,
+# `aws s3 cp` to fetch or store it, one object per port named by its ABI hash.
+# Nothing is installed for it -- the AWS CLI is on all three hosted images --
+# and nothing expires it on our side: a lifecycle rule on the bucket deletes
+# objects some months after they were uploaded, and a package that is still
+# wanted after that is built and stored once more.
+#
+# R2 speaks S3 with three differences the CLI has to be told about: the
+# endpoint is the account's rather than Amazon's, the region is the word
+# `auto`, and the checksums the CLI has computed on every upload since 2.23
+# are not something R2 accepts, so they are limited to where the request
+# demands one. All of it goes through the environment, into GITHUB_ENV, so
+# that the configure step's vcpkg inherits it.
+#
+# The credentials are repository secrets, which a pull request from a fork
+# does not receive. Then this step sets nothing and exits cleanly, and vcpkg
+# falls back to its default local cache, which on a fresh runner is empty: the
+# build takes the long way and is otherwise the same build. A bucket that the
+# credentials cannot list is reported here, in seconds, rather than as an
+# hour of silent rebuilding followed by a failed upload.
+
+inputs:
+  access-key-id:
+    description: The R2 API token's access key id.
+    required: false
+  secret-access-key:
+    description: The R2 API token's secret access key.
+    required: false
+  endpoint:
+    description: The account's S3 endpoint, https://<account id>.r2.cloudflarestorage.com
+    required: false
+  bucket:
+    description: The bucket name.
+    required: false
+    default: xpcog-vcpkg
+
+runs:
+  using: composite
+  steps:
+    - name: Point vcpkg at the bucket
+      shell: bash
+      env:
+        ACCESS_KEY_ID: ${{ inputs.access-key-id }}
+        SECRET_ACCESS_KEY: ${{ inputs.secret-access-key }}
+        ENDPOINT: ${{ inputs.endpoint }}
+        BUCKET: ${{ inputs.bucket }}
+      run: |
+        if [ -z "$ACCESS_KEY_ID" ] || [ -z "$SECRET_ACCESS_KEY" ] || [ -z "$ENDPOINT" ]; then
+          echo "::notice::No binary cache credentials (a pull request from a fork, or the R2 secrets are unset): vcpkg builds every dependency from source."
+          exit 0
+        fi
+        if ! command -v aws >/dev/null; then
+          echo "::error::The AWS CLI is not on this runner, and vcpkg's x-aws provider needs it."
+          exit 1
+        fi
+
+        export AWS_ACCESS_KEY_ID="$ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$SECRET_ACCESS_KEY"
+        export AWS_ENDPOINT_URL="$ENDPOINT"
+        export AWS_DEFAULT_REGION=auto
+        export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+        export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+
+        # Fail here if the bucket cannot be listed; a wrong secret is cheaper
+        # to learn about now.
+        aws s3 ls "s3://$BUCKET/" >/dev/null
+        echo "Binary cache: s3://$BUCKET/ at $ENDPOINT, $(aws --version)"
+
+        {
+          echo "VCPKG_BINARY_SOURCES=clear;x-aws,s3://$BUCKET/,readwrite"
+          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+          echo "AWS_ENDPOINT_URL=$AWS_ENDPOINT_URL"
+          echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
+          echo "AWS_REQUEST_CHECKSUM_CALCULATION=$AWS_REQUEST_CHECKSUM_CALCULATION"
+          echo "AWS_RESPONSE_CHECKSUM_VALIDATION=$AWS_RESPONSE_CHECKSUM_VALIDATION"
+        } >> "$GITHUB_ENV"

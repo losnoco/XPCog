@@ -18,40 +18,25 @@ concurrency:
 # survives the default being tightened later.
 permissions:
   contents: read
-  # For the binary cache: vcpkg uploads each port it builds to the NuGet
-  # registry on GitHub Packages, and the token needs to be allowed to. See
-  # .github/actions/vcpkg-nuget for the rest of it.
-  packages: write
 
 env:
   VCPKG_DISABLE_METRICS: "1"
-  # Where the ports vcpkg builds are kept between runs, and the reason no job
-  # in this file carries an actions/cache step any more. That was the first
-  # design, and it had the wrong shape for vcpkg: one tarball of the whole
-  # cache per job, under a key that has to be written once and cannot be
-  # refreshed, evicted after seven idle days. Three faults followed from it on
-  # the 1.9.0 run alone -- every entry gone after a quiet fortnight, a Visual
-  # Studio update on the runner image changing every package's ABI under an
-  # exact-key hit that could never be resaved, and a cold Windows job running
-  # past its hour -- and each fix was another layer on the tarball.
-  #
-  # A NuGet feed is what vcpkg's own binary caching was designed against: one
-  # package per port, addressed by its ABI, uploaded once and kept. A compiler
-  # update rebuilds the ports whose ABI it changed and nothing else, and there
-  # is no key to get wrong. GitHub Packages hosts it, on the same token as
-  # everything else here; the presets set no cache of their own so that this
-  # is the one that applies.
-  VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json,readwrite"
-  # What each package's nuspec names as its repository, and the line that
-  # keeps this free. A package on GitHub Packages is private until it is
-  # linked to a repository, and linked it inherits the repository's
-  # visibility -- public, here -- at which point its storage is not counted.
-  # Linking happens at publish, from the repository URL in the nuspec, and
-  # GitHub documents that URL as https://github.com/OWNER/REPOSITORY. Left to
-  # itself vcpkg writes it with a .git suffix, and the first run's packages
-  # came out unlinked and private; this variable is vcpkg's way of being told
-  # the exact URL.
-  VCPKG_NUGET_REPOSITORY: ${{ github.server_url }}/${{ github.repository }}
+  # Where the ports vcpkg builds are kept between runs -- see the action
+  # every job calls after setting vcpkg up, .github/actions/vcpkg-cache, which
+  # sets VCPKG_BINARY_SOURCES for the steps after it. The cache is a bucket on
+  # Cloudflare R2, one object per port named by its ABI hash, and that shape
+  # is the point. The first design was actions/cache: one tarball of the whole
+  # cache per job, under a key written once and never refreshed, evicted after
+  # seven idle days. Three faults followed from it on the 1.9.0 run alone --
+  # every entry gone after a quiet fortnight, a Visual Studio update on the
+  # runner image changing every package's ABI under an exact-key hit that could
+  # never be resaved, a cold Windows job running past its hour -- and each fix
+  # was another layer on the tarball. The second was a NuGet feed on GitHub
+  # Packages, which had the right shape and the wrong price: NuGet packages
+  # there are private unless flipped one at a time in the web UI, and private
+  # storage is capped at 500 MB for the organisation, below one platform's
+  # worth. A bucket has the shape and no cap, and the runners already carry
+  # the CLI that talks to it.
 
 jobs:
   version:
@@ -335,20 +320,15 @@ jobs:
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
       - name: Connect vcpkg to the binary cache
-        uses: ./.github/actions/vcpkg-nuget
+        uses: ./.github/actions/vcpkg-cache
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint: ${{ secrets.R2_ENDPOINT }}
 
-      # The unset is for macOS; see .github/actions/vcpkg-nuget for why vcpkg
-      # must not see that variable, and why a shell is the only place it can
-      # be taken away. bash on every platform, so the line means the same
-      # thing on each.
       - name: Configure
         id: configure
-        shell: bash
-        run: |
-          unset VCPKG_FORCE_SYSTEM_BINARIES
-          cmake --preset ${{ matrix.preset }}
+        run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
@@ -440,9 +420,11 @@ jobs:
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
       - name: Connect vcpkg to the binary cache
-        uses: ./.github/actions/vcpkg-nuget
+        uses: ./.github/actions/vcpkg-cache
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint: ${{ secrets.R2_ENDPOINT }}
 
       - name: Configure
         id: configure
@@ -542,9 +524,11 @@ jobs:
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
       - name: Connect vcpkg to the binary cache
-        uses: ./.github/actions/vcpkg-nuget
+        uses: ./.github/actions/vcpkg-cache
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint: ${{ secrets.R2_ENDPOINT }}
 
       # One preset, no -D. This step used to be `--preset linux-debug -D
       # XPCOG_BUILD_APP=OFF`, and that stopped being enough when the crash
@@ -659,9 +643,11 @@ jobs:
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
       - name: Connect vcpkg to the binary cache
-        uses: ./.github/actions/vcpkg-nuget
+        uses: ./.github/actions/vcpkg-cache
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint: ${{ secrets.R2_ENDPOINT }}
 
       # The Last.fm credentials, and this is the only job that gets them.
       #
@@ -816,9 +802,11 @@ jobs:
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
       - name: Connect vcpkg to the binary cache
-        uses: ./.github/actions/vcpkg-nuget
+        uses: ./.github/actions/vcpkg-cache
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint: ${{ secrets.R2_ENDPOINT }}
 
       # The certificate, into a keychain that exists for this job and no longer.
       #
@@ -920,10 +908,7 @@ jobs:
         env:
           XPCOG_LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           XPCOG_LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
-        # The unset: see .github/actions/vcpkg-nuget.
-        run: |
-          unset VCPKG_FORCE_SYSTEM_BINARIES
-          cmake --preset macos-app-release 2>&1 | tee configure.log
+        run: cmake --preset macos-app-release 2>&1 | tee configure.log
 
       # See the Windows installer job for why this is asserted from the configure
       # output rather than from the secret being non-empty, and why forks skip it.
@@ -1121,9 +1106,11 @@ jobs:
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
       - name: Connect vcpkg to the binary cache
-        uses: ./.github/actions/vcpkg-nuget
+        uses: ./.github/actions/vcpkg-cache
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint: ${{ secrets.R2_ENDPOINT }}
 
       # The Last.fm credentials, through the environment for the reason the
       # Windows installer job sets out at length: a -D lands in CMakeCache.txt and
