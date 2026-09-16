@@ -77,9 +77,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     # A hung job is not a slow job, and GitHub's default lets it run for six
     # hours before saying so. A green run here is five to eight minutes on a warm
-    # binary cache and around twenty on a cold one, so an hour is generous enough
-    # never to cut off real work and short enough that a wedged runner reports
-    # rather than idles.
+    # binary cache; a cold one is about thirty on Linux, forty on macOS and
+    # seventy on Windows, where vcpkg's configure alone took fifty-eight for
+    # 1.9.0. Ninety minutes is enough never to cut off real work -- sixty was
+    # not, and cut that Windows job off in its Build step twice, after the
+    # dependencies had been built -- and short enough that a wedged runner
+    # reports rather than idles.
     #
     # Added after one Linux job stalled three times in a row: seven minutes in
     # `apt-get update` against an unreachable azure.archive.ubuntu.com, then
@@ -92,7 +95,7 @@ jobs:
     #
     # One of those three stalls cannot happen any more: the Qt install is gone,
     # since the toolkit now comes from vcpkg like every other dependency.
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -313,13 +316,37 @@ jobs:
       # The `-v2-` is a salt. GitHub caches are write-once per key, so a bad
       # entry cannot be overwritten -- only outlived. Bump it to abandon a
       # poisoned key.
+      # The runner image is an input to vcpkg's ABI, so it is an input to the
+      # key. vcpkg hashes the compiler binary into every package's ABI, and a
+      # Visual Studio or Xcode update on the hosted image changes it without a
+      # line of this repository changing. The 1.9.0 run met that: one attempt on
+      # image 20260907 with VS 17.14.39 filled the cache, the next landed on a
+      # newer image with 17.14.40, restored the entry by its exact key, matched
+      # none of the archives in it, rebuilt all 58 ports -- and then did not
+      # save, because an exact hit skips the save and the key is write-once. A
+      # cache that can never be refreshed, on every attempt, until eviction.
+      #
+      # With the image in the key a new image is a new key: a miss, a rebuild
+      # and a save, once. The prefix fallback below still restores the previous
+      # image's entry first, which is right whenever the update left the
+      # compiler alone -- most of them do -- and harmless when it did not, since
+      # vcpkg matches archives by ABI and the prune before the save drops what
+      # went unused. ImageVersion is the environment variable hosted runners
+      # set; a self-hosted runner without it gets a fixed word.
+      - name: Name the runner image
+        id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-unversioned}" >> "$GITHUB_OUTPUT"
+
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
-          restore-keys: vcpkg-v3-${{ matrix.preset }}-
+          key: vcpkg-v3-${{ matrix.preset }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
+          restore-keys: |
+            vcpkg-v3-${{ matrix.preset }}-${{ steps.image.outputs.version }}-
+            vcpkg-v3-${{ matrix.preset }}-
 
       # vcpkg creates this itself, but not if configure fails before it gets
       # that far -- and then the save step warns about a missing path.
@@ -356,6 +383,34 @@ jobs:
       # `always()` is still wanted so that a compile or test failure does not
       # additionally cost a dependency rebuild; the cache is complete by then.
       # The added condition is only that configure got far enough to fill it.
+      # Only the archives this configure used. The restore may have fallen
+      # back to an entry from another image, and vcpkg leaves in place whatever
+      # it did not match -- saved as-is, every compiler change would carry its
+      # predecessors' archives forward for good. vcpkg records each installed
+      # package's ABI in its status file; anything the cache holds beyond those
+      # is dead weight.
+      - name: Prune unused archives from the binary cache
+        if: always() && steps.configure.outcome == 'success'
+        shell: bash
+        run: |
+          # `|| true` twice: the shell runs with pipefail, and neither a
+          # missing status file nor grep finding nothing is an error -- both
+          # are the case the next line handles.
+          { cat build/*/vcpkg_installed/vcpkg/status 2>/dev/null || true; } \
+            | { grep '^Abi: ' || true; } | awk '{print $2}' | sort -u > used-abis.txt
+          if [ ! -s used-abis.txt ]; then
+            echo "no installed packages recorded; leaving the cache as it is"
+            exit 0
+          fi
+          find .vcpkg-cache -name '*.zip' | while read -r archive; do
+            abi=$(basename "$archive" .zip)
+            if ! grep -qx "$abi" used-abis.txt; then
+              echo "dropping $abi"
+              rm -f "$archive"
+            fi
+          done
+          echo "$(wc -l < used-abis.txt) archives kept"
+
       - name: Save vcpkg binary cache
         if: >-
           always() && steps.configure.outcome == 'success'
@@ -446,13 +501,37 @@ jobs:
       # from the one linux-debug builds -- fourteen packages rather than
       # forty-one. Sharing the prefix would work, the cache being per-package,
       # but it would also mean each job's save step storing the other's misses.
+      # The runner image is an input to vcpkg's ABI, so it is an input to the
+      # key. vcpkg hashes the compiler binary into every package's ABI, and a
+      # Visual Studio or Xcode update on the hosted image changes it without a
+      # line of this repository changing. The 1.9.0 run met that: one attempt on
+      # image 20260907 with VS 17.14.39 filled the cache, the next landed on a
+      # newer image with 17.14.40, restored the entry by its exact key, matched
+      # none of the archives in it, rebuilt all 58 ports -- and then did not
+      # save, because an exact hit skips the save and the key is write-once. A
+      # cache that can never be refreshed, on every attempt, until eviction.
+      #
+      # With the image in the key a new image is a new key: a miss, a rebuild
+      # and a save, once. The prefix fallback below still restores the previous
+      # image's entry first, which is right whenever the update left the
+      # compiler alone -- most of them do -- and harmless when it did not, since
+      # vcpkg matches archives by ABI and the prune before the save drops what
+      # went unused. ImageVersion is the environment variable hosted runners
+      # set; a self-hosted runner without it gets a fixed word.
+      - name: Name the runner image
+        id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-unversioned}" >> "$GITHUB_OUTPUT"
+
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-linux-repo-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
-          restore-keys: vcpkg-v3-linux-repo-
+          key: vcpkg-v3-linux-repo-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
+          restore-keys: |
+            vcpkg-v3-linux-repo-${{ steps.image.outputs.version }}-
+            vcpkg-v3-linux-repo-
 
       # See the matrix job: vcpkg creates this, but not if configure dies first.
       - name: Prepare the binary cache directory
@@ -519,6 +598,34 @@ jobs:
           build/linux-repo-debug/bin/xpcog-cli codecs
 
       # See the matrix job: gated on configure, not on the job as a whole.
+      # Only the archives this configure used. The restore may have fallen
+      # back to an entry from another image, and vcpkg leaves in place whatever
+      # it did not match -- saved as-is, every compiler change would carry its
+      # predecessors' archives forward for good. vcpkg records each installed
+      # package's ABI in its status file; anything the cache holds beyond those
+      # is dead weight.
+      - name: Prune unused archives from the binary cache
+        if: always() && steps.configure.outcome == 'success'
+        shell: bash
+        run: |
+          # `|| true` twice: the shell runs with pipefail, and neither a
+          # missing status file nor grep finding nothing is an error -- both
+          # are the case the next line handles.
+          { cat build/*/vcpkg_installed/vcpkg/status 2>/dev/null || true; } \
+            | { grep '^Abi: ' || true; } | awk '{print $2}' | sort -u > used-abis.txt
+          if [ ! -s used-abis.txt ]; then
+            echo "no installed packages recorded; leaving the cache as it is"
+            exit 0
+          fi
+          find .vcpkg-cache -name '*.zip' | while read -r archive; do
+            abi=$(basename "$archive" .zip)
+            if ! grep -qx "$abi" used-abis.txt; then
+              echo "dropping $abi"
+              rm -f "$archive"
+            fi
+          done
+          echo "$(wc -l < used-abis.txt) archives kept"
+
       - name: Save vcpkg binary cache
         if: >-
           always() && steps.configure.outcome == 'success'
@@ -571,13 +678,37 @@ jobs:
       # we built rather than what vcpkg built. wxWidgets *is* one, and this job
       # omits the `gui` feature, so the two jobs genuinely want different package
       # sets and sharing a key would have each of them evicting the other's.
+      # The runner image is an input to vcpkg's ABI, so it is an input to the
+      # key. vcpkg hashes the compiler binary into every package's ABI, and a
+      # Visual Studio or Xcode update on the hosted image changes it without a
+      # line of this repository changing. The 1.9.0 run met that: one attempt on
+      # image 20260907 with VS 17.14.39 filled the cache, the next landed on a
+      # newer image with 17.14.40, restored the entry by its exact key, matched
+      # none of the archives in it, rebuilt all 58 ports -- and then did not
+      # save, because an exact hit skips the save and the key is write-once. A
+      # cache that can never be refreshed, on every attempt, until eviction.
+      #
+      # With the image in the key a new image is a new key: a miss, a rebuild
+      # and a save, once. The prefix fallback below still restores the previous
+      # image's entry first, which is right whenever the update left the
+      # compiler alone -- most of them do -- and harmless when it did not, since
+      # vcpkg matches archives by ABI and the prune before the save drops what
+      # went unused. ImageVersion is the environment variable hosted runners
+      # set; a self-hosted runner without it gets a fixed word.
+      - name: Name the runner image
+        id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-unversioned}" >> "$GITHUB_OUTPUT"
+
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-linux-headless-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
-          restore-keys: vcpkg-v3-linux-headless-
+          key: vcpkg-v3-linux-headless-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
+          restore-keys: |
+            vcpkg-v3-linux-headless-${{ steps.image.outputs.version }}-
+            vcpkg-v3-linux-headless-
 
       # vcpkg creates this itself, but not if configure fails before it gets
       # that far -- and then the save step warns about a missing path.
@@ -619,6 +750,34 @@ jobs:
           build/linux-headless/bin/xpcog-cli codecs
 
       # See the matrix job: gated on configure, not on the job as a whole.
+      # Only the archives this configure used. The restore may have fallen
+      # back to an entry from another image, and vcpkg leaves in place whatever
+      # it did not match -- saved as-is, every compiler change would carry its
+      # predecessors' archives forward for good. vcpkg records each installed
+      # package's ABI in its status file; anything the cache holds beyond those
+      # is dead weight.
+      - name: Prune unused archives from the binary cache
+        if: always() && steps.configure.outcome == 'success'
+        shell: bash
+        run: |
+          # `|| true` twice: the shell runs with pipefail, and neither a
+          # missing status file nor grep finding nothing is an error -- both
+          # are the case the next line handles.
+          { cat build/*/vcpkg_installed/vcpkg/status 2>/dev/null || true; } \
+            | { grep '^Abi: ' || true; } | awk '{print $2}' | sort -u > used-abis.txt
+          if [ ! -s used-abis.txt ]; then
+            echo "no installed packages recorded; leaving the cache as it is"
+            exit 0
+          fi
+          find .vcpkg-cache -name '*.zip' | while read -r archive; do
+            abi=$(basename "$archive" .zip)
+            if ! grep -qx "$abi" used-abis.txt; then
+              echo "dropping $abi"
+              rm -f "$archive"
+            fi
+          done
+          echo "$(wc -l < used-abis.txt) archives kept"
+
       - name: Save vcpkg binary cache
         if: >-
           always() && steps.configure.outcome == 'success'
@@ -656,7 +815,7 @@ jobs:
     name: Windows installer
     runs-on: windows-2022
     # See the matrix job above for why.
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -718,13 +877,36 @@ jobs:
       #
       # It still saves under a key of its own rather than sharing one, so that
       # neither job's save step is storing the other's misses.
+      # The runner image is an input to vcpkg's ABI, so it is an input to the
+      # key. vcpkg hashes the compiler binary into every package's ABI, and a
+      # Visual Studio or Xcode update on the hosted image changes it without a
+      # line of this repository changing. The 1.9.0 run met that: one attempt on
+      # image 20260907 with VS 17.14.39 filled the cache, the next landed on a
+      # newer image with 17.14.40, restored the entry by its exact key, matched
+      # none of the archives in it, rebuilt all 58 ports -- and then did not
+      # save, because an exact hit skips the save and the key is write-once. A
+      # cache that can never be refreshed, on every attempt, until eviction.
+      #
+      # With the image in the key a new image is a new key: a miss, a rebuild
+      # and a save, once. The prefix fallback below still restores the previous
+      # image's entry first, which is right whenever the update left the
+      # compiler alone -- most of them do -- and harmless when it did not, since
+      # vcpkg matches archives by ABI and the prune before the save drops what
+      # went unused. ImageVersion is the environment variable hosted runners
+      # set; a self-hosted runner without it gets a fixed word.
+      - name: Name the runner image
+        id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-unversioned}" >> "$GITHUB_OUTPUT"
+
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-windows-app-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
+          key: vcpkg-v3-windows-app-release-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: |
+            vcpkg-v3-windows-app-release-${{ steps.image.outputs.version }}-
             vcpkg-v3-windows-app-release-
             vcpkg-v3-windows-debug-
 
@@ -817,6 +999,34 @@ jobs:
           if-no-files-found: error
 
       # See the matrix job: gated on configure, not on the job as a whole.
+      # Only the archives this configure used. The restore may have fallen
+      # back to an entry from another image, and vcpkg leaves in place whatever
+      # it did not match -- saved as-is, every compiler change would carry its
+      # predecessors' archives forward for good. vcpkg records each installed
+      # package's ABI in its status file; anything the cache holds beyond those
+      # is dead weight.
+      - name: Prune unused archives from the binary cache
+        if: always() && steps.configure.outcome == 'success'
+        shell: bash
+        run: |
+          # `|| true` twice: the shell runs with pipefail, and neither a
+          # missing status file nor grep finding nothing is an error -- both
+          # are the case the next line handles.
+          { cat build/*/vcpkg_installed/vcpkg/status 2>/dev/null || true; } \
+            | { grep '^Abi: ' || true; } | awk '{print $2}' | sort -u > used-abis.txt
+          if [ ! -s used-abis.txt ]; then
+            echo "no installed packages recorded; leaving the cache as it is"
+            exit 0
+          fi
+          find .vcpkg-cache -name '*.zip' | while read -r archive; do
+            abi=$(basename "$archive" .zip)
+            if ! grep -qx "$abi" used-abis.txt; then
+              echo "dropping $abi"
+              rm -f "$archive"
+            fi
+          done
+          echo "$(wc -l < used-abis.txt) archives kept"
+
       - name: Save vcpkg binary cache
         if: >-
           always() && steps.configure.outcome == 'success'
@@ -846,8 +1056,8 @@ jobs:
     # drawn and why.
     name: macOS disk image
     runs-on: macos-26
-    # See the matrix job above for why an hour.
-    timeout-minutes: 60
+    # See the matrix job above for why ninety minutes.
+    timeout-minutes: 90
 
     # Read by the release job, which puts what happened to this image into the
     # release notes rather than describing what usually happens. Notarisation is
@@ -901,13 +1111,36 @@ jobs:
       # exactly the package set `macos-debug` does; XPCOG_BUILD_CLI and
       # XPCOG_BUILD_TESTS are ours rather than vcpkg features, so they change
       # nothing about what gets installed.
+      # The runner image is an input to vcpkg's ABI, so it is an input to the
+      # key. vcpkg hashes the compiler binary into every package's ABI, and a
+      # Visual Studio or Xcode update on the hosted image changes it without a
+      # line of this repository changing. The 1.9.0 run met that: one attempt on
+      # image 20260907 with VS 17.14.39 filled the cache, the next landed on a
+      # newer image with 17.14.40, restored the entry by its exact key, matched
+      # none of the archives in it, rebuilt all 58 ports -- and then did not
+      # save, because an exact hit skips the save and the key is write-once. A
+      # cache that can never be refreshed, on every attempt, until eviction.
+      #
+      # With the image in the key a new image is a new key: a miss, a rebuild
+      # and a save, once. The prefix fallback below still restores the previous
+      # image's entry first, which is right whenever the update left the
+      # compiler alone -- most of them do -- and harmless when it did not, since
+      # vcpkg matches archives by ABI and the prune before the save drops what
+      # went unused. ImageVersion is the environment variable hosted runners
+      # set; a self-hosted runner without it gets a fixed word.
+      - name: Name the runner image
+        id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-unversioned}" >> "$GITHUB_OUTPUT"
+
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-macos-app-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
+          key: vcpkg-v3-macos-app-release-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: |
+            vcpkg-v3-macos-app-release-${{ steps.image.outputs.version }}-
             vcpkg-v3-macos-app-release-
             vcpkg-v3-macos-debug-
 
@@ -1132,6 +1365,34 @@ jobs:
         run: security delete-keychain "${{ steps.signing.outputs.keychain }}" || true
 
       # See the matrix job: gated on configure, not on the job as a whole.
+      # Only the archives this configure used. The restore may have fallen
+      # back to an entry from another image, and vcpkg leaves in place whatever
+      # it did not match -- saved as-is, every compiler change would carry its
+      # predecessors' archives forward for good. vcpkg records each installed
+      # package's ABI in its status file; anything the cache holds beyond those
+      # is dead weight.
+      - name: Prune unused archives from the binary cache
+        if: always() && steps.configure.outcome == 'success'
+        shell: bash
+        run: |
+          # `|| true` twice: the shell runs with pipefail, and neither a
+          # missing status file nor grep finding nothing is an error -- both
+          # are the case the next line handles.
+          { cat build/*/vcpkg_installed/vcpkg/status 2>/dev/null || true; } \
+            | { grep '^Abi: ' || true; } | awk '{print $2}' | sort -u > used-abis.txt
+          if [ ! -s used-abis.txt ]; then
+            echo "no installed packages recorded; leaving the cache as it is"
+            exit 0
+          fi
+          find .vcpkg-cache -name '*.zip' | while read -r archive; do
+            abi=$(basename "$archive" .zip)
+            if ! grep -qx "$abi" used-abis.txt; then
+              echo "dropping $abi"
+              rm -f "$archive"
+            fi
+          done
+          echo "$(wc -l < used-abis.txt) archives kept"
+
       - name: Save vcpkg binary cache
         if: >-
           always() && steps.configure.outcome == 'success'
@@ -1184,8 +1445,8 @@ jobs:
     # release notes say the version so nobody has to guess.
     name: Linux tarball
     runs-on: ubuntu-24.04
-    # See the matrix job for why an hour.
-    timeout-minutes: 60
+    # See the matrix job for why ninety minutes.
+    timeout-minutes: 90
 
     # `bash` with pipefail, for the reason the macOS job says it once: the
     # configure step pipes into `tee` so a later step can assert on what it
@@ -1227,13 +1488,36 @@ jobs:
       # the macOS job makes: linux-release and linux-debug both inherit the
       # `linux` preset's VCPKG_MANIFEST_FEATURES, and the build type is not a
       # vcpkg feature, so the two ask for exactly the same package set.
+      # The runner image is an input to vcpkg's ABI, so it is an input to the
+      # key. vcpkg hashes the compiler binary into every package's ABI, and a
+      # Visual Studio or Xcode update on the hosted image changes it without a
+      # line of this repository changing. The 1.9.0 run met that: one attempt on
+      # image 20260907 with VS 17.14.39 filled the cache, the next landed on a
+      # newer image with 17.14.40, restored the entry by its exact key, matched
+      # none of the archives in it, rebuilt all 58 ports -- and then did not
+      # save, because an exact hit skips the save and the key is write-once. A
+      # cache that can never be refreshed, on every attempt, until eviction.
+      #
+      # With the image in the key a new image is a new key: a miss, a rebuild
+      # and a save, once. The prefix fallback below still restores the previous
+      # image's entry first, which is right whenever the update left the
+      # compiler alone -- most of them do -- and harmless when it did not, since
+      # vcpkg matches archives by ABI and the prune before the save drops what
+      # went unused. ImageVersion is the environment variable hosted runners
+      # set; a self-hosted runner without it gets a fixed word.
+      - name: Name the runner image
+        id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-unversioned}" >> "$GITHUB_OUTPUT"
+
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-v3-linux-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
+          key: vcpkg-v3-linux-release-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**', 'triplets/**', 'cmake/XPCogOsxTriplet.cmake', 'cmake/XPCogOsxDeploymentTarget.cmake', 'CMakePresets.json') }}
           restore-keys: |
+            vcpkg-v3-linux-release-${{ steps.image.outputs.version }}-
             vcpkg-v3-linux-release-
             vcpkg-v3-linux-debug-
 
@@ -1333,6 +1617,34 @@ jobs:
           if-no-files-found: error
 
       # See the matrix job: gated on configure, not on the job as a whole.
+      # Only the archives this configure used. The restore may have fallen
+      # back to an entry from another image, and vcpkg leaves in place whatever
+      # it did not match -- saved as-is, every compiler change would carry its
+      # predecessors' archives forward for good. vcpkg records each installed
+      # package's ABI in its status file; anything the cache holds beyond those
+      # is dead weight.
+      - name: Prune unused archives from the binary cache
+        if: always() && steps.configure.outcome == 'success'
+        shell: bash
+        run: |
+          # `|| true` twice: the shell runs with pipefail, and neither a
+          # missing status file nor grep finding nothing is an error -- both
+          # are the case the next line handles.
+          { cat build/*/vcpkg_installed/vcpkg/status 2>/dev/null || true; } \
+            | { grep '^Abi: ' || true; } | awk '{print $2}' | sort -u > used-abis.txt
+          if [ ! -s used-abis.txt ]; then
+            echo "no installed packages recorded; leaving the cache as it is"
+            exit 0
+          fi
+          find .vcpkg-cache -name '*.zip' | while read -r archive; do
+            abi=$(basename "$archive" .zip)
+            if ! grep -qx "$abi" used-abis.txt; then
+              echo "dropping $abi"
+              rm -f "$archive"
+            fi
+          done
+          echo "$(wc -l < used-abis.txt) archives kept"
+
       - name: Save vcpkg binary cache
         if: >-
           always() && steps.configure.outcome == 'success'
