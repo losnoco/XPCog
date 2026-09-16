@@ -8,9 +8,13 @@ description: >-
 # with its `x-aws` provider: `aws s3 ls` to ask whether a package is there,
 # `aws s3 cp` to fetch or store it, one object per port named by its ABI hash.
 # Nothing is installed for it -- the AWS CLI is on all three hosted images --
-# and nothing expires it on our side: a lifecycle rule on the bucket deletes
-# objects some months after they were uploaded, and a package that is still
-# wanted after that is built and stored once more.
+# and nothing expires it. Objects accumulate: a compiler update on a runner
+# image adds one platform's worth of new ABIs, a few hundred megabytes, and
+# the old ones stay. That is deliberate; R2 gives ten gigabytes before it
+# charges, and a lifecycle rule that deleted by age would also delete the
+# packages still in use, since a restore never rewrites the object. If the
+# bucket ever needs pruning, the objects a run used are the ABIs in each
+# build tree's vcpkg_installed/vcpkg/status; everything else is stale.
 #
 # R2 speaks S3 with three differences the CLI has to be told about: the
 # endpoint is the account's rather than Amazon's, the region is the word
