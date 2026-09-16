@@ -3,10 +3,9 @@
 # XPCog for Arch, built against the distribution's libraries.
 #
 # The presets are not used here and that is deliberate: each one names a build
-# directory under the source tree and sets VCPKG_BINARY_SOURCES to a cache
-# inside it, neither of which a package build wants. What this configures by
-# hand is `linux-repo-release` -- XPCOG_USE_SYSTEM_LIBS=ON plus RelWithDebInfo
-# -- with the three differences set out below.
+# directory under the source tree, which a package build does not want. What
+# this configures by hand is `linux-repo-release` -- XPCOG_USE_SYSTEM_LIBS=ON
+# plus RelWithDebInfo -- with the three differences set out below.
 #
 # **This build reaches the network.** vcpkg cannot be avoided: mgba, libvgm and
 # the four libraries the project never substitutes (libogg, libflac, libvorbis,

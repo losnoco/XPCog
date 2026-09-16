@@ -26,7 +26,7 @@ get_filename_component(XPCOG_ROOT_DIR "${XPCOG_ROOT_DIR}" ABSOLUTE)
 
 # vendor/ is third-party source that is not ours to police, and build trees hold
 # generated copies of everything.
-set(_excluded "/vendor/" "/build/" "/.vcpkg-cache/" "/vcpkg_installed/")
+set(_excluded "/vendor/" "/build/" "/vcpkg_installed/")
 
 function(xpcog_gather out)
     set(_found "")

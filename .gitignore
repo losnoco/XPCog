@@ -6,7 +6,6 @@ compile_commands.json
 
 # vcpkg
 /vcpkg_installed/
-/.vcpkg-cache/
 
 # Editors
 .vscode/

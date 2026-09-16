@@ -132,7 +132,6 @@ modules:
         skip:
           - build
           - .git
-          - .vcpkg-cache
       # Pinned to the manifest's builtin-baseline, exactly as
       # packaging/arch/PKGBUILD pins it, and checked below for the same reason:
       # two files that have to say the same commit, and nothing else would
