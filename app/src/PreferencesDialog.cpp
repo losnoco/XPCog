@@ -744,7 +744,12 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
       settings_(settings),
       account_(account),
       scrobbler_(scrobbler) {
-    SetSize(FromDIP(wxSize(700, 480)));
+    // Measured rather than picked: the panes are 205 units narrower and 143
+    // shorter than the dialog, and at 700x480 the Output pane wanted 672x383,
+    // MIDI 481x383 and Remote 521x353 -- three of ten scrolling at the size
+    // they open at. This gives every pane its natural size with room to spare,
+    // except Advanced, whose 935 would fit no screen worth designing for.
+    SetSize(FromDIP(wxSize(900, 620)));
     // A floor, now that the panes scroll. Without one, "it fits because it
     // scrolls" is true all the way down to a dialog with room for half a row --
     // scrolling is there so a long pane is reachable, not so the window can be

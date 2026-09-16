@@ -238,6 +238,20 @@ TEST_CASE("every preference pane can be opened and resized", "[gui][preferences]
         wxYield();
         checkNotesAreReadable(book->GetPage(page));
 
+        // At the size the dialog opens at, the Output pane fits without
+        // scrolling. It is the pane that did not, at 700x480: its device and
+        // sample-rate rows wanted 672x383 of a 495x337 client, so the pane a
+        // listener most often needs opened with a scrollbar and half a form.
+        // The dialog's default size is chosen against this pane, and this is
+        // what keeps the two from drifting apart. Advanced is the one pane
+        // meant to scroll, and is not checked.
+        if (book->GetPageText(page) == "Output") {
+            auto* pane = dynamic_cast<wxScrolled<wxPanel>*>(book->GetPage(page));
+            REQUIRE(pane != nullptr);
+            CHECK(pane->GetVirtualSize().GetWidth() <= pane->GetClientSize().GetWidth());
+            CHECK(pane->GetVirtualSize().GetHeight() <= pane->GetClientSize().GetHeight());
+        }
+
         // Twice more at another width, because a note that wraps once on the way
         // in is a note that has answered one size event. The crash needed the
         // second.
