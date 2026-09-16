@@ -19,21 +19,31 @@
 // rather than an assertion that failed. The checks below are the part that can
 // be asserted -- that a note is still wrapped to somewhere it can be read.
 //
+// The third is the playlist's columns, whose widths are only decided once the
+// toolkit has laid the control out: which column absorbs a wider window, and
+// whether the duration column keeps the width it was given. Measured, because
+// the toolkit's own rule -- the last column takes the slack -- is the bug.
+//
 // It runs under Xvfb where tests/CMakeLists.txt found it, and skips rather than
 // fails where there is no display at all, which is the same bargain the
 // corpus-gated codec tests make.
 
 #include "EqualizerPanel.hpp"
+#include "PlaylistColumns.hpp"
+#include "PlaylistDataModel.hpp"
 #include "PreferencesDialog.hpp"
 
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/Equalizer.hpp"
+#include "xpcog/core/library/Playlist.hpp"
+#include "xpcog/core/library/PlaylistView.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <wx/app.h>
 #include <wx/arrstr.h>
 #include <wx/bookctrl.h>
+#include <wx/dataview.h>
 #include <wx/frame.h>
 #include <wx/init.h>
 #include <wx/panel.h>
@@ -43,7 +53,9 @@
 #include <wx/stattext.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace {
@@ -127,6 +139,43 @@ private:
         }
     }
     return notes;
+}
+
+/// Lets the toolkit finish laying out `list`. wxYield() drains what is
+/// pending, but GTK allocates from its frame clock, which schedules itself a
+/// frame later rather than being pending now -- and under Xvfb with no window
+/// manager a top-level window can take a few frames to settle at the size it
+/// was asked for. So this waits for the control's size to stop changing.
+void settle(const wxWindow& list) {
+    wxSize last  = list.GetClientSize();
+    int    still = 0;
+    for (int i = 0; i < 100 && still < 5; ++i) {
+        wxMilliSleep(20);
+        wxYield();
+        const wxSize now = list.GetClientSize();
+        still            = now == last ? still + 1 : 0;
+        last             = now;
+    }
+}
+
+/// What the columns add up to.
+[[nodiscard]] int columnsWidth(const wxDataViewCtrl& list) {
+    int total = 0;
+    for (unsigned int i = 0; i < list.GetColumnCount(); ++i) {
+        total += list.GetColumn(i)->GetWidth();
+    }
+    return total;
+}
+
+/// The column showing `column`, wherever it has been dragged to.
+[[nodiscard]] wxDataViewColumn* columnFor(wxDataViewCtrl& list,
+                                          xpcog::PlaylistView::Column column) {
+    for (unsigned int i = 0; i < list.GetColumnCount(); ++i) {
+        if (list.GetColumn(i)->GetModelColumn() == static_cast<unsigned int>(column)) {
+            return list.GetColumn(i);
+        }
+    }
+    return nullptr;
 }
 
 void checkNotesAreReadable(wxWindow* page) {
@@ -256,6 +305,111 @@ TEST_CASE("the equaliser's sliders are given room to be drawn", "[gui][equalizer
           static_cast<int>(sliders.size()) * sliders.front()->GetSize().GetWidth());
     CHECK(content.GetHeight() >= panel->GetBestSize().GetHeight());
 
+    frame->Destroy();
+    wxYield();
+}
+
+TEST_CASE("the title column takes the slack, and the widths come back",
+          "[gui][playlist]") {
+    using Column = xpcog::PlaylistView::Column;
+
+    Toolkit toolkit;
+    if (!toolkit.started()) {
+        SKIP("no display: wx could not initialise the toolkit");
+    }
+
+    auto            store = xpcog::makeMemorySettingsStore();
+    xpcog::Settings settings(*store);
+
+    xpcog::Playlist     playlist;
+    xpcog::PlaylistView view{playlist};
+
+    auto* frame = new wxFrame(nullptr, wxID_ANY, "xpcog-gui-tests", wxDefaultPosition,
+                              wxSize(1000, 400));
+    auto* list  = new wxDataViewCtrl(frame, wxID_ANY);
+    auto* model = new xpcog::app::PlaylistDataModel(view);
+    list->AssociateModel(model);
+    model->DecRef();
+    auto  columns = std::make_unique<xpcog::app::PlaylistColumns>(*list, settings);
+    auto* sizer   = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(list, 1, wxEXPAND);
+    frame->SetSizer(sizer);
+    columns->restore();
+    frame->Show();
+    frame->Layout();
+    settle(*list);
+
+    wxDataViewColumn* title  = columnFor(*list, Column::Title);
+    wxDataViewColumn* album  = columnFor(*list, Column::Album);
+    wxDataViewColumn* length = columnFor(*list, Column::Length);
+    REQUIRE(title != nullptr);
+    REQUIRE(album != nullptr);
+    REQUIRE(length != nullptr);
+
+    // The control's client size on GTK is the scrolled window's, which is the
+    // tree view's plus a frame of a pixel or two; the columns fill the tree.
+    constexpr int kBorder = 4;
+
+    // Length is the last column, and the one every toolkit would hand the
+    // leftover to. It must be exactly as wide as it was declared -- 64 dialog
+    // units -- with the window well wider than the columns' defaults add up to.
+    const int declaredLength = list->FromDIP(64);
+    CHECK(length->GetWidth() == declaredLength);
+
+    // The slack is Title's: the columns add up to the control, not short of it.
+    const int titleAtDefault = title->GetWidth();
+    const int clientAtDefault = list->GetClientSize().GetWidth();
+    CHECK(titleAtDefault > list->FromDIP(280));
+    CHECK(std::abs(columnsWidth(*list) - clientAtDefault) <= kBorder);
+
+    // Widen the window: Title grows by the difference, Length does not move.
+    frame->SetSize(wxSize(1300, 400));
+    settle(*list);
+    const int grownBy = list->GetClientSize().GetWidth() - clientAtDefault;
+    REQUIRE(grownBy > 0);
+    CHECK(length->GetWidth() == declaredLength);
+    CHECK(title->GetWidth() == titleAtDefault + grownBy);
+    CHECK(std::abs(columnsWidth(*list) - list->GetClientSize().GetWidth()) <= kBorder);
+
+    // Narrow it below what the columns need: Title stops at its floor rather
+    // than vanishing, and the control scrolls sideways instead.
+    frame->SetSize(wxSize(400, 400));
+    settle(*list);
+    CHECK(length->GetWidth() == declaredLength);
+    CHECK(title->GetWidth() == list->FromDIP(80));
+
+    // A width the listener chose survives a restart. Album is set as a drag
+    // would set it, remembered, and read back into a fresh control -- one
+    // that is shown, since a column that was never laid out has no width to
+    // read.
+    frame->SetSize(wxSize(1000, 400));
+    settle(*list);
+    album->SetWidth(list->FromDIP(230));
+    settle(*list);
+    CHECK(title->GetWidth() == titleAtDefault - list->FromDIP(50));
+    columns->persist();
+    const std::string saved = settings.rawValue("xpcog.playlist.columns");
+    CHECK(saved.find("album=230") != std::string::npos);
+    CHECK(saved.find("length=64") != std::string::npos);
+    // Title's is derived, so it is not written: a saved width would only be
+    // overridden by the fit anyway, and could go stale.
+    CHECK(saved.find("title=") == std::string::npos);
+
+    auto* again      = new wxDataViewCtrl(frame, wxID_ANY);
+    auto* modelAgain = new xpcog::app::PlaylistDataModel(view);
+    again->AssociateModel(modelAgain);
+    modelAgain->DecRef();
+    auto columnsAgain = std::make_unique<xpcog::app::PlaylistColumns>(*again, settings);
+    columnsAgain->restore();
+    sizer->Add(again, 1, wxEXPAND);
+    frame->Layout();
+    settle(*again);
+    CHECK(columnFor(*again, Column::Album)->GetWidth() == list->FromDIP(230));
+    CHECK(columnFor(*again, Column::Length)->GetWidth() == declaredLength);
+    CHECK(columnFor(*again, Column::Title)->GetWidth() == title->GetWidth());
+
+    columnsAgain.reset();
+    columns.reset();
     frame->Destroy();
     wxYield();
 }

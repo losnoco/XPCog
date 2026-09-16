@@ -78,6 +78,7 @@ class FileTree;
 class InfoPanel;
 class LyricsPanel;
 class MiniFrame;
+class PlaylistColumns;
 class PlaylistDataModel;
 class Sc55Panel;
 class SeekBar;
@@ -465,6 +466,9 @@ private:
     /// Reference-counted by the control, so this is a borrowed pointer and must
     /// not be deleted here.
     PlaylistDataModel* model_ = nullptr;
+    /// The list's columns and their widths. Destroyed before the list is; see
+    /// the destructor.
+    std::unique_ptr<PlaylistColumns> columns_;
 
     /// The dockable panes. Each can be dragged to another edge, tabbed with
     /// another, torn off into a floating window and closed -- which is what

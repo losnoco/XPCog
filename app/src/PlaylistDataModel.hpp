@@ -2,7 +2,8 @@
 //
 // Thin on purpose. Everything that decides *what* is shown -- the order, the
 // filter, the cell text -- is core's PlaylistView; this is the adapter that lets
-// wx ask it. Under Qt those two were one class plus a proxy, and pulling them
+// wx ask it. The columns themselves -- headings, widths, which one takes the
+// slack -- are PlaylistColumns'. Under Qt those two were one class plus a proxy, and pulling them
 // apart is what let the sort and filter tests stop needing a display.
 //
 // `wxDataViewVirtualListModel` rather than a real one because the playlist is
@@ -38,11 +39,6 @@ namespace xpcog::app {
 class PlaylistDataModel : public wxDataViewVirtualListModel {
 public:
     explicit PlaylistDataModel(PlaylistView& view);
-
-    /// The columns, in display order, with their headings and alignment. Built
-    /// here rather than by the frame so the model and the control cannot
-    /// disagree about how many there are.
-    void appendColumnsTo(wxDataViewCtrl* control) const;
 
     // --- wxDataViewVirtualListModel ---------------------------------------
     //

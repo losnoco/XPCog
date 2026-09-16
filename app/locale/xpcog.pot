@@ -465,11 +465,11 @@ msgstr ""
 msgid "&Edit"
 msgstr ""
 
-#: app/src/Commands.cpp:116 app/src/MainFrame.cpp:1672
+#: app/src/Commands.cpp:116 app/src/MainFrame.cpp:1677
 msgid "&Undo"
 msgstr ""
 
-#: app/src/Commands.cpp:117 app/src/MainFrame.cpp:1679
+#: app/src/Commands.cpp:117 app/src/MainFrame.cpp:1684
 msgid "&Redo"
 msgstr ""
 
@@ -505,7 +505,7 @@ msgstr ""
 msgid "&Next"
 msgstr ""
 
-#: app/src/Commands.cpp:126 app/src/Commands.cpp:170 app/src/MainFrame.cpp:1795
+#: app/src/Commands.cpp:126 app/src/Commands.cpp:170 app/src/MainFrame.cpp:1800
 msgid "Add to &Queue"
 msgstr ""
 
@@ -626,11 +626,11 @@ msgstr ""
 msgid "Preset"
 msgstr ""
 
-#: app/src/FileTree.cpp:51 app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1840 app/src/MainFrame.cpp:2009 app/src/PreferencesDialog.cpp:1317 app/src/PreferencesDialog.cpp:1319
+#: app/src/FileTree.cpp:51 app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1845 app/src/MainFrame.cpp:2014 app/src/PreferencesDialog.cpp:1317 app/src/PreferencesDialog.cpp:1319
 msgid "All Files"
 msgstr ""
 
-#: app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1840
+#: app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1845
 msgid "Audio Files"
 msgstr ""
 
@@ -810,307 +810,307 @@ msgstr ""
 msgid "Nothing selected or playing."
 msgstr ""
 
-#: app/src/MainFrame.cpp:125
+#: app/src/MainFrame.cpp:126
 msgid "Looking for files…"
 msgstr ""
 
-#: app/src/MainFrame.cpp:127
+#: app/src/MainFrame.cpp:128
 msgid "Looking for files in %s…"
 msgstr ""
 
-#: app/src/MainFrame.cpp:132
+#: app/src/MainFrame.cpp:133
 msgid "Reading %s — %d of %d"
 msgstr ""
 
-#: app/src/MainFrame.cpp:135
+#: app/src/MainFrame.cpp:136
 msgid "Reading %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:176
+#: app/src/MainFrame.cpp:177
 msgid "Crash reporting"
 msgstr ""
 
-#: app/src/MainFrame.cpp:180
+#: app/src/MainFrame.cpp:181
 msgid ""
 "Would you like to allow Sentry to submit crash reports?\n"
 "\n"
 "You may turn this off again in Preferences. We won't ask you again."
 msgstr ""
 
-#: app/src/MainFrame.cpp:185 app/src/PreferencesDialog.cpp:963
+#: app/src/MainFrame.cpp:186 app/src/PreferencesDialog.cpp:963
 msgid "Privacy policy"
 msgstr ""
 
-#: app/src/MainFrame.cpp:237
+#: app/src/MainFrame.cpp:238
 msgid "Library unavailable: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:562
+#: app/src/MainFrame.cpp:567
 msgid "Stop reading files"
 msgstr ""
 
-#: app/src/MainFrame.cpp:653 app/src/MiniFrame.cpp:90
+#: app/src/MainFrame.cpp:658 app/src/MiniFrame.cpp:90
 msgid "Volume"
 msgstr ""
 
-#: app/src/MainFrame.cpp:659
+#: app/src/MainFrame.cpp:664
 msgid "Filter"
 msgstr ""
 
-#: app/src/MainFrame.cpp:662
+#: app/src/MainFrame.cpp:667
 msgid "Filter the playlist"
 msgstr ""
 
-#: app/src/MainFrame.cpp:690
+#: app/src/MainFrame.cpp:695
 msgid "Connecting to %s..."
 msgstr ""
 
-#: app/src/MainFrame.cpp:692
+#: app/src/MainFrame.cpp:697
 msgid "Connecting..."
 msgstr ""
 
-#: app/src/MainFrame.cpp:928
+#: app/src/MainFrame.cpp:933
 msgid "XPCog is still running"
 msgstr ""
 
-#: app/src/MainFrame.cpp:929
+#: app/src/MainFrame.cpp:934
 msgid ""
 "Playback continues. Use the tray icon to bring the window back or to quit."
 msgstr ""
 
-#: app/src/MainFrame.cpp:1384
+#: app/src/MainFrame.cpp:1389
 msgid "Now Playing"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1515 app/src/MiniFrame.cpp:195 app/src/StatusPresence.cpp:182
+#: app/src/MainFrame.cpp:1520 app/src/MiniFrame.cpp:195 app/src/StatusPresence.cpp:182
 msgid "Pause"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1515 app/src/MiniFrame.cpp:195 app/src/StatusPresence.cpp:182
+#: app/src/MainFrame.cpp:1520 app/src/MiniFrame.cpp:195 app/src/StatusPresence.cpp:182
 msgid "Play"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1671
+#: app/src/MainFrame.cpp:1676
 msgid "&Undo %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1678
+#: app/src/MainFrame.cpp:1683
 msgid "&Redo %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1698
+#: app/src/MainFrame.cpp:1703
 msgid "&Pause"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1698
+#: app/src/MainFrame.cpp:1703
 msgid "&Play"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1797
+#: app/src/MainFrame.cpp:1802
 msgid "Remove from &Queue"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1799
+#: app/src/MainFrame.cpp:1804
 msgid "&Toggle Queued"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1842
+#: app/src/MainFrame.cpp:1847
 msgid "Open Files"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1861
+#: app/src/MainFrame.cpp:1866
 msgid "Open Folder"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1901
+#: app/src/MainFrame.cpp:1906
 msgid "Save Playlist"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1903
+#: app/src/MainFrame.cpp:1908
 msgid "M3U Playlist (*.m3u8)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1904
+#: app/src/MainFrame.cpp:1909
 msgid "PLS Playlist (*.pls)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1905
+#: app/src/MainFrame.cpp:1910
 msgid "XSPF Playlist (*.xspf)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1962
+#: app/src/MainFrame.cpp:1967
 msgid "Could not write the playlist."
 msgstr ""
 
-#: app/src/MainFrame.cpp:1975
+#: app/src/MainFrame.cpp:1980
 msgid "Playlist saved: %zu selected track."
 msgid_plural "Playlist saved: %zu selected tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:1981
+#: app/src/MainFrame.cpp:1986
 msgid "Playlist saved: %zu of %zu tracks, the rest hidden by the filter."
 msgstr ""
 
-#: app/src/MainFrame.cpp:1984
+#: app/src/MainFrame.cpp:1989
 msgid "Playlist saved."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2005
+#: app/src/MainFrame.cpp:2010
 msgid "Open a Cog library"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2007
+#: app/src/MainFrame.cpp:2012
 msgid "Cog library (DataModel.sqlite)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2008
+#: app/src/MainFrame.cpp:2013
 msgid "SQLite databases (*.sqlite)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2019
+#: app/src/MainFrame.cpp:2024
 msgid ""
 "That file could not be read as a Cog library.\n"
 "\n"
 "Cog's is DataModel.sqlite, under Application Support/Cog. If Cog is running, copy it along with its -wal and -shm files, or the most recent tracks will be missing."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2023 app/src/MainFrame.cpp:2030
+#: app/src/MainFrame.cpp:2028 app/src/MainFrame.cpp:2035
 msgid "Import from Cog"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2029
+#: app/src/MainFrame.cpp:2034
 msgid "That Cog library has no playlist entries in it."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2092
+#: app/src/MainFrame.cpp:2097
 msgid "Importing %zu track from Cog..."
 msgid_plural "Importing %zu tracks from Cog..."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2104
+#: app/src/MainFrame.cpp:2109
 msgid "(%zu row Cog would not have shown either)"
 msgid_plural "(%zu rows Cog would not have shown either)"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2227
+#: app/src/MainFrame.cpp:2232
 msgid "Nothing was added."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2228
+#: app/src/MainFrame.cpp:2233
 msgid "Nothing playable was found."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2277
+#: app/src/MainFrame.cpp:2282
 msgid "Imported %zu track from Cog"
 msgid_plural "Imported %zu tracks from Cog"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2281
+#: app/src/MainFrame.cpp:2286
 msgid ", %zu with play counts"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2285
+#: app/src/MainFrame.cpp:2290
 msgid "; %zu could not be resolved off a Mac"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2487
+#: app/src/MainFrame.cpp:2492
 msgid "Nothing could be read."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2545
+#: app/src/MainFrame.cpp:2550
 msgid "Re-read %zu track."
 msgid_plural "Re-read %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2554
+#: app/src/MainFrame.cpp:2559
 msgid "Play count reset for %zu track."
 msgid_plural "Play count reset for %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2569
+#: app/src/MainFrame.cpp:2574
 msgid "Rating removed from %zu track."
 msgid_plural "Rating removed from %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2583
+#: app/src/MainFrame.cpp:2588
 msgid "Could not show the file."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2609
+#: app/src/MainFrame.cpp:2614
 msgid ""
 "Undo puts the rows back in the playlist. It does not bring the files back -- restore those from the trash itself."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2611
+#: app/src/MainFrame.cpp:2616
 msgid "Move %u file to the trash?"
 msgid_plural "Move %u files to the trash?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2617
+#: app/src/MainFrame.cpp:2622
 msgid "Do not ask again"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2643
+#: app/src/MainFrame.cpp:2648
 msgid "%zu file could not be moved to the trash."
 msgid_plural "%zu files could not be moved to the trash."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2709
+#: app/src/MainFrame.cpp:2714
 msgid "Last.fm access was withdrawn. Reconnect in Preferences."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2926
+#: app/src/MainFrame.cpp:2931
 msgid "%zu track — %s"
 msgid_plural "%zu tracks — %s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2939 app/src/PreferencesDialog.cpp:807
+#: app/src/MainFrame.cpp:2944 app/src/PreferencesDialog.cpp:807
 msgid "Spectrum"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2940
+#: app/src/MainFrame.cpp:2945
 msgid "Equalizer"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2941 app/src/PreferencesDialog.cpp:785
+#: app/src/MainFrame.cpp:2946 app/src/PreferencesDialog.cpp:785
 msgid "Pitch & Tempo"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2942
+#: app/src/MainFrame.cpp:2947
 msgid "Info"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2943
+#: app/src/MainFrame.cpp:2948
 msgid "Lyrics"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2945
+#: app/src/MainFrame.cpp:2950
 msgid "SC-55 Panel"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3080
+#: app/src/MainFrame.cpp:3088
 msgid "Could not save the playlist: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3113
+#: app/src/MainFrame.cpp:3121
 msgid "The remote control could not create an access token."
 msgstr ""
 
-#: app/src/MainFrame.cpp:3147
+#: app/src/MainFrame.cpp:3155
 msgid "Remote control unavailable: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3153
+#: app/src/MainFrame.cpp:3161
 msgid "Remote control listening on http://%s:%d"
 msgstr ""
 

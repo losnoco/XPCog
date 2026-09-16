@@ -14,6 +14,7 @@
 #include "Sc55Panel.hpp"
 #include "SpectrumPanel.hpp"
 #include "LucideIcon.hpp"
+#include "PlaylistColumns.hpp"
 #include "PlaylistDataModel.hpp"
 #include "SeekBar.hpp"
 #include "RemoteToken.hpp"
@@ -321,6 +322,10 @@ MainFrame::~MainFrame() {
     // UnInit() is what detaches it from them first.
     auiManager_.UnInit();
 
+    // Before the sweep: it holds a signal connection on the list's tree view
+    // and undoes it on destruction, which needs the tree view still there.
+    columns_.reset();
+
     // Then every widget, explicitly, while the things they borrow are still
     // alive.
     //
@@ -419,7 +424,7 @@ void MainFrame::buildUi() {
     // AssociateModel takes a reference of its own; without this the model leaks,
     // because it starts life with one already.
     model_->DecRef();
-    model_->appendColumnsTo(list_);
+    columns_ = std::make_unique<PlaylistColumns>(*list_, settings_);
 
     // Closed, and closed on a first launch rather than only after somebody has
     // shut it: a music player opens onto the music somebody has already added,
@@ -3011,6 +3016,8 @@ void MainFrame::restoreState() {
         showFileTree(true);
     }
 
+    columns_->restore();
+
     // The docking layout: where each pane sits, how big it is, whether it is
     // floating and whether it is open at all. This is what QMainWindow's
     // saveState()/restoreState() carried.
@@ -3055,6 +3062,7 @@ void MainFrame::persistState() {
     }
     settings_.setRawValue("xpcog.window.fileTree",
                           splitter_->IsSplit() ? "1" : "0");
+    columns_->persist();
     // The live position while it is open, and the remembered one while it is
     // not, so closing the browser does not throw away the width it had.
     const int sash = splitter_->IsSplit() ? splitter_->GetSashPosition() : fileTreeSash_;

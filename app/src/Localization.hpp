@@ -10,7 +10,7 @@
 // link no toolkit, so they have no `_()` to call and no catalogue to call it
 // against -- see the layering rule in CLAUDE.md. The few strings they do produce
 // that a listener ever reads are translated where they are shown: the playlist's
-// column headings by PlaylistDataModel, which is what
+// column headings by PlaylistColumns, which is what
 // `PlaylistView::heading()`'s "a front end that wants them localised should map
 // them" was written for.
 

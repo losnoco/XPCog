@@ -57,7 +57,7 @@ SIMPLE = {'n': '\n', 't': '\t', 'r': '\r', '\\': '\\', '"': '"', "'": "'"}
 
 # Messages shown by the application but written somewhere the scan cannot see
 # them. Only core's playlist headings so far: core links no toolkit and so has no
-# `_()` to mark them with, and PlaylistDataModel looks them up by their English
+# `_()` to mark them with, and PlaylistColumns looks them up by their English
 # text -- see the comment there. Every one but this is also an info-panel field
 # and is therefore already found above.
 EXTERNAL = [

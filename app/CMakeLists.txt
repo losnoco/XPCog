@@ -38,6 +38,8 @@ set(XPCOG_APP_SOURCES
     src/OpenUrlDialog.hpp
     src/PlaybackController.cpp
     src/PlaybackController.hpp
+    src/PlaylistColumns.cpp
+    src/PlaylistColumns.hpp
     src/PlaylistDataModel.cpp
     src/PlaylistDataModel.hpp
     src/PreferencesDialog.cpp
@@ -128,6 +130,18 @@ target_link_libraries(xpcog-appcore PUBLIC
     PRIVATE XPCog::warnings)
 
 set_target_properties(xpcog-appcore PROPERTIES FOLDER app)
+
+# On Linux the toolkit is wxGTK, and one file reaches under it: PlaylistColumns
+# reads the tree view's allocation and the columns' fixed widths, which wx's
+# wxDataViewColumn::GetWidth() does not report (it gives the allocated width,
+# slack included). wx's headers forward-declare the GTK types and carry no GTK
+# include path, so it is asked for here -- from the system, the same way
+# platform/ takes GLib: the distribution's wx was built against it.
+if(UNIX AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(XPCOG_GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
+    target_link_libraries(xpcog-appcore PRIVATE PkgConfig::XPCOG_GTK)
+endif()
 
 # ---------------------------------------------------------------------------
 # Resources.
