@@ -205,7 +205,9 @@ wxWidgets is declared under a `gui` feature rather than as a plain dependency, s
 a headless configuration (`-D XPCOG_BUILD_APP=OFF`) builds no toolkit at all.
 
 **On Linux the toolkit comes from the distribution**, not from vcpkg — install
-`libwxgtk3.2-dev` (Debian/Ubuntu), `wxGTK-devel` (Fedora) or `wxgtk3` (Arch).
+`libwxgtk3.2-dev` and `libgtk-3-dev` (Debian/Ubuntu), `wxGTK-devel` (Fedora)
+or `wxgtk3` (Arch). The GTK headers are named separately on Debian because the
+wx package does not depend on them, and one file in `app/` uses GTK directly.
 vcpkg's `wxwidgets` port depends on its `gtk3` port, so asking vcpkg for wx there
 builds 57 packages from source — wx, GTK and 55 more beneath them: glib, pango,
 cairo, harfbuzz, fontconfig, at-spi2, dbus, seven X11 libraries — on a machine
@@ -690,7 +692,7 @@ also needs `pkg-config` for vcpkg's ports.
 ```sh
 brew install ninja pkg-config nasm                              # macOS
 sudo apt install ninja-build pkg-config nasm autoconf automake libtool \
-                libwxgtk3.2-dev libglib2.0-dev                  # Debian/Ubuntu
+                libwxgtk3.2-dev libgtk-3-dev libglib2.0-dev     # Debian/Ubuntu
 ```
 
 macOS builds the app icon from `app/icons/xpcog.icon`, an Icon Composer package,

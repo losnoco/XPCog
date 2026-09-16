@@ -134,6 +134,11 @@ jobs:
       # libsystemd and seven X11 libraries -- 98 packages for the Linux job
       # against 41 without. Every one of them is already on the runner.
       #
+      # libgtk-3-dev beside it because libwxgtk3.2-dev does not depend on it:
+      # wx's headers forward-declare the GTK types, so linking wx needs no GTK
+      # headers -- but app/src/PlaylistColumns.cpp reaches under wx to GTK
+      # itself, and app/CMakeLists.txt asks pkg-config for gtk+-3.0.
+      #
       # That is also where two entries this list used to carry came from, one CI
       # round apart, both for ports nothing in this project asks for: fontconfig
       # built gperf, which wanted autoconf-archive, and further down libxcrypt
@@ -172,7 +177,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
-            libwxgtk3.2-dev libglib2.0-dev xvfb \
+            libwxgtk3.2-dev libgtk-3-dev libglib2.0-dev xvfb \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
 
       - name: Install macOS build dependencies
@@ -421,7 +426,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
-            libwxgtk3.2-dev libglib2.0-dev xvfb \
+            libwxgtk3.2-dev libgtk-3-dev libglib2.0-dev xvfb \
             flac vorbis-tools opus-tools lame wavpack ffmpeg musepack-tools \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
             libcurl4-openssl-dev libarchive-dev libsqlite3-dev libsoxr-dev \
@@ -1209,7 +1214,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
-            libwxgtk3.2-dev libglib2.0-dev xvfb
+            libwxgtk3.2-dev libgtk-3-dev libglib2.0-dev xvfb
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
