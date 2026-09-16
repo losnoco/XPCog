@@ -18,6 +18,16 @@ description: >-
 # -StorePasswordInClearText grants; mono's nuget cannot encrypt it and the
 # runner is discarded with the job.
 #
+# On Apple Silicon, lukka/run-vcpkg exports VCPKG_FORCE_SYSTEM_BINARIES=1 for
+# every later step, and vcpkg reads that as "set" even when empty, so it can
+# only be undone inside a shell. With it set, `vcpkg fetch nuget` refuses to
+# download nuget.exe and the NuGet provider would look for a system `nuget`
+# instead -- and then run it under mono, which Homebrew's `nuget`, a shell
+# script around the real thing, is not. So it is unset here, and again in
+# ci.yml's macOS configure steps, where vcpkg runs the provider. Nothing on the
+# runner needed it: at the pinned baseline vcpkg's own cmake and ninja for
+# macOS are universal binaries.
+#
 # The token is the workflow's GITHUB_TOKEN, given packages:write at the top of
 # ci.yml. On a pull request from a fork it is read-only, and then vcpkg reads
 # the feed, fails to upload what it built, says so, and carries on: the build
@@ -49,6 +59,7 @@ runs:
         FEED: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         TOKEN: ${{ inputs.token }}
       run: |
+        unset VCPKG_FORCE_SYSTEM_BINARIES
         nuget="$("$VCPKG_ROOT/vcpkg" fetch nuget | tail -n 1)"
         if [ "$RUNNER_OS" = "Windows" ]; then
           run=("$nuget")
