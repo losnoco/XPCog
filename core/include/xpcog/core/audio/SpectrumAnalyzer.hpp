@@ -124,7 +124,11 @@ private:
     void buildBands();
     void buildNoteBands(double binWidth, double ceiling);
     void buildFrequencyBands(double binWidth, double ceiling);
+    /// Appends a band at `frequency`, or does nothing if it is past the bins.
+    void addBand(double frequency, double binWidth);
     void resizeBands();
+    /// One bin's level in dB, no lower than the floor.
+    [[nodiscard]] double binDecibels(std::size_t bin) const;
 
     std::unique_ptr<Fft> fft_;
     double               sampleRate_ = 0.0;
@@ -138,9 +142,13 @@ private:
     std::vector<float> imaginary_;
     std::vector<float> magnitudes_;  ///< kBins, scaled as Cog scales them
 
-    /// The first bin of each band, plus a final sentinel so band i covers
-    /// [edges_[i], edges_[i + 1]).
-    std::vector<std::size_t> edges_;
+    /// Each band's bin -- the one its frequency falls in -- and how far through
+    /// that bin the frequency sits, 0 at the bin's own frequency and 1 at the
+    /// next bin's. The level is interpolated between the two at that point, and
+    /// a band wider than a bin then takes the loudest of the bins up to the next
+    /// band's. See analyze().
+    std::vector<std::size_t> bins_;
+    std::vector<float>       ratios_;
     std::vector<double>      frequencies_;
 
     std::vector<float> bands_;

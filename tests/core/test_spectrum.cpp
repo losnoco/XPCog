@@ -122,6 +122,36 @@ TEST_CASE("a tone lights up the band it belongs to", "[audio][spectrum]") {
     }
 }
 
+TEST_CASE("bars that share a bin are told apart by interpolation", "[audio][spectrum]") {
+    // Below a few hundred hertz several semitones fall in one 10.8 Hz bin, and a
+    // band that simply read its bin drew them all at one height: a staircase at
+    // the bottom of every spectrum. deadbeef reads each bar at its own frequency,
+    // interpolated between its bin and the next, and so does this. With a tone
+    // just above the bin the bars sit in, every bar in that bin leans towards it:
+    // strictly rising, none equal.
+    SpectrumAnalyzer analyzer;
+    analyzer.prepare(kRate);
+
+    const double binWidth = kRate / static_cast<double>(SpectrumAnalyzer::kWindowFrames);
+    // 60 Hz is in bin 5. The semitones F1 to G#1 (43.7 .. 51.9 Hz) all share bin
+    // 4, whose own level is below bin 5's: their bars should climb towards it.
+    const std::vector<float> window = sineWindow(60.0);
+    analyzer.analyze(window.data(), window.size());
+
+    std::vector<float> inBinFour;
+    for (std::size_t band = 0; band < analyzer.frequencies().size(); ++band) {
+        if (static_cast<std::size_t>(analyzer.frequencies()[band] / binWidth) == 4) {
+            inBinFour.push_back(analyzer.bands()[band]);
+        }
+    }
+    REQUIRE(inBinFour.size() >= 3);
+    for (std::size_t index = 1; index < inBinFour.size(); ++index) {
+        INFO("bar " << index << " of bin 4: " << inBinFour[index - 1] << " then "
+                    << inBinFour[index]);
+        REQUIRE(inBinFour[index] > inBinFour[index - 1]);
+    }
+}
+
 TEST_CASE("a full-scale sine reads as full scale", "[audio][spectrum]") {
     // Why the 2/2048 scaling is what it is. A Hamming window sums to about 0.54N, so
     // the scaling is chosen to put a full-scale tone at roughly 0 dBFS -- which is

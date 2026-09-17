@@ -91,7 +91,8 @@ void SpectrumAnalyzer::setFloorDb(double decibels) {
 }
 
 void SpectrumAnalyzer::buildBands() {
-    edges_.clear();
+    bins_.clear();
+    ratios_.clear();
     frequencies_.clear();
 
     if (sampleRate_ <= 0.0) {
@@ -108,9 +109,23 @@ void SpectrumAnalyzer::buildBands() {
         buildNoteBands(binWidth, ceiling);
     }
 
-    // The sentinel, so band i owns [edges_[i], edges_[i + 1]).
-    edges_.push_back(kBins);
     resizeBands();
+}
+
+void SpectrumAnalyzer::addBand(double frequency, double binWidth) {
+    const double position = frequency / binWidth;
+    const auto   bin      = static_cast<std::size_t>(position);
+    if (bin >= kBins) {
+        return;
+    }
+    bins_.push_back(bin);
+    // Where in the bin the frequency sits, as a fraction of the way to the next
+    // one. deadbeef takes this fraction in log frequency (_generate_octave_note_bars,
+    // analyzer.c), which between two adjacent bins differs from the linear one by
+    // less than the interpolation is worth -- and divides by log10(0) when a band
+    // lands in bin 0, which C0 does at 96 kHz. Linear, then.
+    ratios_.push_back(static_cast<float>(position - static_cast<double>(bin)));
+    frequencies_.push_back(frequency);
 }
 
 void SpectrumAnalyzer::resizeBands() {
@@ -138,13 +153,7 @@ void SpectrumAnalyzer::buildFrequencyBands(double binWidth, double ceiling) {
     for (std::size_t index = 0; index < frequencyBandCount_; ++index) {
         const double position  = static_cast<double>(index) / (count - 1.0);
         const double frequency = std::pow(10.0, lowest + (position * (highest - lowest)));
-
-        const auto bin = static_cast<std::size_t>(frequency / binWidth);
-        if (bin >= kBins) {
-            break;
-        }
-        edges_.push_back(bin);
-        frequencies_.push_back(frequency);
+        addBand(frequency, binWidth);
     }
 }
 
@@ -155,25 +164,20 @@ void SpectrumAnalyzer::buildNoteBands(double binWidth, double ceiling) {
             continue;
         }
 
-        const auto bin = static_cast<std::size_t>(frequency / binWidth);
-        if (bin >= kBins) {
-            continue;
-        }
-
         // Adjacent semitones below a few hundred hertz land in the *same* bin: at
         // 44.1 kHz a 4096-point window resolves 10.8 Hz, and a semitone down at C1
-        // is under two. Those bands are kept anyway, repeating the bin, which is what
+        // is under two. Those bands are kept anyway, sharing the bin, which is what
         // Cog does.
         //
         // Dropping the duplicates was the first attempt and it was wrong, for a
         // reason worth recording: the whole point of a tempered scale rather than
         // equal log divisions is that the bars line up with notes, so an axis with
-        // gaps in it defeats the choice of series. Repeated bars at the bottom are
-        // also the honest picture -- the analyser genuinely cannot tell those notes
-        // apart at this window size, and drawing them as one wide bar would imply it
-        // had merged them on purpose.
-        edges_.push_back(bin);
-        frequencies_.push_back(frequency);
+        // gaps in it defeats the choice of series. What tells the bars apart is
+        // the interpolation in analyze(): each reads the spectrum at its own
+        // frequency, between the bin and the next, so a run of bars in one bin
+        // slopes towards the neighbouring bin's level rather than standing at one
+        // height -- the same picture deadbeef draws, from the same ratio.
+        addBand(frequency, binWidth);
     }
 }
 
@@ -199,31 +203,36 @@ void SpectrumAnalyzer::analyze(const float* mono, std::size_t frames) {
         magnitudes_[bin] = std::hypot(real_[bin], imaginary_[bin]) * kMagnitudeScale;
     }
 
-    for (std::size_t band = 0; band < frequencies_.size(); ++band) {
-        // The loudest bin the band covers, not the mean.
-        //
-        // A band at the top of the range spans dozens of bins, and averaging them
-        // buries a tone in the noise floor either side of it -- a spectrum where a
-        // 10 kHz sine barely registers while its neighbours do. The maximum is what
-        // makes a peak look like a peak, and it is what deadbeef's accumulation is
-        // reaching for.
-        const std::size_t first = edges_[band];
-        // At least its own bin, which is what makes the repeated low bands work:
-        // there the next band starts at the same place, so the half-open range would
-        // otherwise be empty and every one of them would read as silence.
-        const std::size_t stop = std::min(std::max(edges_[band + 1], first + 1), kBins);
+    const std::size_t count = frequencies_.size();
+    for (std::size_t band = 0; band < count; ++band) {
+        // The level at the band's own frequency, read between its bin and the
+        // next. This is deadbeef's _interpolate_bin_with_ratio, and it is what
+        // separates the bars at the bottom of the range, where several semitones
+        // share one bin: each takes the spectrum at its own point in that bin,
+        // rather than all of them the bin's value. In dB, as deadbeef's data is by
+        // the time it interpolates -- a straight line between two levels on the
+        // scale the bars are drawn on.
+        const std::size_t first = bins_[band];
+        double            decibels = binDecibels(first);
+        if (first + 1 < kBins) {
+            decibels += (binDecibels(first + 1) - decibels) *
+                        static_cast<double>(ratios_[band]);
+        }
 
-        float loudest = 0.0F;
-        for (std::size_t bin = first; bin < stop; ++bin) {
-            loudest = std::max(loudest, magnitudes_[bin]);
+        // A band wider than a bin then takes the loudest of the bins it covers
+        // beyond the first, up to the next band's -- not the mean. A band at the
+        // top of the range spans dozens of bins, and averaging them buries a tone
+        // in the noise floor either side of it: a spectrum where a 10 kHz sine
+        // barely registers while its neighbours do. The maximum is what makes a
+        // peak look like a peak, and it is what deadbeef's accumulation does. The
+        // last band runs to the top of the bins.
+        const std::size_t stop = (band + 1 < count) ? bins_[band + 1] : kBins;
+        for (std::size_t bin = first + 1; bin < stop; ++bin) {
+            decibels = std::max(decibels, binDecibels(bin));
         }
 
         // Normalised so 0 is the floor and 1 is full scale. The magnitude scaling
         // above is what makes "full scale" mean a full-scale sine.
-        const double decibels =
-            (loudest > 0.0F)
-                ? 20.0 * std::log10(static_cast<double>(loudest))
-                : floorDb_;
         const auto level = static_cast<float>(
             std::clamp((decibels - floorDb_) / -floorDb_, 0.0, 1.0));
 
@@ -238,6 +247,17 @@ void SpectrumAnalyzer::analyze(const float* mono, std::size_t frames) {
             peaks_[band] = std::max(level, peaks_[band] - kPeakDecayPerFrame);
         }
     }
+}
+
+double SpectrumAnalyzer::binDecibels(std::size_t bin) const {
+    // Clamped at the floor before any interpolation, so a bin of near-silence
+    // (-300 dB, or nothing at all) pulls its neighbour's level down to the floor
+    // and no further. Below the floor there is nothing to draw anyway.
+    const float magnitude = magnitudes_[bin];
+    if (magnitude <= 0.0F) {
+        return floorDb_;
+    }
+    return std::max(20.0 * std::log10(static_cast<double>(magnitude)), floorDb_);
 }
 
 void SpectrumAnalyzer::reset() {
