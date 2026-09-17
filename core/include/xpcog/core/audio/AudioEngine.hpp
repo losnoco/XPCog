@@ -79,6 +79,21 @@ public:
         /// The seam reached the speaker; `url` is now audible.
         virtual void trackBegan(const Url& /*url*/) {}
 
+        /// The track nextTrack() handed out has been thrown away unheard, and
+        /// the engine has gone back to `audible` -- the track still playing out
+        /// of the queue, which the listener has just seeked inside.
+        ///
+        /// Whatever cursor answered nextTrack() has to be measured from
+        /// `audible` again, or the abandoned track is skipped when the audible
+        /// one really does end. For Playlist that is setCurrent(), which resets
+        /// the read-ahead; the one thing it cannot undo is a pop from the play
+        /// queue, so a track queued out of order and abandoned here comes round
+        /// in playlist order instead. Cog has the same gap, and reaches it from
+        /// the other end (-seekToTime:, under endOfInputReached).
+        ///
+        /// Feeder thread, like nextTrack().
+        virtual void nextTrackAbandoned(const Url& /*audible*/) {}
+
         /// Playback ended because there was nothing left to play.
         virtual void stoppedNaturally() {}
 
@@ -231,6 +246,25 @@ private:
     /// Which device to open: the configured one if it is still there, matched
     /// by id and then by name, and otherwise the system default.
     [[nodiscard]] std::string chosenDeviceId() const;
+
+    /// Services a seek request if there is one, whichever track it turns out to
+    /// belong to. Feeder thread only.
+    ///
+    /// Returns true when the decoder was repositioned and so has material in
+    /// front of it again -- which pumpTrack() needs after end of stream, where
+    /// it means the track is not over after all. A request that no decoder would
+    /// answer returns false, the same as no request at all.
+    bool applyPendingSeek();
+
+    /// Closes whatever is open and opens `url` again, discarding the queued
+    /// seams that say another track is coming. Feeder thread only.
+    ///
+    /// The one way back to a track the gapless handoff has already moved past:
+    /// its decoder was closed when the next one was opened, so there is nothing
+    /// left to seek. False when it would not open a second time, which leaves
+    /// nothing open at all -- the pump then treats that as end of stream, which
+    /// is what it is.
+    bool reopenAudibleTrack(const Url& url);
 
     /// Applies a pending seek. Feeder thread only. False when the decoder
     /// declined and nothing was moved.
@@ -466,8 +500,19 @@ private:
     /// Total frames handed to the ring. Feeder-only.
     std::uint64_t framesWritten_ = 0;
 
-    /// Frame the feeder should jump to, or -1 for none. Written by any thread,
-    /// consumed by the feeder.
+    /// Where the feeder should jump to, in microseconds from the start of the
+    /// audible track, or -1 for none. Written by any thread, consumed by the
+    /// feeder.
+    ///
+    /// A time rather than a frame count, which the decoder's own units would
+    /// be. Who is going to answer the seek is not known until the feeder reads
+    /// it: after a gapless seam is queued the audible track is not the one open,
+    /// and it has to be re-opened before anything can be converted into its
+    /// frames. Storing frames here converted against whichever decoder happened
+    /// to be open, which for two tracks at different sample rates is the wrong
+    /// place in the right track.
+    std::atomic<std::int64_t> pendingSeekMicros_{-1};
+
     /// The rate the *decoder* counts frames in, which is not always the rate the
     /// device runs at. They agreed for every PCM file, so the difference went
     /// unnoticed until DSD: 705,600 Hz of one-bit audio into a device running
@@ -475,8 +520,6 @@ private:
     /// Set wherever a decoder is installed -- openTrack() is the only place --
     /// and read from the caller's thread, hence atomic.
     std::atomic<double> trackRate_{0.0};
-
-    std::atomic<std::int64_t> pendingSeek_{-1};
 
     /// Raised by switchOutputDevice(), consumed by the feeder. A flag rather
     /// than a queue: two device changes in flight mean the second one's answer

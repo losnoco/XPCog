@@ -272,6 +272,9 @@ bool AudioEngine::play(const Url& url) {
     preRing_.clear();
 
     framesWritten_ = 0;
+    // A seek nobody got round to reading belonged to the track that was playing
+    // before this one; honouring it here would start a fresh track part-way in.
+    pendingSeekMicros_.store(-1, std::memory_order_relaxed);
     pendingDeviceSwitch_.store(false, std::memory_order_relaxed);
     deviceLost_.store(false, std::memory_order_relaxed);
     dspReconfigure_.store(false, std::memory_order_relaxed);
@@ -711,11 +714,7 @@ bool AudioEngine::pumpTrack() {
             }
         }
 
-        if (const std::int64_t requested =
-                pendingSeek_.exchange(-1, std::memory_order_acq_rel);
-            requested >= 0) {
-            performSeek(requested);
-        }
+        static_cast<void>(applyPendingSeek());
 
         // Nothing may be written until the consumer has dropped the pre-seek
         // audio, or the discard would take the post-seek audio with it. If the
@@ -900,7 +899,22 @@ bool AudioEngine::pumpTrack() {
                 return true;
             }
         }
+
         publishSeams();
+
+        // And a seek, for the same reason the switch above is here and with the
+        // same answer. This is where the feeder waits out the last seconds of
+        // the final track -- there is no next one to advance to -- and a seek
+        // arriving here used to be read by nobody: the listener dragged the
+        // slider back, the position obediently moved, and the track went on
+        // ending. Whether the audible track is the one still open or one the
+        // handoff has moved past is applyPendingSeek()'s business, not this
+        // loop's; after publishSeams() rather than before it so that it is
+        // asking about the track that is audible now.
+        if (applyPendingSeek()) {
+            return true;
+        }
+
         std::this_thread::sleep_for(kFeederBackoff);
     }
     return false;
@@ -1337,6 +1351,85 @@ void AudioEngine::appendStretchSpanLocked(std::uint64_t out, std::uint64_t src) 
     }
 }
 
+bool AudioEngine::applyPendingSeek() {
+    const std::int64_t micros =
+        pendingSeekMicros_.exchange(-1, std::memory_order_acq_rel);
+    if (micros < 0) {
+        return false;
+    }
+    const double seconds = static_cast<double>(micros) / 1'000'000.0;
+
+    // Whose position did the listener mean? The track they can *hear* -- and
+    // once a gapless seam is queued that is not the track the feeder has open.
+    // The next one was opened when this one stopped decoding, which is a queue's
+    // worth of audio before it is heard, so for the last few seconds of every
+    // song the open decoder belongs to the song after it. Seeking that is what
+    // made a seek back from near the end of a track start playing the next one.
+    Url  audible;
+    bool movedOn = false;
+    {
+        const std::lock_guard lock(seamMutex_);
+        movedOn = !pendingSeams_.empty();
+        audible = audibleUrl_;
+    }
+
+    if (movedOn && !reopenAudibleTrack(audible)) {
+        // Nothing is open. The pump's next pass reads that as end of stream and
+        // asks the delegate for something else, which is the right answer: the
+        // file the listener was seeking inside has gone.
+        return false;
+    }
+
+    const double rate = trackRate_.load(std::memory_order_acquire);
+    if (!track_ || rate <= 0.0) {
+        return false;
+    }
+
+    const auto frame = static_cast<std::int64_t>(seconds * rate);
+    if (performSeek(frame)) {
+        return true;
+    }
+
+    // The decoder would not move. Nothing more to do if it is still the audible
+    // track's -- the position stays where it was, which is what a stream that
+    // cannot seek has always done. But having re-opened the track, the queue is
+    // full of audio from an advance that is no longer happening, and playing it
+    // would hand the listener the very seam this call abandoned. Throw it away
+    // and let the re-opened track speak from its start.
+    if (movedOn) {
+        dropQueuedAudio(0);
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::reopenAudibleTrack(const Url& url) {
+    closeTrack();
+    if (!openTrack(url)) {
+        return false;
+    }
+
+    // The seam is off: the track it announced is not coming, and publishing it
+    // would tell the interface that a track nobody will hear has started.
+    // audibleUrl_ and audibleTrackStart_ stay exactly as they are -- from the
+    // listener's side this track never stopped being the one playing.
+    {
+        const std::lock_guard lock(seamMutex_);
+        pendingSeams_.clear();
+    }
+
+    // Re-read for the track that is playing again. The seam had already applied
+    // the next track's gain to the whole pipeline.
+    applyReplayGain(track_->decoder->properties());
+
+    // And the delegate has to hear about it, or the track it handed out and we
+    // just threw away is skipped when this one really does end.
+    if (delegate_ != nullptr) {
+        delegate_->nextTrackAbandoned(url);
+    }
+    return true;
+}
+
 bool AudioEngine::performSeek(std::int64_t frame) {
     if (!track_) {
         return false;
@@ -1403,20 +1496,15 @@ bool AudioEngine::seek(double seconds) {
     if (status_.load(std::memory_order_relaxed) == PlaybackStatus::Stopped) {
         return false;
     }
-    // The *decoder's* rate, not the device's. IDecoder::seek() counts in the
-    // frames the decoder produces, and for DSD that is 705,600 a second against
-    // a device running at 48,000 -- so using the device's rate here asked for a
-    // position fourteen times too early, which is what "the seeking is way off"
-    // looked like. Every PCM file has the two rates equal, which is why this
-    // survived until now.
-    const double rate = trackRate_.load(std::memory_order_acquire);
-    if (rate <= 0.0) {
-        return false;
-    }
-
+    // Handed across as a time, and converted to frames by the feeder once it
+    // knows which decoder is going to answer. Frames are the decoder's own
+    // units -- for DSD 705,600 a second against a device running at 48,000,
+    // which is what "the seeking is way off" was -- and *which* decoder is not
+    // settled here: across a gapless seam the audible track may have to be
+    // opened again first. See applyPendingSeek().
     const double clamped = (seconds > 0.0) ? seconds : 0.0;
-    pendingSeek_.store(static_cast<std::int64_t>(clamped * rate),
-                       std::memory_order_release);
+    pendingSeekMicros_.store(static_cast<std::int64_t>(clamped * 1'000'000.0),
+                             std::memory_order_release);
     return true;
 }
 

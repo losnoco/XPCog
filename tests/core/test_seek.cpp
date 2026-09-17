@@ -16,6 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -24,6 +25,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -122,7 +124,12 @@ std::filesystem::path fixtureDir() {
 
 /// A continuous sine as 16-bit stereo FLAC. nullopt when `flac` is missing, so
 /// the suite skips rather than fails on a machine without it.
-std::optional<std::filesystem::path> makeFlac(const std::string& name, int frames) {
+///
+/// `amplitude` is what the two-track test below tells its tracks apart by: the
+/// engine resamples nothing here and applies no gain, so a window's peak level
+/// says which file is being heard.
+std::optional<std::filesystem::path> makeFlac(const std::string& name, int frames,
+                                              double amplitude = 20000.0) {
     const auto wav  = fixtureDir() / (name + ".wav");
     const auto flac = fixtureDir() / (name + ".flac");
 
@@ -131,7 +138,7 @@ std::optional<std::filesystem::path> makeFlac(const std::string& name, int frame
     for (int i = 0; i < frames; ++i) {
         const double t = static_cast<double>(i) / kSampleRate;
         const auto   v =
-            static_cast<std::int16_t>(20000.0 * std::sin(xpcog::test::kTwoPi * 440.0 * t));
+            static_cast<std::int16_t>(amplitude * std::sin(xpcog::test::kTwoPi * 440.0 * t));
         samples.push_back(v);
         samples.push_back(v);
     }
@@ -296,4 +303,197 @@ TEST_CASE("seeking past the end does not hang", "[seek]") {
     REQUIRE(engine.seek(60.0));  // well past the end
     engine.waitUntilFinished();  // must terminate rather than wait forever
     engine.stop();
+}
+
+namespace {
+
+/// Frames whose local peak level sits in [low, high].
+///
+/// The two tracks in the test below differ only in level, and one sample cannot
+/// say which is playing -- both cross zero -- so the measurement is per window.
+/// 512 frames is five cycles of 440 Hz, short enough that the few windows
+/// straddling a join are a rounding error against seconds of audio.
+std::size_t framesAtLevel(const std::vector<float>& samples, float low, float high) {
+    constexpr std::size_t kWindow = 512;
+
+    const std::size_t total  = samples.size() / kChannels;
+    std::size_t       frames = 0;
+    for (std::size_t start = 0; start + kWindow <= total; start += kWindow) {
+        float peak = 0.0F;
+        for (std::size_t i = start * kChannels; i < (start + kWindow) * kChannels; ++i) {
+            peak = std::max(peak, std::abs(samples[i]));
+        }
+        if (peak >= low && peak <= high) {
+            frames += kWindow;
+        }
+    }
+    return frames;
+}
+
+/// Two tracks played back to back, counting what it was asked for.
+///
+/// `next` and the two callbacks below all belong to the feeder thread, which is
+/// the only thread that touches them; `handouts` is atomic because the test
+/// thread watches it to know when the gapless handoff has happened.
+struct TwoTrackDelegate final : AudioEngine::Delegate {
+    std::vector<Url>   queue;
+    std::size_t        next = 0;
+    std::atomic<int>   handouts{0};
+    std::mutex         mutex;
+    std::vector<Url>   began;
+
+    std::optional<Url> nextTrack() override {
+        if (next >= queue.size()) {
+            return std::nullopt;
+        }
+        handouts.fetch_add(1, std::memory_order_release);
+        return queue[next++];
+    }
+
+    void nextTrackAbandoned(const Url& audible) override {
+        // Back to the audible track rather than back by one: the engine drops
+        // every handout it is holding, and it can be holding more than one.
+        for (std::size_t i = 0; i < queue.size(); ++i) {
+            if (queue[i].toString() == audible.toString()) {
+                next = i + 1;
+                return;
+            }
+        }
+        next = 0;  // the audible track is the one play() was given
+    }
+
+    void trackBegan(const Url& url) override {
+        const std::lock_guard lock(mutex);
+        began.push_back(url);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("a seek near the end of a track stays inside that track", "[seek][gapless]") {
+    // A gapless engine opens the next track when the current one stops
+    // *decoding*, which is a queue's worth of audio before it is heard -- so for
+    // the last few seconds of every song the decoder that is open belongs to the
+    // song after it. A seek arriving in that window was applied to that decoder:
+    // dragging the slider back from near the end of a track started playing the
+    // middle of the next one.
+    //
+    // Cog has the same window and the same answer -- re-open the track the
+    // listener can hear and seek that, which its -seekToTime: calls a dirty hack
+    // under endOfInputReached.
+    constexpr int kFirstFrames  = static_cast<int>(kSampleRate) * 6;
+    constexpr int kSecondFrames = static_cast<int>(kSampleRate) * 4;
+
+    // Same tone, different levels, so which track a stretch of the capture came
+    // from can be measured rather than inferred.
+    const auto loud  = makeFlac("seam_seek_loud", kFirstFrames, 20000.0);
+    const auto quiet = makeFlac("seam_seek_quiet", kSecondFrames, 6000.0);
+    if (!loud || !quiet) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer ring{static_cast<std::size_t>(kSampleRate * 0.5) * kChannels};
+    // Paced, because the whole test is about acting during playback: the handoff
+    // has to have happened and the first track has to still be audible, and
+    // unpaced there is no such moment to catch.
+    auto output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    // The fade a seek plays would scale the levels this test measures by.
+    settings.setEnableFading(false);
+    AudioEngine engine{registry(), *output, ring, settings};
+
+    TwoTrackDelegate delegate;
+    delegate.queue.push_back(Url::fromLocalPath(*quiet));
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(Url::fromLocalPath(*loud)));
+
+    // The window: the second track has been handed out and opened, and the first
+    // is still playing out of the queue.
+    bool inWindow = false;
+    for (int i = 0; i < 1000; ++i) {
+        if (delegate.handouts.load(std::memory_order_acquire) > 0 &&
+            engine.trackPositionSeconds() >= 3.0) {
+            inWindow = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(inWindow);
+
+    REQUIRE(engine.seek(0.5));
+    engine.waitUntilFinished();
+    engine.stop();
+
+    const std::vector<float> played = capturedAudio(*output);
+    const std::size_t        loudFrames  = framesAtLevel(played, 0.4F, 1.0F);
+    const std::size_t        quietFrames = framesAtLevel(played, 0.08F, 0.35F);
+
+    // Most of the first track is heard twice over: up to the seek, and then from
+    // half a second in to its end. Seeking the wrong decoder left three seconds
+    // of it and nothing more.
+    CHECK(loudFrames > static_cast<std::size_t>(kSampleRate) * 5);
+
+    // And the second track is played in full, from its start, exactly once --
+    // neither seeked into (which is the bug) nor skipped, which is what a
+    // read-ahead cursor left pointing past it would do.
+    CHECK(quietFrames > static_cast<std::size_t>(kSampleRate * 3.8));
+    CHECK(quietFrames < static_cast<std::size_t>(kSampleRate * 4.2));
+
+    // One track began, and then the other: the re-open is not a new track and
+    // must not be announced as one -- the listener never stopped hearing the
+    // first.
+    const std::lock_guard lock(delegate.mutex);
+    REQUIRE(delegate.began.size() == 2);
+    CHECK(delegate.began.front().toString() == Url::fromLocalPath(*loud).toString());
+    CHECK(delegate.began.back().toString() == Url::fromLocalPath(*quiet).toString());
+}
+
+TEST_CASE("a seek during the last track's play-out is still serviced", "[seek]") {
+    // The other end of the same window. Decoding runs hundreds of times faster
+    // than playback, so the feeder reaches the end of the last track's stream
+    // seconds before the listener hears it and then does nothing but wait for
+    // the queue to drain -- and a seek arriving there used to be read by nobody.
+    // The slider moved, the position obediently followed, and the track went on
+    // ending. There is no next track here, so nothing was played from the wrong
+    // place; the seek simply never happened.
+    constexpr int kFrames = static_cast<int>(kSampleRate) * 6;
+
+    const auto file = makeFlac("tail_seek", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer ring{static_cast<std::size_t>(kSampleRate * 0.5) * kChannels};
+    auto       output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    AudioEngine engine{registry(), *output, ring, settings};
+
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+
+    // Past the point where the decoder has certainly finished: the queue holds
+    // about three and a half seconds, so end of stream is reached by the time a
+    // little over two have been heard.
+    bool waiting = false;
+    for (int i = 0; i < 1000; ++i) {
+        if (engine.trackPositionSeconds() >= 4.0) {
+            waiting = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(waiting);
+
+    REQUIRE(engine.seek(1.0));
+    engine.waitUntilFinished();
+    engine.stop();
+
+    // Four seconds heard, then five more from one second in. Unserviced, the
+    // capture is the track's own six.
+    const std::size_t frames = capturedAudio(*output).size() / kChannels;
+    CHECK(frames > static_cast<std::size_t>(kSampleRate) * 7);
 }

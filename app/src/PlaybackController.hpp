@@ -206,6 +206,7 @@ private:
     // --- AudioEngine::Delegate, all called on the feeder thread ---------
     std::optional<Url> nextTrack() override;
     void               trackBegan(const Url& url) override;
+    void               nextTrackAbandoned(const Url& audible) override;
     void               stoppedNaturally() override;
     void               trackFailed(const Url& url) override;
     void               outputSwitchFailed() override;

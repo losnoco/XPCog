@@ -624,6 +624,30 @@ std::optional<Url> PlaybackController::nextTrack() {
     return (entry != nullptr) ? std::optional{entry->url} : std::nullopt;
 }
 
+void PlaybackController::nextTrackAbandoned(const Url& audible) {
+    // The engine threw away the track nextForPlayback() handed it -- a seek
+    // arrived after the handoff had already been decoded -- and went back to the
+    // one still playing out of the queue. The read-ahead cursor is therefore
+    // pointing at a track that has not been played after all, and left there the
+    // next end of stream would ask for the one *after* it and skip it.
+    //
+    // On the feeder thread, not dispatched: the engine asks this and then goes
+    // straight back to decoding, and the track it re-opened may have only
+    // milliseconds left. A reset that arrived after the next nextTrack() would
+    // be too late for the thing it exists to prevent.
+    //
+    // setCurrent() rather than a cursor reset of its own, because that is what
+    // this is: playback has been repositioned to `audible`, which is where the
+    // next question should be measured from. current_ is already that entry, so
+    // nothing is published.
+    for (std::size_t i = 0; i < playlist_.size(); ++i) {
+        if (playlist_.at(i).url.toString() == audible.toString()) {
+            playlist_.setCurrent(playlist_.at(i).id);
+            return;
+        }
+    }
+}
+
 void PlaybackController::trackBegan(const Url& url) {
     // Said here rather than on the interface's thread below, because it is what
     // makes a front panel show the right track's display: across a gapless seam

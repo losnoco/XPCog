@@ -2835,6 +2835,24 @@ left:
   The unseekable stream is refused for the same reason and stays refused, and
   that one is not a window: live radio has no rewind, and there is no version of
   this that gives it one.
+
+  **Since then the re-open exists after all**, built for a different reason: a
+  *seek* arriving in that same window was applied to the next track's decoder,
+  so dragging the slider back from the last seconds of a song started playing
+  the middle of the one after it. `AudioEngine::reopenAudibleTrack()` is the way
+  back — close what the handoff opened, open the audible URL again, discard the
+  queued seam, and tell the delegate its read-ahead has to be measured from the
+  audible track again (`Delegate::nextTrackAbandoned`). Cog reaches the same
+  answer from the other end and says so out loud: `-seekToTime:` calls it "a
+  dirty hack in case the playback has finished with the track that the user
+  thinks they're seeking into".
+
+  So the format-changing switch *could* now follow the stream across a queued
+  seam rather than declining. It still declines, and the reason is no longer
+  that there is nowhere to rewind to: a re-open costs a file open and a decode
+  from the seek point, which is exactly what a seek already is and is not what a
+  device change is supposed to be. Whoever picks that up should measure the gap
+  before assuming it is an improvement.
 - ~~**`preferredSampleRate()` answers for the default device**~~ — **fixed.** It
   takes the device id now, and `AudioEngine::play()` passes `chosenDeviceId()`,
   which it already had. The parameter is defaulted, so `OfflineOutput` and the

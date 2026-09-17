@@ -20,11 +20,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
+#include <thread>
 #include <vector>
 
 using namespace xpcog;
@@ -187,6 +189,18 @@ struct PlaylistBackedDelegate final : AudioEngine::Delegate {
         for (std::size_t i = 0; i < playlist.size(); ++i) {
             if (playlist.at(i).url.toString() == url.toString()) {
                 playlist.setAudible(playlist.at(i).id);
+                return;
+            }
+        }
+    }
+
+    /// What PlaybackController does with it: playback has been repositioned to
+    /// the entry still being heard, so setCurrent() -- which resets the
+    /// read-ahead, where setAudible() deliberately does not.
+    void nextTrackAbandoned(const Url& audible) override {
+        for (std::size_t i = 0; i < playlist.size(); ++i) {
+            if (playlist.at(i).url.toString() == audible.toString()) {
+                playlist.setCurrent(playlist.at(i).id);
                 return;
             }
         }
@@ -503,4 +517,79 @@ TEST_CASE("repeat-one over an unopenable file stops rather than spinning",
 
     // Tried once. Asking again gets the same URL, and that is the stop.
     CHECK(delegate.failed.size() == 1);
+}
+
+TEST_CASE("the track abandoned by a seek at the seam is not skipped", "[gapless][seek]") {
+    // The playlist half of the seek-at-the-seam fix, against the real Playlist
+    // rather than a counter. The engine asks what follows a track when it stops
+    // decoding it, and Playlist::nextForPlayback() *consumes* that question: a
+    // seek that then sends the engine back to the track still playing has thrown
+    // away an answer the playlist believes it has given. Left there, the read-
+    // ahead cursor points past the abandoned track and it is never played --
+    // which is a different way to lose a track than the bug this fixes, and just
+    // as silent.
+    //
+    // Six seconds first, because the window only exists while the first track is
+    // still playing out: the engine's queue holds about three and a half.
+    const auto a = makeFlac("abandon_a", 0, static_cast<int>(kSampleRate) * 6);
+    const auto b = makeFlac("abandon_b", 0, static_cast<int>(kSampleRate), 660.0);
+    const auto c = makeFlac("abandon_c", 0, static_cast<int>(kSampleRate), 880.0);
+    if (!a || !b || !c) {
+        SKIP("the `flac` command-line tool is not available");
+    }
+
+    RingBuffer ring(static_cast<std::size_t>(kSampleRate * 0.5) * kChannels);
+    // Paced: the seek has to land while the first track is still audible.
+    auto        output = makeOfflineOutput(ring, 8.0);
+    auto        store  = makeMemorySettingsStore();
+    Settings    settings(*store);
+    AudioEngine engine(registry(), *output, ring, settings);
+
+    PlaylistBackedDelegate     delegate;
+    std::vector<PlaylistEntry> entries;
+    for (const auto& path : {*a, *b, *c}) {
+        PlaylistEntry entry;
+        entry.url = Url::fromLocalPath(path);
+        entries.push_back(std::move(entry));
+    }
+    const auto ids = delegate.playlist.insert(0, std::move(entries));
+    REQUIRE(ids.size() == 3);
+    delegate.playlist.setRepeat(RepeatMode::None);
+    delegate.playlist.setCurrent(ids.front());
+    engine.setDelegate(&delegate);
+
+    REQUIRE(engine.play(Url::fromLocalPath(*a)));
+
+    bool inWindow = false;
+    for (int i = 0; i < 1000; ++i) {
+        // handedOut is the feeder's, and this reads it from the test thread. The
+        // race is benign in the only direction it can go: a torn size just polls
+        // again, and the seek is what the engine reads under its own ordering.
+        if (!delegate.handedOut.empty() && engine.trackPositionSeconds() >= 3.0) {
+            inWindow = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(inWindow);
+
+    REQUIRE(engine.seek(0.5));
+    engine.waitUntilFinished();
+    engine.stop();
+
+    // Asked again after the abandon. How many handouts the seek threw away is
+    // not fixed -- a track shorter than the queue is decoded the moment it is
+    // opened, so the third may already have been handed out too -- but the
+    // engine rewinds to the audible track once and everything after it is asked
+    // for again from there.
+    CHECK(delegate.handedOut.size() > 2);
+    CHECK(delegate.handedOut.back().toString() == Url::fromLocalPath(*c).toString());
+
+    // And all three were heard, in order, each once. Without the rewind the
+    // playlist's cursor still points past the abandoned track, nextForPlayback()
+    // answers with nothing, and playback ends after the first.
+    REQUIRE(delegate.began.size() == 3);
+    CHECK(delegate.began[0].toString() == Url::fromLocalPath(*a).toString());
+    CHECK(delegate.began[1].toString() == Url::fromLocalPath(*b).toString());
+    CHECK(delegate.began[2].toString() == Url::fromLocalPath(*c).toString());
 }

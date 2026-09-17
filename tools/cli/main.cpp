@@ -484,6 +484,20 @@ int play(const std::vector<std::string>& paths) {
         std::optional<xpcog::Url> nextTrack() override {
             return (next < queue.size()) ? std::optional{queue[next++]} : std::nullopt;
         }
+        void nextTrackAbandoned(const xpcog::Url& audible) override {
+            // A seek landed after the handoff had been decoded and the engine
+            // went back to the track still playing, dropping everything it had
+            // been handed. The cursor comes back to that track rather than back
+            // by one: a track shorter than the queue is decoded the moment it is
+            // opened, so more than one handout can be in flight.
+            for (std::size_t i = 0; i < queue.size(); ++i) {
+                if (queue[i].toString() == audible.toString()) {
+                    next = i + 1;
+                    return;
+                }
+            }
+            next = 0;  // the audible track is the one play() was given
+        }
         void trackBegan(const xpcog::Url& url) override {
             std::fprintf(stderr, "playing: %s\n", url.toString().c_str());
         }
