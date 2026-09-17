@@ -27,7 +27,21 @@
 
 #include <wx/window.h>
 
+#include <string>
+
 namespace xpcog::app {
+
+/// The transport's clock: `m:ss`, or `h:mm:ss` once past an hour.
+///
+/// **Truncated, not rounded**, which is the whole reason this is a function with
+/// a comment rather than three copies of a one-liner. At 0.9 s the listener is
+/// still inside the first second, and a clock reading 0:01 there is half a second
+/// early for the whole track -- most visibly at a track's start, where the label
+/// appears at 0:01 before a second has played and then sits there until the
+/// playhead catches up, which reads as the clock starting late and freezing.
+/// Cog truncates in both places it formats a time: `(long)value` in
+/// PositionSlider.m, `(unsigned)[object doubleValue]` in SecondsFormatter.m.
+[[nodiscard]] std::string formatClock(double seconds);
 
 class SeekBar : public wxWindow {
 public:

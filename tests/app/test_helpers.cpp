@@ -6,10 +6,12 @@
 // settings store, one between two processes -- where a mistake is silent.
 
 #include "OpenUrlDialog.hpp"
+#include "SeekBar.hpp"
 #include "SingleInstance.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -90,4 +92,35 @@ TEST_CASE("the handover identity is per user rather than per machine",
     // collides with a running player.
     const SingleInstance named{"XPCog-test"};
     CHECK(named.name() == "XPCog-test");
+}
+
+// --- the transport's clock -----------------------------------------------
+
+TEST_CASE("the clock truncates rather than rounds", "[wx][clock]") {
+    // The bug this encodes: rounding put the label half a second ahead of the
+    // audio for the whole of every track, and at a track's start -- where the
+    // first label arrives a moment late -- it read as the clock beginning at
+    // 0:01 and then freezing until playback caught up with it.
+    CHECK(formatClock(0.0) == "0:00");
+    CHECK(formatClock(0.4) == "0:00");
+    CHECK(formatClock(0.5) == "0:00");
+    CHECK(formatClock(0.999) == "0:00");
+    CHECK(formatClock(1.0) == "0:01");
+    CHECK(formatClock(1.75) == "0:01");
+
+    // A minute is a minute, and the seconds are padded to two digits.
+    CHECK(formatClock(59.9) == "0:59");
+    CHECK(formatClock(60.0) == "1:00");
+    CHECK(formatClock(61.2) == "1:01");
+    CHECK(formatClock(599.0) == "9:59");
+
+    // Past an hour the form grows a field, and the minutes pad too.
+    CHECK(formatClock(3599.0) == "59:59");
+    CHECK(formatClock(3600.0) == "1:00:00");
+    CHECK(formatClock(3661.0) == "1:01:01");
+    CHECK(formatClock(37230.0) == "10:20:30");
+
+    // Nothing playing, and a duration a decoder could not answer for.
+    CHECK(formatClock(-1.0) == "0:00");
+    CHECK(formatClock(std::numeric_limits<double>::quiet_NaN()) == "0:00");
 }

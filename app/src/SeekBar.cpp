@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <string>
 
 namespace xpcog::app {
 namespace {
@@ -54,6 +55,29 @@ constexpr unsigned char kThumbOutlineAlpha  = 210;
 }
 
 }  // namespace
+
+std::string formatClock(double seconds) {
+    // Not std::lround, and not a cast of `seconds + 0.5`: see the header. A
+    // negative reading is a clock that has not started, not a time before the
+    // track.
+    if (!(seconds > 0.0)) {  // also catches NaN, which a bad duration can be
+        return "0:00";
+    }
+
+    const auto total   = static_cast<long long>(seconds);
+    const long long minutes = total / 60;
+    const long long rest    = total % 60;
+
+    const auto pad = [](long long value) {
+        const std::string text = std::to_string(value);
+        return text.size() < 2 ? "0" + text : text;
+    };
+
+    if (minutes >= 60) {
+        return std::to_string(minutes / 60) + ":" + pad(minutes % 60) + ":" + pad(rest);
+    }
+    return std::to_string(minutes) + ":" + pad(rest);
+}
 
 SeekBar::SeekBar(wxWindow* parent, wxWindowID id)
     : wxWindow(parent, id, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE) {

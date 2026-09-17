@@ -24,18 +24,6 @@ enum : int {
     kMiniVolumeId,
 };
 
-[[nodiscard]] std::string formatClock(double seconds) {
-    if (seconds < 0.0) {
-        seconds = 0.0;
-    }
-    const auto  total   = static_cast<int>(seconds + 0.5);
-    const int   minutes = total / 60;
-    const int   rest    = total % 60;
-    const std::string padded =
-        rest < 10 ? "0" + std::to_string(rest) : std::to_string(rest);
-    return std::to_string(minutes) + ":" + padded;
-}
-
 }  // namespace
 
 MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& settings)

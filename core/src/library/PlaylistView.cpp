@@ -15,7 +15,11 @@ namespace {
     if (seconds <= 0.0) {
         return "--:--";
     }
-    const auto total   = static_cast<int>(seconds + 0.5);
+    // Truncated, like the transport's clock and like Cog's SecondsFormatter
+    // (`value = (unsigned)([object doubleValue])`). Rounding here would put a
+    // track's length in this column a second above the number the seek bar
+    // counts up to for the same track.
+    const auto total   = static_cast<int>(seconds);
     const int  minutes = total / 60;
     const int  rest    = total % 60;
 

@@ -21,6 +21,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -345,4 +346,33 @@ TEST_CASE("sort order never reaches the playlist", "[core][playlist]") {
     // XPCog's one deliberate behaviour difference from Cog, which shuffles and
     // steps through the *sorted* order. Display-only means display-only.
     CHECK(before == after);
+}
+
+TEST_CASE("the length column truncates, like the transport's clock",
+          "[core][playlist]") {
+    // 200.6 seconds is 3:20, not 3:21. Rounding here read a second above the
+    // number the seek bar counts up to for the same track, which is the same
+    // slip the transport's clock had: Cog truncates in SecondsFormatter.m
+    // (`value = (unsigned)([object doubleValue])`).
+    Playlist                   playlist;
+    std::vector<PlaylistEntry> entries;
+    const auto entryOf = [](double seconds) {
+        PlaylistEntry entry;
+        entry.url = *Url::parse("file:///music/len.flac");
+        entry.properties.format.sampleRate = 1000.0;
+        entry.properties.totalFrames = static_cast<std::int64_t>(seconds * 1000.0);
+        return entry;
+    };
+    entries.push_back(entryOf(200.6));
+    entries.push_back(entryOf(0.9));
+    entries.push_back(entryOf(59.5));
+    entries.push_back(entryOf(3600.0));
+    playlist.insert(0, std::move(entries));
+
+    PlaylistView view{playlist};
+    REQUIRE(view.rowCount() == 4);
+    CHECK(view.text(0, Column::Length) == "3:20");
+    CHECK(view.text(1, Column::Length) == "0:00");
+    CHECK(view.text(2, Column::Length) == "0:59");
+    CHECK(view.text(3, Column::Length) == "1:00:00");
 }

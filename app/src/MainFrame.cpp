@@ -88,23 +88,6 @@ enum : int {
         .count();
 }
 
-[[nodiscard]] std::string formatClock(double seconds) {
-    if (seconds < 0.0) {
-        seconds = 0.0;
-    }
-    const auto total   = static_cast<int>(seconds + 0.5);
-    const int  minutes = total / 60;
-    const int  rest    = total % 60;
-    const std::string padded = rest < 10 ? "0" + std::to_string(rest) : std::to_string(rest);
-    if (minutes >= 60) {
-        const int hours = minutes / 60;
-        const int mins  = minutes % 60;
-        return std::to_string(hours) + ":" + (mins < 10 ? "0" : "") +
-               std::to_string(mins) + ":" + padded;
-    }
-    return std::to_string(minutes) + ":" + padded;
-}
-
 /// What the status line says while a scan is running.
 ///
 /// The two passes have two different things worth saying. While the scan is

@@ -235,6 +235,22 @@ void PlaybackController::requestStart(TrackId id, Search hunt) {
     ticker_.Stop();
     starting_.store(true);
 
+    // And the clock belongs to the track being started, from this moment.
+    //
+    // The ticker is the only thing that publishes a position, so without this
+    // the label keeps the *previous* track's reading until the first tick after
+    // the device opens -- a quarter of a second at best, and as long as the file
+    // takes to open at worst. That is why a track appeared to start at 0:01 or
+    // 0:02: the first number the listener saw was not the start of this track
+    // but the clock as it stood once the interface caught up. Published rather
+    // than written to a label, because the mini player has a clock of its own.
+    //
+    // Where the start is going to land, and this track's length. resumeAt_ is
+    // zero for an ordinary gesture and non-zero for a resumed session or a device
+    // reopen, and either way it is the honest answer; duration() is not used
+    // because it reads the audible entry, which has just been cleared.
+    positionChanged.publish(resumeAt_, entry->duration());
+
     const std::uint64_t generation = ++startGeneration_;
     startPending.publish(id);
     playbackStateChanged.publish(false, false);
@@ -672,6 +688,12 @@ void PlaybackController::trackBegan(const Url& url) {
                 playlist_.setAudible(audible_);
                 currentTrackChanged.publish(audible_);
                 publishState();
+                // The seam moved the clock to a new track's frame of reference,
+                // and the ticker will not say so for up to a quarter of a
+                // second -- during which the label reads the end of the track
+                // that has just finished. Gapless is the one track change that
+                // does not go through requestStart(), so it needs its own.
+                positionChanged.publish(position(), duration());
                 return;
             }
         }
