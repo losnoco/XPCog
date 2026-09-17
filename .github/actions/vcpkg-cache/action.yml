@@ -23,6 +23,30 @@ description: >-
 # demands one. All of it goes through the environment, into GITHUB_ENV, so
 # that the configure step's vcpkg inherits it.
 #
+# The retry settings are there because a read that fails is *silent*. vcpkg
+# runs one `aws` per package and reads its exit status only as "cached" or
+# "not cached", so a throttled or dropped read is indistinguishable from a
+# package that was never uploaded: the job rebuilds it from source, uploads it
+# over the copy already there, and says nothing. On 2026-09-17 that cost both
+# Windows jobs about forty minutes each -- 3 packages restored out of 58, with
+# the same compiler, the same baseline and the same 58 versions as the run
+# twenty hours before it, which had restored all 58. Nothing had invalidated;
+# the reads had simply failed.
+#
+# The CLI on all three images is v2 (2.36.40 at the time of writing), whose
+# defaults are already `standard` retries -- throttling, 5xx and transient
+# connection errors -- but only **three attempts**. So what changes here is
+# mostly the headroom: ten attempts of exponential backoff before a read is
+# called a miss. The mode is pinned alongside it rather than left implicit,
+# because it is the CLI's default and not a promise: v1's default was `legacy`,
+# which does not retry a throttle at all, and an image that shipped one would
+# fail this way again with nothing to point at.
+#
+# What this does not do is make a miss *visible*. vcpkg still reports only the
+# count it restored, and only in the configure log, which most jobs do not
+# keep. Reading "Restored N package(s)" against the number it was about to
+# install is the check worth having, and it wants the Configure step to tee.
+#
 # The credentials are repository secrets, which a pull request from a fork
 # does not receive. Then this step sets nothing and exits cleanly, and vcpkg
 # falls back to its default local cache, which on a fresh runner is empty: the
@@ -71,6 +95,8 @@ runs:
         export AWS_DEFAULT_REGION=auto
         export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
         export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+        export AWS_RETRY_MODE=standard
+        export AWS_MAX_ATTEMPTS=10
 
         # Fail here if the bucket cannot be listed; a wrong secret is cheaper
         # to learn about now.
@@ -85,4 +111,6 @@ runs:
           echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
           echo "AWS_REQUEST_CHECKSUM_CALCULATION=$AWS_REQUEST_CHECKSUM_CALCULATION"
           echo "AWS_RESPONSE_CHECKSUM_VALIDATION=$AWS_RESPONSE_CHECKSUM_VALIDATION"
+          echo "AWS_RETRY_MODE=$AWS_RETRY_MODE"
+          echo "AWS_MAX_ATTEMPTS=$AWS_MAX_ATTEMPTS"
         } >> "$GITHUB_ENV"
