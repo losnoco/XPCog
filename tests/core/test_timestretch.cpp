@@ -28,9 +28,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <thread>
 #include <vector>
 
 using namespace xpcog;
@@ -294,4 +296,65 @@ TEST_CASE("the engine renders a track at the configured tempo", "[timestretch]")
     SECTION("disabled plays at unity whatever the sliders hold") {
         CHECK(renderedSeconds("disabled", 2.0) == Approx(4.0).margin(0.1));
     }
+}
+
+TEST_CASE("the clock starts at the top of the second track of a session",
+          "[timestretch][seek]") {
+    // The output counts frames since *its own* start(), which is also the only
+    // place that counter returns to zero -- so between play() zeroing the
+    // engine's base and the device actually opening, the clock reads the
+    // previous track's total. play() spends exactly that window pre-filling
+    // both rings with the DSP thread already running, and every stretch vertex
+    // produced there was compared against the stale count, found to be in the
+    // past, and pruned: the map's anchor ended up about two seconds into a
+    // track that had not started a frame. The position then answered with that
+    // anchor, unchanging, until the device really had played two seconds -- a
+    // clock that began at 0:01, sat there, and then ran a fixed distance ahead
+    // for the rest of the track.
+    //
+    // Only with the stretcher engaged, because only then is there a map to
+    // corrupt. A varispeed engine at unity ratio changes no audio at all and
+    // was enough to break the clock of every track after the first.
+    RingBuffer ring(static_cast<std::size_t>(kRate * 0.5) * kChannels);
+    // Paced, because the first track has to *play* for longer than the second
+    // one's pre-fill for the stale count to reach past it.
+    auto output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings(*store);
+    settings.setRubberbandEngine("varispeed");
+    settings.setTempo(1.0);
+    settings.setPitch(1.0);
+
+    AudioEngine engine(registry(), *output, ring, settings);
+    const auto  url = Url::parse("silence://8");
+    REQUIRE(url.has_value());
+
+    REQUIRE(engine.play(*url));
+    bool reached = false;
+    for (int i = 0; i < 400 && !reached; ++i) {
+        reached = engine.trackPositionSeconds() >= 3.0;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    REQUIRE(reached);
+
+    // The second start of the session, which is the one that broke.
+    REQUIRE(engine.play(*url));
+    const double atStart = engine.trackPositionSeconds();
+
+    // And it has to move from there rather than sit on the anchor.
+    double later = atStart;
+    for (int i = 0; i < 400 && later < atStart + 1.0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        later = engine.trackPositionSeconds();
+    }
+    engine.stop();
+
+    // Measured, not guessed: shipped, this read 2.1 to 2.6 seconds. With the
+    // map's two anchors separated but the stale device count still pruning the
+    // pre-fill it reads 0.42 to 0.46, which is why the bound is a quarter of a
+    // second rather than the half it would comfortably have passed -- both
+    // halves of the fix are load-bearing and the test says so.
+    CHECK(atStart < 0.25);
+    CHECK(later >= atStart + 1.0);
 }

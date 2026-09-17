@@ -474,8 +474,26 @@ private:
     /// which is the whole life of a player that never touches the tempo
     /// slider. All under seamMutex_, like every other position count.
     std::deque<StretchSpan> stretchMap_;
+
+    /// The anchor the map's *first segment* starts from: the last vertex the
+    /// device has played past, which pruning moves forward as the window
+    /// advances. Read by srcFramesLocked(), and by nothing else.
     std::uint64_t           stretchOutBase_ = 0;
     std::uint64_t           stretchSrcBase_ = 0;
+
+    /// The anchor the DSP thread *adds its own counters to*, which is a
+    /// different number and has to be: its counters are distances since the
+    /// last flush epoch, and this is where that epoch sat. Pruning moves the
+    /// pair above and must not move this one -- doing so added the pruned
+    /// distance to every vertex appended afterwards, so the map ran away from
+    /// the device by one pruned vertex per prune. What that looked like is a
+    /// clock stuck at a constant for the first seconds of a track and then
+    /// running permanently offset, because srcFramesLocked() answers with the
+    /// anchor for any position behind the map's first vertex.
+    ///
+    /// Equal to the pair above at every epoch, and only they move apart.
+    std::uint64_t           stretchEpochOut_ = 0;
+    std::uint64_t           stretchEpochSrc_ = 0;
 
     /// Converts an absolute played-frame count into the source frames the
     /// clock and the seams are recorded in. Identity when the map is empty.
@@ -565,6 +583,24 @@ private:
     /// switch and the other after would see the clock jump. The mutex is held
     /// across the whole device change for exactly that window.
     std::uint64_t      deviceFramesBase_ = 0;
+
+    /// Whether a device has been started for *this* play(), which is the one
+    /// thing deviceFramesBase_ cannot express.
+    ///
+    /// framesPlayed() returns to zero inside start() and not in stop(), so
+    /// between play() zeroing the base and the device actually opening, the
+    /// output still reports the count from the previous track -- and play()
+    /// spends that window pre-filling both rings with the DSP thread already
+    /// running. Every stretch vertex it produced there was compared against
+    /// that stale count, found to be in the past, and pruned, dragging the
+    /// map's anchor to the end of the pre-fill: about two seconds. The clock
+    /// then read that anchor as a constant until the device really had played
+    /// two seconds. On the second and every later track of a session, with the
+    /// stretcher engaged, the position started at 0:01 and froze there.
+    ///
+    /// So the clock ignores a device that has not started. The pair is read
+    /// together under seamMutex_ for the same reason the base is.
+    bool               deviceRunning_ = false;
 
     mutable std::mutex seamMutex_;
     std::deque<Seam>   pendingSeams_;

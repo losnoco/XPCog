@@ -287,11 +287,16 @@ bool AudioEngine::play(const Url& url) {
         seekTrackBase_  = 0;
         audibleUrl_        = url;
         audibleTrackStart_ = 0;
-        // A fresh device, counting from zero, and no earlier one behind it.
+        // A fresh device, counting from zero, and no earlier one behind it --
+        // and not yet started, which is not the same thing: until it is, the
+        // output is still reporting the last track's count. See deviceRunning_.
         deviceFramesBase_ = 0;
+        deviceRunning_    = false;
         stretchMap_.clear();
-        stretchOutBase_ = 0;
-        stretchSrcBase_ = 0;
+        stretchOutBase_  = 0;
+        stretchSrcBase_  = 0;
+        stretchEpochOut_ = 0;
+        stretchEpochSrc_ = 0;
     }
     {
         std::lock_guard lock(finishedMutex_);
@@ -340,6 +345,13 @@ bool AudioEngine::play(const Url& url) {
         }
         closeTrack();
         return false;
+    }
+
+    // The clock may read the device now, and not one moment earlier: start()
+    // is what returned framesPlayed() to zero.
+    {
+        const std::lock_guard lock(seamMutex_);
+        deviceRunning_ = true;
     }
 
     // What the running device was asked for, so a later request can be told
@@ -505,8 +517,8 @@ void AudioEngine::dspLoop() {
                 outSinceEpoch += tailFrames;
                 if (stretchSeen) {
                     std::lock_guard lock(seamMutex_);
-                    appendStretchSpanLocked(stretchOutBase_ + outSinceEpoch,
-                                            stretchSrcBase_ + srcSinceEpoch);
+                    appendStretchSpanLocked(stretchEpochOut_ + outSinceEpoch,
+                                            stretchEpochSrc_ + srcSinceEpoch);
                 }
                 if (tailFrames > 0) {
                     for (DSPNode* node : chain_) {
@@ -559,8 +571,8 @@ void AudioEngine::dspLoop() {
             // continuous for as long as anything behind its last vertex might
             // still be queried.
             std::lock_guard lock(seamMutex_);
-            appendStretchSpanLocked(stretchOutBase_ + outSinceEpoch,
-                                    stretchSrcBase_ + srcSinceEpoch);
+            appendStretchSpanLocked(stretchEpochOut_ + outSinceEpoch,
+                                    stretchEpochSrc_ + srcSinceEpoch);
         }
 
         if (frames > 0) {
@@ -744,8 +756,12 @@ bool AudioEngine::pumpTrack() {
             // what lets the line above assign a played count to a source
             // count: at the anchor they are defined to be equal.
             stretchMap_.clear();
-            stretchOutBase_ = seekPlayedBase_;
-            stretchSrcBase_ = seekPlayedBase_;
+            stretchOutBase_  = seekPlayedBase_;
+            stretchSrcBase_  = seekPlayedBase_;
+            // And the anchor the DSP thread counts from, which is the same
+            // number here and only here: this is the epoch they both restart at.
+            stretchEpochOut_ = seekPlayedBase_;
+            stretchEpochSrc_ = seekPlayedBase_;
         }
 
         if (!track_ || !track_->decoder->readAudio(chunk)) {
@@ -1229,8 +1245,10 @@ bool AudioEngine::performDeviceSwitch() {
             // below clears it through dropQueuedAudio() moments from now, but
             // a position poll can land in between, and a map at the wrong
             // scale would answer it with a jump.
-            stretchOutBase_ = rescale(stretchOutBase_);
-            stretchSrcBase_ = rescale(stretchSrcBase_);
+            stretchOutBase_  = rescale(stretchOutBase_);
+            stretchSrcBase_  = rescale(stretchSrcBase_);
+            stretchEpochOut_ = rescale(stretchEpochOut_);
+            stretchEpochSrc_ = rescale(stretchEpochSrc_);
             for (StretchSpan& span : stretchMap_) {
                 span.out = rescale(span.out);
                 span.src = rescale(span.src);
@@ -1279,7 +1297,10 @@ bool AudioEngine::performDeviceSwitch() {
 }
 
 std::uint64_t AudioEngine::totalFramesPlayedLocked() const {
-    return deviceFramesBase_ + output_.framesPlayed();
+    // Not the output's counter until a device has been started for this play():
+    // it holds the previous track's total until start() clears it. See
+    // deviceRunning_.
+    return deviceFramesBase_ + (deviceRunning_ ? output_.framesPlayed() : 0);
 }
 
 std::uint64_t AudioEngine::trackFramesLocked(std::uint64_t played) const {
