@@ -48,6 +48,12 @@ latest run on the branch, and waits up to 100 seconds for that run to appear.
 Straight after a push those differ: latching onto the previous commit's run
 would report a finished, possibly green run as though it were this one.
 
+The same rule cuts the other way once you commit *on top of* what you pushed:
+HEAD has no run, and after 100 seconds this says so and exits -- "no run for
+<sha> -- pushed yet?". That is not the watcher losing the run, it is the run
+belonging to an older commit than the one checked out. Pass the run id
+(`gh run list` has it) and it watches that run whatever HEAD is.
+
 `CI_WATCH_POLL_SECONDS` (default 30) and `CI_WATCH_MAX_POLLS` (default 120,
 so an hour) tune the polling. Thirty seconds is deliberate rather than
 conservative — GitHub's API is rate-limited per hour, and nothing here changes
