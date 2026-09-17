@@ -67,6 +67,7 @@ enum CommandId : int {
 
     EditRemove,
     EditRandomize,
+    EditScrollToCurrent,
 
     PlaybackPlayPause,
     PlaybackStop,

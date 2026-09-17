@@ -296,6 +296,16 @@ private:
     void enqueueSelected();
     void activateRow(unsigned int row);
 
+    /// Puts `id` on screen and makes it the selection, replacing whatever was
+    /// selected -- the gesture three different things want: resuming a session,
+    /// following playback across a track change, and the Select Currently
+    /// Playing command.
+    ///
+    /// Answers false when the track has no row to scroll to, which with a filter
+    /// in the box is an ordinary thing rather than an error: the track is still
+    /// playing, it is just not among the rows being shown.
+    bool revealTrack(TrackId id);
+
     // --- the playlist's context menu -------------------------------------
     //
     // Cog's ContextualMenu, one function per item. Every one of them acts on the

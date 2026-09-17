@@ -116,6 +116,17 @@ const std::vector<MenuItem>& layout() {
         {wxTRANSLATE("&Edit"), EditUndo, wxTRANSLATE("&Undo"), "Ctrl+Z"},
         {nullptr, EditRedo, wxTRANSLATE("&Redo"), "Ctrl+Y"},
         {nullptr, EditSelectAll, wxTRANSLATE("Select &All"), "Ctrl+A", ItemKind::Normal, true},
+        // Cog's "Select Currently Playing", directly under Select All where Cog
+        // keeps it, and doing what Cog's does: -scrollToCurrentEntry: scrolls
+        // the row into view *and* selects it, replacing the selection rather
+        // than extending it. The name describes the selection; the scroll is
+        // what it is reached for, after ten minutes of looking through a long
+        // playlist for where you are.
+        //
+        // Ctrl-J rather than Cog's Cmd-L, which is Open URL here -- see the
+        // accelerator note at the top of this file. J is what several players
+        // use for jumping to the playing track, and nothing here claims it.
+        {nullptr, EditScrollToCurrent, wxTRANSLATE("Select Currently &Playing"), "Ctrl+J"},
         {nullptr, EditRemove, wxTRANSLATE("&Remove from Playlist"), "Del"},
         {nullptr, EditRandomize, wxTRANSLATE("Randomi&ze Playlist"), "", ItemKind::Normal, true},
 

@@ -454,6 +454,10 @@ msgstr "&Rehacer"
 msgid "Select &All"
 msgstr "Seleccionar &todo"
 
+#: app/src/Commands.cpp:129
+msgid "Select Currently &Playing"
+msgstr "Seleccionar &pista en reproducción"
+
 #: app/src/Commands.cpp:119 app/src/Commands.cpp:182
 msgid "&Remove from Playlist"
 msgstr "&Quitar de la lista"
@@ -1158,6 +1162,10 @@ msgstr "No se pudo reproducir %s"
 #: app/src/PlaybackController.cpp:579
 msgid "No playable track found"
 msgstr "No se encontró ninguna pista que se pueda reproducir"
+
+#: app/src/MainFrame.cpp:1548
+msgid "The playing track is hidden by the filter"
+msgstr "El filtro oculta la pista en reproducción"
 
 #: app/src/PreferencesDialog.cpp:59
 msgid "None"

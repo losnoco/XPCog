@@ -1236,11 +1236,7 @@ void MainFrame::restorePlayback() {
         return;
     }
 
-    if (const auto row = view_.rowForTrack(*current)) {
-        const wxDataViewItem item = model_->GetItem(static_cast<unsigned>(*row));
-        list_->Select(item);
-        list_->EnsureVisible(item);
-    }
+    revealTrack(*current);
 
     if (!settings_.ResumePlaybackOnStartup()) {
         return;
@@ -1542,6 +1538,16 @@ void MainFrame::bindCommands() {
     on(EditRemove, [this] { removeSelected(); });
     on(EditSelectAll, [this] { list_->SelectAll(); });
     on(EditRandomize, [this] { commands_.randomize(); });
+    on(EditScrollToCurrent, [this] {
+        // Enabled whenever something is playing, which is not the same as
+        // something being *visible*: a filter in the box can hide the playing
+        // track, and then this has nothing to scroll to. Saying so is better
+        // than a menu item that appears to do nothing -- the track has not
+        // stopped, it is only out of view.
+        if (!revealTrack(currentTrack_)) {
+            setStatusText(_("The playing track is hidden by the filter"));
+        }
+    });
 
     on(PlaybackPlayPause, [this] { playback_->playPause(); });
     on(PlaybackStop, [this] { playback_->stop(); });
@@ -1678,6 +1684,13 @@ void MainFrame::bindUpdateUi() {
            [this](wxUpdateUIEvent& event) { event.Enable(playlist_.size() > 1); });
     update(EditSelectAll,
            [this](wxUpdateUIEvent& event) { event.Enable(view_.rowCount() > 0); });
+    // On whether anything is playing, not on whether it has a row. Cog draws the
+    // same line (-validateUserInterfaceItem: refuses only when stopped), and the
+    // row question costs a scan of the visible order -- which this would pay on
+    // every idle, for a menu nobody has opened.
+    update(EditScrollToCurrent, [this](wxUpdateUIEvent& event) {
+        event.Enable(currentTrack_ != kInvalidTrackId);
+    });
     update(FileSavePlaylist,
            [this](wxUpdateUIEvent& event) { event.Enable(!playlist_.empty()); });
 
@@ -2292,6 +2305,28 @@ void MainFrame::activateRow(unsigned int row) {
     }
 }
 
+bool MainFrame::revealTrack(TrackId id) {
+    if (id == kInvalidTrackId) {
+        return false;
+    }
+    // The view's row, not the playlist's index: a sort or a filter is exactly
+    // what makes the two differ, and it is exactly when this is worth having.
+    const auto row = view_.rowForTrack(id);
+    if (!row) {
+        return false;
+    }
+
+    const wxDataViewItem item = model_->GetItem(static_cast<unsigned>(*row));
+    // Unselect first, so this replaces the selection rather than adding to it --
+    // Cog's -scrollToCurrentEntry: selects byExtendingSelection:NO. And
+    // EnsureVisible as well as Select, because a selection that has scrolled out
+    // of sight is one the listener still has to go looking for.
+    list_->UnselectAll();
+    list_->Select(item);
+    list_->EnsureVisible(item);
+    return true;
+}
+
 std::vector<TrackId> MainFrame::selectedTracks() const {
     wxDataViewItemArray items;
     list_->GetSelections(items);
@@ -2803,16 +2838,11 @@ void MainFrame::onCurrentTrackChanged(TrackId id, ListenChange change) {
     // playlist here has no equivalent hook, because choosing the next entry is
     // core's job and selecting a row is the interface's.
     //
-    // EnsureVisible as well as Select: a selection that has scrolled out of
-    // sight is one the listener has to go looking for, which is the opposite of
-    // what following playback is for.
-    if (settings_.SelectionFollowsPlayback() && id != kInvalidTrackId) {
-        if (const auto row = view_.rowForTrack(id)) {
-            const wxDataViewItem item = model_->GetItem(static_cast<unsigned>(*row));
-            list_->UnselectAll();
-            list_->Select(item);
-            list_->EnsureVisible(item);
-        }
+    // What "move the selection" means -- replace it, and scroll it into view --
+    // is revealTrack()'s, shared with the Select Currently Playing command and
+    // with the selection a resumed session starts with.
+    if (settings_.SelectionFollowsPlayback()) {
+        revealTrack(id);
     }
 
     const PlaylistEntry* entry = playlist_.find(id);
