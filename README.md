@@ -357,7 +357,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-1.10.0-x64-setup.exe
+:: -> build\windows-release\XPCog-1.11.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -378,7 +378,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-1.10.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-1.11.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -757,6 +757,7 @@ xpcog-cli info   song.flac           # format, duration, ReplayGain, tags
 xpcog-cli expand album.cue           # the tracks a playlist or cue sheet holds
 xpcog-cli info   album.cue#3         # one track of a single-file album
 xpcog-cli decode song.flac out.raw   # headerless native-endian PCM
+xpcog-cli waveform --dump song.flac  # the seek bar's peak/RMS buckets
 xpcog-cli play   a.flac b.m4a c.mp3  # gapless across the queue
 ```
 
@@ -972,6 +973,18 @@ encrypted and the pane says so before you bind it to the network.
 
 `xpcog-cli serve` runs the same API with no toolkit linked at all, which is what
 demonstrates that none of this reached below the interface layer.
+
+## Waveform seek bar
+
+View → Show Waveform draws the playing track's shape in the seek bar: a peak
+envelope with the RMS level inside it, the played part in the accent colour. The
+first time a track plays with this on it is decoded a second time in the background
+and the bar fills in from the left; the result -- two kilobytes a track -- is kept
+in the platform's cache directory (`~/.cache/LoSnoCo/XPCog/waveforms`,
+`~/Library/Caches/LoSnoCo/XPCog/waveforms`, `%LOCALAPPDATA%\LoSnoCo\XPCog\cache\waveforms`)
+so every later play is instant, and the track that will probably follow is analysed
+ahead of time. Streams and DSD show the plain bar. `xpcog-cli waveform --cache DIR`
+fills a cache directory without the player, and `--dump` prints the buckets.
 
 ## Languages
 

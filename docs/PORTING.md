@@ -3690,6 +3690,34 @@ All of these are also documented at the call site.
   index and the stop-after mark are kept, because getting that backwards would be
   a reload that silently reset them and still looked like it had worked.
 
+- **The seek bar can draw the track's waveform; Cog's cannot.** Cog's position
+  slider is a plain `NSSlider` with a time tooltip (`Window/PositionSlider.m`),
+  so this is new work on the terms `docs/REST.md` set rather than a port. View →
+  Show Waveform, behind the `waveformSeekBar` setting and off by default, makes
+  both seek bars taller and draws the track's shape in them: a peak envelope
+  with the RMS level inside it, channels averaged, mirrored about the centre
+  line, the played part in the accent colour and a playhead line where the
+  thumb was.
+
+  Nothing in the player had whole-track audio -- the spectrum taps the last
+  fraction of a second of played output -- so the shape comes from decoding the
+  track a second time, on `WaveformProvider`'s worker, as it starts to play.
+  The bar fills in from the left while that runs, and the playlist's guess at
+  the next track (`Playlist::peekNextForPlayback()`, which reads what
+  `nextForPlayback()` would answer without popping the queue or extending the
+  shuffle order) is analysed afterwards so it is whole when it starts. The
+  result is 1024 buckets of two bytes each, kept in the platform's cache
+  directory (`platform::cacheDirectory()`, `waveforms/`) in a fixed
+  little-endian format `WaveformFile.hpp` documents, keyed like `PluginCache`
+  on the URL plus the file's modification time and size. Two kilobytes a track,
+  no pruning, and instant on every later play. `xpcog-cli waveform` runs the
+  same analyser and can pre-warm or dump a cache.
+
+  A stream, which has no declared length, and a DSD file, which has no PCM to
+  measure without the decimation filter, draw the plain bar. So does a cue
+  track until its sheet's stamp changes: the cache stamps the `.cue`, not the
+  audio behind it, because core cannot see that path without the codec.
+
 - **No custom Dock tile.** Cog's `DockIconController` draws playback state onto the
   icon through `NSDockTile`; XPCog does not, and macOS keeps the do-nothing
   `TaskbarIntegration`. The badge and progress bar stay a Windows feature, where the
