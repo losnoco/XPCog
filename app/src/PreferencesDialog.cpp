@@ -198,9 +198,11 @@ constexpr std::array kCuratedKeys = {
     // second one: its generated row would be a free-text box for a value that
     // has exactly three valid answers, one of which is the empty string.
     "language",
-    // Spectrum
+    // Visualizers
     "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode", "spectrumFloorDb",
-    "spectrumShowPeaks",
+    "spectrumShowPeaks", "scopeChannels", "scopeColor", "scopeBackgroundColor",
+    "scopeStrokeWidth", "scopeGain", "scopeWindowMs", "scopeFrameRate", "scopeTrigger",
+    "scopeFill",
     // General
     "sentryConsented", "httpStreamingBufferSize",
     // Appearance
@@ -590,6 +592,61 @@ public:
                       announce(key);
                   });
         add(label, box);
+    }
+
+    /// A fraction with a range and a step: a stroke width, a gain. Digits
+    /// follow the step, so a step of a quarter shows two places and one of a
+    /// half shows one.
+    void decimal(const wxString& label, const char* key, double minimum, double maximum,
+                 double step) const {
+        auto* box = new wxSpinCtrlDouble(pane_, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                         wxDefaultSize, wxSP_ARROW_KEYS, minimum, maximum,
+                                         toDouble(settings_->rawValue(key)), step);
+        box->SetDigits(step < 0.5 ? 2U : 1U);
+        box->Bind(wxEVT_SPINCTRLDOUBLE, [settings = settings_, announce = announce_,
+                                         key](wxSpinDoubleEvent& event) {
+            settings->setRawValue(key, std::to_string(event.GetValue()));
+            announce(key);
+        });
+        add(label, box);
+    }
+
+    /// A colour, as a real colour button -- what the Qt version built from a
+    /// QPushButton, a generated swatch pixmap and QColorDialog. Stored as the
+    /// lower-case #rrggbb the settings document; wx spells it upper case.
+    ///
+    /// An unparseable stored value -- notably an imported Cog colour, which is
+    /// an archived NSColor rather than a string -- shows as `fallback` rather
+    /// than as black. A black bar on a near-black background looks like the
+    /// display is broken.
+    void colour(const wxString& label, const char* key, const char* fallback) const {
+        wxColour initial;
+        if (!initial.Set(toWx(settings_->rawValue(key)))) {
+            initial.Set(fallback);
+        }
+        auto* picker = new wxColourPickerCtrl(pane_, wxID_ANY, initial);
+        picker->Bind(wxEVT_COLOURPICKER_CHANGED,
+                     [settings = settings_, announce = announce_, key](wxColourPickerEvent& event) {
+                         std::string hex = toUtf8(event.GetColour().GetAsString(wxC2S_HTML_SYNTAX));
+                         std::transform(hex.begin(), hex.end(), hex.begin(), [](unsigned char c) {
+                             return static_cast<char>(std::tolower(c));
+                         });
+                         settings->setRawValue(key, hex);
+                         announce(key);
+                     });
+        add(label, picker);
+    }
+
+    /// A section title, for the one pane that holds two things. Bold, in the
+    /// label column, with the control column left empty: the form is a grid of
+    /// two, so a heading is a row of it like any other.
+    FormRow heading(const wxString& text) const {
+        auto* title = new wxStaticText(pane_, wxID_ANY, text);
+        title->SetFont(title->GetFont().Bold());
+        auto* pad = new wxStaticText(pane_, wxID_ANY, "");
+        form_->Add(title, 0, wxALIGN_CENTER_VERTICAL | wxTOP, pane_->FromDIP(8));
+        form_->Add(pad, 1, wxEXPAND);
+        return FormRow{title, pad, nullptr};
     }
 
     void seconds(const wxString& label, const char* key, double maximum) const {
@@ -1429,6 +1486,12 @@ wxWindow* PreferencesDialog::buildVisualizersPane(wxWindow* parent) {
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
 
+    // Two visualisers on one pane, each under its own heading. Was the
+    // Spectrum pane until the oscilloscope arrived; a pane per visualiser
+    // would put nine rows and five rows two categories apart for no reason a
+    // listener choosing colours can see.
+    row->heading(_("Spectrum"));
+
     // Bands. Cog's two analyser modes, stored in its own key: false is the note
     // scale, true the even spacing. A list rather than a checkbox because
     // "Frequency mode: off" says nothing about what you get instead.
@@ -1443,43 +1506,10 @@ wxWindow* PreferencesDialog::buildVisualizersPane(wxWindow* parent) {
     });
     row->add(_("Bands"), bands);
 
-    // wxColourPickerCtrl is a real colour button -- what the Qt version built
-    // from a QPushButton, a generated swatch pixmap and QColorDialog.
-    //
-    // An unparseable stored value -- notably an imported Cog colour, which is an
-    // archived NSColor rather than a string -- shows as the setting's own default
-    // rather than as black. A black bar on a near-black background looks like the
-    // display is broken.
-    const auto colourRow = [&](const wxString& label, const std::string& stored,
-                               std::function<void(const std::string&)> store) {
-        wxColour initial;
-        if (!initial.Set(toWx(stored))) {
-            initial.Set("#ff8000");
-        }
-        auto* picker = new wxColourPickerCtrl(pane, wxID_ANY, initial);
-        picker->Bind(wxEVT_COLOURPICKER_CHANGED,
-                     [store = std::move(store)](wxColourPickerEvent& event) {
-                         // Lower case and six digits, which is the form the
-                         // setting documents; wx spells it upper case.
-                         std::string hex =
-                             toUtf8(event.GetColour().GetAsString(wxC2S_HTML_SYNTAX));
-                         std::transform(hex.begin(), hex.end(), hex.begin(),
-                                        [](unsigned char c) {
-                                            return static_cast<char>(std::tolower(c));
-                                        });
-                         store(hex);
-                     });
-        row->add(label, picker);
-    };
-
-    colourRow(_("Bar colour"), settings_.SpectrumBarColor(), [this](const std::string& hex) {
-        settings_.setSpectrumBarColor(hex);
-        settingChanged.publish("spectrumBarColor");
-    });
-    colourRow(_("Peak colour"), settings_.SpectrumDotColor(), [this](const std::string& hex) {
-        settings_.setSpectrumDotColor(hex);
-        settingChanged.publish("spectrumDotColor");
-    });
+    // The fallbacks are the settings' own defaults: an imported Cog colour is
+    // an archived NSColor and parses as nothing.
+    row->colour(_("Bar colour"), "spectrumBarColor", "#ff8000");
+    row->colour(_("Peak colour"), "spectrumDotColor", "#ff3b30");
 
     auto* peaks = new wxCheckBox(pane, wxID_ANY, _("Show peak markers"));
     peaks->SetValue(settings_.SpectrumShowPeaks());
@@ -1505,6 +1535,29 @@ wxWindow* PreferencesDialog::buildVisualizersPane(wxWindow* parent) {
     // which is defending the analysis to someone who was choosing a colour.
     row->note(_("Bars sit on semitones from C0, so the display lines up with the "
                 "notes being played."));
+
+    // The oscilloscope. Its labels are the ones its own context menu uses for
+    // the three choices both offer, so the catalogue carries each once.
+    row->heading(_("Oscilloscope"));
+
+    static constexpr std::array kChannels = {
+        Choice{"mono", wxTRANSLATE("Mono")},
+        Choice{"left", wxTRANSLATE("Left")},
+        Choice{"right", wxTRANSLATE("Right")},
+        Choice{"stacked", wxTRANSLATE("Stereo, stacked")},
+        Choice{"overlaid", wxTRANSLATE("Stereo, overlaid")},
+    };
+    row->choice(_("Channels"), "scopeChannels", kChannels);
+    row->colour(_("Trace colour"), "scopeColor", "#30d158");
+    row->colour(_("Background"), "scopeBackgroundColor", "#121214");
+    row->decimal(_("Stroke width"), "scopeStrokeWidth", 0.5, 6.0, 0.5);
+    row->decimal(_("Vertical gain"), "scopeGain", 0.25, 8.0, 0.25);
+    row->number(_("Window (ms)"), "scopeWindowMs", 5, 100);
+    row->number(_("Frames per second"), "scopeFrameRate", 15, 120);
+    row->toggle(_("Hold a steady tone still"), "scopeTrigger",
+                _("Start each frame at a rising zero crossing, so a tone does not "
+                  "crawl across the display."));
+    row->toggle(_("Fill under the trace"), "scopeFill");
 
     return finishPane(pane, form);
 }

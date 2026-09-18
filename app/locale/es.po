@@ -418,6 +418,10 @@ msgstr "Los paneles siguen la reproducció&n"
 msgid "&Spectrum"
 msgstr "Espe&ctro"
 
+#: app/src/Commands.cpp:94
+msgid "&Oscilloscope"
+msgstr "&Osciloscopio"
+
 #: app/src/Commands.cpp:95
 msgid "Show &Waveform"
 msgstr "Mostrar &forma de onda"
@@ -1105,6 +1109,38 @@ msgstr[1] "%zu pistas — %s"
 msgid "Spectrum"
 msgstr "Espectro"
 
+#: app/src/MainFrame.cpp:3104 app/src/PreferencesDialog.cpp:1541
+msgid "Oscilloscope"
+msgstr "Osciloscopio"
+
+#: app/src/OscilloscopePanel.cpp:334 app/src/PreferencesDialog.cpp:1544
+msgid "Mono"
+msgstr "Mono"
+
+#: app/src/OscilloscopePanel.cpp:335 app/src/PreferencesDialog.cpp:1545
+msgid "Left"
+msgstr "Izquierdo"
+
+#: app/src/OscilloscopePanel.cpp:336 app/src/PreferencesDialog.cpp:1546
+msgid "Right"
+msgstr "Derecho"
+
+#: app/src/OscilloscopePanel.cpp:337 app/src/PreferencesDialog.cpp:1547
+msgid "Stereo, stacked"
+msgstr "Estéreo, apilado"
+
+#: app/src/OscilloscopePanel.cpp:338 app/src/PreferencesDialog.cpp:1548
+msgid "Stereo, overlaid"
+msgstr "Estéreo, superpuesto"
+
+#: app/src/OscilloscopePanel.cpp:340 app/src/PreferencesDialog.cpp:1557
+msgid "Hold a steady tone still"
+msgstr "Mantener quieto un tono sostenido"
+
+#: app/src/OscilloscopePanel.cpp:341 app/src/PreferencesDialog.cpp:1560
+msgid "Fill under the trace"
+msgstr "Rellenar bajo el trazo"
+
 #: app/src/MainFrame.cpp:2923
 msgid "Equalizer"
 msgstr "Ecualizador"
@@ -1390,6 +1426,10 @@ msgstr "Notificaciones"
 #: app/src/PreferencesDialog.cpp:796
 msgid "Appearance"
 msgstr "Apariencia"
+
+#: app/src/PreferencesDialog.cpp:861
+msgid "Visualizers"
+msgstr "Visualizadores"
 
 #: app/src/PreferencesDialog.cpp:801
 msgid "Advanced"
@@ -1759,6 +1799,36 @@ msgstr "Mostrar las marcas de pico"
 #: app/src/PreferencesDialog.cpp:1475
 msgid "Quietest level shown (dB)"
 msgstr "Nivel más bajo mostrado (dB)"
+
+#: app/src/PreferencesDialog.cpp:1551
+msgid "Trace colour"
+msgstr "Color del trazo"
+
+#: app/src/PreferencesDialog.cpp:1552
+msgid "Background"
+msgstr "Fondo"
+
+#: app/src/PreferencesDialog.cpp:1553
+msgid "Stroke width"
+msgstr "Grosor del trazo"
+
+#: app/src/PreferencesDialog.cpp:1554
+msgid "Vertical gain"
+msgstr "Ganancia vertical"
+
+#: app/src/PreferencesDialog.cpp:1555
+msgid "Window (ms)"
+msgstr "Ventana (ms)"
+
+#: app/src/PreferencesDialog.cpp:1556
+msgid "Frames per second"
+msgstr "Cuadros por segundo"
+
+#: app/src/PreferencesDialog.cpp:1558
+msgid ""
+"Start each frame at a rising zero crossing, so a tone does not crawl across the display."
+msgstr ""
+"Empezar cada cuadro en un cruce por cero ascendente, para que un tono no se desplace por la pantalla."
 
 #: app/src/PreferencesDialog.cpp:1480
 msgid ""
