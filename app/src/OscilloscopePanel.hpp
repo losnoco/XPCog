@@ -56,6 +56,7 @@ public:
         kMenuOverlaid,
         kMenuTrigger,
         kMenuFill,
+        kMenuLogScale,
         kMenuPreferences,
     };
 
@@ -142,6 +143,7 @@ private:
     int      windowMs_    = 40;
     bool     fill_        = false;
     bool     trigger_     = true;
+    bool     logScale_    = false;
     Channels channels_    = Channels::Mono;
 };
 

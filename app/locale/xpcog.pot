@@ -1155,35 +1155,39 @@ msgstr ""
 msgid "Invalid URL"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:334 app/src/PreferencesDialog.cpp:1544
+#: app/src/OscilloscopePanel.cpp:335 app/src/PreferencesDialog.cpp:1544
 msgid "Mono"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:335 app/src/PreferencesDialog.cpp:1545
+#: app/src/OscilloscopePanel.cpp:336 app/src/PreferencesDialog.cpp:1545
 msgid "Left"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:336 app/src/PreferencesDialog.cpp:1546
+#: app/src/OscilloscopePanel.cpp:337 app/src/PreferencesDialog.cpp:1546
 msgid "Right"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:337 app/src/PreferencesDialog.cpp:1547
+#: app/src/OscilloscopePanel.cpp:338 app/src/PreferencesDialog.cpp:1547
 msgid "Stereo, stacked"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:338 app/src/PreferencesDialog.cpp:1548
+#: app/src/OscilloscopePanel.cpp:339 app/src/PreferencesDialog.cpp:1548
 msgid "Stereo, overlaid"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:340 app/src/PreferencesDialog.cpp:1557
+#: app/src/OscilloscopePanel.cpp:341 app/src/PreferencesDialog.cpp:1557
 msgid "Hold a steady tone still"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:341 app/src/PreferencesDialog.cpp:1560
+#: app/src/OscilloscopePanel.cpp:342 app/src/PreferencesDialog.cpp:1560
 msgid "Fill under the trace"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:343 app/src/SpectrumPanel.cpp:136 app/src/SpeedPanel.cpp:61
+#: app/src/OscilloscopePanel.cpp:343 app/src/PreferencesDialog.cpp:1561
+msgid "Logarithmic scale"
+msgstr ""
+
+#: app/src/OscilloscopePanel.cpp:345 app/src/SpectrumPanel.cpp:136 app/src/SpeedPanel.cpp:61
 msgid "Preferences…"
 msgstr ""
 
@@ -1817,147 +1821,152 @@ msgid ""
 "Start each frame at a rising zero crossing, so a tone does not crawl across the display."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1634
+#: app/src/PreferencesDialog.cpp:1562
+msgid ""
+"Levels in decibels rather than linear, so quiet material is a shape rather than a line."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:1637
 msgid "Maintained automatically, and not meant to be edited."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1642
+#: app/src/PreferencesDialog.cpp:1645
 msgid ""
 "The greyed rows are what XPCog remembers about the last session, not settings."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1658
+#: app/src/PreferencesDialog.cpp:1661
 msgid "Allow remote control over HTTP"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1661
+#: app/src/PreferencesDialog.cpp:1664
 msgid "This computer only"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1662
+#: app/src/PreferencesDialog.cpp:1665
 msgid "Any computer on the network"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1664
+#: app/src/PreferencesDialog.cpp:1667
 msgid "Listen on"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1665
+#: app/src/PreferencesDialog.cpp:1668
 msgid "Port"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1666
+#: app/src/PreferencesDialog.cpp:1669
 msgid "Allow changes, not just reading"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1672
+#: app/src/PreferencesDialog.cpp:1675
 msgid "Let programs on this computer connect without the token"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1675
+#: app/src/PreferencesDialog.cpp:1678
 msgid ""
 "For a script or a command line driving your own player. Any program on this computer can then control it, including a web page that was told to try. Other computers still need the token."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1685
+#: app/src/PreferencesDialog.cpp:1688
 msgid "Copy"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1686
+#: app/src/PreferencesDialog.cpp:1689
 msgid "Regenerate"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1692
+#: app/src/PreferencesDialog.cpp:1695
 msgid "Access token"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1719
+#: app/src/PreferencesDialog.cpp:1722
 msgid "This build has no remote-control server."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1722
+#: app/src/PreferencesDialog.cpp:1725
 msgid ""
 "The system password store is not available, so an access token cannot be kept safely."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1728
+#: app/src/PreferencesDialog.cpp:1731
 msgid "Off. Nothing is listening."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1736
+#: app/src/PreferencesDialog.cpp:1739
 msgid "Listening on %s -- open %s/docs in a browser to try it."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1740
+#: app/src/PreferencesDialog.cpp:1743
 msgid "Programs on this computer are connecting without the token."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1749
+#: app/src/PreferencesDialog.cpp:1752
 msgid ""
 "Reachable from other machines. The connection is not encrypted and the access token is sent with every request, so use this on a network you trust."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1782
+#: app/src/PreferencesDialog.cpp:1785
 msgid ""
 "Every device using the current token will stop working until it is given the new one.\n"
 "\n"
 "Generate a new token?"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1785
+#: app/src/PreferencesDialog.cpp:1788
 msgid "Regenerate Access Token"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1807
+#: app/src/PreferencesDialog.cpp:1810
 msgid "Scrobble to Last.fm"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1817
+#: app/src/PreferencesDialog.cpp:1820
 msgid "Connect..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1818
+#: app/src/PreferencesDialog.cpp:1821
 msgid "Cancel"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1819
+#: app/src/PreferencesDialog.cpp:1822
 msgid "Disconnect"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1877
+#: app/src/PreferencesDialog.cpp:1880
 msgid ""
 "The system password store is not available, so a Last.fm session cannot be kept."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1881
+#: app/src/PreferencesDialog.cpp:1884
 msgid "Waiting for you to allow access in your browser..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1883
+#: app/src/PreferencesDialog.cpp:1886
 msgid "Connected as %s."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1886
+#: app/src/PreferencesDialog.cpp:1889
 msgid ""
 "Not connected. Connecting opens Last.fm in your browser; XPCog never sees your password."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1895
+#: app/src/PreferencesDialog.cpp:1898
 msgid "%zu play waiting to be sent."
 msgid_plural "%zu plays waiting to be sent."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/PreferencesDialog.cpp:1954
+#: app/src/PreferencesDialog.cpp:1957
 msgid ""
 "Plays are sent once you have heard half a track, or four minutes of it, whichever comes first. Tracks under 30 seconds are never scrobbled."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1957
+#: app/src/PreferencesDialog.cpp:1960
 msgid "Your Last.fm applications"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1959
+#: app/src/PreferencesDialog.cpp:1962
 msgid ""
 "Revoking access there stops scrobbling immediately, whatever this pane says."
 msgstr ""

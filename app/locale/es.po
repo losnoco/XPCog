@@ -1141,6 +1141,16 @@ msgstr "Mantener quieto un tono sostenido"
 msgid "Fill under the trace"
 msgstr "Rellenar bajo el trazo"
 
+#: app/src/OscilloscopePanel.cpp:343 app/src/PreferencesDialog.cpp:1561
+msgid "Logarithmic scale"
+msgstr "Escala logarítmica"
+
+#: app/src/PreferencesDialog.cpp:1562
+msgid ""
+"Levels in decibels rather than linear, so quiet material is a shape rather than a line."
+msgstr ""
+"Niveles en decibeles en vez de lineales, para que el material silencioso sea una forma y no una línea."
+
 #: app/src/MainFrame.cpp:2923
 msgid "Equalizer"
 msgstr "Ecualizador"

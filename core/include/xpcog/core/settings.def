@@ -581,6 +581,10 @@ XPCOG_SETTING(ScopeFill, bool, "scopeFill", false)
 /// instead of crawling at the beat between it and the frame rate.
 XPCOG_SETTING(ScopeTrigger, bool, "scopeTrigger", true)
 
+/// Draw levels in decibels over a -60 dB floor rather than linearly, sign
+/// kept, so quiet material is a shape rather than a line.
+XPCOG_SETTING(ScopeLogScale, bool, "scopeLogScale", false)
+
 /// Which channels to draw: "mono" (the mix), "left", "right", "stacked"
 /// (left above right) or "overlaid" (both on one centre line).
 XPCOG_SETTING(ScopeChannels, std::string, "scopeChannels", "mono")

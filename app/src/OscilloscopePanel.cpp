@@ -120,6 +120,7 @@ void OscilloscopePanel::applySettings(const Settings& settings) {
     windowMs_    = std::clamp(settings.ScopeWindowMs(), 5, 100);
     fill_        = settings.ScopeFill();
     trigger_     = settings.ScopeTrigger();
+    logScale_    = settings.ScopeLogScale();
     channels_    = channelsFromKey(settings.ScopeChannels());
 
     const int frameRate = std::clamp(settings.ScopeFrameRate(), 15, 120);
@@ -285,7 +286,7 @@ void OscilloscopePanel::paintTrace(wxGraphicsContext& gc, const float* samples,
     // are the same value, and the band is a line.
     columns_.resize(static_cast<std::size_t>(width));
     foldForDisplay(std::span<const float>{samples, count}, static_cast<float>(gain_),
-                   columns_);
+                   logScale_ ? ScopeScale::Logarithmic : ScopeScale::Linear, columns_);
 
     const auto y = [&](float value) { return centre - (static_cast<double>(value) * amplitude); };
     const auto x = [](std::size_t column) { return static_cast<double>(column) + 0.5; };
@@ -339,6 +340,7 @@ void OscilloscopePanel::onContextMenu(wxContextMenuEvent& event) {
     menu.AppendSeparator();
     menu.AppendCheckItem(kMenuTrigger, _("Hold a steady tone still"));
     menu.AppendCheckItem(kMenuFill, _("Fill under the trace"));
+    menu.AppendCheckItem(kMenuLogScale, _("Logarithmic scale"));
     menu.AppendSeparator();
     menu.Append(kMenuPreferences, trUtf8("Preferences\xE2\x80\xA6"));
 
@@ -350,6 +352,7 @@ void OscilloscopePanel::onContextMenu(wxContextMenuEvent& event) {
     menu.Check(kMenuOverlaid, channels == Channels::Overlaid);
     menu.Check(kMenuTrigger, settings_.ScopeTrigger());
     menu.Check(kMenuFill, settings_.ScopeFill());
+    menu.Check(kMenuLogScale, settings_.ScopeLogScale());
 
     const wxPoint where = event.GetPosition();
     const wxPoint at    = (where == wxDefaultPosition) ? wxPoint(0, 0) : ScreenToClient(where);
@@ -379,6 +382,10 @@ void OscilloscopePanel::applyMenuItem(int item) {
         case kMenuFill:
             settings_.setScopeFill(!settings_.ScopeFill());
             settingChanged.publish("scopeFill");
+            break;
+        case kMenuLogScale:
+            settings_.setScopeLogScale(!settings_.ScopeLogScale());
+            settingChanged.publish("scopeLogScale");
             break;
         case kMenuPreferences:
             settingsRequested.publish();

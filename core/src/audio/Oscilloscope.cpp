@@ -1,8 +1,20 @@
 #include "xpcog/core/audio/Oscilloscope.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace xpcog {
+
+float scopeLevel(float sample, float gain, ScopeScale scale) noexcept {
+    const float linear = std::clamp(sample * gain, -1.0F, 1.0F);
+    if (scale == ScopeScale::Linear || linear == 0.0F) {
+        return linear;
+    }
+    const float magnitude = std::fabs(linear);
+    const float db        = 20.0F * std::log10(magnitude);
+    const float height    = std::clamp(1.0F - (db / kScopeLogFloorDb), 0.0F, 1.0F);
+    return std::copysign(height, linear);
+}
 
 std::size_t triggerOffset(std::span<const float> samples, std::size_t window) noexcept {
     if (window == 0 || samples.size() < window) {
@@ -28,7 +40,7 @@ std::size_t triggerOffset(std::span<const float> samples, std::size_t window) no
     return newest;
 }
 
-void foldForDisplay(std::span<const float> samples, float gain,
+void foldForDisplay(std::span<const float> samples, float gain, ScopeScale scale,
                     std::span<std::pair<float, float>> columns) noexcept {
     if (columns.empty()) {
         return;
@@ -38,9 +50,7 @@ void foldForDisplay(std::span<const float> samples, float gain,
         return;
     }
 
-    const auto scaled = [gain](float sample) {
-        return std::clamp(sample * gain, -1.0F, 1.0F);
-    };
+    const auto scaled = [gain, scale](float sample) { return scopeLevel(sample, gain, scale); };
 
     const std::size_t count = samples.size();
     const std::size_t width = columns.size();

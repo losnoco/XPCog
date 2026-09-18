@@ -15,6 +15,8 @@
 
 using Catch::Approx;
 using xpcog::foldForDisplay;
+using xpcog::ScopeScale;
+using xpcog::scopeLevel;
 using xpcog::triggerOffset;
 
 namespace {
@@ -114,7 +116,7 @@ TEST_CASE("folding keeps each column's extremes", "[oscilloscope]") {
     }
 
     std::vector<std::pair<float, float>> columns(10);
-    foldForDisplay(samples, 1.0F, columns);
+    foldForDisplay(samples, 1.0F, ScopeScale::Linear, columns);
     CHECK(columns[0].first == Approx(0.0F));
     CHECK(columns[0].second == Approx(0.5F));
     CHECK(columns[7].first == Approx(-0.5F));
@@ -125,7 +127,7 @@ TEST_CASE("folding applies the gain and clamps", "[oscilloscope]") {
     const std::vector<float>             samples{0.25F, -0.25F, 0.75F, -0.75F};
     std::vector<std::pair<float, float>> columns(2);
 
-    foldForDisplay(samples, 2.0F, columns);
+    foldForDisplay(samples, 2.0F, ScopeScale::Linear, columns);
     CHECK(columns[0].first == Approx(-0.5F));
     CHECK(columns[0].second == Approx(0.5F));
     CHECK(columns[1].first == Approx(-1.0F));  // 1.5 clamped
@@ -136,7 +138,7 @@ TEST_CASE("folding fewer samples than columns takes the nearest sample", "[oscil
     const std::vector<float>             samples{0.1F, 0.2F, 0.3F, 0.4F};
     std::vector<std::pair<float, float>> columns(8);
 
-    foldForDisplay(samples, 1.0F, columns);
+    foldForDisplay(samples, 1.0F, ScopeScale::Linear, columns);
     for (const auto& [low, high] : columns) {
         CHECK(low == high);
     }
@@ -144,7 +146,34 @@ TEST_CASE("folding fewer samples than columns takes the nearest sample", "[oscil
     CHECK(columns[7].first == Approx(0.4F));
 
     std::vector<std::pair<float, float>> empty(3, {9.0F, 9.0F});
-    foldForDisplay({}, 1.0F, empty);
+    foldForDisplay({}, 1.0F, ScopeScale::Linear, empty);
     CHECK(empty[1].first == 0.0F);
     CHECK(empty[1].second == 0.0F);
+}
+
+TEST_CASE("the logarithmic scale lifts quiet material and keeps the sign", "[oscilloscope]") {
+    // Full scale is still the edge, silence still the centre.
+    CHECK(scopeLevel(1.0F, 1.0F, ScopeScale::Logarithmic) == Approx(1.0F));
+    CHECK(scopeLevel(-1.0F, 1.0F, ScopeScale::Logarithmic) == Approx(-1.0F));
+    CHECK(scopeLevel(0.0F, 1.0F, ScopeScale::Logarithmic) == 0.0F);
+
+    // -20 dB: a tenth linearly, two thirds of the way up over a -60 dB floor.
+    CHECK(scopeLevel(0.1F, 1.0F, ScopeScale::Linear) == Approx(0.1F));
+    CHECK(scopeLevel(0.1F, 1.0F, ScopeScale::Logarithmic) == Approx(2.0F / 3.0F).margin(0.001F));
+    CHECK(scopeLevel(-0.1F, 1.0F, ScopeScale::Logarithmic) == Approx(-2.0F / 3.0F).margin(0.001F));
+
+    // At and below the floor: the centre, not past it.
+    CHECK(scopeLevel(0.001F, 1.0F, ScopeScale::Logarithmic) == Approx(0.0F).margin(0.001F));
+    CHECK(scopeLevel(0.0001F, 1.0F, ScopeScale::Logarithmic) == 0.0F);
+
+    // Gain applies first, and clips first.
+    CHECK(scopeLevel(0.1F, 10.0F, ScopeScale::Logarithmic) == Approx(1.0F));
+    CHECK(scopeLevel(0.01F, 10.0F, ScopeScale::Logarithmic) == Approx(2.0F / 3.0F).margin(0.001F));
+
+    // And through the fold.
+    const std::vector<float>             samples{0.1F, -0.1F};
+    std::vector<std::pair<float, float>> columns(1);
+    foldForDisplay(samples, 1.0F, ScopeScale::Logarithmic, columns);
+    CHECK(columns[0].first == Approx(-2.0F / 3.0F).margin(0.001F));
+    CHECK(columns[0].second == Approx(2.0F / 3.0F).margin(0.001F));
 }

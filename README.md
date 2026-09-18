@@ -980,9 +980,9 @@ demonstrates that none of this reached below the interface layer.
 View → Oscilloscope draws the live waveform beside the spectrum, from the same tap
 (before the volume, so the knob does not shrink it). Each frame starts at a rising
 zero crossing, so a steady tone holds still. Right-click the pane for the channels
-(mono, left, right, stereo stacked or overlaid), the trigger and the fill;
-Preferences → Visualizers has those and the colour, background, stroke width,
-frame rate, vertical gain and window length.
+(mono, left, right, stereo stacked or overlaid), the trigger, the fill and a
+logarithmic scale; Preferences → Visualizers has those and the colour, background,
+stroke width, frame rate, vertical gain and window length.
 
 ## Waveform seek bar
 

@@ -202,7 +202,7 @@ constexpr std::array kCuratedKeys = {
     "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode", "spectrumFloorDb",
     "spectrumShowPeaks", "scopeChannels", "scopeColor", "scopeBackgroundColor",
     "scopeStrokeWidth", "scopeGain", "scopeWindowMs", "scopeFrameRate", "scopeTrigger",
-    "scopeFill",
+    "scopeFill", "scopeLogScale",
     // General
     "sentryConsented", "httpStreamingBufferSize",
     // Appearance
@@ -1558,6 +1558,9 @@ wxWindow* PreferencesDialog::buildVisualizersPane(wxWindow* parent) {
                 _("Start each frame at a rising zero crossing, so a tone does not "
                   "crawl across the display."));
     row->toggle(_("Fill under the trace"), "scopeFill");
+    row->toggle(_("Logarithmic scale"), "scopeLogScale",
+                _("Levels in decibels rather than linear, so quiet material is a shape "
+                  "rather than a line."));
 
     return finishPane(pane, form);
 }

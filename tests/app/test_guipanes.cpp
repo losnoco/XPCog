@@ -402,13 +402,15 @@ TEST_CASE("the oscilloscope draws every channel mode and its menu writes setting
     CHECK(settings.ScopeTrigger());
     panel->applyMenuItem(Item::kMenuFill);
     CHECK(settings.ScopeFill());
-    CHECK(announced.size() == 8);
+    panel->applyMenuItem(Item::kMenuLogScale);
+    CHECK(settings.ScopeLogScale());
+    CHECK(announced.size() == 9);
 
     int requested = 0;
     const xpcog::Subscription onRequest = panel->settingsRequested.connect([&] { ++requested; });
     panel->applyMenuItem(Item::kMenuPreferences);
     CHECK(requested == 1);
-    CHECK(announced.size() == 8);  // not a setting
+    CHECK(announced.size() == 9);  // not a setting
 
     // Unknown spellings read as mono rather than as nothing.
     CHECK(xpcog::app::OscilloscopePanel::channelsFromKey("sideways") == Channels::Mono);

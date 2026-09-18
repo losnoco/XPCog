@@ -22,6 +22,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <utility>
 
@@ -49,12 +50,30 @@ namespace xpcog {
 
 inline constexpr float kTriggerHysteresis = 0.002F;
 
+/// How a sample's level becomes a height.
+enum class ScopeScale : std::uint8_t {
+    /// Height is the sample: full scale at the edge, -20 dB a tenth of the way.
+    Linear,
+    /// Height is the sample's level in decibels over kScopeLogFloorDb..0, with
+    /// the sign kept, so quiet material is a shape rather than a line -- and a
+    /// -20 dB signal stands two thirds of the way up instead of a tenth.
+    Logarithmic,
+};
+
+/// The bottom of the logarithmic scale. Sixty decibels below full scale is
+/// where a 16-bit dither floor sits after gain; below that is noise drawn as
+/// signal.
+inline constexpr float kScopeLogFloorDb = -60.0F;
+
+/// One sample's height in [-1, 1] on `scale`, after `gain`.
+[[nodiscard]] float scopeLevel(float sample, float gain, ScopeScale scale) noexcept;
+
 /// Folds `samples` into `columns.size()` (low, high) pairs, one per pixel
-/// column, each the extremes of the samples that column covers after `gain`
-/// and clamping to [-1, 1]. With fewer samples than columns each column gets
+/// column, each the extremes of the samples that column covers as
+/// scopeLevel() draws them. With fewer samples than columns each column gets
 /// the one sample nearest it, low and high alike, so the caller can draw a
 /// polyline through either. Empty input leaves every column at (0, 0).
-void foldForDisplay(std::span<const float> samples, float gain,
+void foldForDisplay(std::span<const float> samples, float gain, ScopeScale scale,
                     std::span<std::pair<float, float>> columns) noexcept;
 
 }  // namespace xpcog

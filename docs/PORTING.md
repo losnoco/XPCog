@@ -686,13 +686,15 @@ first block after a seek, which is M4's work.
   faster than the sweep is the band a scope's phosphor would show rather than
   an aliased zigzag. Both are tested without a window.
 
-  Nine `scope*` settings, every one **No Cog counterpart**: colour, background,
-  stroke width, frame rate, vertical gain, window length, fill, trigger and
-  channels (mono, left, right, stereo stacked, stereo overlaid). All on
-  Preferences → Visualizers, which is the Spectrum pane renamed and given two
-  headings; the three that get flipped while looking -- channels, trigger,
-  fill -- are on the pane's own context menu as well, writing the same keys
-  through the same effect path, so the menu and the pane cannot disagree.
+  Ten `scope*` settings, every one **No Cog counterpart**: colour, background,
+  stroke width, frame rate, vertical gain, window length, fill, trigger, a
+  logarithmic scale (levels in decibels over a -60 dB floor, sign kept, so
+  quiet material is a shape rather than a line) and channels (mono, left,
+  right, stereo stacked, stereo overlaid). All on Preferences → Visualizers,
+  which is the Spectrum pane renamed and given two headings; the four that
+  get flipped while looking -- channels, trigger, fill, the scale -- are on
+  the pane's own context menu as well, writing the same keys through the
+  same effect path, so the menu and the pane cannot disagree.
 
 - **The taskbar button**, `ITaskbarList3`: a play/pause overlay badge and a
   progress bar. Port of Cog's `DockIconController`, with one correction to the
