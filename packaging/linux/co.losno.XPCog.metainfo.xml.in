@@ -14,7 +14,7 @@
 
   <!-- The licence of this file, which is not the licence of the program. -->
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-2.0-or-later</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
 
   <name>XPCog</name>
   <summary>Play music, including formats other players do not</summary>

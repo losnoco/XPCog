@@ -285,7 +285,7 @@ msgstr ""
 
 #: app/src/AboutDialog.cpp:243
 msgid ""
-"XPCog is free software, licensed under the <b>GNU General Public License, version 2 or later</b>. It comes with absolutely no warranty."
+"XPCog is free software, licensed under the <b>GNU General Public License, version 3 or later</b>. It comes with absolutely no warranty."
 msgstr ""
 
 #: app/src/AboutDialog.cpp:246
@@ -1155,39 +1155,39 @@ msgstr ""
 msgid "Invalid URL"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:335 app/src/PreferencesDialog.cpp:1544
+#: app/src/OscilloscopePanel.cpp:369 app/src/PreferencesDialog.cpp:1544
 msgid "Mono"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:336 app/src/PreferencesDialog.cpp:1545
+#: app/src/OscilloscopePanel.cpp:370 app/src/PreferencesDialog.cpp:1545
 msgid "Left"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:337 app/src/PreferencesDialog.cpp:1546
+#: app/src/OscilloscopePanel.cpp:371 app/src/PreferencesDialog.cpp:1546
 msgid "Right"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:338 app/src/PreferencesDialog.cpp:1547
+#: app/src/OscilloscopePanel.cpp:372 app/src/PreferencesDialog.cpp:1547
 msgid "Stereo, stacked"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:339 app/src/PreferencesDialog.cpp:1548
+#: app/src/OscilloscopePanel.cpp:373 app/src/PreferencesDialog.cpp:1548
 msgid "Stereo, overlaid"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:341 app/src/PreferencesDialog.cpp:1557
+#: app/src/OscilloscopePanel.cpp:375 app/src/PreferencesDialog.cpp:1557
 msgid "Hold a steady tone still"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:342 app/src/PreferencesDialog.cpp:1560
+#: app/src/OscilloscopePanel.cpp:376 app/src/PreferencesDialog.cpp:1560
 msgid "Fill under the trace"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:343 app/src/PreferencesDialog.cpp:1561
+#: app/src/OscilloscopePanel.cpp:377 app/src/PreferencesDialog.cpp:1561
 msgid "Logarithmic scale"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:345 app/src/SpectrumPanel.cpp:136 app/src/SpeedPanel.cpp:61
+#: app/src/OscilloscopePanel.cpp:379 app/src/SpectrumPanel.cpp:136 app/src/SpeedPanel.cpp:61
 msgid "Preferences…"
 msgstr ""
 

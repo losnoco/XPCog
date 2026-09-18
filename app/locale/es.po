@@ -296,9 +296,9 @@ msgstr ""
 
 #: app/src/AboutDialog.cpp:243
 msgid ""
-"XPCog is free software, licensed under the <b>GNU General Public License, version 2 or later</b>. It comes with absolutely no warranty."
+"XPCog is free software, licensed under the <b>GNU General Public License, version 3 or later</b>. It comes with absolutely no warranty."
 msgstr ""
-"XPCog es software libre, publicado bajo la <b>Licencia Pública General de GNU, versión 2 o posterior</b>. Se entrega sin garantía de ningún tipo."
+"XPCog es software libre, publicado bajo la <b>Licencia Pública General de GNU, versión 3 o posterior</b>. Se entrega sin garantía de ningún tipo."
 
 #: app/src/AboutDialog.cpp:246
 msgid "Cog:"

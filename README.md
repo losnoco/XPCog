@@ -1092,8 +1092,16 @@ behind the PSF formats one at a time, and is now the record of all eight.
 
 ## License
 
-GPL-2.0-or-later, following upstream Cog. See [COPYING](COPYING).
+GPL-3.0-or-later. See [COPYING](COPYING).
+
+Cog is GPL-2.0-or-later, and this was too until 1.13.0. What is built here has been
+GPL-3 in effect for as long as it has shipped the Syntrax and 2SF decoders (both
+GPL-3-only) and the SoundFont synthesiser and the remote control's documentation
+page (both Apache-2.0, which GPL-2 cannot take): the "or later" is what made those
+combinations legal, and the licence now says what the binary is. Cog's own code
+stays under Cog's licence; the upgrade is the one its "or later" permits.
 
 Cog is copyright Vincent Spader and Christopher Snowhill. Bundled decoding and tagging
-libraries are under their own licenses. Interface icons are [Lucide](https://lucide.dev)
-under the ISC license — see [`app/icons/lucide/LICENSE`](app/icons/lucide/LICENSE).
+libraries are under their own licenses, listed in the About dialog. Interface icons
+are [Lucide](https://lucide.dev) under the ISC license — see
+[`app/icons/lucide/LICENSE`](app/icons/lucide/LICENSE).

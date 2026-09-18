@@ -3325,10 +3325,14 @@ Six things left behind, none of them blocking:
   file is more than it can deliver. That is the file describing itself and is the
   right answer, but it means a damaged `.shn` ends early rather than at its
   stated end.
-- **libjaytrax is GPL-3.0-only** while this project is GPL-2.0-or-later. They
-  combine — the "or later" is what makes them — but a build with
-  `XPCOG_WITH_SYNTRAX` on is GPL-3.0 rather than GPL-2.0. Cog ships the same
-  sources under the same project licence and inherits the same result.
+- **libjaytrax is GPL-3.0-only**, and so is melonDS behind 2SF, and SpessaSynth
+  and the bundled swagger-ui are Apache-2.0, which GPL-2 cannot take. The
+  project was GPL-2.0-or-later until 1.13.0 and the "or later" is what made
+  every one of those combinations legal -- but it meant a shipped build was
+  GPL-3 while every licence statement said 2. The project is
+  **GPL-3.0-or-later** now, which is the upgrade Cog's own "or later" permits
+  and says what the binary is. Cog ships the same sources under GPL-2-or-later
+  and inherits the same effective result without saying so.
 - **Nothing creates a `silence://` URL yet.** The decoder plays one; wiring it
   into the failed-open path would change `PlaybackController`'s existing, tested
   behaviour and is a product decision rather than a porting one.

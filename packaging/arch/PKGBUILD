@@ -20,7 +20,7 @@ pkgrel=1
 pkgdesc="Audio player for the formats other players do not open"
 arch=('x86_64')
 url="https://cog.losno.co/xpcog"
-license=('GPL-2.0-or-later')
+license=('GPL-3.0-or-later')
 
 # What the built binaries link from the repositories.
 #

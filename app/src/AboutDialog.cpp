@@ -241,7 +241,7 @@ AboutDialog::AboutDialog(wxWindow* parent, const PluginRegistry& registry)
                    "Christopher Snowhill and the Cog authors.") +
                  "</p><p>" +
                  _("XPCog is free software, licensed under the <b>GNU General Public "
-                   "License, version 2 or later</b>. It comes with absolutely no "
+                   "License, version 3 or later</b>. It comes with absolutely no "
                    "warranty.") +
                  "</p><p>" + _("Cog:") + " cog.losno.co<br>" + _("Source:") +
                  " github.com/losnoco/XPCog</p>"),
