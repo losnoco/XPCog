@@ -17,6 +17,7 @@ add_library(xpcog-core STATIC
     src/audio/RealFft.cpp
     src/audio/MiniaudioOutput.cpp
     src/audio/OfflineOutput.cpp
+    src/audio/Oscilloscope.cpp
     src/audio/ReplayGain.cpp
     src/audio/RingBuffer.cpp
     src/audio/SampleConvert.cpp

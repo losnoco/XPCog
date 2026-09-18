@@ -12,6 +12,7 @@ add_executable(xpcog-tests
     core/test_freesurround.cpp
     core/test_gapless.cpp
     core/test_m1c.cpp
+    core/test_oscilloscope.cpp
     core/test_output_device.cpp
     core/test_panelfeed.cpp
     core/test_library.cpp
