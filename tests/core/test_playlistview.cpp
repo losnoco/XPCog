@@ -278,6 +278,29 @@ TEST_CASE("a metadata update does not rebuild the mapping", "[core][playlist]") 
     CHECK(view.text(3, Column::Title) == "Track 4 (Remastered)");
 }
 
+TEST_CASE("changing repeat or shuffle touches nothing in the view", "[core][playlist]") {
+    Playlist     playlist = makeAlbum();
+    PlaylistView view{playlist};
+    const auto   before = visibleTitles(view);
+
+    int                rebuilds  = 0;
+    int                rowEdits  = 0;
+    const Subscription onRebuild = view.rebuilt.connect([&] { ++rebuilds; });
+    const Subscription onRow     = view.rowChanged.connect([&](std::size_t) { ++rowEdits; });
+
+    playlist.setShuffle(ShuffleMode::All);
+    playlist.setRepeat(RepeatMode::One);
+    playlist.setShuffle(ShuffleMode::Off);
+    playlist.setRepeat(RepeatMode::All);
+
+    // A rebuild is a Reset() on the control, which scrolls a long playlist back
+    // to the top and drops the selection. Nothing on screen changed, so nothing
+    // may be published.
+    CHECK(rebuilds == 0);
+    CHECK(rowEdits == 0);
+    CHECK(visibleTitles(view) == before);
+}
+
 TEST_CASE("an update that changes whether a row passes the filter rebuilds",
           "[core][playlist]") {
     Playlist     playlist = makeAlbum();

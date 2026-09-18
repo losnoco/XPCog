@@ -214,11 +214,20 @@ void PlaylistView::onPlaylistChanged(const Playlist::Change& change) {
             }
             return;
 
+        case Kind::Order:
+            // Repeat and shuffle change what plays next, not what is shown:
+            // the entries, their order and every column are as they were, and
+            // the shuffle order is not a column. So nothing is published. This
+            // used to rebuild with the cases below, and a rebuild is a Reset()
+            // on the control, which drops the selection and puts the scroll
+            // back at the top -- so picking Shuffle from the Order menu lost
+            // the place in a long playlist for no change on screen.
+            return;
+
         case Kind::Inserted:
         case Kind::Removed:
         case Kind::Moved:
         case Kind::Reset:
-        case Kind::Order:
             rebuild();
             rebuilt.publish();
             return;
