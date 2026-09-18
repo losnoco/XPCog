@@ -19,10 +19,23 @@ std::size_t roundUpToPowerOfTwo(std::size_t value) {
 AudioTap::AudioTap(std::size_t capacityFrames)
     : capacity_(roundUpToPowerOfTwo(std::max<std::size_t>(capacityFrames, 2))),
       mask_(capacity_ - 1),
-      samples_(capacity_) {
-    for (std::atomic<float>& sample : samples_) {
-        sample.store(0.0F, std::memory_order_relaxed);
+      mono_(capacity_),
+      left_(capacity_),
+      right_(capacity_) {
+    for (auto* lane : {&mono_, &left_, &right_}) {
+        for (std::atomic<float>& sample : *lane) {
+            sample.store(0.0F, std::memory_order_relaxed);
+        }
     }
+}
+
+const std::vector<std::atomic<float>>& AudioTap::lane(TapLane which) const noexcept {
+    switch (which) {
+        case TapLane::Left:  return left_;
+        case TapLane::Right: return right_;
+        case TapLane::Mono:  break;
+    }
+    return mono_;
 }
 
 void AudioTap::write(const float* samples, std::size_t count,
@@ -35,16 +48,25 @@ void AudioTap::write(const float* samples, std::size_t count,
     std::uint64_t     cursor = written_.load(std::memory_order_relaxed);
 
     for (std::size_t frame = 0; frame < frames; ++frame) {
-        // The average, not the first channel and not the max. A visualiser showing
-        // only the left channel is wrong in an obvious way; showing the max
-        // exaggerates anything hard-panned, which is most of a 1970s stereo mix.
+        const float* in = samples + (frame * channels);
+
+        // The mono lane is the average, not the first channel and not the max. A
+        // visualiser showing only the left channel is wrong in an obvious way;
+        // showing the max exaggerates anything hard-panned, which is most of a
+        // 1970s stereo mix. The sides are the first two channels as they are --
+        // and for a mono source, the one channel, so a reader of a side gets the
+        // sound rather than silence.
         float sum = 0.0F;
         for (std::size_t channel = 0; channel < channels; ++channel) {
-            sum += samples[(frame * channels) + channel];
+            sum += in[channel];
         }
+        const float left  = in[0];
+        const float right = channels > 1 ? in[1] : in[0];
 
-        samples_[static_cast<std::size_t>(cursor) & mask_].store(
-            sum / static_cast<float>(channels), std::memory_order_relaxed);
+        const std::size_t slot = static_cast<std::size_t>(cursor) & mask_;
+        mono_[slot].store(sum / static_cast<float>(channels), std::memory_order_relaxed);
+        left_[slot].store(left, std::memory_order_relaxed);
+        right_[slot].store(right, std::memory_order_relaxed);
         ++cursor;
     }
 
@@ -67,12 +89,12 @@ void AudioTap::write(const float* samples, std::size_t count,
     written_.store(cursor, std::memory_order_release);
 }
 
-bool AudioTap::readLatest(float* out, std::size_t count) const noexcept {
-    return readEnding(written_.load(std::memory_order_acquire), out, count);
+bool AudioTap::readLatest(float* out, std::size_t count, TapLane which) const noexcept {
+    return readEnding(written_.load(std::memory_order_acquire), out, count, which);
 }
 
-bool AudioTap::readEnding(std::uint64_t end, float* out,
-                          std::size_t count) const noexcept {
+bool AudioTap::readEnding(std::uint64_t end, float* out, std::size_t count,
+                          TapLane which) const noexcept {
     if (out == nullptr || count == 0) {
         return false;
     }
@@ -102,9 +124,10 @@ bool AudioTap::readEnding(std::uint64_t end, float* out,
     // the caller expects it.
     std::fill_n(out, pad, 0.0F);
 
+    const std::vector<std::atomic<float>>& samples = lane(which);
     for (std::size_t index = 0; index < wanted; ++index) {
         out[pad + index] =
-            samples_[static_cast<std::size_t>(begin + index) & mask_].load(
+            samples[static_cast<std::size_t>(begin + index) & mask_].load(
                 std::memory_order_relaxed);
     }
     return true;
@@ -113,8 +136,10 @@ bool AudioTap::readEnding(std::uint64_t end, float* out,
 void AudioTap::clear() noexcept {
     written_.store(0, std::memory_order_release);
     granularity_.store(0, std::memory_order_relaxed);
-    for (std::atomic<float>& sample : samples_) {
-        sample.store(0.0F, std::memory_order_relaxed);
+    for (auto* which : {&mono_, &left_, &right_}) {
+        for (std::atomic<float>& sample : *which) {
+            sample.store(0.0F, std::memory_order_relaxed);
+        }
     }
 }
 
@@ -127,13 +152,24 @@ void TapCursor::setSampleRate(double rate) noexcept {
 }
 
 void TapCursor::reset() noexcept {
-    cursor_ = 0;
-    carry_  = 0.0;
-    synced_ = false;
+    cursor_  = 0;
+    carry_   = 0.0;
+    lastEnd_ = 0;
+    synced_  = false;
+}
+
+bool TapCursor::readAgain(const AudioTap& tap, float* out, std::size_t count,
+                          TapLane lane) const noexcept {
+    // lastEnd_ rather than cursor_: with no rate, read() follows the head and
+    // never moves the cursor, and the window it filled ended at the head.
+    if (lastEnd_ == 0) {
+        return false;
+    }
+    return tap.readEnding(lastEnd_, out, count, lane);
 }
 
 bool TapCursor::read(const AudioTap& tap, double elapsedSeconds, float* out,
-                     std::size_t count) noexcept {
+                     std::size_t count, TapLane lane) noexcept {
     if (out == nullptr || count == 0) {
         return false;
     }
@@ -151,7 +187,9 @@ bool TapCursor::read(const AudioTap& tap, double elapsedSeconds, float* out,
         // turn seconds into frames. Follow the head, which is what a visualiser did
         // before this class existed -- choppy with large chunks, but never wrong.
         synced_ = false;
-        return tap.readEnding(head, out, count);
+        const bool ok = tap.readEnding(head, out, count, lane);
+        lastEnd_      = ok ? head : 0;
+        return ok;
     }
 
     // How much audio a frame of the display's clock is worth. Both the step the
@@ -204,7 +242,9 @@ bool TapCursor::read(const AudioTap& tap, double elapsedSeconds, float* out,
         }
     }
 
-    return tap.readEnding(cursor_, out, count);
+    const bool ok = tap.readEnding(cursor_, out, count, lane);
+    lastEnd_      = ok ? cursor_ : 0;
+    return ok;
 }
 
 }  // namespace xpcog

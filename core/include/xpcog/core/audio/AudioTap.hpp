@@ -64,19 +64,31 @@
 
 namespace xpcog {
 
+/// Which of the tap's three copies of the audio to read.
+///
+/// Mono is the channel average, and is what the spectrum wants; Left and Right
+/// are the first two channels as written, which are front left and right in
+/// every layout a channelConfig names. A mono source fills all three with the
+/// same sample, so a reader asking for a side of it gets the sound rather than
+/// silence. The oscilloscope is the reader that asks.
+enum class TapLane : std::uint8_t { Mono, Left, Right };
+
 class AudioTap {
 public:
     /// `capacityFrames` is rounded up to a power of two, so the wrap is a mask.
-    /// It should comfortably exceed the analysis window; the default is four times
-    /// the spectrum's 4096 so a slow repaint still finds a complete window, and so
-    /// there is room behind the write head for a paced reader to sit in.
-    explicit AudioTap(std::size_t capacityFrames = 1U << 14);
+    /// It should comfortably exceed the analysis window, and there has to be room
+    /// behind the write head for a paced reader to sit in. The default is eight
+    /// times the spectrum's 4096: the oscilloscope fetches two of its windows at
+    /// once so it can trigger inside the older one, and a hundred milliseconds of
+    /// 96 kHz twice over is most of 16384. Three lanes of 32768 floats is 384 KiB.
+    explicit AudioTap(std::size_t capacityFrames = 1U << 15);
 
-    /// Mixes `count` interleaved samples down to mono and appends them.
-    /// Real-time safe. `channels` of zero is ignored rather than dividing by it.
+    /// Appends `count` interleaved samples: the channel average into the mono
+    /// lane, the first two channels into their own. Real-time safe. `channels`
+    /// of zero is ignored rather than dividing by it.
     void write(const float* samples, std::size_t count, std::size_t channels) noexcept;
 
-    /// Copies the newest `count` mono samples into `out`, oldest first.
+    /// Copies the newest `count` samples of `lane` into `out`, oldest first.
     ///
     /// Zero-fills whatever has not been written yet, so a display can start drawing
     /// immediately after playback begins instead of waiting for a full window --
@@ -87,9 +99,10 @@ public:
     ///
     /// For a display on a clock, prefer TapCursor: see the note above about what
     /// following the write head does to motion when the chunks are large.
-    bool readLatest(float* out, std::size_t count) const noexcept;
+    bool readLatest(float* out, std::size_t count, TapLane lane = TapLane::Mono) const noexcept;
 
-    /// Copies the `count` mono samples ending at absolute frame `end`, oldest first.
+    /// Copies the `count` samples of `lane` ending at absolute frame `end`,
+    /// oldest first.
     ///
     /// `end` is counted in the same units as framesWritten(): frames since the tap
     /// was created or last cleared. It is exclusive -- the sample at `end - 1` is
@@ -100,7 +113,8 @@ public:
     /// all: past the write head (audio that has not happened yet) or so far behind
     /// it that the samples have been overwritten. A caller that gets false should
     /// keep its last frame on screen rather than draw silence.
-    bool readEnding(std::uint64_t end, float* out, std::size_t count) const noexcept;
+    bool readEnding(std::uint64_t end, float* out, std::size_t count,
+                    TapLane lane = TapLane::Mono) const noexcept;
 
     /// Forgets everything. For a stop or a track change, so the display does not
     /// hold the previous track's tail.
@@ -128,9 +142,13 @@ public:
     }
 
 private:
+    [[nodiscard]] const std::vector<std::atomic<float>>& lane(TapLane which) const noexcept;
+
     std::size_t                     capacity_;
     std::size_t                     mask_;
-    std::vector<std::atomic<float>> samples_;
+    std::vector<std::atomic<float>> mono_;
+    std::vector<std::atomic<float>> left_;
+    std::vector<std::atomic<float>> right_;
     std::atomic<std::uint64_t>      written_{0};
     std::atomic<std::size_t>        granularity_{0};
 };
@@ -182,7 +200,15 @@ public:
     /// are rare enough by construction to be worth less than the alternative,
     /// which is drifting silently out of sync with the audio.
     bool read(const AudioTap& tap, double elapsedSeconds, float* out,
-              std::size_t count) noexcept;
+              std::size_t count, TapLane lane = TapLane::Mono) noexcept;
+
+    /// The window the last read() filled, in another lane. For a display
+    /// showing two channels of the same moment: read() advances the cursor and
+    /// this does not, so the two windows end at the same frame. False when
+    /// read() has not succeeded since the last reset(), or when the window has
+    /// since been overwritten -- the same answer read() would give.
+    bool readAgain(const AudioTap& tap, float* out, std::size_t count,
+                   TapLane lane) const noexcept;
 
     /// The frame the last window ended at. Exposed for tests.
     [[nodiscard]] std::uint64_t position() const noexcept { return cursor_; }
@@ -200,6 +226,10 @@ private:
     /// that slides steadily later.
     double        carry_  = 0.0;
     std::uint64_t cursor_ = 0;
+    /// Where the last read() actually ended, which is `cursor_` when there is a
+    /// rate and the head when there is not. What readAgain() reads at; zero
+    /// until a read() has succeeded.
+    std::uint64_t lastEnd_ = 0;
     bool          synced_ = false;
 };
 

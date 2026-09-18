@@ -659,3 +659,108 @@ TEST_CASE("the tap is fed before the volume", "[audio][spectrum]") {
     CHECK(shown.front() == Approx(0.8F));
     CHECK(shown.back() == Approx(0.8F));
 }
+
+// --- lanes ------------------------------------------------------------------
+//
+// The oscilloscope can show a side on its own. The tap keeps the first two
+// channels beside the mix, and a paced reader can ask for a second lane of the
+// window it just read.
+
+TEST_CASE("the tap keeps left and right beside the mono mix", "[audio][spectrum]") {
+    using xpcog::TapLane;
+    AudioTap tap(1U << 8);
+
+    // Left rising, right falling, so every lane has a different answer.
+    std::vector<float> stereo;
+    for (int frame = 0; frame < 16; ++frame) {
+        stereo.push_back(static_cast<float>(frame));
+        stereo.push_back(static_cast<float>(-frame));
+    }
+    tap.write(stereo.data(), stereo.size(), 2);
+
+    std::vector<float> out(4, 99.0F);
+    REQUIRE(tap.readLatest(out.data(), out.size(), TapLane::Left));
+    CHECK(out == std::vector<float>{12.0F, 13.0F, 14.0F, 15.0F});
+    REQUIRE(tap.readLatest(out.data(), out.size(), TapLane::Right));
+    CHECK(out == std::vector<float>{-12.0F, -13.0F, -14.0F, -15.0F});
+    REQUIRE(tap.readLatest(out.data(), out.size()));  // mono, the average
+    CHECK(out == std::vector<float>{0.0F, 0.0F, 0.0F, 0.0F});
+}
+
+TEST_CASE("a mono source fills every lane of the tap", "[audio][spectrum]") {
+    using xpcog::TapLane;
+    AudioTap tap(1U << 8);
+
+    const std::vector<float> mono{0.25F, 0.5F, 0.75F, 1.0F};
+    tap.write(mono.data(), mono.size(), 1);
+
+    for (const TapLane lane : {TapLane::Mono, TapLane::Left, TapLane::Right}) {
+        std::vector<float> out(4, 0.0F);
+        REQUIRE(tap.readLatest(out.data(), out.size(), lane));
+        CHECK(out == mono);
+    }
+}
+
+TEST_CASE("more than two channels: the sides are the first two", "[audio][spectrum]") {
+    using xpcog::TapLane;
+    AudioTap tap(1U << 8);
+
+    // 5.1, one frame: L, R, C, LFE, Ls, Rs.
+    const std::vector<float> frame{0.1F, 0.2F, 0.3F, 0.4F, 0.5F, 0.6F};
+    tap.write(frame.data(), frame.size(), 6);
+
+    float out = 0.0F;
+    REQUIRE(tap.readLatest(&out, 1, TapLane::Left));
+    CHECK(out == Approx(0.1F));
+    REQUIRE(tap.readLatest(&out, 1, TapLane::Right));
+    CHECK(out == Approx(0.2F));
+    REQUIRE(tap.readLatest(&out, 1));
+    CHECK(out == Approx(0.35F));
+}
+
+TEST_CASE("the display cursor reads a second lane of the same window", "[audio][spectrum]") {
+    using xpcog::TapCursor;
+    using xpcog::TapLane;
+
+    AudioTap tap(1U << 10);
+    // Left is the frame number, right its negative: a window's two lanes must
+    // agree on which frames they cover.
+    std::vector<float> stereo;
+    for (int frame = 0; frame < 600; ++frame) {
+        stereo.push_back(static_cast<float>(frame));
+        stereo.push_back(static_cast<float>(-frame));
+    }
+    tap.write(stereo.data(), stereo.size(), 2);
+
+    TapCursor cursor;
+    cursor.setSampleRate(48000.0);
+
+    std::vector<float> left(8, 0.0F);
+    std::vector<float> right(8, 0.0F);
+    REQUIRE_FALSE(cursor.readAgain(tap, right.data(), right.size(), TapLane::Right));  // nothing read yet
+
+    REQUIRE(cursor.read(tap, 0.0, left.data(), left.size(), TapLane::Left));
+    REQUIRE(cursor.readAgain(tap, right.data(), right.size(), TapLane::Right));
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        CHECK(right[i] == Approx(-left[i]));
+    }
+    // And the cursor did not move.
+    const std::uint64_t at = cursor.position();
+    std::vector<float>  again(8, 0.0F);
+    REQUIRE(cursor.readAgain(tap, again.data(), again.size(), TapLane::Left));
+    CHECK(again == left);
+    CHECK(cursor.position() == at);
+
+    SECTION("with no rate the second lane ends at the head, like the first") {
+        TapCursor following;
+        REQUIRE(following.read(tap, 0.016, left.data(), left.size(), TapLane::Left));
+        REQUIRE(following.readAgain(tap, right.data(), right.size(), TapLane::Right));
+        CHECK(left.back() == Approx(599.0F));
+        CHECK(right.back() == Approx(-599.0F));
+    }
+
+    SECTION("a reset forgets the window") {
+        cursor.reset();
+        CHECK_FALSE(cursor.readAgain(tap, right.data(), right.size(), TapLane::Right));
+    }
+}
