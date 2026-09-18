@@ -29,11 +29,13 @@
 // corpus-gated codec tests make.
 
 #include "EqualizerPanel.hpp"
+#include "OscilloscopePanel.hpp"
 #include "PlaylistColumns.hpp"
 #include "PlaylistDataModel.hpp"
 #include "PreferencesDialog.hpp"
 
 #include "xpcog/core/Settings.hpp"
+#include "xpcog/core/audio/AudioTap.hpp"
 #include "xpcog/core/audio/Equalizer.hpp"
 #include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/library/PlaylistView.hpp"
@@ -56,6 +58,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <cmath>
 #include <vector>
 
 namespace {
@@ -318,6 +321,97 @@ TEST_CASE("the equaliser's sliders are given room to be drawn", "[gui][equalizer
     CHECK(content.GetWidth() >=
           static_cast<int>(sliders.size()) * sliders.front()->GetSize().GetWidth());
     CHECK(content.GetHeight() >= panel->GetBestSize().GetHeight());
+
+    frame->Destroy();
+    wxYield();
+}
+
+TEST_CASE("the oscilloscope draws every channel mode and its menu writes settings",
+          "[gui][oscilloscope]") {
+    // A window is the only way to run the paint and timer path at all, and
+    // the only way to catch a mode that reads a lane the tick did not fill.
+    // The menu is not popped -- nothing can click it here -- so its handler
+    // is driven directly, which is what applyMenuItem() is public for.
+    Toolkit toolkit;
+    if (!toolkit.started()) {
+        SKIP("no display: wx could not initialise the toolkit");
+    }
+
+    auto            store = xpcog::makeMemorySettingsStore();
+    xpcog::Settings settings(*store);
+
+    // A second of stereo: a tone on the left, a different one on the right.
+    xpcog::AudioTap    tap;
+    std::vector<float> stereo;
+    for (int frame = 0; frame < 48000; ++frame) {
+        const double t = frame / 48000.0;
+        stereo.push_back(static_cast<float>(0.6 * std::sin(2.0 * 3.14159265 * 220.0 * t)));
+        stereo.push_back(static_cast<float>(0.3 * std::sin(2.0 * 3.14159265 * 660.0 * t)));
+    }
+    tap.write(stereo.data(), stereo.size(), 2);
+
+    auto* frame = new wxFrame(nullptr, wxID_ANY, "xpcog-gui-tests", wxDefaultPosition,
+                              wxSize(600, 200));
+    auto* panel = new xpcog::app::OscilloscopePanel(frame, tap, settings);
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(panel, 1, wxEXPAND);
+    frame->SetSizer(sizer);
+    frame->Show();
+    frame->Layout();
+    wxYield();
+
+    CHECK(panel->GetSize().GetWidth() >= panel->GetMinSize().GetWidth());
+    CHECK(panel->GetSize().GetHeight() >= panel->GetMinSize().GetHeight());
+
+    panel->setSampleRate(48000.0);
+
+    using Channels = xpcog::app::OscilloscopePanel::Channels;
+    using Item     = xpcog::app::OscilloscopePanel::MenuItem;
+
+    std::vector<std::string> announced;
+    const xpcog::Subscription onChange =
+        panel->settingChanged.connect([&](const std::string& key) { announced.push_back(key); });
+
+    const std::pair<int, const char*> modes[] = {
+        {Item::kMenuLeft, "left"},         {Item::kMenuRight, "right"},
+        {Item::kMenuStacked, "stacked"},   {Item::kMenuOverlaid, "overlaid"},
+        {Item::kMenuMono, "mono"},
+    };
+    for (const auto& [item, key] : modes) {
+        panel->applyMenuItem(item);
+        CHECK(settings.ScopeChannels() == key);
+        // What MainFrame does with the announcement.
+        panel->applySettings(settings);
+        CHECK(panel->channels() == xpcog::app::OscilloscopePanel::channelsFromKey(key));
+
+        // A few frames of the clock in this mode, on a real window.
+        panel->setActive(true);
+        for (int i = 0; i < 4; ++i) {
+            wxMilliSleep(20);
+            wxYield();
+        }
+        panel->setActive(false);
+        wxYield();
+    }
+    CHECK(announced.size() == 5);
+    CHECK(announced.back() == "scopeChannels");
+
+    panel->applyMenuItem(Item::kMenuTrigger);
+    CHECK_FALSE(settings.ScopeTrigger());
+    panel->applyMenuItem(Item::kMenuTrigger);
+    CHECK(settings.ScopeTrigger());
+    panel->applyMenuItem(Item::kMenuFill);
+    CHECK(settings.ScopeFill());
+    CHECK(announced.size() == 8);
+
+    int requested = 0;
+    const xpcog::Subscription onRequest = panel->settingsRequested.connect([&] { ++requested; });
+    panel->applyMenuItem(Item::kMenuPreferences);
+    CHECK(requested == 1);
+    CHECK(announced.size() == 8);  // not a setting
+
+    // Unknown spellings read as mono rather than as nothing.
+    CHECK(xpcog::app::OscilloscopePanel::channelsFromKey("sideways") == Channels::Mono);
 
     frame->Destroy();
     wxYield();

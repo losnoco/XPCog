@@ -89,6 +89,9 @@ const std::vector<MenuItem>& layout() {
         {nullptr, ViewFollowSelection, wxTRANSLATE("Panels Follow &Selection"), "", ItemKind::Radio},
         {nullptr, ViewFollowPlayback, wxTRANSLATE("Panels Follow Play&back"), "", ItemKind::Radio},
         {nullptr, ViewSpectrum, wxTRANSLATE("&Spectrum"), "Ctrl+U", ItemKind::Check, true},
+        // The other visualiser. No shortcut: U is the spectrum's, and one key
+        // for the pane most people open once is enough.
+        {nullptr, ViewOscilloscope, wxTRANSLATE("&Oscilloscope"), "", ItemKind::Check},
         // The seek bar's waveform: on, the transport is taller and shows the
         // track's shape; off, it is the plain bar it always was. Here as well
         // as on the Appearance pane, which holds the two drawing choices too,

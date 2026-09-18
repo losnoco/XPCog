@@ -546,6 +546,45 @@ XPCOG_SETTING(SpectrumFloorDb, double, "spectrumFloorDb", -80.0)
 /// the bars alone read as calmer.
 XPCOG_SETTING(SpectrumShowPeaks, bool, "spectrumShowPeaks", true)
 
+// --- oscilloscope ---------------------------------------------------------
+//
+// **No Cog counterpart**, any of it: Cog has a spectrum and nothing else. The
+// oscilloscope pane draws the live waveform from the same tap the spectrum
+// reads, and these are its look. Preferences -> Visualizers has every one;
+// the pane's own context menu has the three that get flipped while looking.
+
+/// Trace colour, as #RRGGBB.
+XPCOG_SETTING(ScopeColor, std::string, "scopeColor", "#30d158")
+
+/// Background, as #RRGGBB. Defaults to the spectrum's fixed dark grey, so the
+/// two panes match until told otherwise.
+XPCOG_SETTING(ScopeBackgroundColor, std::string, "scopeBackgroundColor", "#121214")
+
+/// Stroke width in device-independent pixels, 0.5 to 6.
+XPCOG_SETTING(ScopeStrokeWidth, double, "scopeStrokeWidth", 1.5)
+
+/// Repaints a second, 15 to 120. The clock is a timer, and the display
+/// advances by the interval it actually got, so a rate the machine cannot
+/// keep costs frames rather than sync.
+XPCOG_SETTING(ScopeFrameRate, int, "scopeFrameRate", 60)
+
+/// Vertical gain, 0.25 to 8. Above 1 clips at the edges, as a scope does.
+XPCOG_SETTING(ScopeGain, double, "scopeGain", 1.0)
+
+/// How much audio one frame shows, in milliseconds, 5 to 100.
+XPCOG_SETTING(ScopeWindowMs, int, "scopeWindowMs", 40)
+
+/// Fill between the trace and the centre line, as well as stroking it.
+XPCOG_SETTING(ScopeFill, bool, "scopeFill", false)
+
+/// Start each frame at a rising zero crossing, so a steady tone holds still
+/// instead of crawling at the beat between it and the frame rate.
+XPCOG_SETTING(ScopeTrigger, bool, "scopeTrigger", true)
+
+/// Which channels to draw: "mono" (the mix), "left", "right", "stacked"
+/// (left above right) or "overlaid" (both on one centre line).
+XPCOG_SETTING(ScopeChannels, std::string, "scopeChannels", "mono")
+
 /// Draw the track's waveform in the seek bar, peak and RMS mirrored about the
 /// centre line, with the played part in the accent colour.
 ///

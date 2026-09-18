@@ -85,6 +85,7 @@ class PlaylistDataModel;
 class Sc55Panel;
 class SeekBar;
 class SpectrumPanel;
+class OscilloscopePanel;
 class SpeedPanel;
 enum class PreferencesPane;
 
@@ -509,6 +510,7 @@ private:
     InfoPanel*      info_      = nullptr;
     LyricsPanel*    lyrics_    = nullptr;
     SpectrumPanel*  spectrum_  = nullptr;
+    OscilloscopePanel* scope_  = nullptr;
 #ifdef XPCOG_HAVE_SC55_PANEL
     /// The SC-55's front panel. Closed by default: it is one synthesiser of
     /// three, for one format among many, and a photograph of a 1993 sound

@@ -10,6 +10,7 @@
 #include "LyricsPanel.hpp"
 #include "MiniFrame.hpp"
 #include "OpenUrlDialog.hpp"
+#include "OscilloscopePanel.hpp"
 #include "PreferencesDialog.hpp"
 #include "Sc55Panel.hpp"
 #include "SpectrumPanel.hpp"
@@ -348,6 +349,7 @@ MainFrame::~MainFrame() {
     info_      = nullptr;
     lyrics_    = nullptr;
     spectrum_  = nullptr;
+    scope_     = nullptr;
     mini_      = nullptr;
 #ifdef XPCOG_HAVE_SC55_PANEL
     sc55_ = nullptr;
@@ -439,6 +441,8 @@ void MainFrame::buildUi() {
     lyrics_    = new LyricsPanel(dockHost_);
     spectrum_  = new SpectrumPanel(dockHost_, playback_->tap());
     spectrum_->applySettings(settings_);
+    // The same tap, its own cursor into it; reads settings itself.
+    scope_      = new OscilloscopePanel(dockHost_, playback_->tap(), settings_);
     speedPanel_ = new SpeedPanel(dockHost_, settings_);
 
 #ifdef XPCOG_HAVE_SC55_PANEL
@@ -459,6 +463,16 @@ void MainFrame::buildUi() {
                                        .BestSize(FromDIP(wxSize(400, 140)))
                                        .MinSize(FromDIP(wxSize(120, 60)))
                                        .Show());
+    // Hidden by default where the spectrum is shown: one visualiser open on
+    // first launch says what the bottom of the window is for, and two say the
+    // window is busy. A perspective saved before this pane existed leaves it
+    // at these defaults, which is what an unknown pane name does.
+    auiManager_.AddPane(scope_, wxAuiPaneInfo()
+                                    .Name("scope")
+                                    .Bottom()
+                                    .BestSize(FromDIP(wxSize(400, 140)))
+                                    .MinSize(FromDIP(wxSize(120, 60)))
+                                    .Hide());
 
     // Hidden rather than absent, so it keeps a place in the layout to come back
     // to. 31 sliders is a lot of window to open on someone who wanted a music
@@ -769,11 +783,18 @@ void MainFrame::wireUp() {
     observe(playback_->playbackStateChanged, [this](bool playing, bool paused) {
         spectrum_->setSampleRate(playback_->sampleRate());
         spectrum_->setActive(paneShown(spectrum_) && playing && !paused);
+        scope_->setSampleRate(playback_->sampleRate());
+        scope_->setActive(paneShown(scope_) && playing && !paused);
     });
 
     // --- the equaliser ---------------------------------------------------
     observe(spectrum_->settingsRequested,
-            [this] { showPreferences(PreferencesPane::Spectrum); });
+            [this] { showPreferences(PreferencesPane::Visualizers); });
+    observe(scope_->settingsRequested,
+            [this] { showPreferences(PreferencesPane::Visualizers); });
+    // The oscilloscope's context menu writes settings; the change takes the
+    // same road a Preferences change does, and ends back in the panel.
+    observe(scope_->settingChanged, [this](const std::string& key) { onSettingChanged(key); });
     observe(speedPanel_->settingChanged,
             [this](const std::string& key) { onSettingChanged(key); });
     observe(speedPanel_->settingsRequested,
@@ -968,6 +989,9 @@ void MainFrame::wireUp() {
         if (event.GetPane()->window == spectrum_) {
             spectrum_->setActive(false);
         }
+        if (event.GetPane()->window == scope_) {
+            scope_->setActive(false);
+        }
 #ifdef XPCOG_HAVE_SC55_PANEL
         if (event.GetPane()->window == sc55_) {
             sc55_->setActive(false);
@@ -1053,6 +1077,10 @@ void MainFrame::onSettingChanged(const std::string& key) {
 
         case Effect::RefreshSpectrum:
             spectrum_->applySettings(settings_);
+            break;
+
+        case Effect::RefreshScope:
+            scope_->applySettings(settings_);
             break;
 
         case Effect::RefreshPanels:
@@ -1704,6 +1732,11 @@ void MainFrame::bindCommands() {
         // cost this guard exists to avoid.
         spectrum_->setActive(showing && playback_->playing() && !playback_->paused());
     });
+    on(ViewOscilloscope, [this] {
+        const bool showing = !paneShown(scope_);
+        togglePane(scope_, showing);
+        scope_->setActive(showing && playback_->playing() && !playback_->paused());
+    });
 #ifdef XPCOG_HAVE_SC55_PANEL
     on(ViewSc55Panel, [this] {
         const bool showing = !paneShown(sc55_);
@@ -1829,6 +1862,8 @@ void MainFrame::bindUpdateUi() {
     });
     update(ViewSpectrum,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(spectrum_)); });
+    update(ViewOscilloscope,
+           [this](wxUpdateUIEvent& event) { event.Check(paneShown(scope_)); });
     update(ViewWaveform,
            [this](wxUpdateUIEvent& event) { event.Check(settings_.WaveformSeekBar()); });
     update(ViewDockPanes,
@@ -3066,6 +3101,7 @@ void MainFrame::applyPaneCaptions() {
     // walks a list cannot forget a pane where scattered calls will.
     const std::pair<wxWindow*, wxString> captions[] = {
         {spectrum_, _("Spectrum")},
+        {scope_, _("Oscilloscope")},
         {equalizer_, _("Equalizer")},
         {speedPanel_, _("Pitch & Tempo")},
         {info_, _("Info")},

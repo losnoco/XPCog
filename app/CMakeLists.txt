@@ -54,6 +54,7 @@ set(XPCOG_APP_SOURCES
     src/SettingEffect.hpp
     src/SingleInstance.cpp
     src/SingleInstance.hpp
+    src/OscilloscopePanel.cpp
     src/SpectrumPanel.cpp
     src/SpectrumPanel.hpp
     src/SpeedCurve.hpp

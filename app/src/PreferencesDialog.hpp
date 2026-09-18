@@ -58,7 +58,7 @@ class LastFmAccount;
 /// forward-declare it -- `enum class PreferencesPane;` is a complete
 /// declaration, where a nested type is not, and MainFrame would otherwise have
 /// to include this whole header to name one enumerator.
-enum class PreferencesPane { PitchTempo, Spectrum };
+enum class PreferencesPane { PitchTempo, Visualizers };
 
 class PreferencesDialog : public wxDialog {
 public:
@@ -85,7 +85,7 @@ private:
     wxListBox*    categories_    = nullptr;
     wxSimplebook* book_          = nullptr;
     int           pitchTempoPage_ = 0;
-    int           spectrumPage_   = 0;
+    int           visualizersPage_   = 0;
 
     // One pane per screen, named and ordered after Cog's own
     // (Preferences/Preferences/GeneralPreferencesPlugin.m:44) minus the one
@@ -113,7 +113,7 @@ private:
     /// macOS -- where close-to-tray is not a question -- a pane of one checkbox
     /// was not worth a category.
     [[nodiscard]] wxWindow* buildAppearancePane(wxWindow* parent);
-    [[nodiscard]] wxWindow* buildSpectrumPane(wxWindow* parent);
+    [[nodiscard]] wxWindow* buildVisualizersPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildAdvancedPane(wxWindow* parent);
 
     /// Cog has this as its own pane too (Preferences/Panes/LastFMPaneView.swift),

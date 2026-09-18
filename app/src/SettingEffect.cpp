@@ -35,6 +35,9 @@ SettingEffect effectOf(std::string_view key) {
     if (key.starts_with("spectrum")) {
         return {Effect::RefreshSpectrum, Applies::Immediately};
     }
+    if (key.starts_with("scope")) {
+        return {Effect::RefreshScope, Applies::Immediately};
+    }
 
     if (key == "enableFading" || key == "enableFSurround" || key == "enableHDCD") {
         return {Effect::ReloadDsp, Applies::Immediately};

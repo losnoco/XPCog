@@ -800,8 +800,8 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     }
     page(buildAppearancePane(book), _("Appearance"));
     page(buildMidiPane(book), "MIDI");  // an acronym, the same in every language
-    spectrumPage_ = static_cast<int>(book->GetPageCount());
-    page(buildSpectrumPane(book), _("Spectrum"));
+    visualizersPage_ = static_cast<int>(book->GetPageCount());
+    page(buildVisualizersPane(book), _("Visualizers"));
     page(buildRemotePane(book), _("Remote"));
     page(buildAdvancedPane(book), _("Advanced"));
 
@@ -847,8 +847,8 @@ void PreferencesDialog::showPane(PreferencesPane pane) {
         case PreferencesPane::PitchTempo:
             index = pitchTempoPage_;
             break;
-        case PreferencesPane::Spectrum:
-            index = spectrumPage_;
+        case PreferencesPane::Visualizers:
+            index = visualizersPage_;
             break;
     }
     if (book_ == nullptr || index >= static_cast<int>(book_->GetPageCount())) {
@@ -1423,7 +1423,7 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     return finishPane(pane, form);
 }
 
-wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
+wxWindow* PreferencesDialog::buildVisualizersPane(wxWindow* parent) {
     auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};

@@ -43,6 +43,7 @@ enum class Effect {
     RefreshSpeed,     ///< The speed popup shows a stale number until told.
     RefreshPanels,    ///< Info and Lyrics decide what to show from this.
     RefreshSpectrum,  ///< The analyser holds its own copy of these.
+    RefreshScope,     ///< The oscilloscope holds its own copy of these.
     GenreEqualizer,   ///< Apply the playing track's genre curve at once.
     PlaylistMode,     ///< Repeat, shuffle and stop-after live on the Playlist.
     Volume,           ///< Engine, slider and the OS's now-playing entry.
