@@ -46,11 +46,11 @@ written down — see [Relationship to Cog](#relationship-to-cog).
 The [latest release](https://github.com/losnoco/XPCog/releases/latest) carries
 the first three; the rest build on your machine.
 
-- **Windows** — `XPCog-<version>-x64-setup.exe`. Unsigned, so SmartScreen will
-  say so. Silent switches and what it registers:
-  [Windows: the installer](docs/BUILDING.md#windows-the-installer).
-- **macOS** — `XPCog-<version>-arm64.dmg`, signed and notarised. **Apple silicon
-  only**; an Intel Mac cannot run it.
+- **Windows** — `XPCog-<version>-x64-setup.exe`, for **Windows 10 or newer,
+  64-bit**. Unsigned, so SmartScreen will say so. Silent switches and what it
+  registers: [Windows: the installer](docs/BUILDING.md#windows-the-installer).
+- **macOS** — `XPCog-<version>-arm64.dmg`, for **macOS 13 Ventura or newer** on
+  **Apple silicon only**; an Intel Mac cannot run it. Signed and notarised.
 - **Linux** — `XPCog-<version>-x86_64.tar.gz`, for **glibc 2.39 or newer**
   (Ubuntu 24.04, Debian 13, current Fedora, Arch, openSUSE):
 
@@ -113,17 +113,7 @@ install tree, how a release is made, building against a distribution's
 libraries, the encoders and corpora the tests want — is in
 [`docs/BUILDING.md`](docs/BUILDING.md).
 
-## Using it
-
-```sh
-xpcog-cli codecs                     # what this build can decode
-xpcog-cli info   song.flac           # format, duration, ReplayGain, tags
-xpcog-cli expand album.cue           # the tracks a playlist or cue sheet holds
-xpcog-cli info   album.cue#3         # one track of a single-file album
-xpcog-cli decode song.flac out.raw   # headerless native-endian PCM
-xpcog-cli waveform --dump song.flac  # the seek bar's peak/RMS buckets
-xpcog-cli play   a.flac b.m4a c.mp3  # gapless across the queue
-```
+## What it does
 
 Each of the following has a longer entry in [`docs/FEATURES.md`](docs/FEATURES.md).
 

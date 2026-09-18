@@ -4,6 +4,19 @@ The README says what the player does in a paragraph each; this is the rest of
 each of those paragraphs, moved here whole. `docs/PORTING.md` is where the
 decisions were made; this is what they amount to for someone using the player.
 
+## Trying it without the window
+
+```sh
+xpcog-cli codecs                     # what this build can decode
+xpcog-cli info   song.flac           # format, duration, ReplayGain, tags
+xpcog-cli expand album.cue           # the tracks a playlist or cue sheet holds
+xpcog-cli info   album.cue#3         # one track of a single-file album
+xpcog-cli decode song.flac out.raw   # headerless native-endian PCM
+xpcog-cli waveform --dump song.flac  # the seek bar's peak/RMS buckets
+xpcog-cli play   a.flac b.m4a c.mp3  # gapless across the queue
+xpcog-cli serve  a.flac b.flac       # the REST remote control, no toolkit
+```
+
 ## Cue sheets
 
 A `.cue` expands to one URL per track (`album.cue#1`, `#2`, …). Opening one decodes
