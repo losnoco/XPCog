@@ -11,6 +11,9 @@
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
+#include "xpcog/core/audio/Waveform.hpp"
+#include "xpcog/core/audio/WaveformCache.hpp"
+#include "xpcog/core/library/PluginCache.hpp"
 #include "xpcog/core/library/Scanner.hpp"
 
 #include <algorithm>
@@ -18,6 +21,7 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -57,6 +61,13 @@ int usage() {
               "  expand <playlist>   list the tracks a playlist or container holds\n"
               "  scan <path>...      walk folders and playlists, reading tags\n"
               "  decode <in> <out>   decode to headerless native-endian PCM\n"
+              "  waveform [--cache DIR] [--dump] <file>...\n"
+              "                      fold each track into the peak and RMS buckets the\n"
+              "                      seek bar draws; --cache writes the entries the\n"
+              "                      player reads (its own directory is the platform's\n"
+              "                      cache location, LoSnoCo/XPCog/waveforms) and reads\n"
+              "                      them back on a second run; --dump prints one\n"
+              "                      'index peak rms' line per bucket\n"
               "\n"
               "  play <file>...      play, gaplessly across multiple files\n"
               "\n"
@@ -291,6 +302,85 @@ int decode(std::string_view input, std::string_view output) {
                  static_cast<long long>(frames), sampleFormatName(fmt.format),
                  fmt.channels, fmt.sampleRate);
     return 0;
+}
+
+int waveform(const std::vector<std::string>& arguments) {
+    std::optional<xpcog::WaveformCache> cache;
+    bool                                dump = false;
+    std::vector<std::string>            inputs;
+
+    for (std::size_t i = 0; i < arguments.size(); ++i) {
+        const std::string& argument = arguments[i];
+        if (argument == "--cache") {
+            if (i + 1 >= arguments.size()) {
+                return usage();
+            }
+            cache.emplace(std::filesystem::path{arguments[++i]});
+        } else if (argument == "--dump") {
+            dump = true;
+        } else {
+            inputs.push_back(argument);
+        }
+    }
+    if (inputs.empty()) {
+        return usage();
+    }
+
+    int failures = 0;
+    for (const std::string& input : inputs) {
+        const xpcog::Url url = urlFromArgument(input);
+
+        std::optional<xpcog::WaveformSummary> summary;
+        const char*                           origin = "analysed";
+        const auto                            started = std::chrono::steady_clock::now();
+
+        if (cache) {
+            summary = cache->load(url);
+            if (summary) {
+                origin = "cached";
+            }
+        }
+        if (!summary) {
+            auto opened = registry().open(url, xpcog::SkipCue::No, xpcog::LoopPolicy::Never);
+            if (!opened) {
+                std::fprintf(stderr, "xpcog-cli: cannot open '%s'\n", input.c_str());
+                ++failures;
+                continue;
+            }
+            xpcog::WaveformSummary fresh;
+            if (!xpcog::analyseWaveform(*opened.decoder, fresh, [] { return false; })) {
+                std::fprintf(stderr,
+                             "xpcog-cli: '%s' has no waveform to draw (no declared "
+                             "length, or DSD)\n",
+                             input.c_str());
+                ++failures;
+                continue;
+            }
+            summary = std::move(fresh);
+            if (cache && !cache->store(url, *summary)) {
+                origin = "analysed, not cacheable";
+            }
+        }
+
+        const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started);
+
+        unsigned peakMax = 0;
+        unsigned rmsMax  = 0;
+        for (std::uint32_t i = 0; i < summary->bucketCount; ++i) {
+            peakMax = std::max<unsigned>(peakMax, summary->peak[i]);
+            rmsMax  = std::max<unsigned>(rmsMax, summary->rms[i]);
+        }
+        std::printf("%s: %u buckets over %.3f s, peak %u/255, rms %u/255, %s in %.3f s\n",
+                    input.c_str(), summary->bucketCount, summary->duration, peakMax, rmsMax,
+                    origin, elapsed.count());
+
+        if (dump) {
+            for (std::uint32_t i = 0; i < summary->bucketCount; ++i) {
+                std::printf("%u %u %u\n", i, summary->peak[i], summary->rms[i]);
+            }
+        }
+    }
+    return failures == 0 ? 0 : 1;
 }
 
 /// Plays one or more files back to back through the real engine, so the CLI
@@ -602,6 +692,10 @@ int main(int argc, char** argv) {
 
     if (command == "decode") {
         return (argc < 4) ? usage() : decode(argv[2], argv[3]);
+    }
+
+    if (command == "waveform") {
+        return waveform(std::vector<std::string>(argv + 2, argv + argc));
     }
 
     if (command == "serve") {
