@@ -89,6 +89,10 @@ const std::vector<MenuItem>& layout() {
         {nullptr, ViewFollowSelection, wxTRANSLATE("Panels Follow &Selection"), "", ItemKind::Radio},
         {nullptr, ViewFollowPlayback, wxTRANSLATE("Panels Follow Play&back"), "", ItemKind::Radio},
         {nullptr, ViewSpectrum, wxTRANSLATE("&Spectrum"), "Ctrl+U", ItemKind::Check, true},
+        // The seek bar's waveform. A view toggle rather than a preference row,
+        // because it is looked at, not configured: on, the transport is taller
+        // and shows the track's shape; off, it is the plain bar it always was.
+        {nullptr, ViewWaveform, wxTRANSLATE("Show &Waveform"), "", ItemKind::Check},
         // Cog keeps its equaliser in a window of its own rather than in
         // preferences, and so does this. Ctrl-E, which nothing else claims.
         {nullptr, ViewEqualizer, wxTRANSLATE("&Equalizer"), "Ctrl+E", ItemKind::Check},

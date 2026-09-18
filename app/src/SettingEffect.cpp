@@ -88,6 +88,9 @@ SettingEffect effectOf(std::string_view key) {
     if (key == "floatingMiniWindow") {
         return {Effect::MiniFloating, Applies::Immediately};
     }
+    if (key == "waveformSeekBar") {
+        return {Effect::WaveformSeekBar, Applies::Immediately};
+    }
     if (key == "enableAudioScrobbler") {
         return {Effect::Scrobbler, Applies::Immediately};
     }

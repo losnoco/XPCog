@@ -7,8 +7,12 @@
 #include <wx/settings.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace xpcog::app {
 namespace {
@@ -16,6 +20,21 @@ namespace {
 /// The groove's thickness, and the thumb's radius, in device-independent pixels.
 constexpr int kGrooveHeight = 4;
 constexpr int kThumbRadius  = 6;
+
+/// The bar's height in waveform mode, and the room left above and below the
+/// shape so a full-scale bucket does not touch the edge. 28 is what fits the
+/// transport row without moving the clock: tall enough for the shape to read,
+/// not so tall that the row stops looking like a transport.
+constexpr int kWaveformHeight  = 28;
+constexpr int kWaveformPadding = 2;
+/// The playhead's width in waveform mode, where it stands in for the thumb.
+constexpr int kPlayheadWidth = 2;
+
+/// How hard the shape is drawn, out of 255. The RMS body is the darker of the
+/// two so it reads as the loudness and the peak as its envelope; the played
+/// pair is the accent colour at the same two strengths.
+constexpr unsigned char kPeakAlpha = 55;
+constexpr unsigned char kRmsAlpha  = 120;
 
 /// Room either side so the thumb is not clipped at the ends. Everything the bar
 /// draws is inset by this, and every position maps into what is left.
@@ -84,7 +103,7 @@ SeekBar::SeekBar(wxWindow* parent, wxWindowID id)
     // wx does not double-buffer on MSW, and an unbuffered custom paint flickers
     // visibly at four updates a second.
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-    SetMinSize(FromDIP(wxSize(120, (2 * kThumbRadius) + 4)));
+    setWaveformMode(false);
 
     Bind(wxEVT_PAINT, &SeekBar::onPaint, this);
     Bind(wxEVT_LEFT_DOWN, &SeekBar::onMouseDown, this);
@@ -116,6 +135,20 @@ void SeekBar::setDuration(double seconds) {
         position_ = duration_;
     }
     Refresh();
+}
+
+void SeekBar::setWaveformMode(bool on) {
+    waveformMode_ = on;
+    SetMinSize(FromDIP(wxSize(120, on ? kWaveformHeight : (2 * kThumbRadius) + 4)));
+    InvalidateBestSize();
+    Refresh();
+}
+
+void SeekBar::setWaveform(std::shared_ptr<const WaveformSummary> summary) {
+    waveform_ = std::move(summary);
+    if (waveformMode_) {
+        Refresh();
+    }
 }
 
 void SeekBar::setPosition(double seconds) {
@@ -165,11 +198,25 @@ void SeekBar::onPaint(wxPaintEvent&) {
 
     const wxSize size    = GetClientSize();
     const int    margin  = FromDIP(kMargin);
-    const int    groove  = FromDIP(kGrooveHeight);
-    const int    radius  = FromDIP(kThumbRadius);
     const double centreY = size.GetHeight() / 2.0;
     const double left    = margin;
     const double width   = std::max(0, size.GetWidth() - (2 * margin));
+
+    // The shape only when there is one to draw. A stream, a DSD file, or a
+    // track the analyser has not reached yet gets the plain bar, centred in the
+    // taller control, rather than an empty strip -- the bar is never blank.
+    if (waveformMode_ && waveform_ && duration_ > 0.0 && waveform_->bucketCount > 0) {
+        const double halfHeight = std::max(1.0, centreY - FromDIP(kWaveformPadding));
+        paintWaveform(*gc, left, width, centreY, halfHeight);
+        return;
+    }
+    paintPlain(*gc, left, width, centreY);
+}
+
+void SeekBar::paintPlain(wxGraphicsContext& gcRef, double left, double width, double centreY) {
+    wxGraphicsContext* gc     = &gcRef;
+    const int          groove = FromDIP(kGrooveHeight);
+    const int          radius = FromDIP(kThumbRadius);
 
     const wxColour trackColour = wxSystemSettings::GetColour(wxSYS_COLOUR_3DSHADOW);
     const wxColour fillColour  = accent();
@@ -222,6 +269,109 @@ void SeekBar::onPaint(wxPaintEvent&) {
     const double thumbSize = (2.0 * radius) - thumbPen;
     gc->DrawEllipse(thumbCentre() - radius + (thumbPen / 2.0),
                     centreY - radius + (thumbPen / 2.0), thumbSize, thumbSize);
+}
+
+void SeekBar::paintWaveform(wxGraphicsContext& gc, double left, double width, double centreY,
+                            double halfHeight) {
+    const WaveformSummary& shape   = *waveform_;
+    const auto             columns = static_cast<int>(width);
+    if (columns <= 0) {
+        return;
+    }
+
+    const wxColour trackColour = wxSystemSettings::GetColour(wxSYS_COLOUR_3DSHADOW);
+    const wxColour accentColour = accent();
+    const wxColour playedPeak(accentColour.Red(), accentColour.Green(), accentColour.Blue(),
+                              kPeakAlpha + 60);
+    const wxColour playedRms = accentColour;
+    const double   hairline  = FromDIP(1);
+
+    // Where the shape stops and the plain groove begins, in columns. A bucket
+    // is drawn once every column it covers has been analysed, so the edge of
+    // the shape never shows a half-filled bucket as a dip.
+    const double bucketsPerColumn = static_cast<double>(shape.bucketCount) / columns;
+    const int    analysedColumns  = std::clamp(
+        static_cast<int>(std::floor(shape.analysed / bucketsPerColumn)), 0, columns);
+    const int playedColumns = std::clamp(thumbCentre() - static_cast<int>(left), 0, columns);
+
+    // The centre line first, under everything, so a silent stretch still reads
+    // as part of the bar rather than a gap in it.
+    gc.SetPen(wxPen(trackColour, hairline));
+    gc.StrokeLine(left, centreY, left + width, centreY);
+
+    // One polygon per (level, played) pair: across the top edge of every
+    // column, then back along the bottom. Filled in one go, so there are no
+    // seams between columns and the antialiasing lands only on the outline.
+    const auto level = [&](const std::vector<std::uint8_t>& values, int x) {
+        const int first = static_cast<int>(x * bucketsPerColumn);
+        const int last  = std::max(first, static_cast<int>((x + 1) * bucketsPerColumn) - 1);
+        std::uint8_t peak = 0;
+        for (int i = first; i <= last && i < static_cast<int>(values.size()); ++i) {
+            peak = std::max(peak, values[i]);
+        }
+        return (peak / 255.0) * halfHeight;
+    };
+
+    const auto fill = [&](const std::vector<std::uint8_t>& values, int from, int to,
+                          const wxColour& colour) {
+        if (to <= from) {
+            return;
+        }
+        wxGraphicsPath path = gc.CreatePath();
+        path.MoveToPoint(left + from, centreY);
+        for (int x = from; x < to; ++x) {
+            const double h = level(values, x);
+            path.AddLineToPoint(left + x, centreY - h);
+            path.AddLineToPoint(left + x + 1, centreY - h);
+        }
+        path.AddLineToPoint(left + to, centreY);
+        for (int x = to - 1; x >= from; --x) {
+            const double h = level(values, x);
+            path.AddLineToPoint(left + x + 1, centreY + h);
+            path.AddLineToPoint(left + x, centreY + h);
+        }
+        path.CloseSubpath();
+        gc.SetPen(*wxTRANSPARENT_PEN);
+        gc.SetBrush(wxBrush(colour));
+        gc.FillPath(path);
+    };
+
+    const int split = std::min(playedColumns, analysedColumns);
+    fill(shape.peak, 0, split, playedPeak);
+    fill(shape.peak, split, analysedColumns, outline(kPeakAlpha));
+    fill(shape.rms, 0, split, playedRms);
+    fill(shape.rms, split, analysedColumns, outline(kRmsAlpha));
+
+    // Past the analysis: the plain groove, with the played part filled if the
+    // playhead has got there first, which it can after a seek into a long track
+    // still being read.
+    if (analysedColumns < columns) {
+        const int    groove = FromDIP(kGrooveHeight);
+        const double top    = centreY - (groove / 2.0);
+        const double x      = left + analysedColumns;
+        const double rest   = width - analysedColumns;
+        gc.SetBrush(wxBrush(trackColour));
+        gc.SetPen(wxPen(outline(kGrooveOutlineAlpha), hairline));
+        gc.DrawRoundedRectangle(x + (hairline / 2.0), top + (hairline / 2.0),
+                                std::max(0.0, rest - hairline),
+                                std::max(0.0, groove - hairline), groove / 2.0);
+        if (playedColumns > analysedColumns) {
+            gc.SetBrush(wxBrush(accentColour));
+            gc.SetPen(*wxTRANSPARENT_PEN);
+            gc.DrawRoundedRectangle(x + (hairline / 2.0), top + (hairline / 2.0),
+                                    std::max(0.0, playedColumns - analysedColumns - hairline),
+                                    std::max(0.0, groove - hairline), groove / 2.0);
+        }
+    }
+
+    // The playhead, full height, in the foreground colour: it has to read over
+    // the accent on its left and the grey on its right, and over nothing at
+    // all in a silent stretch.
+    const double playhead = FromDIP(kPlayheadWidth);
+    gc.SetPen(*wxTRANSPARENT_PEN);
+    gc.SetBrush(wxBrush(outline(kThumbOutlineAlpha)));
+    gc.DrawRectangle(thumbCentre() - (playhead / 2.0), centreY - halfHeight, playhead,
+                     2.0 * halfHeight);
 }
 
 void SeekBar::onMouseDown(wxMouseEvent& event) {

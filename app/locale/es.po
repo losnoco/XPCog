@@ -418,6 +418,10 @@ msgstr "Los paneles siguen la reproducció&n"
 msgid "&Spectrum"
 msgstr "Espe&ctro"
 
+#: app/src/Commands.cpp:95
+msgid "Show &Waveform"
+msgstr "Mostrar &forma de onda"
+
 #: app/src/Commands.cpp:94
 msgid "&Equalizer"
 msgstr "Ecuali&zador"

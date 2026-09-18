@@ -546,6 +546,16 @@ XPCOG_SETTING(SpectrumFloorDb, double, "spectrumFloorDb", -80.0)
 /// the bars alone read as calmer.
 XPCOG_SETTING(SpectrumShowPeaks, bool, "spectrumShowPeaks", true)
 
+/// Draw the track's waveform in the seek bar, peak and RMS mirrored about the
+/// centre line, with the played part in the accent colour.
+///
+/// **No Cog counterpart** -- Cog's position slider is a plain NSSlider. Off by
+/// default so nobody's transport changes shape on upgrade; View -> Show Waveform
+/// is where it is found. A track is analysed the first time it plays with this
+/// on and the result kept in the platform's cache directory, so the bar fills in
+/// once and is instant after that.
+XPCOG_SETTING(WaveformSeekBar, bool, "waveformSeekBar", false)
+
 // --- synthesised formats --------------------------------------------------
 //
 // Modules and game-music rips are emulated rather than decoded, so they have no

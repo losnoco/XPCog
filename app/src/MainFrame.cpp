@@ -247,6 +247,11 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
 
     presence_ = std::make_unique<StatusPresence>(this, dispatch_);
 
+    waveforms_ = std::make_unique<WaveformProvider>(
+        registry_, WaveformCache{pathFromUtf8(platform::cacheDirectory()) / "waveforms"},
+        dispatch_);
+    seekBar_->setWaveformMode(settings_.WaveformSeekBar());
+
     wireUp();
     restoreState();
 
@@ -292,6 +297,8 @@ MainFrame::~MainFrame() {
     // outlives what it is reading from. ~ScanTask cancels and joins, so nothing
     // is still posting to the interface after this returns.
     scan_.reset();
+    // The same for the waveform worker, which borrows the registry too.
+    waveforms_.reset();
 
     // The tray icon is not a child window and so is not covered by the sweep
     // below. Removing it here rather than only on the quit path means it cannot
@@ -748,6 +755,10 @@ void MainFrame::wireUp() {
     observe(seekBar_->scrubbed, [this](double seconds) {
         clock_->SetLabelText(toWx(formatClock(seconds) + " / " + formatClock(duration_)));
     });
+    observe(waveforms_->updated(),
+            [this](const Url& url, const std::shared_ptr<const WaveformSummary>& summary) {
+                onWaveformUpdated(url, summary);
+            });
 
     // --- the spectrum ----------------------------------------------------
     //
@@ -1025,6 +1036,12 @@ void MainFrame::onSettingChanged(const std::string& key) {
             // starts. Moving what is already playing is what reopenOutput() is
             // for.
             playback_->reopenOutput();
+            break;
+
+        case Effect::WaveformSeekBar:
+            // The View menu's path calls this itself; this is the Advanced row
+            // and a remote write, which have to reach the bars as well.
+            applyWaveformSetting();
             break;
 
         case Effect::MiniFloating:
@@ -1386,6 +1403,10 @@ void MainFrame::setMiniMode(bool mini) {
             }));
         }
         mini_->refreshVolume();
+        // A fresh window read the mode from settings; the shape it has to be
+        // handed, or it opens mid-track with a plain bar until the next one.
+        mini_->setWaveformMode(settings_.WaveformSeekBar());
+        mini_->setWaveform(seekBar_->waveform());
         mini_->setNowPlaying(
             playlist_.find(currentTrack_) != nullptr ? playlist_.find(currentTrack_)->title()
                                                      : std::string{},
@@ -1402,6 +1423,73 @@ void MainFrame::setMiniMode(bool mini) {
     }
     Show();
     Raise();
+}
+
+void MainFrame::applyWaveformSetting() {
+    const bool on = settings_.WaveformSeekBar();
+
+    seekBar_->setWaveformMode(on);
+    // The bar's minimum grew or shrank; the transport row and everything under
+    // it has to be laid out again for the frame to take it up.
+    Layout();
+    if (mini_ != nullptr) {
+        mini_->setWaveformMode(on);
+    }
+
+    if (on) {
+        requestWaveform(currentTrack_);
+    } else {
+        waveforms_->cancel();
+        seekBar_->setWaveform(nullptr);
+        if (mini_ != nullptr) {
+            mini_->setWaveform(nullptr);
+        }
+    }
+}
+
+void MainFrame::requestWaveform(TrackId id) {
+    seekBar_->setWaveform(nullptr);
+    if (mini_ != nullptr) {
+        mini_->setWaveform(nullptr);
+    }
+
+    const PlaylistEntry* entry = playlist_.find(id);
+    if (!settings_.WaveformSeekBar() || entry == nullptr) {
+        waveforms_->cancel();
+        return;
+    }
+    waveforms_->request(entry->url);
+}
+
+std::optional<Url> MainFrame::currentTrackUrl() const {
+    const PlaylistEntry* entry = playlist_.find(currentTrack_);
+    return entry != nullptr ? std::optional{entry->url} : std::nullopt;
+}
+
+void MainFrame::onWaveformUpdated(const Url& url,
+                                  const std::shared_ptr<const WaveformSummary>& summary) {
+    const std::optional<Url> current = currentTrackUrl();
+    if (!current || current->toString() != url.toString()) {
+        return;
+    }
+
+    seekBar_->setWaveform(summary);
+    if (mini_ != nullptr) {
+        mini_->setWaveform(summary);
+    }
+
+    // The bar being looked at is done; now the guess at the next one, so it is
+    // whole when it starts. The guess is the playlist's and can be wrong --
+    // the queue may change, a shuffle may draw differently -- and a wrong one
+    // costs a spare analysis that ends up in the cache anyway.
+    if (summary && summary->complete()) {
+        if (const std::optional<TrackId> next = playlist_.peekNextForPlayback()) {
+            if (const PlaylistEntry* entry = playlist_.find(*next);
+                entry != nullptr && entry->url.toString() != url.toString()) {
+                waveforms_->prefetch(entry->url);
+            }
+        }
+    }
 }
 
 void MainFrame::openUrl() {
@@ -1595,6 +1683,10 @@ void MainFrame::bindCommands() {
     on(ViewFollowSelection, [follow] { follow(0); });
     on(ViewFollowPlayback, [follow] { follow(1); });
     on(ViewMiniPlayer, [this] { setMiniMode(mini_ == nullptr || !mini_->IsShown()); });
+    on(ViewWaveform, [this] {
+        settings_.setWaveformSeekBar(!settings_.WaveformSeekBar());
+        applyWaveformSetting();
+    });
     on(ViewSpectrum, [this] {
         const bool showing = !paneShown(spectrum_);
         togglePane(spectrum_, showing);
@@ -1728,6 +1820,8 @@ void MainFrame::bindUpdateUi() {
     });
     update(ViewSpectrum,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(spectrum_)); });
+    update(ViewWaveform,
+           [this](wxUpdateUIEvent& event) { event.Check(settings_.WaveformSeekBar()); });
     update(ViewDockPanes,
            [this](wxUpdateUIEvent& event) { event.Enable(anyPaneFloating()); });
 #ifdef XPCOG_HAVE_SC55_PANEL
@@ -2880,6 +2974,9 @@ void MainFrame::onCurrentTrackChanged(TrackId id, ListenChange change) {
     refreshLyrics();
     notifyTrack(entry);
     applyGenreEqualizer(entry);
+    if (!looping) {
+        requestWaveform(id);
+    }
 }
 
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {
@@ -2901,6 +2998,11 @@ void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {
         clock_->SetLabelText("0:00 / 0:00");
         media_->clear();
         mediaPosition_ = -1.0;
+        // The waveform is not cleared here. A stop announces kInvalidTrackId
+        // through currentTrackChanged, which is where the bars are cleared;
+        // and this signal also says "not playing" once, briefly, right after a
+        // start -- publishState() runs before the engine reports itself
+        // playing -- which would cancel the analysis just requested.
         return;
     }
     media_->setPlaybackState(playing, paused, playback_->position());

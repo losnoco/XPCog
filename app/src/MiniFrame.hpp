@@ -26,9 +26,11 @@
 
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Signal.hpp"
+#include "xpcog/core/audio/Waveform.hpp"
 
 #include <wx/frame.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,12 @@ public:
 
     void setPosition(double seconds, double duration);
     void setPlaybackState(bool playing, bool paused);
+
+    /// The seek bar's waveform mode, and the shape to draw in it. The mode is
+    /// read from settings when the window is built; this is for a change while
+    /// it is up, and it re-fits the window, whose height is pinned to its row.
+    void setWaveformMode(bool on);
+    void setWaveform(std::shared_ptr<const WaveformSummary> summary);
 
     /// Reads the volume back from the controller. Called when the window appears,
     /// because the main window's slider may have moved while this was hidden.

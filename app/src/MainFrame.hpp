@@ -43,6 +43,7 @@
 #include "xpcog/core/library/PlaylistView.hpp"
 #include "xpcog/core/library/PluginCache.hpp"
 #include "xpcog/core/library/ScanTask.hpp"
+#include "xpcog/core/audio/WaveformProvider.hpp"
 #include "xpcog/core/remote/RemoteServer.hpp"
 #include "xpcog/platform/MediaIntegration.hpp"
 #include "xpcog/platform/TaskbarIntegration.hpp"
@@ -165,6 +166,23 @@ private:
     /// Switches between the full window and the mini player. A mode, as in
     /// Cog: one is shown and the other hidden, never both.
     void setMiniMode(bool mini);
+
+    /// Reads `waveformSeekBar` and makes both seek bars agree with it: taller
+    /// and analysing the playing track, or plain and analysing nothing.
+    void applyWaveformSetting();
+
+    /// Asks the provider for `id`'s shape, when the setting is on, and clears
+    /// both bars until it answers. The prefetch of what probably follows is
+    /// asked for when this one completes, not here.
+    void requestWaveform(TrackId id);
+
+    /// The provider's answer, on this thread. Ignored unless it is for the
+    /// track that is audible now -- a prefetch's result waits in the cache.
+    void onWaveformUpdated(const Url& url, const std::shared_ptr<const WaveformSummary>& summary);
+
+    /// The current entry's URL, if there is one. Comparing URLs rather than
+    /// ids because the provider speaks URLs and knows nothing of the playlist.
+    [[nodiscard]] std::optional<Url> currentTrackUrl() const;
 
     /// Which track the Info and Lyrics panes should be describing.
     ///
@@ -575,6 +593,10 @@ private:
         std::string jobId;
     };
     std::unique_ptr<ScanTask> scan_;
+
+    /// The seek bar's waveforms. Owned like the scan and for the same reason:
+    /// it borrows the registry, so the destructor lets it go first.
+    std::unique_ptr<WaveformProvider> waveforms_;
     /// The job id of the scan now running, if it came from the API.
     std::string               scanJobId_;
     std::vector<ScanRequest>  pendingScans_;

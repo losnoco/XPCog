@@ -20,14 +20,26 @@
 //
 // Both belong to the widget rather than to the window, so a second user of it
 // cannot half-wire them. The mini player is that second user.
+//
+// The waveform is a mode of the same widget rather than a second one, for the
+// same reason: it is the same gesture on the same geometry, with the track's
+// shape drawn where the groove was. In that mode the bar is taller, the played
+// part of the shape takes the accent colour, a thin playhead replaces the
+// thumb, and buckets the analyser has not reached yet are drawn as the plain
+// groove -- so the shape visibly fills in from the left the first time a track
+// is heard.
 
 #pragma once
 
 #include "xpcog/core/Signal.hpp"
+#include "xpcog/core/audio/Waveform.hpp"
 
 #include <wx/window.h>
 
+#include <memory>
 #include <string>
+
+class wxGraphicsContext;
 
 namespace xpcog::app {
 
@@ -60,6 +72,22 @@ public:
     /// position updates fighting the cursor.
     [[nodiscard]] bool scrubbing() const noexcept { return scrubbing_; }
 
+    /// Taller, and drawing the track's shape when one has been given. Off is
+    /// the plain bar, drawn exactly as it was before there was a mode. Changes
+    /// the minimum size, so the owner lays out again afterwards.
+    void setWaveformMode(bool on);
+    [[nodiscard]] bool waveformMode() const noexcept { return waveformMode_; }
+
+    /// The shape to draw, or nothing: a stream, a track that cannot be
+    /// summarised, or one not started yet, all of which draw the plain groove.
+    /// A partial summary is drawn as far as it goes. Only looked at in
+    /// waveform mode, but kept either way, so toggling the mode back on does
+    /// not have to wait for another.
+    void setWaveform(std::shared_ptr<const WaveformSummary> summary);
+    [[nodiscard]] const std::shared_ptr<const WaveformSummary>& waveform() const noexcept {
+        return waveform_;
+    }
+
     /// The user let go. Carries seconds, so nothing else has to know how the bar
     /// is scaled.
     Signal<double> seekRequested;
@@ -82,9 +110,18 @@ private:
 
     void stopScrubbing();
 
+    /// The plain bar: groove, fill, thumb.
+    void paintPlain(wxGraphicsContext& gc, double left, double width, double centreY);
+    /// The shape, the playhead, and the plain groove past what has been analysed.
+    void paintWaveform(wxGraphicsContext& gc, double left, double width, double centreY,
+                       double halfHeight);
+
     double duration_  = 0.0;
     double position_  = 0.0;
     bool   scrubbing_ = false;
+
+    bool                                   waveformMode_ = false;
+    std::shared_ptr<const WaveformSummary> waveform_;
 };
 
 }  // namespace xpcog::app

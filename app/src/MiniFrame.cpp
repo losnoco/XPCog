@@ -15,6 +15,8 @@
 #include <wx/translation.h>
 
 #include <cmath>
+#include <memory>
+#include <utility>
 
 namespace xpcog::app {
 namespace {
@@ -66,6 +68,9 @@ MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& s
     }
 
     seekBar_ = new SeekBar(panel, kMiniSeekId);
+    // Before the fit below, so the window is built at the height the mode
+    // wants rather than re-fitted a moment later.
+    seekBar_->setWaveformMode(settings_.WaveformSeekBar());
     row->Add(seekBar_, 1, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(6));
 
     clock_ = new wxStaticText(panel, wxID_ANY, "0:00", wxDefaultPosition,
@@ -147,6 +152,27 @@ void MiniFrame::setPlaybackState(bool playing, bool paused) {
         seekBar_->setDuration(0.0);
         clock_->SetLabelText("0:00");
     }
+}
+
+void MiniFrame::setWaveformMode(bool on) {
+    if (seekBar_->waveformMode() == on) {
+        return;
+    }
+    seekBar_->setWaveformMode(on);
+
+    // The height is pinned to the fitted row (see the constructor), and
+    // wxSizer::SetSizeHints keeps an existing maximum, so a plain re-fit is
+    // refused by the window manager. Lift the hints, lay out, take the new
+    // fitted height, and pin again -- width kept, because it is the listener's.
+    SetSizeHints(wxDefaultCoord, wxDefaultCoord, wxDefaultCoord, wxDefaultCoord);
+    Layout();
+    const wxSize fitted = GetSizer()->ComputeFittingWindowSize(this);
+    SetSize(GetSize().GetWidth(), fitted.GetHeight());
+    SetSizeHints(fitted.GetWidth(), fitted.GetHeight(), wxDefaultCoord, fitted.GetHeight());
+}
+
+void MiniFrame::setWaveform(std::shared_ptr<const WaveformSummary> summary) {
+    seekBar_->setWaveform(std::move(summary));
 }
 
 void MiniFrame::refreshVolume() {
