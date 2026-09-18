@@ -47,7 +47,7 @@ enum class Effect {
     PlaylistMode,     ///< Repeat, shuffle and stop-after live on the Playlist.
     Volume,           ///< Engine, slider and the OS's now-playing entry.
     MiniFloating,     ///< The mini window's always-on-top flag.
-    WaveformSeekBar,  ///< Grow the seek bars and analyse the playing track, or shrink them.
+    WaveformSeekBar,  ///< The seek bars' waveform: shown or not, and how it is drawn.
     Scrobbler,        ///< Start or stop the submission worker.
     CrashReporter,    ///< Start or close the SDK, in both directions.
     RestartRemote,    ///< Rebind the REST server, so a port change needs no relaunch.

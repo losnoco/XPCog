@@ -70,6 +70,8 @@ MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& s
     seekBar_ = new SeekBar(panel, kMiniSeekId);
     // Before the fit below, so the window is built at the height the mode
     // wants rather than re-fitted a moment later.
+    seekBar_->setWaveformStyle({.rectified   = settings_.WaveformRectified(),
+                                .logarithmic = settings_.WaveformLogScale()});
     seekBar_->setWaveformMode(settings_.WaveformSeekBar());
     row->Add(seekBar_, 1, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(6));
 
@@ -169,6 +171,10 @@ void MiniFrame::setWaveformMode(bool on) {
     const wxSize fitted = GetSizer()->ComputeFittingWindowSize(this);
     SetSize(GetSize().GetWidth(), fitted.GetHeight());
     SetSizeHints(fitted.GetWidth(), fitted.GetHeight(), wxDefaultCoord, fitted.GetHeight());
+}
+
+void MiniFrame::setWaveformStyle(SeekBar::WaveformStyle style) {
+    seekBar_->setWaveformStyle(style);
 }
 
 void MiniFrame::setWaveform(std::shared_ptr<const WaveformSummary> summary) {

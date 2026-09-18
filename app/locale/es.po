@@ -422,6 +422,14 @@ msgstr "Espe&ctro"
 msgid "Show &Waveform"
 msgstr "Mostrar &forma de onda"
 
+#: app/src/Commands.cpp:98
+msgid "&Rectified Waveform"
+msgstr "Forma de onda &rectificada"
+
+#: app/src/Commands.cpp:99
+msgid "&Logarithmic Waveform"
+msgstr "Forma de onda &logarítmica"
+
 #: app/src/Commands.cpp:94
 msgid "&Equalizer"
 msgstr "Ecuali&zador"

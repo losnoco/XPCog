@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include "SeekBar.hpp"
+
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/audio/Waveform.hpp"
@@ -41,7 +43,6 @@ class wxStaticText;
 namespace xpcog::app {
 
 class PlaybackController;
-class SeekBar;
 
 class MiniFrame : public wxFrame {
 public:
@@ -57,6 +58,7 @@ public:
     /// read from settings when the window is built; this is for a change while
     /// it is up, and it re-fits the window, whose height is pinned to its row.
     void setWaveformMode(bool on);
+    void setWaveformStyle(SeekBar::WaveformStyle style);
     void setWaveform(std::shared_ptr<const WaveformSummary> summary);
 
     /// Reads the volume back from the controller. Called when the window appears,

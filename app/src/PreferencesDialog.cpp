@@ -172,8 +172,9 @@ constexpr std::array kCuratedKeys = {
     // groups; `panelFollowMode` is View -> Panels Follow. All four are state a
     // gesture sets, not preferences someone comes here to type.
     "volume", "repeat", "shuffle", "panelFollowMode",
-    // `waveformSeekBar` is View -> Show Waveform, for the same reason.
-    "waveformSeekBar",
+    // The waveform's three are View -> Show / Rectified / Logarithmic Waveform,
+    // for the same reason.
+    "waveformSeekBar", "waveformRectified", "waveformLogScale",
     // Output
     "volumeScaling", "resampling", "enableHDCD", "halveDSDVolume", "outputDeviceId",
     "outputDeviceName", "exclusiveOutput", "enableFSurround", "enableFading",

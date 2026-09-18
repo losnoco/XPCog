@@ -78,6 +78,21 @@ public:
     void setWaveformMode(bool on);
     [[nodiscard]] bool waveformMode() const noexcept { return waveformMode_; }
 
+    /// How the shape is drawn. `rectified` stands the shape on the bottom edge
+    /// rather than mirroring it about the centre, which is the other way a
+    /// waveform overview is commonly drawn and gives each level twice the
+    /// height. `logarithmic` maps levels in decibels rather than linearly, so
+    /// quiet material -- classical, a spoken word -- is a shape rather than a
+    /// line. Both are drawing choices only: the buckets are the same.
+    struct WaveformStyle {
+        bool rectified   = false;
+        bool logarithmic = false;
+
+        [[nodiscard]] friend bool operator==(const WaveformStyle&, const WaveformStyle&) = default;
+    };
+    void setWaveformStyle(WaveformStyle style);
+    [[nodiscard]] WaveformStyle waveformStyle() const noexcept { return style_; }
+
     /// The shape to draw, or nothing: a stream, a track that cannot be
     /// summarised, or one not started yet, all of which draw the plain groove.
     /// A partial summary is drawn as far as it goes. Only looked at in
@@ -121,6 +136,7 @@ private:
     bool   scrubbing_ = false;
 
     bool                                   waveformMode_ = false;
+    WaveformStyle                          style_;
     std::shared_ptr<const WaveformSummary> waveform_;
 };
 

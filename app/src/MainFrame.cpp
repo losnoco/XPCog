@@ -250,6 +250,7 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
     waveforms_ = std::make_unique<WaveformProvider>(
         registry_, WaveformCache{pathFromUtf8(platform::cacheDirectory()) / "waveforms"},
         dispatch_);
+    seekBar_->setWaveformStyle(waveformStyle());
     seekBar_->setWaveformMode(settings_.WaveformSeekBar());
 
     wireUp();
@@ -1405,6 +1406,7 @@ void MainFrame::setMiniMode(bool mini) {
         mini_->refreshVolume();
         // A fresh window read the mode from settings; the shape it has to be
         // handed, or it opens mid-track with a plain bar until the next one.
+        mini_->setWaveformStyle(waveformStyle());
         mini_->setWaveformMode(settings_.WaveformSeekBar());
         mini_->setWaveform(seekBar_->waveform());
         mini_->setNowPlaying(
@@ -1425,14 +1427,21 @@ void MainFrame::setMiniMode(bool mini) {
     Raise();
 }
 
+SeekBar::WaveformStyle MainFrame::waveformStyle() const {
+    return {.rectified   = settings_.WaveformRectified(),
+            .logarithmic = settings_.WaveformLogScale()};
+}
+
 void MainFrame::applyWaveformSetting() {
     const bool on = settings_.WaveformSeekBar();
 
+    seekBar_->setWaveformStyle(waveformStyle());
     seekBar_->setWaveformMode(on);
     // The bar's minimum grew or shrank; the transport row and everything under
     // it has to be laid out again for the frame to take it up.
     Layout();
     if (mini_ != nullptr) {
+        mini_->setWaveformStyle(waveformStyle());
         mini_->setWaveformMode(on);
     }
 
@@ -1687,6 +1696,14 @@ void MainFrame::bindCommands() {
         settings_.setWaveformSeekBar(!settings_.WaveformSeekBar());
         applyWaveformSetting();
     });
+    on(ViewWaveformRectified, [this] {
+        settings_.setWaveformRectified(!settings_.WaveformRectified());
+        applyWaveformSetting();
+    });
+    on(ViewWaveformLog, [this] {
+        settings_.setWaveformLogScale(!settings_.WaveformLogScale());
+        applyWaveformSetting();
+    });
     on(ViewSpectrum, [this] {
         const bool showing = !paneShown(spectrum_);
         togglePane(spectrum_, showing);
@@ -1822,6 +1839,14 @@ void MainFrame::bindUpdateUi() {
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(spectrum_)); });
     update(ViewWaveform,
            [this](wxUpdateUIEvent& event) { event.Check(settings_.WaveformSeekBar()); });
+    update(ViewWaveformRectified, [this](wxUpdateUIEvent& event) {
+        event.Enable(settings_.WaveformSeekBar());
+        event.Check(settings_.WaveformRectified());
+    });
+    update(ViewWaveformLog, [this](wxUpdateUIEvent& event) {
+        event.Enable(settings_.WaveformSeekBar());
+        event.Check(settings_.WaveformLogScale());
+    });
     update(ViewDockPanes,
            [this](wxUpdateUIEvent& event) { event.Enable(anyPaneFloating()); });
 #ifdef XPCOG_HAVE_SC55_PANEL

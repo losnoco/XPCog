@@ -30,6 +30,13 @@ constexpr int kWaveformPadding = 2;
 /// The playhead's width in waveform mode, where it stands in for the thumb.
 constexpr int kPlayheadWidth = 2;
 
+/// The bottom of the logarithmic scale. One step of the byte a bucket is
+/// stored in is 20*log10(1/255) = -48.1 dB, so a floor there is where the
+/// stored resolution runs out: the quietest non-zero bucket is drawn at the
+/// bottom of the scale rather than a fifth of the way up it, which a deeper
+/// floor would do, and silence and near-silence still tell apart.
+constexpr double kLogFloorDb = -48.0;
+
 /// How hard the shape is drawn, out of 255. The RMS body is the darker of the
 /// two so it reads as the loudness and the peak as its envelope; the played
 /// pair is the accent colour at the same two strengths.
@@ -142,6 +149,16 @@ void SeekBar::setWaveformMode(bool on) {
     SetMinSize(FromDIP(wxSize(120, on ? kWaveformHeight : (2 * kThumbRadius) + 4)));
     InvalidateBestSize();
     Refresh();
+}
+
+void SeekBar::setWaveformStyle(WaveformStyle style) {
+    if (style_ == style) {
+        return;
+    }
+    style_ = style;
+    if (waveformMode_) {
+        Refresh();
+    }
 }
 
 void SeekBar::setWaveform(std::shared_ptr<const WaveformSummary> summary) {
@@ -294,10 +311,34 @@ void SeekBar::paintWaveform(wxGraphicsContext& gc, double left, double width, do
         static_cast<int>(std::floor(shape.analysed / bucketsPerColumn)), 0, columns);
     const int playedColumns = std::clamp(thumbCentre() - static_cast<int>(left), 0, columns);
 
-    // The centre line first, under everything, so a silent stretch still reads
+    // Mirrored, the shape hangs off the centre line by up to halfHeight each
+    // way. Rectified, it stands on the bottom edge and has the whole height to
+    // itself -- the same bucket is drawn twice as tall, which is the point of
+    // that style. `baseline` is the line the shape grows from and `amplitude`
+    // how far a full-scale bucket reaches.
+    const bool   rectified = style_.rectified;
+    const double baseline  = rectified ? centreY + halfHeight : centreY;
+    const double amplitude = rectified ? 2.0 * halfHeight : halfHeight;
+
+    // The baseline first, under everything, so a silent stretch still reads
     // as part of the bar rather than a gap in it.
     gc.SetPen(wxPen(trackColour, hairline));
-    gc.StrokeLine(left, centreY, left + width, centreY);
+    gc.StrokeLine(left, baseline, left + width, baseline);
+
+    // A bucket's byte as a fraction of the amplitude. Linear is the byte over
+    // 255. Logarithmic is its level in decibels laid over kLogFloorDb..0, so a
+    // -24 dB passage stands half way up instead of a sixteenth.
+    const auto scale = [&](std::uint8_t value) {
+        if (value == 0) {
+            return 0.0;
+        }
+        const double linear = value / 255.0;
+        if (!style_.logarithmic) {
+            return linear;
+        }
+        const double db = 20.0 * std::log10(linear);
+        return std::clamp(1.0 - (db / kLogFloorDb), 0.0, 1.0);
+    };
 
     // One polygon per (level, played) pair: across the top edge of every
     // column, then back along the bottom. Filled in one go, so there are no
@@ -309,7 +350,7 @@ void SeekBar::paintWaveform(wxGraphicsContext& gc, double left, double width, do
         for (int i = first; i <= last && i < static_cast<int>(values.size()); ++i) {
             peak = std::max(peak, values[i]);
         }
-        return (peak / 255.0) * halfHeight;
+        return scale(peak) * amplitude;
     };
 
     const auto fill = [&](const std::vector<std::uint8_t>& values, int from, int to,
@@ -318,17 +359,19 @@ void SeekBar::paintWaveform(wxGraphicsContext& gc, double left, double width, do
             return;
         }
         wxGraphicsPath path = gc.CreatePath();
-        path.MoveToPoint(left + from, centreY);
+        path.MoveToPoint(left + from, baseline);
         for (int x = from; x < to; ++x) {
             const double h = level(values, x);
-            path.AddLineToPoint(left + x, centreY - h);
-            path.AddLineToPoint(left + x + 1, centreY - h);
+            path.AddLineToPoint(left + x, baseline - h);
+            path.AddLineToPoint(left + x + 1, baseline - h);
         }
-        path.AddLineToPoint(left + to, centreY);
-        for (int x = to - 1; x >= from; --x) {
-            const double h = level(values, x);
-            path.AddLineToPoint(left + x + 1, centreY + h);
-            path.AddLineToPoint(left + x, centreY + h);
+        path.AddLineToPoint(left + to, baseline);
+        if (!rectified) {
+            for (int x = to - 1; x >= from; --x) {
+                const double h = level(values, x);
+                path.AddLineToPoint(left + x + 1, baseline + h);
+                path.AddLineToPoint(left + x, baseline + h);
+            }
         }
         path.CloseSubpath();
         gc.SetPen(*wxTRANSPARENT_PEN);
@@ -347,7 +390,9 @@ void SeekBar::paintWaveform(wxGraphicsContext& gc, double left, double width, do
     // still being read.
     if (analysedColumns < columns) {
         const int    groove = FromDIP(kGrooveHeight);
-        const double top    = centreY - (groove / 2.0);
+        // Centred on the baseline when the shape is mirrored; standing on it
+        // when the shape does, so the two meet where the analysis stopped.
+        const double top    = rectified ? baseline - groove : centreY - (groove / 2.0);
         const double x      = left + analysedColumns;
         const double rest   = width - analysedColumns;
         gc.SetBrush(wxBrush(trackColour));

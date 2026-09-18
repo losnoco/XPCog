@@ -3697,7 +3697,12 @@ All of these are also documented at the call site.
   both seek bars taller and draws the track's shape in them: a peak envelope
   with the RMS level inside it, channels averaged, mirrored about the centre
   line, the played part in the accent colour and a playhead line where the
-  thumb was.
+  thumb was. Two drawing choices sit beside it in the View menu: Rectified
+  stands the shape on the bar's bottom edge instead, with the whole height to
+  itself, and Logarithmic lays the levels out in decibels over a -48 dB floor
+  -- the floor being one step of the byte a bucket is stored in, so the scale
+  runs out where the data does. Both are how the bytes are drawn, not what is
+  stored: the cache is the same whichever is chosen.
 
   Nothing in the player had whole-track audio -- the spectrum taps the last
   fraction of a second of played output -- so the shape comes from decoding the

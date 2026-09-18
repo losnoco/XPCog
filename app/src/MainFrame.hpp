@@ -28,6 +28,7 @@
 #include "AppCommands.hpp"
 #include "AppPlayerControl.hpp"
 #include "RemoteJobs.hpp"
+#include "SeekBar.hpp"
 #include "PlaybackController.hpp"
 #include "StatusPresence.hpp"
 
@@ -167,9 +168,11 @@ private:
     /// Cog: one is shown and the other hidden, never both.
     void setMiniMode(bool mini);
 
-    /// Reads `waveformSeekBar` and makes both seek bars agree with it: taller
-    /// and analysing the playing track, or plain and analysing nothing.
+    /// Reads the waveform settings and makes both seek bars agree with them:
+    /// taller and analysing the playing track, or plain and analysing nothing,
+    /// and drawn the way `waveformRectified` and `waveformLogScale` say.
     void applyWaveformSetting();
+    [[nodiscard]] SeekBar::WaveformStyle waveformStyle() const;
 
     /// Asks the provider for `id`'s shape, when the setting is on, and clears
     /// both bars until it answers. The prefetch of what probably follows is

@@ -93,6 +93,10 @@ const std::vector<MenuItem>& layout() {
         // because it is looked at, not configured: on, the transport is taller
         // and shows the track's shape; off, it is the plain bar it always was.
         {nullptr, ViewWaveform, wxTRANSLATE("Show &Waveform"), "", ItemKind::Check},
+        // Its two drawing choices, beside it rather than in a pane: they are
+        // flipped while looking at the bar, and disabled while it is plain.
+        {nullptr, ViewWaveformRectified, wxTRANSLATE("&Rectified Waveform"), "", ItemKind::Check},
+        {nullptr, ViewWaveformLog, wxTRANSLATE("&Logarithmic Waveform"), "", ItemKind::Check},
         // Cog keeps its equaliser in a window of its own rather than in
         // preferences, and so does this. Ctrl-E, which nothing else claims.
         {nullptr, ViewEqualizer, wxTRANSLATE("&Equalizer"), "Ctrl+E", ItemKind::Check},
