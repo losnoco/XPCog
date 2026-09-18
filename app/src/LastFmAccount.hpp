@@ -1,10 +1,25 @@
-// The listener's Last.fm connection: where the session key is kept, and the
-// three-step dance that obtains one.
+// The listener's Last.fm connection: where the session key is kept, which API
+// key it was opened under, and the three-step dance that obtains one.
 //
 // This is the app-layer half of scrobbling. Core does the protocol and the
 // queue and knows nothing about credentials -- it is handed a session key as a
 // string. Everything about *storing* that string, and about the browser trip
 // that produces it, is here, because both need a toolkit and core links none.
+//
+// **Two credentials, not one.** The session key is the listener's; the API key
+// and shared secret are the application's, and identify *which program* is
+// submitting. A build normally carries that pair baked in (LastFmSecrets.hpp.in
+// says how, and why a clean checkout has none). But a listener who built from
+// source, or whose build shipped without one, can apply for a pair of their own
+// at https://www.last.fm/api/account/create and enter it in the pane. A pair
+// entered that way wins over the built-in one, is kept in the same secret store
+// as the session, and can be removed to go back. The shared secret is what
+// signs every request, so it gets the same treatment as the session key rather
+// than a settings key: anyone holding it can submit as that application.
+//
+// A session belongs to the key that opened it. Change the key and the session
+// stops working, so `setApiCredentials()` discards it and says so, and the
+// listener connects again under the new one.
 //
 // **Storage is wxSecretStore**, which is the platform's own facility on each of
 // the three: Credential Manager on Windows, the Keychain on macOS, the Secret
@@ -40,8 +55,10 @@
 #include <wx/string.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <thread>
 
 namespace xpcog {
@@ -59,8 +76,9 @@ public:
     LastFmAccount(const LastFmAccount&)            = delete;
     LastFmAccount& operator=(const LastFmAccount&) = delete;
 
-    /// Whether this build carries an API key *and* has an HTTP client. False
-    /// means scrobbling cannot work at all here, whatever the listener does.
+    /// Whether an API key is in use *and* there is an HTTP client. False means
+    /// scrobbling cannot work here until the listener supplies a key -- or at
+    /// all, in a build without HTTP.
     [[nodiscard]] bool usable() const;
 
     /// Why `usable()` is false, phrased for the preferences pane. Empty when it
@@ -83,6 +101,48 @@ public:
 
     /// Removes the stored session.
     void forget();
+
+    // --- the application's own credentials -------------------------------
+
+    /// An API key and the shared secret that signs for it. Both or neither:
+    /// one without the other cannot make a request.
+    struct ApiCredentials {
+        std::string key;
+        std::string secret;
+
+        [[nodiscard]] bool empty() const noexcept { return key.empty() && secret.empty(); }
+        [[nodiscard]] bool complete() const noexcept {
+            return !key.empty() && !secret.empty();
+        }
+    };
+
+    /// Whether this build was configured with a key of its own.
+    [[nodiscard]] static bool hasBuiltInCredentials();
+
+    /// The listener's own pair, from the secret store, or an empty one.
+    [[nodiscard]] static ApiCredentials loadApiCredentials();
+
+    /// Whether the pair in use is the listener's rather than the build's.
+    [[nodiscard]] bool usingOwnCredentials() const { return !own_.empty(); }
+
+    /// Stores `credentials` as the listener's own and puts them into use, or,
+    /// given an empty pair, removes the stored one and goes back to the
+    /// built-in key. A pair with only one half filled in is refused.
+    ///
+    /// Returns the outcome rather than a bool because the caller has two things
+    /// to say: whether the store took it, and whether the session was discarded
+    /// with it. It is when the key in use changed -- a session opened under one
+    /// key is not valid for another, so keeping it would mean every scrobble
+    /// failing with error 9 until the scrobbler noticed and threw it away
+    /// anyway. The caller clears the scrobbler's copy and the listener
+    /// connects again.
+    enum class ApplyResult : std::uint8_t {
+        Applied,
+        AppliedAndDisconnected,
+        Incomplete,
+        StoreRefused,
+    };
+    ApplyResult setApiCredentials(ApiCredentials credentials);
 
     /// The client, for the pane. Borrowed; never null.
     [[nodiscard]] LastFmClient& client() const { return *client_; }
@@ -129,8 +189,19 @@ private:
     /// looking for it.
     static const wxString& serviceName();
 
+    /// The record holding the listener's own API key and secret. A second
+    /// service rather than a second field: wxSecretStore's unit is one
+    /// (service, username, secret), and the key goes in the username slot, so
+    /// the two halves are one record and cannot disagree.
+    static const wxString& apiServiceName();
+
+    /// Hands the client whichever pair applies: the listener's own when there
+    /// is one, the build's otherwise.
+    void applyCredentials();
+
     std::unique_ptr<IHttpClient>  http_;
     std::unique_ptr<LastFmClient> client_;
+    ApiCredentials                own_;
 
     std::thread       worker_;
     std::atomic<bool> connecting_{false};

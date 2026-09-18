@@ -75,8 +75,9 @@ set(XPCOG_APP_SOURCES
 # and the key identifies the *application*, so a fork submitting under XPCog's
 # identity would be misattributing somebody's listening history.
 #
-# A build without them compiles all of the scrobbling code and reports the
-# feature as unavailable, which is the same shape as XPCOG_WITH_SENTRY.
+# A build without them compiles all of the scrobbling code and reports itself as
+# carrying no key, which is the same shape as XPCOG_WITH_SENTRY -- except that
+# the listener can enter a key of their own in the preferences pane.
 set(XPCOG_LASTFM_API_KEY "" CACHE STRING
     "Last.fm API key. Apply at https://www.last.fm/api/account/create")
 set(XPCOG_LASTFM_API_SECRET "" CACHE STRING
@@ -111,7 +112,7 @@ endforeach()
 if(XPCOG_LASTFM_API_KEY AND XPCOG_LASTFM_API_SECRET)
     message(STATUS "Last.fm: API key configured")
 else()
-    message(STATUS "Last.fm: no API key; scrobbling will report itself unavailable")
+    message(STATUS "Last.fm: no API key; scrobbling needs one entered in preferences")
 endif()
 
 configure_file(src/LastFmSecrets.hpp.in

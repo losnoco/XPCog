@@ -192,8 +192,22 @@ bool LastFmError::retryable() const noexcept {
 LastFmClient::LastFmClient(IHttpClient& http, std::string apiKey, std::string apiSecret)
     : http_(http), apiKey_(std::move(apiKey)), apiSecret_(std::move(apiSecret)) {}
 
-bool LastFmClient::configured() const noexcept {
-    return !apiKey_.empty() && !apiSecret_.empty();
+void LastFmClient::setCredentials(std::string apiKey, std::string apiSecret) {
+    std::lock_guard lock(credentialsMutex_);
+    apiKey_    = std::move(apiKey);
+    apiSecret_ = std::move(apiSecret);
+}
+
+std::pair<std::string, std::string> LastFmClient::credentials() const {
+    std::lock_guard lock(credentialsMutex_);
+    return {apiKey_, apiSecret_};
+}
+
+std::string LastFmClient::apiKey() const { return credentials().first; }
+
+bool LastFmClient::configured() const {
+    const auto [key, secret] = credentials();
+    return !key.empty() && !secret.empty();
 }
 
 std::string LastFmClient::signature(const HttpParams& params, std::string_view secret) {
@@ -222,15 +236,19 @@ std::string LastFmClient::signature(const HttpParams& params, std::string_view s
 
 HttpResponse LastFmClient::call(std::string_view method, HttpParams params,
                                 std::string_view sessionKey, bool usePost) {
+    // One read for both, so the key sent and the secret signed with belong to
+    // the same pair even if setCredentials() lands in between.
+    const auto [apiKey, apiSecret] = credentials();
+
     params.emplace_back("method", std::string{method});
-    params.emplace_back("api_key", apiKey_);
+    params.emplace_back("api_key", apiKey);
     if (!sessionKey.empty()) {
         params.emplace_back("sk", std::string{sessionKey});
     }
 
     // Signed before `format` is added, which costs nothing since signature()
     // skips it, and keeps the two orderings from having to agree.
-    params.emplace_back("api_sig", signature(params, apiSecret_));
+    params.emplace_back("api_sig", signature(params, apiSecret));
     params.emplace_back("format", "json");
 
     return usePost ? http_.post(kApiRoot, params) : http_.get(kApiRoot, params);
@@ -239,7 +257,7 @@ HttpResponse LastFmClient::call(std::string_view method, HttpParams params,
 std::optional<std::string> LastFmClient::requestToken(LastFmError* error) {
     if (!configured()) {
         setError(error, LastFmError::Kind::Api, kInvalidApiKey,
-                 "this build carries no Last.fm API key");
+                 "no Last.fm API key is configured");
         return std::nullopt;
     }
 
@@ -261,7 +279,7 @@ std::optional<std::string> LastFmClient::requestToken(LastFmError* error) {
 std::string LastFmClient::authorizationUrl(std::string_view token) const {
     std::string url{kAuthRoot};
     url += "?api_key=";
-    url += percentEncode(apiKey_);
+    url += percentEncode(apiKey());
     url += "&token=";
     url += percentEncode(token);
     return url;
@@ -271,7 +289,7 @@ std::optional<LastFmSession> LastFmClient::session(std::string_view token,
                                                    LastFmError*     error) {
     if (!configured()) {
         setError(error, LastFmError::Kind::Api, kInvalidApiKey,
-                 "this build carries no Last.fm API key");
+                 "no Last.fm API key is configured");
         return std::nullopt;
     }
 
@@ -329,7 +347,7 @@ std::optional<LastFmClient::ScrobbleResult> LastFmClient::scrobble(
     LastFmError* error) {
     if (!configured()) {
         setError(error, LastFmError::Kind::Api, kInvalidApiKey,
-                 "this build carries no Last.fm API key");
+                 "no Last.fm API key is configured");
         return std::nullopt;
     }
     if (tracks.empty() || tracks.size() > kMaxBatch) {

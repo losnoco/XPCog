@@ -3284,10 +3284,17 @@ That is a fuzzing target and not the place to save a download.
 
 **No API key ships**, exactly as Cog ships none — `Secrets.template.xcconfig` is
 blank there and `XPCOG_LASTFM_API_KEY` is blank here. A build without one
-compiles every line of this and reports the feature as unavailable, which is the
-same shape as `XPCOG_WITH_SENTRY`. So the code is complete and a clean
-checkout reports the feature unavailable; everything below the network is covered
-by 46 tests against a fake transport, and the signing path is additionally
+compiles every line of this and says so, which is the same shape as
+`XPCOG_WITH_SENTRY` — with one departure from Cog: the pane takes a key and
+shared secret of the listener's own, kept as a second `wxSecretStore` record
+beside the session (the key in the username slot, so the two halves are one
+record and cannot disagree) and handed to `LastFmClient::setCredentials()`,
+which reads the pair under a lock at the moment it signs so the scrobbler's
+worker never sends one key signed with the other's secret. Changing the key
+discards the session, because a session belongs to the key that opened it. In
+Cog the key is `Secrets.xcconfig` or nothing; here a build without one scrobbles
+once the listener has applied for a key. Everything below the network is covered
+by tests against a fake transport, and the signing path is additionally
 confirmed against the real service by the hidden `[.lastfmlive]` case. What
 remains unexercised is everything behind the browser grant. See the entry under
 "Known gaps".

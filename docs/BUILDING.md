@@ -194,7 +194,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-1.13.0-x64-setup.exe
+:: -> build\windows-release\XPCog-1.14.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -215,7 +215,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-1.13.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-1.14.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -589,8 +589,11 @@ cmake --preset macos-headless && cmake --build --preset macos-headless
 ## Last.fm credentials
 
 **No API key ships with the source**, exactly as Cog ships none. Every line of
-the feature is compiled either way, and a build without one shows the pane greyed
-with an explanation. To build with scrobbling live, apply for a key at
+the feature is compiled either way, and a build without one says so in the pane
+and takes a key from the listener instead — Preferences → Last.fm → API account,
+which is also how somebody with a built-in key scrobbles under an application of
+their own (see [`docs/FEATURES.md`](FEATURES.md#lastfm)). To build with a key
+baked in, apply for one at
 [last.fm/api/account/create](https://www.last.fm/api/account/create) and
 configure with:
 
@@ -607,15 +610,15 @@ straight back into plaintext beside the build:
 op run --env-file=lastfm.env -- cmake --preset windows-debug
 ```
 
-Configure prints `Last.fm: API key configured`, or says the feature will report
-itself unavailable. CI reads the same two values out of the
+Configure prints `Last.fm: API key configured`, or says one will have to be
+entered in preferences. CI reads the same two values out of the
 `LASTFM_API_KEY` and `LASTFM_API_SECRET` repository secrets, by that same
 environment path, and only in the two jobs that package something — the Windows
 installer and the macOS disk image. No other job produces something a person
 downloads. That job fails when configure
-reports no key, because the alternative is shipping an installer whose Last.fm
-pane is greyed with nothing to say why. A pull request from a fork cannot see
-secrets and packages exactly such a build, deliberately. To check a key works before wiring anything up:
+reports no key, because the alternative is shipping an installer that asks
+every listener to apply for an API account before it scrobbles. A pull request
+from a fork cannot see secrets and packages exactly such a build, deliberately. To check a key works before wiring anything up:
 
 ```
 XPCOG_LASTFM_API_KEY=... XPCOG_LASTFM_API_SECRET=... xpcog-tests "[.lastfmlive]"

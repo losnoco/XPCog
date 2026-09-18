@@ -75,6 +75,13 @@ const wxString& LastFmAccount::serviceName() {
     return name;
 }
 
+const wxString& LastFmAccount::apiServiceName() {
+    // Same rule: stable, and named so the listener can find it beside the
+    // session in whatever the platform calls its credential manager.
+    static const wxString name = "XPCog/last.fm API key";
+    return name;
+}
+
 LastFmAccount::LastFmAccount()
     : http_(makeCurlHttpClient()) {
     // Falls back to a transport that refuses everything, so `client()` is always
@@ -87,6 +94,12 @@ LastFmAccount::LastFmAccount()
     client_ = std::make_unique<LastFmClient>(*http_,
                                              std::string{secrets::kLastFmApiKey},
                                              std::string{secrets::kLastFmApiSecret});
+    // Read here rather than lazily: the scrobbler is built right after this
+    // and starts using the client, so the pair has to be in place before that.
+    // The session is read at the same moment by MainFrame, so this is not a
+    // new trip to the store, only a second record from the same one.
+    own_ = loadApiCredentials();
+    applyCredentials();
 }
 
 LastFmAccount::~LastFmAccount() {
@@ -106,8 +119,8 @@ wxString LastFmAccount::unavailableReason() const {
                  "reach Last.fm.");
     }
     if (!client_->configured()) {
-        return _("This build carries no Last.fm API key. See "
-                 "app/src/LastFmSecrets.hpp.in for how to build with one.");
+        return _("This build carries no Last.fm API key. Enter your own below "
+                 "to scrobble.");
     }
     return {};
 }
@@ -180,6 +193,78 @@ void LastFmAccount::forget() {
         store.Delete(serviceName());
     }
 #endif
+}
+
+bool LastFmAccount::hasBuiltInCredentials() {
+    return !secrets::kLastFmApiKey.empty() && !secrets::kLastFmApiSecret.empty();
+}
+
+LastFmAccount::ApiCredentials LastFmAccount::loadApiCredentials() {
+#if wxUSE_SECRETSTORE
+    wxSecretStore store = wxSecretStore::GetDefault();
+    if (!store.IsOk()) {
+        return {};
+    }
+
+    wxString      key;
+    wxSecretValue secret;
+    if (!store.Load(apiServiceName(), key, secret)) {
+        return {};
+    }
+    const wxSecretString value{secret};
+
+    ApiCredentials credentials;
+    credentials.key    = key.utf8_string();
+    credentials.secret = value.utf8_string();
+    // A record with a half missing is treated as absent rather than handed to
+    // the client to fail every request with: it cannot have been written by
+    // setApiCredentials(), which refuses such a pair.
+    return credentials.complete() ? credentials : ApiCredentials{};
+#else
+    return {};
+#endif
+}
+
+LastFmAccount::ApplyResult LastFmAccount::setApiCredentials(ApiCredentials credentials) {
+    if (!credentials.empty() && !credentials.complete()) {
+        return ApplyResult::Incomplete;
+    }
+
+#if wxUSE_SECRETSTORE
+    wxSecretStore store = wxSecretStore::GetDefault();
+    if (!store.IsOk()) {
+        return ApplyResult::StoreRefused;
+    }
+    if (credentials.empty()) {
+        // Delete() answers false for a record that was not there, which is
+        // the outcome asked for, so it is not a refusal.
+        store.Delete(apiServiceName());
+    } else if (!store.Save(apiServiceName(), wxString::FromUTF8(credentials.key),
+                           wxSecretValue{wxString::FromUTF8(credentials.secret)})) {
+        return ApplyResult::StoreRefused;
+    }
+#else
+    return ApplyResult::StoreRefused;
+#endif
+
+    const std::string before = client_->apiKey();
+    own_                     = std::move(credentials);
+    applyCredentials();
+
+    if (client_->apiKey() == before) {
+        return ApplyResult::Applied;
+    }
+    forget();
+    return ApplyResult::AppliedAndDisconnected;
+}
+
+void LastFmAccount::applyCredentials() {
+    if (own_.complete()) {
+        client_->setCredentials(own_.key, own_.secret);
+    } else {
+        client_->setCredentials(std::string{secrets::kLastFmApiKey},
+                                std::string{secrets::kLastFmApiSecret});
+    }
 }
 
 void LastFmAccount::connect(std::function<void(std::function<void()>)> dispatch,

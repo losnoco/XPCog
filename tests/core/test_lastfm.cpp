@@ -361,6 +361,34 @@ TEST_CASE("A build with no API key never reaches the network", "[lastfm]") {
     CHECK(http.callCount() == 0);
 }
 
+TEST_CASE("Credentials set later are the ones sent and signed with", "[lastfm]") {
+    FakeHttp     http;
+    LastFmClient client{http, "", ""};
+    CHECK(client.configured() == false);
+
+    // The listener's own pair, entered in the pane after the build shipped
+    // without one. Every later call carries the new key and is signed with the
+    // new secret -- the signature here is the one the earlier test pins for
+    // KEY/SECRET, so a stale secret would show up as a different digest.
+    client.setCredentials(std::string{kKey}, std::string{kSecret});
+    CHECK(client.configured());
+    CHECK(client.apiKey() == std::string{kKey});
+
+    http.reply(200, R"({"token":"TOK123"})");
+    REQUIRE(client.requestToken());
+    CHECK(http.sent(0, "api_key") == std::string{kKey});
+    CHECK(http.sent(0, "api_sig") == "66ee63a18da3c919f987b342697d913c");
+    CHECK(client.authorizationUrl("TOK123") ==
+          "https://www.last.fm/api/auth/?api_key=KEY&token=TOK123");
+
+    // And back to none, which is what removing the pair does: the network is
+    // not touched again.
+    client.setCredentials("", "");
+    CHECK(client.configured() == false);
+    CHECK(!client.requestToken());
+    CHECK(http.callCount() == 1);
+}
+
 // --- encoding ------------------------------------------------------------
 
 TEST_CASE("Percent-encoding escapes what a form body would otherwise eat",

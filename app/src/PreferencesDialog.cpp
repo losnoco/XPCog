@@ -8,6 +8,7 @@
 #include "Text.hpp"
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
+#include "xpcog/core/net/HttpClient.hpp"
 #include "xpcog/core/remote/RemoteServer.hpp"
 #include "xpcog/platform/CrashReporter.hpp"
 
@@ -638,7 +639,7 @@ public:
         return add(label, picker);
     }
 
-    /// A section title, for the one pane that holds two things. Bold, in the
+    /// A section title, for the panes that hold two things. Bold, in the
     /// label column, with the control column left empty: the form is a grid of
     /// two, so a heading is a row of it like any other.
     FormRow heading(const wxString& text) const {
@@ -1875,6 +1876,58 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
     form->AddSpacer(0);
     form->Add(buttons, 0, wxBOTTOM, pane->FromDIP(6));
 
+    row->note(_("Plays are sent once you have heard half a track, or four "
+                "minutes of it, whichever comes first. Tracks under 30 seconds "
+                "are never scrobbled."));
+    row->link(_("Your Last.fm applications"),
+              "https://www.last.fm/settings/applications");
+    row->note(_("Revoking access there stops scrobbling immediately, whatever "
+                "this pane says."));
+
+    // The application's own identity with Last.fm, which is a different thing
+    // from the listener's account above: the API key says *which program* is
+    // submitting. A build usually carries one; this lets a listener bring their
+    // own, which is the only way a build without one scrobbles at all, and is
+    // also what somebody who would rather not submit under XPCog's name wants.
+    //
+    // Two fields and a button rather than fields that commit on focus loss like
+    // the path rows: the key and the secret are useless apart, so they are
+    // written together or not at all, and a half-typed pair should not have
+    // already replaced a working one.
+    row->heading(_("API account"));
+    auto* keyStatus = new NoteText(pane, wxEmptyString);
+    {
+        auto* pad = new wxStaticText(pane, wxID_ANY, "");
+        form->Add(pad, 0);
+        form->Add(keyStatus, 1, wxEXPAND | wxTOP, pane->FromDIP(6));
+    }
+    row->link(_("Create a Last.fm API account"),
+              "https://www.last.fm/api/account/create");
+
+    const LastFmAccount::ApiCredentials own = LastFmAccount::loadApiCredentials();
+    auto* keyEdit = new wxTextCtrl(pane, wxID_ANY, wxString::FromUTF8(own.key));
+    // A password field, for the half that signs every request. It is shown
+    // filled so the listener can see a secret is set without being shown it.
+    auto* secretEdit = new wxTextCtrl(pane, wxID_ANY, wxString::FromUTF8(own.secret),
+                                      wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
+    // Same reason as makeEdit(): the box takes the row's spare width, so its
+    // default minimum must not be what decides the pane's.
+    keyEdit->SetMinSize(wxSize(pane->FromDIP(60), -1));
+    secretEdit->SetMinSize(wxSize(pane->FromDIP(60), -1));
+    row->add(_("API key"), keyEdit);
+    row->add(_("Shared secret"), secretEdit);
+
+    auto* use    = new wxButton(pane, wxID_ANY, _("Use this key"));
+    auto* remove = new wxButton(pane, wxID_ANY, _("Remove"));
+    auto* keyButtons = new wxBoxSizer(wxHORIZONTAL);
+    keyButtons->Add(use, 0, wxRIGHT, pane->FromDIP(6));
+    keyButtons->Add(remove, 0);
+    form->AddSpacer(0);
+    form->Add(keyButtons, 0, wxTOP | wxBOTTOM, pane->FromDIP(6));
+    row->note(_("A connection belongs to the key that opened it, so changing "
+                "the key disconnects you and you connect again under the new "
+                "one."));
+
     // A token proving this pane is still on screen.
     //
     // The connect flow answers on a worker and is marshalled back through
@@ -1891,7 +1944,8 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
 
     // Captured by the handlers below. `refresh` is the only thing that decides
     // what is shown, so there is no way for two paths to disagree about it.
-    const auto refresh = [this, token, status, connect, cancel, forget, enable] {
+    const auto refresh = [this, token, status, connect, cancel, forget, enable,
+                          keyStatus, keyEdit, secretEdit, use, remove] {
         if (token.expired()) {
             return;
         }
@@ -1906,6 +1960,27 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
         cancel->Show(working);
         forget->Show(session.connected() && !working);
         connect->Enable(built && store);
+
+        // The key fields want the store -- there is nowhere else to keep the
+        // secret -- and a transport, and are frozen while a connection is in
+        // flight: swapping the key under a token that was issued to the old
+        // one would only make the poll fail in a confusing way.
+        const bool ownKey  = account_->usingOwnCredentials();
+        const bool canEdit = store && httpClientAvailable() && !working;
+        keyEdit->Enable(canEdit);
+        secretEdit->Enable(canEdit);
+        use->Enable(canEdit);
+        remove->Show(ownKey);
+        remove->Enable(canEdit);
+        if (ownKey) {
+            keyStatus->setText(_("Using your own API key."));
+        } else if (LastFmAccount::hasBuiltInCredentials()) {
+            keyStatus->setText(_("Using the key built into XPCog. Enter your own "
+                                 "to scrobble as an application of your own."));
+        } else {
+            keyStatus->setText(_("This build carries no API key, so scrobbling "
+                                 "needs one of yours."));
+        }
 
         // Built up and handed over once, rather than written to the control and
         // then read back to append to. Reading it back stopped being an option
@@ -1998,13 +2073,66 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
         refresh();
     });
 
-    row->note(_("Plays are sent once you have heard half a track, or four "
-                "minutes of it, whichever comes first. Tracks under 30 seconds "
-                "are never scrobbled."));
-    row->link(_("Your Last.fm applications"),
-              "https://www.last.fm/settings/applications");
-    row->note(_("Revoking access there stops scrobbling immediately, whatever "
-                "this pane says."));
+    // What the two key buttons have in common: hand the pair to the account,
+    // and say what it did. `refresh` writes both notes from the state, so a
+    // message that is *about the change* goes on top afterwards, as the connect
+    // flow's failure handler does -- a complaint about the fields beside the
+    // fields, and the one about the connection on the connection's line.
+    const auto apply = [this, refresh, token, status, keyStatus, keyEdit, secretEdit](
+                           LastFmAccount::ApiCredentials credentials, bool removing) {
+        // Nothing typed is a request to enter something, not to remove what is
+        // there; that is what the other button is for.
+        const auto result = (!removing && !credentials.complete())
+                                ? LastFmAccount::ApplyResult::Incomplete
+                                : account_->setApiCredentials(std::move(credentials));
+        wxString   keyMessage;
+        wxString   connectionMessage;
+        switch (result) {
+            case LastFmAccount::ApplyResult::Applied:
+                break;
+            case LastFmAccount::ApplyResult::AppliedAndDisconnected:
+                scrobbler_->setSession({});
+                connectionMessage = _("The key changed, so you have been "
+                                      "disconnected. Connect again to scrobble "
+                                      "under it.");
+                break;
+            case LastFmAccount::ApplyResult::Incomplete:
+                keyMessage = _("Both the API key and the shared secret are needed.");
+                break;
+            case LastFmAccount::ApplyResult::StoreRefused:
+                keyMessage = _("The system password store would not keep the key.");
+                break;
+        }
+        refresh();
+        if (token.expired()) {
+            return;
+        }
+        if (!keyMessage.IsEmpty()) {
+            keyStatus->setText(keyMessage);
+        }
+        if (!connectionMessage.IsEmpty()) {
+            status->setText(connectionMessage);
+        }
+        // Whatever is stored is what the fields show, so a refused save does
+        // not leave a pair on screen that is not the pair in use.
+        const auto stored = LastFmAccount::loadApiCredentials();
+        keyEdit->ChangeValue(wxString::FromUTF8(stored.key));
+        secretEdit->ChangeValue(wxString::FromUTF8(stored.secret));
+    };
+
+    use->Bind(wxEVT_BUTTON, [apply, keyEdit, secretEdit](wxCommandEvent&) {
+        LastFmAccount::ApiCredentials credentials;
+        // Trimmed, because a key is pasted out of a web page and arrives with
+        // whatever whitespace the selection caught, and Last.fm's answer to a
+        // key with a space on the end is "invalid API key" with no hint why.
+        credentials.key    = toUtf8(keyEdit->GetValue().Strip(wxString::both));
+        credentials.secret = toUtf8(secretEdit->GetValue().Strip(wxString::both));
+        apply(std::move(credentials), /*removing=*/false);
+    });
+
+    remove->Bind(wxEVT_BUTTON, [apply](wxCommandEvent&) {
+        apply(LastFmAccount::ApiCredentials{}, /*removing=*/true);
+    });
 
     refresh();
 

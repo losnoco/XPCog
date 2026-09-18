@@ -766,11 +766,11 @@ msgid ""
 msgstr ""
 "Esta compilación se configuró sin compatibilidad con HTTP, así que no puede conectarse a Last.fm."
 
-#: app/src/LastFmAccount.cpp:109
+#: app/src/LastFmAccount.cpp:126
 msgid ""
-"This build carries no Last.fm API key. See app/src/LastFmSecrets.hpp.in for how to build with one."
+"This build carries no Last.fm API key. Enter your own below to scrobble."
 msgstr ""
-"Esta compilación no lleva ninguna clave de API de Last.fm. Consulta app/src/LastFmSecrets.hpp.in para compilar con una."
+"Esta compilación no lleva ninguna clave de API de Last.fm. Ingresa la tuya más abajo para enviar scrobbles."
 
 #: app/src/LastFmAccount.cpp:123
 msgid ""
@@ -1933,6 +1933,66 @@ msgid ""
 "Revoking access there stops scrobbling immediately, whatever this pane says."
 msgstr ""
 "Revocar el acceso allí detiene los scrobbles de inmediato, diga lo que diga este panel."
+
+#: app/src/PreferencesDialog.cpp:1904
+msgid "API account"
+msgstr "Cuenta de API"
+
+#: app/src/PreferencesDialog.cpp:1911
+msgid "Create a Last.fm API account"
+msgstr "Crear una cuenta de API de Last.fm"
+
+#: app/src/PreferencesDialog.cpp:1924
+msgid "API key"
+msgstr "Clave de API"
+
+#: app/src/PreferencesDialog.cpp:1925
+msgid "Shared secret"
+msgstr "Secreto compartido"
+
+#: app/src/PreferencesDialog.cpp:1927
+msgid "Use this key"
+msgstr "Usar esta clave"
+
+#: app/src/PreferencesDialog.cpp:1928
+msgid "Remove"
+msgstr "Quitar"
+
+#: app/src/PreferencesDialog.cpp:1934
+msgid ""
+"A connection belongs to the key that opened it, so changing the key disconnects you and you connect again under the new one."
+msgstr ""
+"Una conexión pertenece a la clave con la que se abrió, así que cambiar la clave te desconecta y vuelves a conectarte con la nueva."
+
+#: app/src/PreferencesDialog.cpp:1980
+msgid "Using your own API key."
+msgstr "Usando tu propia clave de API."
+
+#: app/src/PreferencesDialog.cpp:1982
+msgid ""
+"Using the key built into XPCog. Enter your own to scrobble as an application of your own."
+msgstr ""
+"Usando la clave incorporada en XPCog. Ingresa la tuya para enviar los scrobbles como una aplicación propia."
+
+#: app/src/PreferencesDialog.cpp:1985
+msgid ""
+"This build carries no API key, so scrobbling needs one of yours."
+msgstr ""
+"Esta compilación no lleva ninguna clave de API, así que enviar scrobbles necesita una tuya."
+
+#: app/src/PreferencesDialog.cpp:2091
+msgid ""
+"The key changed, so you have been disconnected. Connect again to scrobble under it."
+msgstr ""
+"La clave cambió, así que se cerró la conexión. Vuelve a conectarte para enviar scrobbles con ella."
+
+#: app/src/PreferencesDialog.cpp:2095
+msgid "Both the API key and the shared secret are needed."
+msgstr "Se necesitan tanto la clave de API como el secreto compartido."
+
+#: app/src/PreferencesDialog.cpp:2098
+msgid "The system password store would not keep the key."
+msgstr "El almacén de contraseñas del sistema no quiso guardar la clave."
 
 #: app/src/Sc55Panel.cpp:141
 msgid "Waiting for the panel…"

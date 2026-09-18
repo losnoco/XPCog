@@ -42,10 +42,12 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace xpcog {
@@ -125,15 +127,30 @@ class LastFmClient {
 public:
     /// `http` is borrowed and must outlive the client.
     ///
-    /// The key and secret are the *application's*, not the listener's. They are
-    /// baked in at build time and may be empty -- see `configured()`.
+    /// The key and secret identify the *application* to Last.fm, not the
+    /// listener. They are usually baked in at build time and may be empty -- see
+    /// `configured()` -- and may be replaced later by `setCredentials()`.
     LastFmClient(IHttpClient& http, std::string apiKey, std::string apiSecret);
 
-    /// False when this build carries no API key, in which case every call here
-    /// fails without touching the network. Cog ships in exactly this state:
+    /// Replaces the key and secret, for a listener who applied for their own
+    /// rather than building with one.
+    ///
+    /// Safe to call while the scrobbler's worker is mid-request: each call reads
+    /// both under a lock at the moment it signs, so a request is signed with one
+    /// pair or the other, never a key from one and a secret from the other.
+    /// Callers should expect a session key granted under the old pair to stop
+    /// working -- a session belongs to the key that opened it.
+    void setCredentials(std::string apiKey, std::string apiSecret);
+
+    /// The key in use. For the interface to say which one that is; the secret
+    /// is deliberately not offered back.
+    [[nodiscard]] std::string apiKey() const;
+
+    /// False when no API key is set, in which case every call here fails
+    /// without touching the network. Cog ships in exactly this state:
     /// `Secrets.template.xcconfig` has both values blank and `AudioScrobbler`
     /// reports itself disabled.
-    [[nodiscard]] bool configured() const noexcept;
+    [[nodiscard]] bool configured() const;
 
     // --- the desktop authentication flow --------------------------------
 
@@ -202,9 +219,14 @@ private:
     [[nodiscard]] HttpResponse call(std::string_view method, HttpParams params,
                                     std::string_view sessionKey, bool usePost);
 
-    IHttpClient& http_;
-    std::string  apiKey_;
-    std::string  apiSecret_;
+    /// Both under `credentialsMutex_`: written by the interface's thread and
+    /// read by whichever worker is signing a request.
+    [[nodiscard]] std::pair<std::string, std::string> credentials() const;
+
+    IHttpClient&       http_;
+    mutable std::mutex credentialsMutex_;
+    std::string        apiKey_;
+    std::string        apiSecret_;
 };
 
 }  // namespace xpcog

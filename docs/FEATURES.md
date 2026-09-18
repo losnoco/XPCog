@@ -162,6 +162,16 @@ Plays go on a durable queue before they are sent, so an evening spent offline
 arrives the next time the machine has a network. Cog has no queue; a failed
 submission there is simply gone.
 
+The API key — the one that says *which program* is submitting, as distinct from
+the listener's session — is normally built in, and the releases carry one. The
+pane also takes a key and shared secret of your own, from
+[last.fm/api/account/create](https://www.last.fm/api/account/create), under
+*API account*: for a build made without one, or for scrobbling under an
+application of your own rather than XPCog's. The pair goes in the same secret
+store as the session and wins over the built-in one until removed. A session
+belongs to the key that opened it, so changing the key disconnects you and you
+connect again under the new one. Cog has no equivalent; its key is
+`Secrets.xcconfig` or nothing.
 
 Building with credentials of your own is in [`docs/BUILDING.md`](BUILDING.md#lastfm-credentials).
 
