@@ -187,6 +187,22 @@ public:
     /// gapless preloading needs anyway.
     [[nodiscard]] std::optional<TrackId> nextForPlayback();
 
+    /// What nextForPlayback() would most likely answer, without answering it.
+    ///
+    /// For work worth starting early on the track that is probably next -- the
+    /// waveform behind the seek bar -- and nothing that cannot survive being
+    /// wrong. It reads the same state the real call reads and touches none of
+    /// it: the queue is not popped, the shuffle order is not extended, a removed
+    /// entry's resume point is left for the real call to consume. Where the
+    /// real answer would have to be *made* rather than read -- the shuffle
+    /// order has run out and would be extended, or was never built -- this says
+    /// nothing rather than guessing.
+    ///
+    /// Read from the interface thread while the feeder thread's
+    /// nextForPlayback() writes the same fields; the playlist view already reads
+    /// entries the feeder marks, and this lives with the same tolerance.
+    [[nodiscard]] std::optional<TrackId> peekNextForPlayback() const;
+
     /// The user pressed Next. Repeat-one is ignored -- otherwise the button would
     /// do nothing -- and the current entry is updated. Cog's -next.
     bool next();

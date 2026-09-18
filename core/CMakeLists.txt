@@ -25,6 +25,7 @@ add_library(xpcog-core STATIC
     src/audio/Waveform.cpp
     src/audio/WaveformCache.cpp
     src/audio/WaveformFile.cpp
+    src/audio/WaveformProvider.cpp
     src/AssetPath.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp

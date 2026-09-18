@@ -15,6 +15,7 @@
 #include "xpcog/core/audio/Waveform.hpp"
 #include "xpcog/core/audio/WaveformCache.hpp"
 #include "xpcog/core/audio/WaveformFile.hpp"
+#include "xpcog/core/audio/WaveformProvider.hpp"
 
 #include "../TestShell.hpp"
 #include "../TestSignal.hpp"
@@ -22,14 +23,21 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 using namespace xpcog;
@@ -547,4 +555,329 @@ TEST_CASE("Waveform analyser reads a real file through the registry", "[waveform
     };
     CHECK(meanRms(50, 450) == Catch::Approx(loudPeak / std::sqrt(2.0) * 255).margin(2));
     CHECK(meanRms(562, 962) == Catch::Approx(quietPeak / std::sqrt(2.0) * 255).margin(2));
+}
+
+// --- provider ----------------------------------------------------------------
+//
+// The seam between the worker and the interface. What is asserted is the same
+// as for ScanTask: nothing reaches a slot except through the dispatcher, a
+// superseded job's snapshots are dropped even when they were already queued,
+// and a provider destroyed mid-track takes its thread with it.
+
+namespace {
+
+/// Emits `frames` of a square wave, one chunk at a time, with an optional
+/// pause per chunk so a job can be caught mid-track.
+class ToneDecoder final : public IDecoder {
+public:
+    static inline std::atomic<int>          chunkDelayMs{0};
+    static inline std::atomic<std::int64_t> frames{kWaveformBuckets * 4};
+    static inline std::atomic<int>          interrupts{0};
+
+    bool open(ISource*) override { return true; }
+
+    [[nodiscard]] TrackProperties properties() const override {
+        TrackProperties props;
+        props.format.sampleRate = kRate;
+        props.format.channels   = 1;
+        props.format.format     = SampleFormat::F32;
+        props.totalFrames       = frames.load();
+        return props;
+    }
+
+    bool readAudio(AudioChunk& out) override {
+        const std::int64_t total = frames.load();
+        if (cursor_ >= total) {
+            return false;
+        }
+        const auto count = static_cast<std::size_t>(std::min<std::int64_t>(4096, total - cursor_));
+        std::vector<float> samples(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            samples[i] = (i % 2 == 0) ? 0.5F : -0.5F;
+        }
+        out.setFormat(properties().format);
+        out.assign(samples.data(), count);
+        cursor_ += static_cast<std::int64_t>(count);
+        if (const int delay = chunkDelayMs.load(); delay > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{delay});
+        }
+        return true;
+    }
+
+    std::int64_t seek(std::int64_t) override { return -1; }
+    void         close() override {}
+    void         interrupt() override { ++interrupts; }
+
+private:
+    std::int64_t cursor_ = 0;
+};
+
+class AnySource final : public ISource {
+public:
+    bool open(const Url& url) override {
+        url_ = url;
+        return true;
+    }
+    [[nodiscard]] bool seekable() const override { return true; }
+    bool seek(std::int64_t, int) override { return true; }
+    [[nodiscard]] std::int64_t tell() const override { return 0; }
+    std::int64_t read(void*, std::int64_t) override { return 0; }
+    void close() override {}
+    [[nodiscard]] const Url& url() const override { return url_; }
+
+private:
+    Url url_;
+};
+
+constexpr std::string_view kFileScheme[]   = {"file"};
+constexpr std::string_view kToneExtension[] = {"tone"};
+
+PluginRegistry& toneRegistry() {
+    static PluginRegistry instance;
+    static const bool     once = [] {
+        instance.addSource({
+            .name    = "AnySource",
+            .schemes = kFileScheme,
+            .create  = []() -> SourcePtr { return std::make_unique<AnySource>(); },
+        });
+        instance.addDecoder({
+            .name       = "ToneDecoder",
+            .extensions = kToneExtension,
+            .mimeTypes  = {},
+            .create     = []() -> DecoderPtr { return std::make_unique<ToneDecoder>(); },
+        });
+        instance.freeze();
+        return true;
+    }();
+    (void)once;
+    return instance;
+}
+
+/// A dispatcher that is a queue, drained where the test chooses.
+class Queue {
+public:
+    Dispatcher dispatcher() {
+        return [this](std::function<void()> action) {
+            const std::lock_guard lock(mutex_);
+            queued_.push_back(std::move(action));
+        };
+    }
+
+    /// Runs what has been queued so far. Returns how many.
+    std::size_t drain() {
+        std::vector<std::function<void()>> batch;
+        {
+            const std::lock_guard lock(mutex_);
+            batch.swap(queued_);
+        }
+        for (auto& action : batch) {
+            action();
+        }
+        return batch.size();
+    }
+
+    /// Drains until `done()` or `limit` passes.
+    template <typename Done>
+    bool drainUntil(Done done, std::chrono::milliseconds limit = std::chrono::seconds{10}) {
+        const auto deadline = std::chrono::steady_clock::now() + limit;
+        while (std::chrono::steady_clock::now() < deadline) {
+            drain();
+            if (done()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        drain();
+        return done();
+    }
+
+    [[nodiscard]] std::size_t pending() {
+        const std::lock_guard lock(mutex_);
+        return queued_.size();
+    }
+
+private:
+    std::mutex                         mutex_;
+    std::vector<std::function<void()>> queued_;
+};
+
+struct Update {
+    Url                                    url;
+    std::shared_ptr<const WaveformSummary> summary;
+};
+
+struct ProviderFixture {
+    TempDir dir{"provider"};
+    Queue   queue;
+    std::vector<Update> updates;
+    std::unique_ptr<WaveformProvider> provider;
+    Subscription subscription;
+
+    ProviderFixture() {
+        ToneDecoder::chunkDelayMs = 0;
+        ToneDecoder::frames       = kWaveformBuckets * 4;
+        ToneDecoder::interrupts   = 0;
+        provider = std::make_unique<WaveformProvider>(
+            toneRegistry(), WaveformCache{dir.path() / "waveforms"}, queue.dispatcher());
+        subscription = provider->updated().connect(
+            [this](const Url& url, const std::shared_ptr<const WaveformSummary>& summary) {
+                updates.push_back({url, summary});
+            });
+    }
+
+    Url track(const std::string& name) {
+        return Url::fromLocalPath(dir.write(name, "a stamp to key on: " + name));
+    }
+
+    [[nodiscard]] bool completeFor(const Url& url) const {
+        return std::any_of(updates.begin(), updates.end(), [&](const Update& u) {
+            return u.url.toString() == url.toString() && u.summary->complete();
+        });
+    }
+
+    [[nodiscard]] std::size_t countFor(const Url& url) const {
+        return static_cast<std::size_t>(std::count_if(updates.begin(), updates.end(), [&](const Update& u) {
+            return u.url.toString() == url.toString();
+        }));
+    }
+};
+
+}  // namespace
+
+TEST_CASE("Waveform provider analyses a track and hands the result to the dispatcher",
+          "[waveform]") {
+    ProviderFixture f;
+    const Url       url = f.track("one.tone");
+
+    f.provider->request(url);
+    REQUIRE(f.queue.drainUntil([&] { return f.completeFor(url); }));
+
+    REQUIRE_FALSE(f.updates.empty());
+    CHECK(f.updates.back().url.toString() == url.toString());
+    CHECK(f.updates.back().summary->complete());
+    CHECK(f.updates.back().summary->peak[10] == 128);
+
+    // Kept, and answered from disk the second time: one update, complete.
+    f.updates.clear();
+    f.provider->request(url);
+    REQUIRE(f.queue.drainUntil([&] { return f.completeFor(url); }));
+    CHECK(f.countFor(url) == 1);
+}
+
+TEST_CASE("Waveform provider publishes nothing off the dispatcher", "[waveform]") {
+    ProviderFixture f;
+    const Url       url = f.track("quiet.tone");
+
+    f.provider->request(url);
+    // Give the worker time to finish without draining.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (f.queue.pending() == 0 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+    }
+    CHECK(f.updates.empty());
+    CHECK(f.queue.pending() > 0);
+    f.queue.drain();
+    CHECK(f.completeFor(url));
+}
+
+TEST_CASE("Waveform provider drops a superseded job's snapshots, even queued ones",
+          "[waveform]") {
+    ProviderFixture f;
+    ToneDecoder::chunkDelayMs = 5;
+    ToneDecoder::frames       = 4096 * 200;  // a second of chunks
+    const Url slow = f.track("slow.tone");
+    const Url next = f.track("next.tone");
+
+    f.provider->request(slow);
+    // Let the first job get going and queue some snapshots, but do not drain.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (f.queue.pending() == 0 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+    }
+    REQUIRE(f.queue.pending() > 0);
+
+    ToneDecoder::chunkDelayMs = 0;
+    f.provider->request(next);
+    REQUIRE(f.queue.drainUntil([&] { return f.completeFor(next); }));
+
+    CHECK(f.countFor(slow) == 0);
+    CHECK(ToneDecoder::interrupts.load() >= 1);
+}
+
+TEST_CASE("Waveform provider runs the prefetch after the request, not beside it",
+          "[waveform]") {
+    ProviderFixture f;
+    const Url       now   = f.track("now.tone");
+    const Url       after = f.track("after.tone");
+
+    f.provider->request(now);
+    f.provider->prefetch(after);
+    REQUIRE(f.queue.drainUntil([&] { return f.completeFor(after); }));
+
+    CHECK(f.completeFor(now));
+    const auto firstAfter = std::find_if(f.updates.begin(), f.updates.end(), [&](const Update& u) {
+        return u.url.toString() == after.toString();
+    });
+    const auto lastNow = std::find_if(f.updates.rbegin(), f.updates.rend(), [&](const Update& u) {
+        return u.url.toString() == now.toString();
+    });
+    REQUIRE(firstAfter != f.updates.end());
+    REQUIRE(lastNow != f.updates.rend());
+    CHECK(std::distance(f.updates.begin(), firstAfter) >
+          std::distance(f.updates.begin(), lastNow.base()) - 1);
+
+    // A prefetch asked for once the request is done starts at once.
+    f.updates.clear();
+    const Url later = f.track("later.tone");
+    f.provider->prefetch(later);
+    REQUIRE(f.queue.drainUntil([&] { return f.completeFor(later); }));
+}
+
+TEST_CASE("Waveform provider forgets a prefetch when a new request arrives", "[waveform]") {
+    ProviderFixture f;
+    ToneDecoder::chunkDelayMs = 5;
+    ToneDecoder::frames       = 4096 * 40;
+    const Url first  = f.track("first.tone");
+    const Url guess  = f.track("guess.tone");
+    const Url second = f.track("second.tone");
+
+    f.provider->request(first);
+    f.provider->prefetch(guess);
+    ToneDecoder::chunkDelayMs = 0;
+    f.provider->request(second);
+    REQUIRE(f.queue.drainUntil([&] { return f.completeFor(second); }));
+
+    CHECK(f.countFor(guess) == 0);
+    CHECK(f.countFor(first) == 0);
+}
+
+TEST_CASE("Waveform provider says nothing after cancel", "[waveform]") {
+    ProviderFixture f;
+    ToneDecoder::chunkDelayMs = 5;
+    ToneDecoder::frames       = 4096 * 40;
+    const Url url = f.track("cancelled.tone");
+
+    f.provider->request(url);
+    std::this_thread::sleep_for(std::chrono::milliseconds{30});
+    f.provider->cancel();
+    std::this_thread::sleep_for(std::chrono::milliseconds{50});
+    f.queue.drain();
+    CHECK(f.updates.empty());
+}
+
+TEST_CASE("Waveform provider destroyed mid-track leaves nothing behind", "[waveform]") {
+    ProviderFixture f;
+    ToneDecoder::chunkDelayMs = 5;
+    ToneDecoder::frames       = 4096 * 200;
+    const Url url = f.track("orphan.tone");
+
+    f.provider->request(url);
+    std::this_thread::sleep_for(std::chrono::milliseconds{50});
+    const auto before = std::chrono::steady_clock::now();
+    f.provider.reset();
+    CHECK(std::chrono::steady_clock::now() - before < std::chrono::seconds{2});
+
+    // Whatever was queued before the destructor ran finds no owner.
+    f.queue.drain();
+    CHECK(f.updates.empty());
 }

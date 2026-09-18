@@ -639,3 +639,122 @@ TEST_CASE("reorder refuses anything that is not a permutation", "[playlist]") {
     REQUIRE(playlist.at(1).id == ids[1]);
     REQUIRE(playlist.at(2).id == ids[2]);
 }
+
+// --- peekNextForPlayback ---------------------------------------------------
+//
+// The guess the waveform prefetch runs on. It has to agree with the real
+// answer wherever the real answer can be read, and stay silent where it would
+// have to be made.
+
+TEST_CASE("peeking the next track agrees with taking it, and changes nothing",
+          "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 4);
+    playlist.setCurrent(ids[0]);
+
+    SECTION("in order") {
+        CHECK(playlist.peekNextForPlayback() == ids[1]);
+        CHECK(playlist.peekNextForPlayback() == ids[1]);  // twice, the same
+        CHECK(playlist.nextForPlayback() == ids[1]);
+        // Measured from the cursor once one has been handed out, like the real one.
+        CHECK(playlist.peekNextForPlayback() == ids[2]);
+    }
+
+    SECTION("the queue outranks the order and is not popped") {
+        playlist.enqueue(ids[3]);
+        playlist.enqueue(ids[2]);
+        CHECK(playlist.peekNextForPlayback() == ids[3]);
+        CHECK(playlist.queue().size() == 2);
+        CHECK(playlist.nextForPlayback() == ids[3]);
+        CHECK(playlist.peekNextForPlayback() == ids[2]);
+    }
+
+    SECTION("repeat one") {
+        playlist.setRepeat(RepeatMode::One);
+        CHECK(playlist.peekNextForPlayback() == ids[0]);
+        CHECK(playlist.nextForPlayback() == ids[0]);
+    }
+
+    SECTION("stop after current") {
+        playlist.setStopAfterCurrent(true);
+        CHECK_FALSE(playlist.peekNextForPlayback().has_value());
+    }
+
+    SECTION("stop after this entry") {
+        playlist.update(ids[0], [](PlaylistEntry& entry) { entry.stopAfter = true; });
+        CHECK_FALSE(playlist.peekNextForPlayback().has_value());
+    }
+
+    SECTION("nothing current yet") {
+        Playlist   fresh;
+        const auto more = fill(fresh, 2);
+        CHECK(fresh.peekNextForPlayback() == more[0]);
+        CHECK(fresh.nextForPlayback() == more[0]);
+    }
+}
+
+TEST_CASE("peeking at the end of the list follows the repeat mode", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 3);
+    playlist.setCurrent(ids[2]);
+
+    SECTION("repeat none stops") {
+        playlist.setRepeat(RepeatMode::None);
+        CHECK_FALSE(playlist.peekNextForPlayback().has_value());
+        CHECK_FALSE(playlist.nextForPlayback().has_value());
+    }
+    SECTION("repeat all wraps") {
+        playlist.setRepeat(RepeatMode::All);
+        CHECK(playlist.peekNextForPlayback() == ids[0]);
+        CHECK(playlist.nextForPlayback() == ids[0]);
+    }
+}
+
+TEST_CASE("peeking under repeat album wraps to the album's first track", "[playlist]") {
+    Playlist playlist;
+    std::vector<PlaylistEntry> entries;
+    entries.push_back(makeEntry("a1", "A", 1));
+    entries.push_back(makeEntry("a2", "A", 2));
+    entries.push_back(makeEntry("b1", "B", 1));
+    const auto ids = playlist.insert(0, std::move(entries));
+    playlist.setRepeat(RepeatMode::Album);
+    playlist.setCurrent(ids[1]);
+
+    CHECK(playlist.peekNextForPlayback() == ids[0]);
+    CHECK(playlist.nextForPlayback() == ids[0]);
+}
+
+TEST_CASE("peeking in shuffle reads the order and never extends it", "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 5);
+    playlist.seedShuffle(7);
+    playlist.setShuffle(ShuffleMode::All);
+    playlist.setRepeat(RepeatMode::All);
+    playlist.setCurrent(ids[0]);
+
+    // Walk the built order, peeking before each take.
+    for (int i = 0; i < 4; ++i) {
+        const auto guess = playlist.peekNextForPlayback();
+        const auto real  = playlist.nextForPlayback();
+        REQUIRE(real.has_value());
+        CHECK(guess == real);
+    }
+
+    // The order is now used up. The real call would extend it; the peek says
+    // nothing, and asking did not extend it either.
+    CHECK_FALSE(playlist.peekNextForPlayback().has_value());
+    REQUIRE(playlist.nextForPlayback().has_value());
+}
+
+TEST_CASE("peeking after the cursor's entry was removed resumes where it will",
+          "[playlist]") {
+    Playlist   playlist;
+    const auto ids = fill(playlist, 5);
+    playlist.setCurrent(ids[0]);
+    REQUIRE(playlist.nextForPlayback() == ids[1]);
+    REQUIRE(playlist.nextForPlayback() == ids[2]);
+
+    playlist.removeAt(2, 1);  // "3", the one the cursor is sitting on
+    CHECK(playlist.peekNextForPlayback() == ids[3]);
+    CHECK(playlist.nextForPlayback() == ids[3]);
+}

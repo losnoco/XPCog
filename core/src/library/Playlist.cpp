@@ -746,6 +746,86 @@ std::optional<TrackId> Playlist::nextForPlayback() {
     return id;
 }
 
+std::optional<TrackId> Playlist::peekNextForPlayback() const {
+    // Branch for branch with nextForPlayback() and nextEntry(from, false),
+    // reading where they write. A divergence between the two is a wrong guess
+    // for the prefetch and nothing worse, but keep them together all the same.
+    if (entries_.empty() || stopAfterCurrent_) {
+        return std::nullopt;
+    }
+
+    const std::optional<TrackId> from =
+        playbackCursor_.has_value() ? playbackCursor_ : current_;
+
+    if (!from && !currentRemoved_) {
+        // firstTrack(), which in shuffle would build the order if it had not
+        // been built. Reading it is fine; building it is not ours to do.
+        if (shuffle_ != ShuffleMode::Off) {
+            return shuffleList_.empty() ? std::nullopt : std::optional{shuffleList_.front()};
+        }
+        return entries_.front().id;
+    }
+
+    const PlaylistEntry* entry = find(from.value_or(kInvalidTrackId));
+    if (entry != nullptr && entry->stopAfter) {
+        return std::nullopt;
+    }
+    if (repeat_ == RepeatMode::One && entry != nullptr) {
+        return from;
+    }
+
+    if (!queue_.empty()) {
+        return queue_.front();
+    }
+
+    if (shuffle_ != ShuffleMode::Off) {
+        if (shuffleList_.empty()) {
+            return std::nullopt;
+        }
+        const std::int64_t here = entry ? entry->shuffleIndex : -1;
+        const std::int64_t i    = here + 1;
+        if (i < 0 || i >= static_cast<std::int64_t>(shuffleList_.size())) {
+            // The real call would extend the order under repeat-all, and there
+            // is no telling what it will draw.
+            return std::nullopt;
+        }
+        return shuffleList_[static_cast<std::size_t>(i)];
+    }
+
+    std::int64_t i = 0;
+    if (entry != nullptr) {
+        i = static_cast<std::int64_t>(*indexOf(*from)) + 1;
+    } else if (currentRemoved_) {
+        const auto position = resumeAt_ ? indexOf(*resumeAt_) : std::nullopt;
+        i = position ? static_cast<std::int64_t>(*position)
+                     : static_cast<std::int64_t>(entries_.size());
+    }
+
+    if (repeat_ == RepeatMode::Album && entry != nullptr) {
+        const std::string album = entry->album;
+
+        const bool pastEnd = i >= static_cast<std::int64_t>(entries_.size());
+        const bool leftAlbum =
+            !pastEnd && !sameAlbum(entries_[static_cast<std::size_t>(i)].album, album);
+
+        if (pastEnd || leftAlbum) {
+            const std::vector<std::size_t> members = indicesForAlbum(album);
+            if (members.empty()) {
+                return std::nullopt;
+            }
+            i = static_cast<std::int64_t>(members.front());
+        }
+    }
+
+    if (i >= static_cast<std::int64_t>(entries_.size())) {
+        if (repeat_ != RepeatMode::All) {
+            return std::nullopt;
+        }
+        i = 0;
+    }
+    return entries_[static_cast<std::size_t>(i)].id;
+}
+
 bool Playlist::next() {
     if (entries_.empty()) {
         return false;
