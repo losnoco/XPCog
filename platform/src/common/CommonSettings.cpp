@@ -53,6 +53,11 @@ namespace {
     return value.empty() ? home() / ".local" / "share" : std::filesystem::path{value};
 }
 
+[[nodiscard]] std::filesystem::path cacheHome() {
+    const std::string value = environment("XDG_CACHE_HOME");
+    return value.empty() ? home() / ".cache" : std::filesystem::path{value};
+}
+
 }  // namespace
 
 std::unique_ptr<ISettingsStore> makeNativeSettingsStore() {
@@ -71,6 +76,15 @@ std::string libraryDatabasePath() {
     std::filesystem::create_directories(directory, ec);
 
     return (directory / "library.db").string();
+}
+
+std::string cacheDirectory() {
+    const std::filesystem::path directory = cacheHome() / "LoSnoCo" / "XPCog";
+
+    std::error_code ec;
+    std::filesystem::create_directories(directory, ec);
+
+    return directory.string();
 }
 
 }  // namespace xpcog::platform

@@ -136,10 +136,10 @@ private:
     HKEY key_ = nullptr;
 };
 
-/// %APPDATA%, or empty if the shell will not say.
-[[nodiscard]] std::filesystem::path roamingAppData() {
+/// One of the shell's known folders, or empty if it will not say.
+[[nodiscard]] std::filesystem::path knownFolder(REFKNOWNFOLDERID id) {
     PWSTR raw = nullptr;
-    if (FAILED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &raw))) {
+    if (FAILED(SHGetKnownFolderPath(id, 0, nullptr, &raw))) {
         CoTaskMemFree(raw);
         return {};
     }
@@ -159,7 +159,7 @@ std::unique_ptr<ISettingsStore> makeFileSettingsStore(const std::string& path) {
 }
 
 std::string libraryDatabasePath() {
-    std::filesystem::path directory = roamingAppData();
+    std::filesystem::path directory = knownFolder(FOLDERID_RoamingAppData);
     if (directory.empty()) {
         return "library.db";
     }
@@ -170,6 +170,21 @@ std::string libraryDatabasePath() {
     std::filesystem::create_directories(directory, ec);
 
     return toUtf8((directory / L"library.db").wstring());
+}
+
+std::string cacheDirectory() {
+    std::filesystem::path directory = knownFolder(FOLDERID_LocalAppData);
+    if (directory.empty()) {
+        return "cache";
+    }
+    directory /= L"LoSnoCo";
+    directory /= L"XPCog";
+    directory /= L"cache";
+
+    std::error_code ec;
+    std::filesystem::create_directories(directory, ec);
+
+    return toUtf8(directory.wstring());
 }
 
 }  // namespace xpcog::platform

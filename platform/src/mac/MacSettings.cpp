@@ -177,4 +177,18 @@ std::string libraryDatabasePath() {
     return (directory / "library.db").string();
 }
 
+std::string cacheDirectory() {
+    const char* home = std::getenv("HOME");
+    const std::filesystem::path base =
+        (home != nullptr && *home != '\0') ? std::filesystem::path{home}
+                                           : std::filesystem::path{"."};
+
+    const std::filesystem::path directory = base / "Library" / "Caches" / "LoSnoCo" / "XPCog";
+
+    std::error_code ec;
+    std::filesystem::create_directories(directory, ec);
+
+    return directory.string();
+}
+
 }  // namespace xpcog::platform

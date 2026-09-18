@@ -45,4 +45,16 @@ namespace xpcog::platform {
 /// would start an empty library beside a real one and say nothing.
 [[nodiscard]] std::string libraryDatabasePath();
 
+/// Where this platform keeps things that can be thrown away and remade: the
+/// waveform summaries, and whatever comes next that is derived from a file
+/// rather than typed by the listener. Created if absent.
+///
+/// A different root from the library on every platform, and on Windows a
+/// different profile half: %LOCALAPPDATA% rather than %APPDATA%, because a
+/// regenerable cache must not roam with the profile and be copied onto every
+/// machine the listener signs in to. Elsewhere it is $XDG_CACHE_HOME and
+/// ~/Library/Caches, which the desktop knows it may clear -- and clearing it
+/// costs a second decode, nothing more.
+[[nodiscard]] std::string cacheDirectory();
+
 }  // namespace xpcog::platform
