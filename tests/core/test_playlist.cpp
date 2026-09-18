@@ -728,9 +728,15 @@ TEST_CASE("peeking in shuffle reads the order and never extends it", "[playlist]
     Playlist   playlist;
     const auto ids = fill(playlist, 5);
     playlist.seedShuffle(7);
-    playlist.setShuffle(ShuffleMode::All);
     playlist.setRepeat(RepeatMode::All);
+    // Current first, then shuffle, so the order is built with the current
+    // entry leading it and the four others behind. The other way round leaves
+    // the current entry wherever the generator put it -- which differs between
+    // libstdc++ and libc++ for the same seed -- and the walk below reaches the
+    // end of the order early on one of them.
     playlist.setCurrent(ids[0]);
+    playlist.setShuffle(ShuffleMode::All);
+    REQUIRE(playlist.find(ids[0])->shuffleIndex == 0);
 
     // Walk the built order, peeking before each take.
     for (int i = 0; i < 4; ++i) {
