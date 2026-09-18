@@ -70,8 +70,7 @@ MiniFrame::MiniFrame(wxWindow* parent, PlaybackController& playback, Settings& s
     seekBar_ = new SeekBar(panel, kMiniSeekId);
     // Before the fit below, so the window is built at the height the mode
     // wants rather than re-fitted a moment later.
-    seekBar_->setWaveformStyle({.rectified   = settings_.WaveformRectified(),
-                                .logarithmic = settings_.WaveformLogScale()});
+    seekBar_->setWaveformStyle(SeekBar::styleFrom(settings_));
     seekBar_->setWaveformMode(settings_.WaveformSeekBar());
     row->Add(seekBar_, 1, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(6));
 
@@ -161,7 +160,19 @@ void MiniFrame::setWaveformMode(bool on) {
         return;
     }
     seekBar_->setWaveformMode(on);
+    refitToSeekBar();
+}
 
+void MiniFrame::setWaveformStyle(SeekBar::WaveformStyle style) {
+    const int before = seekBar_->waveformStyle().height;
+    seekBar_->setWaveformStyle(style);
+    // The height is part of the style, and the row is only as tall as the bar.
+    if (seekBar_->waveformMode() && style.height != before) {
+        refitToSeekBar();
+    }
+}
+
+void MiniFrame::refitToSeekBar() {
     // The height is pinned to the fitted row (see the constructor), and
     // wxSizer::SetSizeHints keeps an existing maximum, so a plain re-fit is
     // refused by the window manager. Lift the hints, lay out, take the new
@@ -171,10 +182,6 @@ void MiniFrame::setWaveformMode(bool on) {
     const wxSize fitted = GetSizer()->ComputeFittingWindowSize(this);
     SetSize(GetSize().GetWidth(), fitted.GetHeight());
     SetSizeHints(fitted.GetWidth(), fitted.GetHeight(), wxDefaultCoord, fitted.GetHeight());
-}
-
-void MiniFrame::setWaveformStyle(SeekBar::WaveformStyle style) {
-    seekBar_->setWaveformStyle(style);
 }
 
 void MiniFrame::setWaveform(std::shared_ptr<const WaveformSummary> summary) {

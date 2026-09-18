@@ -1782,6 +1782,26 @@ msgstr "Logarítmica: dibujar los niveles en decibeles"
 msgid "So quiet material is a shape rather than a line."
 msgstr "Para que el material silencioso sea una forma y no una línea."
 
+#: app/src/PreferencesDialog.cpp:1472
+msgid "Height"
+msgstr "Altura"
+
+#: app/src/PreferencesDialog.cpp:1498
+msgid "Played part follows the system accent colour"
+msgstr "La parte reproducida sigue el color de acento del sistema"
+
+#: app/src/PreferencesDialog.cpp:1499
+msgid "Played colour"
+msgstr "Color de lo reproducido"
+
+#: app/src/PreferencesDialog.cpp:1500
+msgid "Unplayed part follows the theme's text colour"
+msgstr "La parte no reproducida sigue el color del texto del tema"
+
+#: app/src/PreferencesDialog.cpp:1501
+msgid "Unplayed colour"
+msgstr "Color de lo no reproducido"
+
 #: app/src/PreferencesDialog.cpp:1410
 msgid "Musical notes (one bar per semitone)"
 msgstr "Notas musicales (una barra por semitono)"

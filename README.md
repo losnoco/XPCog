@@ -358,7 +358,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-1.12.0-x64-setup.exe
+:: -> build\windows-release\XPCog-1.13.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -379,7 +379,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-1.12.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-1.13.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -988,9 +988,11 @@ stroke width, frame rate, vertical gain and window length.
 
 View → Show Waveform draws the playing track's shape in the seek bar: a peak
 envelope with the RMS level inside it, the played part in the accent colour.
-Preferences → Appearance has the same switch and two drawing choices: rectified
+Preferences → Appearance has the same switch, two drawing choices — rectified
 stands it on the bar's bottom edge instead of mirroring it, and logarithmic draws
-the levels in decibels so quiet material still has a shape. The
+the levels in decibels so quiet material still has a shape — the bar's height, and
+the two colours, each of which follows the system (the accent colour, the theme's
+text colour) until one is chosen. The
 first time a track plays with this on it is decoded a second time in the background
 and the bar fills in from the left; the result -- two kilobytes a track -- is kept
 in the platform's cache directory (`~/.cache/LoSnoCo/XPCog/waveforms`,

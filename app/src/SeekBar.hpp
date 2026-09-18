@@ -31,12 +31,15 @@
 
 #pragma once
 
+#include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/audio/Waveform.hpp"
 
+#include <wx/colour.h>
 #include <wx/window.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 class wxGraphicsContext;
@@ -87,11 +90,24 @@ public:
     struct WaveformStyle {
         bool rectified   = false;
         bool logarithmic = false;
+        /// The bar's height in device-independent pixels while the mode is on.
+        /// Changing it changes the minimum size, so the owner lays out again.
+        int height = 28;
+        /// The played part's colour, or nothing for the desktop's accent; the
+        /// unplayed part's, or nothing for a shade of the window's text colour,
+        /// which is what follows a theme change.
+        std::optional<wxColour> played;
+        std::optional<wxColour> unplayed;
 
         [[nodiscard]] friend bool operator==(const WaveformStyle&, const WaveformStyle&) = default;
     };
     void setWaveformStyle(WaveformStyle style);
     [[nodiscard]] WaveformStyle waveformStyle() const noexcept { return style_; }
+
+    /// The style the settings describe. In one place because two windows read
+    /// it, and an unparseable colour reads as "not chosen" rather than as
+    /// black.
+    [[nodiscard]] static WaveformStyle styleFrom(const Settings& settings);
 
     /// The shape to draw, or nothing: a stream, a track that cannot be
     /// summarised, or one not started yet, all of which draw the plain groove.

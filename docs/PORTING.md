@@ -3737,8 +3737,11 @@ All of these are also documented at the call site.
   stands the shape on the bar's bottom edge instead, with the whole height to
   itself, and Logarithmic lays the levels out in decibels over a -48 dB floor
   -- the floor being one step of the byte a bucket is stored in, so the scale
-  runs out where the data does. Both are how the bytes are drawn, not what is
-  stored: the cache is the same whichever is chosen.
+  runs out where the data does. Beside them the bar's height (20 to 80 DIP)
+  and the two colours, played and unplayed, each empty by default so the bar
+  follows the desktop's accent and the theme's text colour as the plain bar
+  does, and a colour once chosen. All of it is how the bytes are drawn, not
+  what is stored: the cache is the same whichever is chosen.
 
   Nothing in the player had whole-track audio -- the spectrum taps the last
   fraction of a second of played output -- so the shape comes from decoding the

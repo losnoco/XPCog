@@ -609,6 +609,20 @@ XPCOG_SETTING(WaveformRectified, bool, "waveformRectified", false)
 /// Preferences -> Appearance.
 XPCOG_SETTING(WaveformLogScale, bool, "waveformLogScale", false)
 
+/// The seek bar's height while the waveform is shown, in device-independent
+/// pixels, 20 to 80. **No Cog counterpart.**
+XPCOG_SETTING(WaveformHeight, int, "waveformHeight", 28)
+
+/// The played part's colour, as #RRGGBB, or empty for the desktop's accent
+/// colour -- which is what the plain bar uses and what follows the system.
+/// **No Cog counterpart.**
+XPCOG_SETTING(WaveformPlayedColor, std::string, "waveformPlayedColor", "")
+
+/// The unplayed part's colour, as #RRGGBB, or empty for a shade of the
+/// window's text colour, which is what follows a light or dark theme.
+/// **No Cog counterpart.**
+XPCOG_SETTING(WaveformUnplayedColor, std::string, "waveformUnplayedColor", "")
+
 // --- synthesised formats --------------------------------------------------
 //
 // Modules and game-music rips are emulated rather than decoded, so they have no

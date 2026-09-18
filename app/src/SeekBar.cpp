@@ -21,11 +21,9 @@ namespace {
 constexpr int kGrooveHeight = 4;
 constexpr int kThumbRadius  = 6;
 
-/// The bar's height in waveform mode, and the room left above and below the
-/// shape so a full-scale bucket does not touch the edge. 28 is what fits the
-/// transport row without moving the clock: tall enough for the shape to read,
-/// not so tall that the row stops looking like a transport.
-constexpr int kWaveformHeight  = 28;
+/// The room left above and below the shape so a full-scale bucket does not
+/// touch the edge. The height itself is the style's: 28 by default, which
+/// fits the transport row without moving the clock.
 constexpr int kWaveformPadding = 2;
 /// The playhead's width in waveform mode, where it stands in for the thumb.
 constexpr int kPlayheadWidth = 2;
@@ -144,9 +142,23 @@ void SeekBar::setDuration(double seconds) {
     Refresh();
 }
 
+SeekBar::WaveformStyle SeekBar::styleFrom(const Settings& settings) {
+    const auto colour = [](const std::string& text) -> std::optional<wxColour> {
+        if (wxColour parsed; !text.empty() && parsed.Set(wxString::FromUTF8(text))) {
+            return parsed;
+        }
+        return std::nullopt;
+    };
+    return {.rectified   = settings.WaveformRectified(),
+            .logarithmic = settings.WaveformLogScale(),
+            .height      = std::clamp(settings.WaveformHeight(), 20, 80),
+            .played      = colour(settings.WaveformPlayedColor()),
+            .unplayed    = colour(settings.WaveformUnplayedColor())};
+}
+
 void SeekBar::setWaveformMode(bool on) {
     waveformMode_ = on;
-    SetMinSize(FromDIP(wxSize(120, on ? kWaveformHeight : (2 * kThumbRadius) + 4)));
+    SetMinSize(FromDIP(wxSize(120, on ? style_.height : (2 * kThumbRadius) + 4)));
     InvalidateBestSize();
     Refresh();
 }
@@ -155,8 +167,12 @@ void SeekBar::setWaveformStyle(WaveformStyle style) {
     if (style_ == style) {
         return;
     }
-    style_ = style;
+    const bool grew = style.height != style_.height;
+    style_           = style;
     if (waveformMode_) {
+        if (grew) {
+            setWaveformMode(true);  // re-applies the minimum size
+        }
         Refresh();
     }
 }
@@ -296,12 +312,23 @@ void SeekBar::paintWaveform(wxGraphicsContext& gc, double left, double width, do
         return;
     }
 
-    const wxColour trackColour = wxSystemSettings::GetColour(wxSYS_COLOUR_3DSHADOW);
-    const wxColour accentColour = accent();
+    const wxColour trackColour  = wxSystemSettings::GetColour(wxSYS_COLOUR_3DSHADOW);
+    const wxColour accentColour = style_.played.value_or(accent());
     const wxColour playedPeak(accentColour.Red(), accentColour.Green(), accentColour.Blue(),
                               kPeakAlpha + 60);
     const wxColour playedRms = accentColour;
     const double   hairline  = FromDIP(1);
+
+    // The unplayed part: a shade of the window's text colour unless a colour
+    // was chosen, because the text colour is the one thing guaranteed to read
+    // against the window in either appearance -- see outline().
+    const auto unplayed = [&](unsigned char alpha) {
+        if (style_.unplayed) {
+            return wxColour(style_.unplayed->Red(), style_.unplayed->Green(),
+                            style_.unplayed->Blue(), alpha);
+        }
+        return outline(alpha);
+    };
 
     // Where the shape stops and the plain groove begins, in columns. A bucket
     // is drawn once every column it covers has been analysed, so the edge of
@@ -381,9 +408,9 @@ void SeekBar::paintWaveform(wxGraphicsContext& gc, double left, double width, do
 
     const int split = std::min(playedColumns, analysedColumns);
     fill(shape.peak, 0, split, playedPeak);
-    fill(shape.peak, split, analysedColumns, outline(kPeakAlpha));
+    fill(shape.peak, split, analysedColumns, unplayed(kPeakAlpha));
     fill(shape.rms, 0, split, playedRms);
-    fill(shape.rms, split, analysedColumns, outline(kRmsAlpha));
+    fill(shape.rms, split, analysedColumns, unplayed(kRmsAlpha));
 
     // Past the analysis: the plain groove, with the played part filled if the
     // playhead has got there first, which it can after a seek into a long track

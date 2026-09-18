@@ -61,6 +61,10 @@ public:
     void setWaveformStyle(SeekBar::WaveformStyle style);
     void setWaveform(std::shared_ptr<const WaveformSummary> summary);
 
+    /// Re-pins the window's height to the row after the seek bar's minimum
+    /// changed -- the mode, or the height that comes with the style.
+    void refitToSeekBar();
+
     /// Reads the volume back from the controller. Called when the window appears,
     /// because the main window's slider may have moved while this was hidden.
     void refreshVolume();

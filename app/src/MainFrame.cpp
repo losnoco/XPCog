@@ -1456,8 +1456,7 @@ void MainFrame::setMiniMode(bool mini) {
 }
 
 SeekBar::WaveformStyle MainFrame::waveformStyle() const {
-    return {.rectified   = settings_.WaveformRectified(),
-            .logarithmic = settings_.WaveformLogScale()};
+    return SeekBar::styleFrom(settings_);
 }
 
 void MainFrame::applyWaveformSetting() {

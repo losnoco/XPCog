@@ -207,6 +207,7 @@ constexpr std::array kCuratedKeys = {
     "sentryConsented", "httpStreamingBufferSize",
     // Appearance
     "floatingMiniWindow", "waveformSeekBar", "waveformRectified", "waveformLogScale",
+    "waveformHeight", "waveformPlayedColor", "waveformUnplayedColor",
     // Notifications
     "notifications.enable", "notifications.show-album-art",
     // Remote control. The token is not here at all -- it lives in the system
@@ -581,8 +582,8 @@ public:
         form_->Add(control, 0, wxTOP, pane_->FromDIP(2));
     }
 
-    void number(const wxString& label, const char* key, int minimum,
-                int maximum) const {
+    FormRow number(const wxString& label, const char* key, int minimum,
+                   int maximum) const {
         auto* box = new wxSpinCtrl(pane_, wxID_ANY, wxEmptyString, wxDefaultPosition,
                                    wxDefaultSize, wxSP_ARROW_KEYS, minimum, maximum,
                                    toInt(settings_->rawValue(key)));
@@ -591,7 +592,7 @@ public:
                       settings->setRawValue(key, std::to_string(event.GetPosition()));
                       announce(key);
                   });
-        add(label, box);
+        return add(label, box);
     }
 
     /// A fraction with a range and a step: a stroke width, a gain. Digits
@@ -619,7 +620,7 @@ public:
     /// an archived NSColor rather than a string -- shows as `fallback` rather
     /// than as black. A black bar on a near-black background looks like the
     /// display is broken.
-    void colour(const wxString& label, const char* key, const char* fallback) const {
+    FormRow colour(const wxString& label, const char* key, const char* fallback) const {
         wxColour initial;
         if (!initial.Set(toWx(settings_->rawValue(key)))) {
             initial.Set(fallback);
@@ -634,7 +635,7 @@ public:
                          settings->setRawValue(key, hex);
                          announce(key);
                      });
-        add(label, picker);
+        return add(label, picker);
     }
 
     /// A section title, for the one pane that holds two things. Bold, in the
@@ -1462,9 +1463,52 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     const FormRow logarithmic =
         row->toggle(_("Logarithmic: draw levels in decibels"), "waveformLogScale",
                     _("So quiet material is a shape rather than a line."));
-    const auto styles = [rectified, logarithmic](bool on) {
+    // The height, and the two colours. Each colour has a "follow the system"
+    // state the picker cannot show -- an empty value means the desktop's
+    // accent, or a shade of the theme's text colour -- so each gets a
+    // checkbox for that beside its picker, and the picker is greyed while it
+    // is ticked. Ticking it clears the stored colour rather than remembering
+    // one, which is what "follow the system" means.
+    const FormRow height = row->number(_("Height"), "waveformHeight", 20, 80);
+    const auto colourWithDefault = [&](const wxString& follow, const wxString& pick,
+                                       const char* key, const char* fallback) {
+        auto* box = new wxCheckBox(pane, wxID_ANY, follow);
+        box->SetValue(settings_.rawValue(key).empty());
+        const FormRow follows = row->add("", box);
+        const FormRow picker  = row->colour(pick, key, fallback);
+        picker.control->Enable(!box->GetValue());
+        box->Bind(wxEVT_CHECKBOX, [this, key, picker](wxCommandEvent& event) {
+            picker.control->Enable(!event.IsChecked());
+            if (event.IsChecked()) {
+                settings_.setRawValue(key, "");
+                settingChanged.publish(key);
+            } else {
+                // Off: the picker's current colour becomes the choice, so the
+                // bar changes to what is shown rather than staying as it was.
+                const wxColour chosen = static_cast<wxColourPickerCtrl*>(picker.control)->GetColour();
+                std::string hex = toUtf8(chosen.GetAsString(wxC2S_HTML_SYNTAX));
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                settings_.setRawValue(key, hex);
+                settingChanged.publish(key);
+            }
+        });
+        return std::pair{follows, picker};
+    };
+    const auto played = colourWithDefault(_("Played part follows the system accent colour"),
+                                          _("Played colour"), "waveformPlayedColor", "#0a84ff");
+    const auto unplayed = colourWithDefault(_("Unplayed part follows the theme's text colour"),
+                                            _("Unplayed colour"), "waveformUnplayedColor",
+                                            "#808080");
+    const auto styles = [rectified, logarithmic, height, played, unplayed](bool on) {
         rectified.control->Enable(on);
         logarithmic.control->Enable(on);
+        height.control->Enable(on);
+        for (const auto& pair : {played, unplayed}) {
+            pair.first.control->Enable(on);
+            pair.second.control->Enable(
+                on && !static_cast<wxCheckBox*>(pair.first.control)->GetValue());
+        }
     };
     styles(settings_.WaveformSeekBar());
     show.control->Bind(wxEVT_CHECKBOX, [styles](wxCommandEvent& event) {
