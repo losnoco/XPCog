@@ -27,7 +27,7 @@
 #
 # The AppStream metainfo is the third because a software centre shows nothing
 # useful without it, and because Flathub requires it -- see the Flatpak note in
-# README's Linux section.
+# docs/BUILDING.md's Linux section.
 
 # The date of the release this version number describes, for the metainfo's
 # <releases> entry. The one field here that is hand-maintained: the version
@@ -145,7 +145,7 @@ endforeach()
 # are the responsibility of whatever installs the tree -- every distribution
 # package manager has a trigger for both -- and running them from an install
 # rule would write outside DESTDIR, which is precisely what breaks packaging.
-# README's Linux section says what to run after a manual `cmake --install`.
+# docs/BUILDING.md's Linux section says what to run after a manual `cmake --install`.
 
 # ---------------------------------------------------------------------------
 # The tarball.
@@ -184,7 +184,7 @@ endforeach()
 # co.losno.XPCog.desktop.in for why a bare name is worse -- so unpacking the
 # archive somewhere other than that prefix gives a working player whose menu
 # entry launches nothing. Unpack it at the prefix it was built for, which is
-# what README's Linux section says to do, or edit the one line.
+# what docs/BUILDING.md's Linux section says to do, or edit the one line.
 # ---------------------------------------------------------------------------
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

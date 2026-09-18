@@ -32,9 +32,9 @@ macOS bundle's `CFBundleShortVersionString` and `CFBundleVersion`. The version
 string is user-visible in the About dialog, in `xpcog-cli`'s banner and in the
 HTTP source's `User-Agent`.
 
-`README.md` is the one place that spells a version out by hand: the Windows
-installer section shows `XPCog-<version>-x64-setup.exe` in two examples, and those
-follow the bump.
+`docs/BUILDING.md` is the one place that spells a version out by hand: the
+Windows installer section shows `XPCog-<version>-x64-setup.exe` in two examples,
+and those follow the bump.
 
 Which component moves is [semver](https://semver.org), read against the public
 surface this project actually has: the `core` and `codecs` headers, the plugin
@@ -129,7 +129,7 @@ Other targets: `xpcog-no-toolkit` (layering check, runs as part of `ALL`),
 into the bundle's `Info.plist` from the codec registry — never edit them by
 hand), and `sign`, `dmg` and `notarize` (`packaging/macos/`; the identity comes from
 `XPCOG_CODESIGN_IDENTITY` and the notary credentials from the environment only —
-see the README section).
+see `docs/BUILDING.md`).
 
 On Linux `package` builds `XPCog-<version>-<arch>.tar.gz` — CPack's `TGZ`
 generator over the install rules, stripped, and the only generator enabled on
@@ -277,6 +277,14 @@ upstream to point at, mostly the emulator cores behind the PSF family and
 Cog's own small libraries. See `ports/README.md`.
 
 ## Docs
+
+`docs/BUILDING.md` is the README's build and packaging material at full length:
+the disk image and its signing, the installer, the Linux install tree and
+tarball, how a release is made, the system-libraries presets, the encoders and
+corpora the tests want, and Last.fm credentials. `docs/FEATURES.md` is the same
+for what the player does: formats, cue sheets, gapless, HDCD, the real-time
+callback, crash reporting, Last.fm, the remote control, languages. The README
+keeps a paragraph on each and points here; put detail in these, not there.
 
 `docs/PORTING.md` is the long one: the survey, the structural decisions, progress,
 the **deliberate differences from Cog**, the verification strategy, known gaps,

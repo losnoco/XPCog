@@ -2689,7 +2689,7 @@ decoder ever requires a refactor, the design has failed.
 Written to be picked up cold, on another machine, by someone who has not read the
 rest of this file. Ordered by what each one is worth, not by size. Everything
 here is reachable from a clean checkout — `cmake --preset <platform>-debug` and
-the README's asset variables are the whole setup.
+the asset variables in `docs/BUILDING.md` are the whole setup.
 
 **Re-ranked since the last revision.** The decoders were item 5 and are now done,
 which promotes `cogimport` to the top: with every format Cog plays now playing

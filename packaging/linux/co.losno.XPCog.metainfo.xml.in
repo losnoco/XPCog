@@ -3,7 +3,7 @@
   AppStream metadata: what GNOME Software, KDE Discover and Flathub read to
   describe XPCog before it is installed. Nothing at run time consults it, which
   is exactly why it is easy to leave broken — `appstreamcli validate` is the
-  check, and README's Linux section says when to run it.
+  check, and docs/BUILDING.md's Linux section says when to run it.
 
   The <id> is the application ID and must match the .desktop file's basename and
   the installed icon's name. All three come from XPCOG_DESKTOP_ID; see the root
