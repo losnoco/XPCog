@@ -1696,14 +1696,6 @@ void MainFrame::bindCommands() {
         settings_.setWaveformSeekBar(!settings_.WaveformSeekBar());
         applyWaveformSetting();
     });
-    on(ViewWaveformRectified, [this] {
-        settings_.setWaveformRectified(!settings_.WaveformRectified());
-        applyWaveformSetting();
-    });
-    on(ViewWaveformLog, [this] {
-        settings_.setWaveformLogScale(!settings_.WaveformLogScale());
-        applyWaveformSetting();
-    });
     on(ViewSpectrum, [this] {
         const bool showing = !paneShown(spectrum_);
         togglePane(spectrum_, showing);
@@ -1839,14 +1831,6 @@ void MainFrame::bindUpdateUi() {
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(spectrum_)); });
     update(ViewWaveform,
            [this](wxUpdateUIEvent& event) { event.Check(settings_.WaveformSeekBar()); });
-    update(ViewWaveformRectified, [this](wxUpdateUIEvent& event) {
-        event.Enable(settings_.WaveformSeekBar());
-        event.Check(settings_.WaveformRectified());
-    });
-    update(ViewWaveformLog, [this](wxUpdateUIEvent& event) {
-        event.Enable(settings_.WaveformSeekBar());
-        event.Check(settings_.WaveformLogScale());
-    });
     update(ViewDockPanes,
            [this](wxUpdateUIEvent& event) { event.Enable(anyPaneFloating()); });
 #ifdef XPCOG_HAVE_SC55_PANEL

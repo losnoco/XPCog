@@ -3697,7 +3697,9 @@ All of these are also documented at the call site.
   both seek bars taller and draws the track's shape in them: a peak envelope
   with the RMS level inside it, channels averaged, mirrored about the centre
   line, the played part in the accent colour and a playhead line where the
-  thumb was. Two drawing choices sit beside it in the View menu: Rectified
+  thumb was. Two drawing choices sit on Preferences → Appearance, under a
+  second copy of the toggle (the pane is now built on macOS too, which it was
+  not while its only platform-neutral row was the mini player's): Rectified
   stands the shape on the bar's bottom edge instead, with the whole height to
   itself, and Logarithmic lays the levels out in decibels over a -48 dB floor
   -- the floor being one step of the byte a bucket is stored in, so the scale

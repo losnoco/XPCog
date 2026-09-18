@@ -172,9 +172,6 @@ constexpr std::array kCuratedKeys = {
     // groups; `panelFollowMode` is View -> Panels Follow. All four are state a
     // gesture sets, not preferences someone comes here to type.
     "volume", "repeat", "shuffle", "panelFollowMode",
-    // The waveform's three are View -> Show / Rectified / Logarithmic Waveform,
-    // for the same reason.
-    "waveformSeekBar", "waveformRectified", "waveformLogScale",
     // Output
     "volumeScaling", "resampling", "enableHDCD", "halveDSDVolume", "outputDeviceId",
     "outputDeviceName", "exclusiveOutput", "enableFSurround", "enableFading",
@@ -191,10 +188,11 @@ constexpr std::array kCuratedKeys = {
     // than it belongs in Appearance. Kept in settings.def so a settings file that
     // has travelled from a Qt build keeps its value rather than losing it.
     //
-    // Both stay listed on macOS, where the pane itself is not built. Curated is
-    // the right side of this list for them there too: closeToTray is answered by
-    // the platform and widgetStyle is dead, and neither belongs in Advanced,
-    // where a raw editable row would offer control that does not exist.
+    // Both stay listed on macOS, where the pane has no row for either. Curated
+    // is the right side of this list for them there too: closeToTray is
+    // answered by the platform and widgetStyle is dead, and neither belongs in
+    // Advanced, where a raw editable row would offer control that does not
+    // exist.
     "widgetStyle", "closeToTray",
     // General. `language` has a picker there, and Advanced must not offer a
     // second one: its generated row would be a free-text box for a value that
@@ -206,7 +204,7 @@ constexpr std::array kCuratedKeys = {
     // General
     "sentryConsented", "httpStreamingBufferSize",
     // Appearance
-    "floatingMiniWindow",
+    "floatingMiniWindow", "waveformSeekBar", "waveformRectified", "waveformLogScale",
     // Notifications
     "notifications.enable", "notifications.show-album-art",
     // Remote control. The token is not here at all -- it lives in the system
@@ -800,16 +798,7 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     if (account_ != nullptr && scrobbler_ != nullptr) {
         page(buildLastFmPane(book), "Last.fm");  // a proper noun
     }
-    // Absent on macOS. Its only control is the close-to-tray checkbox, which is
-    // already Windows and Linux only -- macOS closes to the Dock unconditionally,
-    // by platform convention rather than by preference -- so what remains there is
-    // a category whose page is one greyed-out paragraph. That reads as a screen
-    // that failed to load, and the paragraph says nothing a macOS user needs
-    // telling: following the system appearance is what every application on the
-    // platform does.
-#ifndef __WXOSX__
     page(buildAppearancePane(book), _("Appearance"));
-#endif
     page(buildMidiPane(book), "MIDI");  // an acronym, the same in every language
     spectrumPage_ = static_cast<int>(book->GetPageCount());
     page(buildSpectrumPane(book), _("Spectrum"));
@@ -911,10 +900,10 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
     auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
     pane->SetClientObject(row);
 
-    // The language, first, and on General rather than Appearance -- Appearance
-    // is not built on macOS at all, and this is the one row on it that every
-    // platform needs. Cog has no equivalent: macOS carries a per-application
-    // language preference of its own, and Windows does not.
+    // The language, first, and on General rather than Appearance -- it was
+    // placed when Appearance was not built on macOS at all, and it is not a
+    // question of appearance in any case. Cog has no equivalent: macOS carries
+    // a per-application language preference of its own, and Windows does not.
     //
     // By hand rather than through RowBuilder::choice: the rows come from what
     // the build compiled in rather than from a constexpr table, and the first of
@@ -1351,10 +1340,6 @@ wxWindow* PreferencesDialog::buildMidiPane(wxWindow* parent) {
     return finishPane(pane, form);
 }
 
-// Not built on macOS at all -- see the page list in the constructor. The guard is
-// here rather than only around the caller so the pane's one control keeps its
-// single `#ifndef`, instead of an empty function surviving for no one to call.
-#ifndef __WXOSX__
 wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     auto* pane = makePane(parent);
     auto* form = makeForm(pane->FromDIP(6));
@@ -1368,18 +1353,18 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     // that travelled from a Qt build keeps its value, and kCuratedKeys keeps it
     // out of Advanced, where a dead key would be worse.
 
-    // The reason this whole pane is absent on macOS: the question this asks does
-    // not arise there. Closing the window hides it and leaves XPCog running --
-    // unconditionally, because that is the platform's convention rather than a
-    // preference -- and there is no tray icon to hide to in any case. A checkbox
-    // offering to choose something already chosen is the same fault as one that
-    // does nothing.
+    // Not on macOS: the question this asks does not arise there. Closing the
+    // window hides it and leaves XPCog running -- unconditionally, because that
+    // is the platform's convention rather than a preference -- and there is no
+    // tray icon to hide to in any case. A checkbox offering to choose something
+    // already chosen is the same fault as one that does nothing.
     //
     // Named for the thing rather than described. "Closing the window keeps
     // XPCog running" was a sentence about a consequence, which reads as an
     // explanation and is therefore worse at being a label: close-to-tray is what
     // this behaviour is called, it is what somebody arrives looking for, and it
     // is what the tooltip and the notice both already say.
+#ifndef __WXOSX__
     auto* closeToTray = new wxCheckBox(pane, wxID_ANY, _("Close to tray"));
     closeToTray->SetValue(settings_.CloseToTray());
     closeToTray->SetToolTip(
@@ -1399,19 +1384,44 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
         settingChanged.publish("closeToTray");
     });
     row->add("", closeToTray);
+#endif
 
     // The mini player's own control is a button on the mini player, which is only
     // reachable once you are in it. Here as well, so it can be set beforehand.
     row->toggle(_("Keep the mini player on top"), "floatingMiniWindow");
 
+    // The seek bar's waveform. View -> Show Waveform is the quick way to the
+    // first of these, as the mini player's button is to the row above; the two
+    // drawing choices live only here, and are greyed out while there is no
+    // waveform for them to change -- the checkbox they depend on is the row
+    // above them, so the greying explains itself.
+    const FormRow show =
+        row->toggle(_("Show the waveform in the seek bar"), "waveformSeekBar",
+                    _("The track's shape behind the playhead, analysed the first "
+                      "time it plays and kept for every play after."));
+    const FormRow rectified =
+        row->toggle(_("Rectified: stand the waveform on the bottom edge"), "waveformRectified",
+                    _("Instead of mirroring it about the centre line."));
+    const FormRow logarithmic =
+        row->toggle(_("Logarithmic: draw levels in decibels"), "waveformLogScale",
+                    _("So quiet material is a shape rather than a line."));
+    const auto styles = [rectified, logarithmic](bool on) {
+        rectified.control->Enable(on);
+        logarithmic.control->Enable(on);
+    };
+    styles(settings_.WaveformSeekBar());
+    show.control->Bind(wxEVT_CHECKBOX, [styles](wxCommandEvent& event) {
+        styles(event.IsChecked());
+        event.Skip();
+    });
+
     // No note about following the system appearance. It said that XPCog has no
     // theme of its own, which is an answer to a question nobody standing in front
-    // of two checkboxes has asked -- and it read as an apology for a pane that
+    // of a few checkboxes has asked -- and it read as an apology for a pane that
     // does not need one.
 
     return finishPane(pane, form);
 }
-#endif  // !__WXOSX__
 
 wxWindow* PreferencesDialog::buildSpectrumPane(wxWindow* parent) {
     auto* pane = makePane(parent);

@@ -87,8 +87,6 @@ enum CommandId : int {
     ViewFileTreeRoot,
     ViewSpectrum,
     ViewWaveform,
-    ViewWaveformRectified,
-    ViewWaveformLog,
     ViewEqualizer,
     ViewSpeed,
     ViewInfo,

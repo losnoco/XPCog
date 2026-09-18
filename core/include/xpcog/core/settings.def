@@ -551,19 +551,19 @@ XPCOG_SETTING(SpectrumShowPeaks, bool, "spectrumShowPeaks", true)
 ///
 /// **No Cog counterpart** -- Cog's position slider is a plain NSSlider. Off by
 /// default so nobody's transport changes shape on upgrade; View -> Show Waveform
-/// is where it is found. A track is analysed the first time it plays with this
-/// on and the result kept in the platform's cache directory, so the bar fills in
-/// once and is instant after that.
+/// and Preferences -> Appearance are where it is found. A track is analysed the
+/// first time it plays with this on and the result kept in the platform's cache
+/// directory, so the bar fills in once and is instant after that.
 XPCOG_SETTING(WaveformSeekBar, bool, "waveformSeekBar", false)
 
 /// Stand the waveform on the bar's bottom edge rather than mirroring it about
 /// the centre line. The other common way to draw an overview, and each level
-/// gets twice the height. **No Cog counterpart.** View -> Rectified Waveform.
+/// gets twice the height. **No Cog counterpart.** Preferences -> Appearance.
 XPCOG_SETTING(WaveformRectified, bool, "waveformRectified", false)
 
 /// Draw the waveform's levels in decibels rather than linearly, so quiet
 /// material is a shape rather than a line. **No Cog counterpart.**
-/// View -> Logarithmic Waveform.
+/// Preferences -> Appearance.
 XPCOG_SETTING(WaveformLogScale, bool, "waveformLogScale", false)
 
 // --- synthesised formats --------------------------------------------------

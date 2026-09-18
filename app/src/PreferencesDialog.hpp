@@ -64,8 +64,7 @@ class PreferencesDialog : public wxDialog {
 public:
     /// `account` and `scrobbler` may be null, and are on the paths that do not
     /// have them -- there is no reason for a dialog to refuse to open because
-    /// scrobbling is not wired up. The Last.fm pane is then not built at all,
-    /// which is the same treatment Appearance gets on macOS.
+    /// scrobbling is not wired up. The Last.fm pane is then not built at all.
     PreferencesDialog(wxWindow* parent, Settings& settings,
                       LastFmAccount* account = nullptr,
                       Scrobbler*     scrobbler = nullptr);
@@ -109,11 +108,11 @@ private:
     [[nodiscard]] wxWindow* buildGeneralPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildNotificationsPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildMidiPane(wxWindow* parent);
-    // Appearance is not built on macOS: its one control is Windows and Linux only,
-    // and what would be left is a category holding a single greyed-out paragraph.
-#ifndef __WXOSX__
+    /// On every platform since the waveform rows arrived. Before them its one
+    /// platform-neutral control was the mini player's floating flag, and on
+    /// macOS -- where close-to-tray is not a question -- a pane of one checkbox
+    /// was not worth a category.
     [[nodiscard]] wxWindow* buildAppearancePane(wxWindow* parent);
-#endif
     [[nodiscard]] wxWindow* buildSpectrumPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildAdvancedPane(wxWindow* parent);
 

@@ -422,14 +422,6 @@ msgstr "Espe&ctro"
 msgid "Show &Waveform"
 msgstr "Mostrar &forma de onda"
 
-#: app/src/Commands.cpp:98
-msgid "&Rectified Waveform"
-msgstr "Forma de onda &rectificada"
-
-#: app/src/Commands.cpp:99
-msgid "&Logarithmic Waveform"
-msgstr "Forma de onda &logarítmica"
-
 #: app/src/Commands.cpp:94
 msgid "&Equalizer"
 msgstr "Ecuali&zador"
@@ -1713,6 +1705,32 @@ msgstr "Esta sesión no tiene área de notificación en la que dejar XPCog."
 #: app/src/PreferencesDialog.cpp:1389
 msgid "Keep the mini player on top"
 msgstr "Mantener el reproductor mini encima"
+
+#: app/src/PreferencesDialog.cpp:1399
+msgid "Show the waveform in the seek bar"
+msgstr "Mostrar la forma de onda en la barra de posición"
+
+#: app/src/PreferencesDialog.cpp:1400
+msgid ""
+"The track's shape behind the playhead, analysed the first time it plays and kept for every play after."
+msgstr ""
+"La forma de la pista detrás del cursor, analizada la primera vez que suena y guardada para las siguientes."
+
+#: app/src/PreferencesDialog.cpp:1403
+msgid "Rectified: stand the waveform on the bottom edge"
+msgstr "Rectificada: apoyar la forma de onda en el borde inferior"
+
+#: app/src/PreferencesDialog.cpp:1404
+msgid "Instead of mirroring it about the centre line."
+msgstr "En lugar de reflejarla respecto a la línea central."
+
+#: app/src/PreferencesDialog.cpp:1406
+msgid "Logarithmic: draw levels in decibels"
+msgstr "Logarítmica: dibujar los niveles en decibeles"
+
+#: app/src/PreferencesDialog.cpp:1407
+msgid "So quiet material is a shape rather than a line."
+msgstr "Para que el material silencioso sea una forma y no una línea."
 
 #: app/src/PreferencesDialog.cpp:1410
 msgid "Musical notes (one bar per semitone)"

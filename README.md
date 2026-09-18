@@ -978,9 +978,9 @@ demonstrates that none of this reached below the interface layer.
 
 View → Show Waveform draws the playing track's shape in the seek bar: a peak
 envelope with the RMS level inside it, the played part in the accent colour.
-Rectified Waveform stands it on the bar's bottom edge instead of mirroring it, and
-Logarithmic Waveform draws the levels in decibels so quiet material still has a
-shape. The
+Preferences → Appearance has the same switch and two drawing choices: rectified
+stands it on the bar's bottom edge instead of mirroring it, and logarithmic draws
+the levels in decibels so quiet material still has a shape. The
 first time a track plays with this on it is decoded a second time in the background
 and the bar fills in from the left; the result -- two kilobytes a track -- is kept
 in the platform's cache directory (`~/.cache/LoSnoCo/XPCog/waveforms`,
