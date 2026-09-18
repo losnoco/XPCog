@@ -668,6 +668,32 @@ first block after a seek, which is M4's work.
   the note grid that motivates a tempered scale, and in Frequencies it turns an even
   log axis into steps that jump from a ratio of 1.13 to 2.08.
 
+- **The oscilloscope**, which has no Cog counterpart -- Cog has a spectrum and
+  nothing else -- and is written rather than ported, on the terms `docs/REST.md`
+  set. View → Oscilloscope; the spectrum's sibling in structure: the same tap,
+  its own `TapCursor` advanced by the clock, the same visible-and-playing gate
+  on the timer.
+
+  Two pieces of core came with it. `AudioTap` keeps **three lanes** now -- the
+  mono mix the spectrum reads, and the first two channels as written -- so a
+  side can be shown on its own, and `TapCursor::readAgain()` reads a second
+  lane of the window `read()` just filled, so a stereo frame shows one instant
+  in both. And `Oscilloscope.hpp` holds the two pure functions the panel
+  draws from: `triggerOffset()`, a Schmitt trigger on a rising zero crossing
+  searched over the window before the newest, which is what holds a steady
+  tone still instead of letting it crawl at the beat between it and the frame
+  rate; and `foldForDisplay()`, one low and high per pixel column, so a tone
+  faster than the sweep is the band a scope's phosphor would show rather than
+  an aliased zigzag. Both are tested without a window.
+
+  Nine `scope*` settings, every one **No Cog counterpart**: colour, background,
+  stroke width, frame rate, vertical gain, window length, fill, trigger and
+  channels (mono, left, right, stereo stacked, stereo overlaid). All on
+  Preferences → Visualizers, which is the Spectrum pane renamed and given two
+  headings; the three that get flipped while looking -- channels, trigger,
+  fill -- are on the pane's own context menu as well, writing the same keys
+  through the same effect path, so the menu and the pane cannot disagree.
+
 - **The taskbar button**, `ITaskbarList3`: a play/pause overlay badge and a
   progress bar. Port of Cog's `DockIconController`, with one correction to the
   obvious guess about what the bar means. It is **not** the position within the

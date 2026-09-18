@@ -11,7 +11,8 @@ HDCD. A 31-band equaliser, transport fades, matrix downmix and upmix, FreeSurrou
 stereo-to-5.1, and time-stretching that moves pitch and tempo independently.
 
 **The window.** A playlist, transport and seek bar, file browser, preferences, undo and
-drag-and-drop, over a persistent SQLite library. A spectrum analyser and a mini player.
+drag-and-drop, over a persistent SQLite library. A spectrum analyser, an oscilloscope
+and a mini player.
 English and Spanish.
 
 **The desktop.** Media keys and Now Playing on all three platforms — MediaPlayer.framework,
@@ -357,7 +358,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-1.11.0-x64-setup.exe
+:: -> build\windows-release\XPCog-1.12.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -378,7 +379,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-1.11.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-1.12.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -973,6 +974,15 @@ encrypted and the pane says so before you bind it to the network.
 
 `xpcog-cli serve` runs the same API with no toolkit linked at all, which is what
 demonstrates that none of this reached below the interface layer.
+
+## Oscilloscope
+
+View → Oscilloscope draws the live waveform beside the spectrum, from the same tap
+(before the volume, so the knob does not shrink it). Each frame starts at a rising
+zero crossing, so a steady tone holds still. Right-click the pane for the channels
+(mono, left, right, stereo stacked or overlaid), the trigger and the fill;
+Preferences → Visualizers has those and the colour, background, stroke width,
+frame rate, vertical gain and window length.
 
 ## Waveform seek bar
 
