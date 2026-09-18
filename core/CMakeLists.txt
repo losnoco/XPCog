@@ -22,6 +22,9 @@ add_library(xpcog-core STATIC
     src/audio/SampleConvert.cpp
     src/audio/SpectrumAnalyzer.cpp
     src/audio/TimeStretch.cpp
+    src/audio/Waveform.cpp
+    src/audio/WaveformCache.cpp
+    src/audio/WaveformFile.cpp
     src/AssetPath.cpp
     src/AudioChunk.cpp
     src/AudioFormat.cpp

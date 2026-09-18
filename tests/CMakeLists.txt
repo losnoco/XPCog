@@ -38,6 +38,7 @@ add_executable(xpcog-tests
     core/test_timestretch.cpp
     core/test_transportgain.cpp
     core/test_version.cpp
+    core/test_waveform.cpp
     codecs/test_codec_settings.cpp
     codecs/test_conformance.cpp
     codecs/test_containers.cpp
