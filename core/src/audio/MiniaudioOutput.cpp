@@ -1,15 +1,16 @@
 // miniaudio backend for IAudioOutput.
 //
 // The data callback runs on a real-time thread. Its entire body is: read from the
-// ring, zero any tail it could not fill, apply the volume and transport fade, and
-// copy the result to the visualiser tap if one is attached. No lock, no allocation,
-// no std::function, no logging, no system call. Device lifecycle
+// ring, zero any tail it could not fill, copy the result to the visualiser tap if
+// one is attached, and apply the volume and transport fade. No lock, no
+// allocation, no std::function, no logging, no system call. Device lifecycle
 // (init/uninit/reconfigure) happens on the caller's thread, never here.
 //
 // That list is a promise, and it is kept deliberately short -- so anything added to
-// it gets named here rather than appearing quietly. The tap is the most recent
-// addition and it is the last step on purpose: it must see what the speakers get,
-// which means after the gain, not before.
+// it gets named here rather than appearing quietly. The tap comes before the gain
+// on purpose: the spectrum is a picture of the music, and the volume knob is not
+// part of the music. It used to come after, so the display shrank with the
+// volume and a quiet listen showed a flat line; see fill().
 //
 // One step has since joined it: converting to an integer device format, when the
 // device was opened in one. It is still no lock, no allocation and no system
@@ -468,11 +469,11 @@ private:
         self->framesPlayed_.fetch_add(frameCount, std::memory_order_relaxed);
     }
 
-    /// Ring to float buffer, with the tail silenced, the gain applied and the tap
-    /// fed. Everything the callback did before a device format came into it.
+    /// Ring to float buffer, with the tail silenced, the tap fed and the gain
+    /// applied. Everything the callback did before a device format came into it.
     ///
     /// Shared by both paths rather than duplicated, because the two differ only
-    /// in where the floats end up -- and a second copy of the gain-then-tap order
+    /// in where the floats end up -- and a second copy of the tap-then-gain order
     /// is exactly the divergence TransportGain.hpp was written about.
     void fill(float* out, std::size_t wanted, std::size_t channels) {
         const std::size_t got = sink_.read(out, wanted);
@@ -483,18 +484,25 @@ private:
             underruns_.fetch_add(1, std::memory_order_relaxed);
         }
 
+        // Before the gain. The tap feeds the spectrum, and the spectrum is a
+        // picture of the music rather than of the speakers: turning the volume
+        // down is not the music getting quieter, and a display that shrank with
+        // the knob showed a flat line to anyone listening quietly. What is given
+        // up is the transport fade, which the display no longer follows over
+        // its few hundred milliseconds -- and the tap is cleared on stop anyway.
+        // Still here rather than upstream in the chain, so the timing argument
+        // in AudioTap.hpp holds: this is the audio about to be heard, not a
+        // buffer's worth ahead of it.
+        if (AudioTap* tap = tap_.load(std::memory_order_relaxed); tap != nullptr) {
+            tap->write(out, got, channels);
+        }
+
         // Volume and the transport fade are separate multipliers -- a fade must not
         // read or overwrite what the user set -- and both are applied by
         // TransportGain, which is shared with OfflineOutput. It used to be written
         // out here, and having a second copy of it in the test double is how the
         // two came to disagree; see TransportGain.hpp.
         fade_.apply(out, got, channels, volume_.load(std::memory_order_relaxed));
-
-        // After the gain, so the visualiser sees what the speakers get -- including
-        // a fade, which is the point of tapping here rather than upstream.
-        if (AudioTap* tap = tap_.load(std::memory_order_relaxed); tap != nullptr) {
-            tap->write(out, got, channels);
-        }
     }
 
     /// Fires on a miniaudio-internal thread, not the RT thread. It only hands the

@@ -12,13 +12,18 @@
 // read *behind* the write cursor by the device latency plus a margin, and Cog
 // carries that arithmetic in VisualizationController.m.
 //
-// XPCog fills it in the device callback instead, after the gain, which is the last
-// place the audio exists before the driver takes it. That removes the compensation
-// rather than reimplementing it: what is written is what is about to be heard, give
-// or take the device's own period. That residual is one buffer -- ~10-20 ms -- and
-// is deliberately not corrected, because a spectrum leading the music by a fiftieth
-// of a second is not something an eye can see, and a latency estimate that is wrong
-// in the other direction is.
+// XPCog fills it in the device callback instead, which is the last place the
+// audio exists before the driver takes it. That removes the compensation rather
+// than reimplementing it: what is written is what is about to be heard, give or
+// take the device's own period. That residual is one buffer -- ~10-20 ms -- and is
+// deliberately not corrected, because a spectrum leading the music by a fiftieth
+// of a second is not something an eye can see, and a latency estimate that is
+// wrong in the other direction is.
+//
+// In the callback, but *before* its gain. The volume knob is not part of the
+// music, and a display that followed it showed a quiet listener a flat line. The
+// transport fade goes with it, which is a few hundred milliseconds the display no
+// longer tracks and the clear on stop covers.
 //
 // Real-time safety: write() allocates nothing, locks nothing, and touches only
 // relaxed atomics. Per-sample atomic stores rather than a memcpy over plain floats,

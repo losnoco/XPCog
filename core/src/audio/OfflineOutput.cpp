@@ -111,8 +111,9 @@ public:
     }
 
 private:
-    /// Applies volume and the transport fade, then records the result. The one
-    /// place either is applied, so every path into the capture agrees.
+    /// Feeds the tap, applies volume and the transport fade, and records the
+    /// result. The one place either is applied, so every path into the capture
+    /// agrees.
     ///
     /// Through the same TransportGain the real device uses. It used to be a second
     /// hand-written copy of that arithmetic, and the two drifted: this one was
@@ -123,17 +124,19 @@ private:
             static_cast<std::size_t>(std::max<std::uint32_t>(format_.channels, 1));
 
         std::lock_guard lock(mutex_);
+
+        // Same point in the chain as the real output -- before the gain -- so a
+        // test can exercise the visualiser path without a device and see what
+        // the device's tap would.
+        if (AudioTap* tap = tap_.load(std::memory_order_relaxed); tap != nullptr) {
+            tap->write(samples, count, channels);
+        }
+
         const std::size_t begin = captured_.size();
         captured_.insert(captured_.end(), samples,
                          samples + static_cast<std::ptrdiff_t>(count));
         fade_.apply(captured_.data() + begin, count, channels,
                     volume_.load(std::memory_order_relaxed));
-
-        // Same point in the chain as the real output, so a test can exercise the
-        // visualiser path without a device.
-        if (AudioTap* tap = tap_.load(std::memory_order_relaxed); tap != nullptr) {
-            tap->write(captured_.data() + begin, count, channels);
-        }
     }
 
     void drainLoop() {

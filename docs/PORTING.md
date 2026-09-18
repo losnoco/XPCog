@@ -638,11 +638,13 @@ first block after a seek, which is M4's work.
   one-for-one substitution for Core Graphics. That also settles the deployment
   question — see the graphics runtime note under Known gaps.
 
-  The audio is tapped in the *device callback*, after the gain, which is where
-  XPCog differs from Cog structurally rather than incidentally. Cog posts PCM from
-  up in the chain and then has to read behind its own write cursor by the device
-  latency to undo the lead that creates; tapping at the last point before the driver
-  means there is no lead to undo. See `AudioTap`.
+  The audio is tapped in the *device callback*, which is where XPCog differs
+  from Cog structurally rather than incidentally. Cog posts PCM from up in the
+  chain and then has to read behind its own write cursor by the device latency
+  to undo the lead that creates; tapping at the last point before the driver
+  means there is no lead to undo. Before the callback's gain, though: the volume
+  knob is not part of the music, and while the tap sat after it the display
+  shrank with the volume. See `AudioTap`.
 
   Customisation follows Cog's own preference keys where they exist:
   `spectrumBarColor`, `spectrumDotColor` and `spectrumFreqMode`. Two of Cog's five

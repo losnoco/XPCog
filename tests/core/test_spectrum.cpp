@@ -7,16 +7,21 @@
 // back the newest audio rather than the oldest.
 
 #include "xpcog/core/audio/AudioTap.hpp"
+#include "xpcog/core/audio/IAudioOutput.hpp"
+#include "xpcog/core/audio/OfflineOutput.hpp"
+#include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/SpectrumAnalyzer.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
+#include <thread>
 #include <vector>
 
 using Catch::Approx;
@@ -610,4 +615,47 @@ TEST_CASE("the tap reports how large the chunks reaching it are",
 
     tap.clear();
     REQUIRE(tap.writeGranularity() == 0);
+}
+
+TEST_CASE("the tap is fed before the volume", "[audio][spectrum]") {
+    // The spectrum is a picture of the music, not of the speakers. Turning the
+    // volume down must not shrink it -- which it did while the tap was fed
+    // after the gain, so a quiet listen showed a flat line.
+    using xpcog::IAudioOutput;
+    using xpcog::RingBuffer;
+
+    constexpr std::size_t kChannels = 2;
+    constexpr std::size_t kFrames   = 256;
+
+    RingBuffer ring(kFrames * kChannels * 4);
+    auto       output = xpcog::makeOfflineOutput(ring);
+    AudioTap   tap(1U << 10);
+    output->setTap(&tap);
+    output->setVolume(0.25F);
+
+    IAudioOutput::Config config;
+    config.sampleRate = 48000.0;
+    config.channels   = kChannels;
+    REQUIRE(output->start(config));
+
+    // A constant, so the tap's mono mix of it is the same constant, and the
+    // capture's is a quarter of it.
+    std::vector<float> samples(kFrames * kChannels, 0.8F);
+    REQUIRE(ring.write(samples.data(), samples.size()) == samples.size());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (xpcog::capturedAudio(*output).size() < samples.size() &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+    }
+    output->stop();
+
+    const std::vector<float> heard = xpcog::capturedAudio(*output);
+    REQUIRE(heard.size() >= samples.size());
+    CHECK(heard[0] == Approx(0.2F));
+
+    std::vector<float> shown(kFrames, 0.0F);
+    REQUIRE(tap.readLatest(shown.data(), shown.size()));
+    CHECK(shown.front() == Approx(0.8F));
+    CHECK(shown.back() == Approx(0.8F));
 }
