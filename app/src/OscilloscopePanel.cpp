@@ -289,30 +289,19 @@ void OscilloscopePanel::paintTrace(wxGraphicsContext& gc, const float* samples,
                    logScale_ ? ScopeScale::Logarithmic : ScopeScale::Linear, columns_);
 
     const auto y = [&](float value) { return centre - (static_cast<double>(value) * amplitude); };
-    const auto x = [](std::size_t column) { return static_cast<double>(column) + 0.5; };
+    const double stroke = FromDIP(1) * strokeWidth_;
 
-    // The band: across the highs, back along the lows. Filled in the trace
-    // colour, so a dense signal is solid where it should be; stroked along
-    // both edges, so a sparse one is a line of the chosen width.
-    wxGraphicsPath band = gc.CreatePath();
-    band.MoveToPoint(x(0), y(columns_[0].second));
-    for (std::size_t column = 1; column < columns_.size(); ++column) {
-        band.AddLineToPoint(x(column), y(columns_[column].second));
-    }
-    for (std::size_t column = columns_.size(); column-- > 0;) {
-        band.AddLineToPoint(x(column), y(columns_[column].first));
-    }
-    band.CloseSubpath();
-
-    if (fill_) {
-        // Between the trace and the centre line: the highs down to the
-        // centre, and the lows up to it, each as its own polygon.
-        for (const bool highs : {true, false}) {
+    if (count <= columns_.size()) {
+        // Sparse: at most one sample a column, so the trace is a polyline
+        // through them, of the chosen width. Cheap to stroke, because the
+        // path is continuous -- each segment is a sample's step, not a
+        // column's height.
+        const auto x = [](std::size_t column) { return static_cast<double>(column) + 0.5; };
+        if (fill_) {
             wxGraphicsPath area = gc.CreatePath();
             area.MoveToPoint(x(0), centre);
             for (std::size_t column = 0; column < columns_.size(); ++column) {
-                const float value = highs ? columns_[column].second : columns_[column].first;
-                area.AddLineToPoint(x(column), y(value));
+                area.AddLineToPoint(x(column), y(columns_[column].second));
             }
             area.AddLineToPoint(x(columns_.size() - 1), centre);
             area.CloseSubpath();
@@ -320,11 +309,56 @@ void OscilloscopePanel::paintTrace(wxGraphicsContext& gc, const float* samples,
             gc.SetBrush(wxBrush(withAlpha(colour, kFillAlpha)));
             gc.FillPath(area);
         }
+        wxGraphicsPath line = gc.CreatePath();
+        line.MoveToPoint(x(0), y(columns_[0].second));
+        for (std::size_t column = 1; column < columns_.size(); ++column) {
+            line.AddLineToPoint(x(column), y(columns_[column].second));
+        }
+        gc.SetPen(wxPen(colour, stroke));
+        gc.StrokePath(line);
+        return;
     }
 
+    // Dense: a column holds several samples, and the trace is the band from
+    // each column's lowest to its highest -- what a scope's phosphor shows for
+    // a signal faster than the sweep. Drawn as one rectangle a column, all in
+    // one fill, and *not* as a stroked outline: the outline is a zigzag of
+    // two vertices a column with a join at every reversal, and on complex
+    // material at a logarithmic scale every column spans nearly the whole
+    // height, so stroking it had the renderer tessellating thousands of joins
+    // along a path hundreds of thousands of pixels long, sixty times a
+    // second, on the interface thread. Rectangles are the fast path of every
+    // rasterizer there is. Each is stretched to meet its neighbour's span, so
+    // a jump between columns is a joined edge rather than a gap, and by half
+    // the stroke width each way, so the width setting still reads.
+    const double half = stroke / 2.0;
+    wxGraphicsPath band = gc.CreatePath();
+    wxGraphicsPath area = gc.CreatePath();
+    for (std::size_t column = 0; column < columns_.size(); ++column) {
+        double upper = y(columns_[column].second);
+        double lower = y(columns_[column].first);
+        if (column > 0) {
+            upper = std::min(upper, y(columns_[column - 1].first));
+            lower = std::max(lower, y(columns_[column - 1].second));
+        }
+        band.AddRectangle(static_cast<double>(column), upper - half, 1.0,
+                          (lower - upper) + stroke);
+        if (fill_) {
+            // Centre to the column's extremes, either side, clipped to the
+            // side of the centre each lies on.
+            const double above = std::min(upper, centre);
+            const double below = std::max(lower, centre);
+            area.AddRectangle(static_cast<double>(column), above, 1.0, centre - above);
+            area.AddRectangle(static_cast<double>(column), centre, 1.0, below - centre);
+        }
+    }
+    gc.SetPen(*wxTRANSPARENT_PEN);
+    if (fill_) {
+        gc.SetBrush(wxBrush(withAlpha(colour, kFillAlpha)));
+        gc.FillPath(area);
+    }
     gc.SetBrush(wxBrush(colour));
-    gc.SetPen(wxPen(colour, FromDIP(1) * strokeWidth_));
-    gc.DrawPath(band);
+    gc.FillPath(band);
 }
 
 void OscilloscopePanel::onContextMenu(wxContextMenuEvent& event) {
