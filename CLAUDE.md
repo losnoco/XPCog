@@ -29,8 +29,8 @@ Everything else derives from the first of those and must not be edited by hand:
 (`kVersionMajor`/`Minor`/`Patch`, `kVersionString`), `app/XPCog.rc.in` takes the
 Windows `FileVersion` and `ProductVersion`, and `app/CMakeLists.txt` sets the
 macOS bundle's `CFBundleShortVersionString` and `CFBundleVersion`. The version
-string is user-visible in the About dialog, in `xpcog-cli`'s banner and in the
-HTTP source's `User-Agent`.
+string is user-visible in the About dialog, in `xpcog-cli`'s banner and in
+every `User-Agent` the program sends (`userAgent()`, beside it in `Version.hpp`).
 
 `docs/BUILDING.md` is the one place that spells a version out by hand: the
 Windows installer section shows `XPCog-<version>-x64-setup.exe` in two examples,

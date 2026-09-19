@@ -7,6 +7,7 @@
 // between two threads for no saving.
 
 #include "xpcog/core/net/HttpClient.hpp"
+#include "xpcog/core/Version.hpp"
 
 #include <curl/curl.h>
 
@@ -120,7 +121,8 @@ private:
         // Without this a redirect to http:// would be followed silently, which
         // for a request carrying a session key is a downgrade nobody asked for.
         curl_easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS_STR, "https");
-        curl_easy_setopt(handle, CURLOPT_USERAGENT, "XPCog");
+        // libcurl copies the string, so the temporary is fine.
+        curl_easy_setopt(handle, CURLOPT_USERAGENT, std::string{userAgent()}.c_str());
         // libcurl is not thread-safe about its own signal handling, and this is
         // called from a worker; without it a DNS timeout can longjmp out of
         // another thread's alarm handler.

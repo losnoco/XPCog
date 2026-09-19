@@ -9,7 +9,21 @@ inline constexpr int kVersionMinor = @PROJECT_VERSION_MINOR@;
 inline constexpr int kVersionPatch = @PROJECT_VERSION_PATCH@;
 inline constexpr std::string_view kVersionString = "@PROJECT_VERSION@";
 
+/// Where the project lives, for anything that has to say so: the User-Agent,
+/// the About dialog, a crash report.
+inline constexpr std::string_view kProjectUrl = "https://github.com/losnoco/XPCog";
+
 /// Version string plus the build's compiled-in codec count.
 [[nodiscard]] std::string_view versionBanner();
+
+/// What this program calls itself to a server: `XPCog/<version> (+<url>)`.
+///
+/// One spelling for every HTTP request the program makes -- the streaming
+/// source, the API client behind scrobbling and lyrics, and the header LRCLIB
+/// reads instead of the User-Agent -- so a server operator sees the same name
+/// whichever path a request took, with a version to correlate a problem
+/// against and somewhere to write. Any new client should send this rather
+/// than a string of its own.
+[[nodiscard]] std::string_view userAgent();
 
 }  // namespace xpcog

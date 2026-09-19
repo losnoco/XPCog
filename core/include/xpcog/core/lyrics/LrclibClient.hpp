@@ -116,9 +116,10 @@ public:
     [[nodiscard]] std::optional<LrclibLyrics> get(const LyricsQuery& query,
                                                   LyricsError*       error = nullptr);
 
-    /// The `Lrclib-Client` value every request carries: the program, its
-    /// version, and where to find it, as the service asks. Exposed for the
-    /// test that pins it.
+    /// The `Lrclib-Client` value every request carries: `userAgent()` from
+    /// Version.hpp -- the program, its version, and where to find it, as the
+    /// service asks -- under the header name the server reads first. Exposed
+    /// for the test that pins it.
     [[nodiscard]] static std::string clientHeader();
 
 private:

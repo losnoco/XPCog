@@ -83,7 +83,9 @@ std::string LrclibClient::endpoint(std::string_view name) const {
 }
 
 std::string LrclibClient::clientHeader() {
-    return "XPCog/" + std::string{kVersionString} + " (https://github.com/losnoco/XPCog)";
+    // The one User-Agent, again: the transport sends it under that name and
+    // this sends it under the one the server reads first.
+    return std::string{userAgent()};
 }
 
 std::optional<LrclibLyrics> LrclibClient::get(const LyricsQuery& query, LyricsError* error) {

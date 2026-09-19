@@ -395,7 +395,8 @@ private:
         curl_easy_setopt(handle.get(), CURLOPT_NOSIGNAL, 1L);
         curl_easy_setopt(handle.get(), CURLOPT_CONNECTTIMEOUT, 10L);
         curl_easy_setopt(handle.get(), CURLOPT_HTTP09_ALLOWED, 1L);
-        curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, userAgent().c_str());
+        curl_easy_setopt(handle.get(), CURLOPT_USERAGENT,
+                         std::string{xpcog::userAgent()}.c_str());
 
         curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, &onHeader);
         curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &context);
@@ -509,12 +510,6 @@ private:
             spaceAvailable_.wait_for(lock, 20ms);
         }
         return done;
-    }
-
-    [[nodiscard]] static const std::string& userAgent() {
-        static const std::string agent =
-            "XPCog/" + std::string{kVersionString};
-        return agent;
     }
 
     mutable std::mutex      mutex_;

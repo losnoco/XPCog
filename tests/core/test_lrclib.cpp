@@ -173,9 +173,11 @@ TEST_CASE("Every request names the program in Lrclib-Client", "[lrclib]") {
     REQUIRE(http.callCount() == 1);
     const auto header = http.header(0, "Lrclib-Client");
     REQUIRE(header);
+    // The one User-Agent, under the name the server reads first.
     CHECK(*header == LrclibClient::clientHeader());
+    CHECK(*header == userAgent());
     CHECK(header->starts_with("XPCog/" + std::string{kVersionString}));
-    CHECK(header->find("github.com/losnoco/XPCog") != std::string::npos);
+    CHECK(header->find(kProjectUrl) != std::string::npos);
 }
 
 TEST_CASE("An unknown or absurd length is left out rather than sent", "[lrclib]") {
