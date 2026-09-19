@@ -8,12 +8,14 @@
 
 #include "xpcog/core/NaturalOrder.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/library/FolderArtwork.hpp"
 #include "xpcog/core/library/Library.hpp"
 #include "xpcog/core/library/Scanner.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -73,51 +75,57 @@ const PluginRegistry& codecRegistry() {
     return registry;
 }
 
-/// A one-second FLAC with the given Vorbis comments. Returns false when `flac`
-/// is not installed.
-bool makeTaggedFlac(const fs::path& target, const std::vector<std::string>& tags) {
+/// One second of 16-bit stereo 44.1 kHz silence, which is enough for a test
+/// about tags or covers rather than audio.
+void writeSilentWav(const fs::path& wav) {
+    constexpr int kFrames = 44100;
+    std::ofstream out{wav, std::ios::binary};
+    const auto    write32 = [&out](std::uint32_t value) {
+        const char bytes[4] = {static_cast<char>(value & 0xFF),
+                               static_cast<char>((value >> 8) & 0xFF),
+                               static_cast<char>((value >> 16) & 0xFF),
+                               static_cast<char>((value >> 24) & 0xFF)};
+        out.write(bytes, 4);
+    };
+    const auto write16 = [&out](std::uint16_t value) {
+        const char bytes[2] = {static_cast<char>(value & 0xFF),
+                               static_cast<char>((value >> 8) & 0xFF)};
+        out.write(bytes, 2);
+    };
+    const std::uint32_t dataBytes = kFrames * 4;
+    out.write("RIFF", 4);
+    write32(36 + dataBytes);
+    out.write("WAVEfmt ", 8);
+    write32(16);
+    write16(1);
+    write16(2);
+    write32(44100);
+    write32(44100 * 4);
+    write16(4);
+    write16(16);
+    out.write("data", 4);
+    write32(dataBytes);
+    const std::vector<char> silence(dataBytes, 0);
+    out.write(silence.data(), dataBytes);
+}
+
+/// A one-second FLAC with the given Vorbis comments, and `picture` embedded
+/// when one is named. Returns false when `flac` is not installed.
+bool makeTaggedFlac(const fs::path& target, const std::vector<std::string>& tags,
+                    const fs::path& picture = {}) {
     if (!haveTool("flac")) {
         return false;
     }
 
     const fs::path wav = target.parent_path() / "source.wav";
-    {
-        // 16-bit stereo 44.1 kHz, one second of silence is enough: the test is
-        // about tags, not audio.
-        constexpr int kFrames = 44100;
-        std::ofstream out{wav, std::ios::binary};
-        const auto    write32 = [&out](std::uint32_t value) {
-            const char bytes[4] = {static_cast<char>(value & 0xFF),
-                                   static_cast<char>((value >> 8) & 0xFF),
-                                   static_cast<char>((value >> 16) & 0xFF),
-                                   static_cast<char>((value >> 24) & 0xFF)};
-            out.write(bytes, 4);
-        };
-        const auto write16 = [&out](std::uint16_t value) {
-            const char bytes[2] = {static_cast<char>(value & 0xFF),
-                                   static_cast<char>((value >> 8) & 0xFF)};
-            out.write(bytes, 2);
-        };
-        const std::uint32_t dataBytes = kFrames * 4;
-        out.write("RIFF", 4);
-        write32(36 + dataBytes);
-        out.write("WAVEfmt ", 8);
-        write32(16);
-        write16(1);
-        write16(2);
-        write32(44100);
-        write32(44100 * 4);
-        write16(4);
-        write16(16);
-        out.write("data", 4);
-        write32(dataBytes);
-        const std::vector<char> silence(dataBytes, 0);
-        out.write(silence.data(), dataBytes);
-    }
+    writeSilentWav(wav);
 
     std::string command = "flac -s -f --totally-silent";
     for (const std::string& tag : tags) {
         command += " --tag=\"" + tag + "\"";
+    }
+    if (!picture.empty()) {
+        command += " --picture=\"" + picture.string() + "\"";
     }
     command += " -o \"" + target.string() + "\" \"" + wav.string() + "\"";
     command += xpcog::test::kSilenceStderr;
@@ -126,6 +134,16 @@ bool makeTaggedFlac(const fs::path& target, const std::vector<std::string>& tags
     std::error_code error;
     fs::remove(wav, error);
     return ok && fs::exists(target);
+}
+
+/// The bytes of a file, for comparing a cover with what a scan attached.
+std::vector<std::byte> bytesOf(const fs::path& path) {
+    std::ifstream          in{path, std::ios::binary};
+    std::vector<std::byte> out;
+    for (int c = in.get(); c != std::char_traits<char>::eof(); c = in.get()) {
+        out.push_back(static_cast<std::byte>(c));
+    }
+    return out;
 }
 
 }  // namespace
@@ -603,4 +621,143 @@ TEST_CASE("embedded artwork moves into the library", "[scanner]") {
 
     // Nothing to move the second time.
     REQUIRE_FALSE(library.adoptArtwork(entry));
+}
+
+// --- folder artwork ------------------------------------------------------
+
+TEST_CASE("a folder's cover is found whatever its case", "[scanner][artwork]") {
+    const TempDir dir{"folderart-case"};
+    dir.write("01 Dogs.flac", "x");
+    dir.write("Cover.JPG", "jpeg bytes");
+
+    const auto found = findFolderArtwork(dir.path());
+    REQUIRE(found.has_value());
+    REQUIRE(found->filename() == "Cover.JPG");
+}
+
+TEST_CASE("the folder's cover is chosen by name first, then by extension",
+          "[scanner][artwork]") {
+    const TempDir dir{"folderart-rank"};
+    dir.write("folder.jpg", "x");
+    dir.write("cover.png", "x");
+    dir.write("front.jpg", "x");
+
+    // `cover` outranks `folder` even though folder's extension ranks higher.
+    REQUIRE(findFolderArtwork(dir.path())->filename() == "cover.png");
+
+    dir.write("cover.jpg", "x");
+    // ...and between two covers the jpg wins.
+    REQUIRE(findFolderArtwork(dir.path())->filename() == "cover.jpg");
+}
+
+TEST_CASE("a folder with no cover has no cover", "[scanner][artwork]") {
+    const TempDir dir{"folderart-none"};
+    dir.write("01 Dogs.flac", "x");
+    // Right name, wrong kind; and a picture under a name nobody agreed on.
+    dir.write("cover.txt", "x");
+    dir.write("scan of the booklet.jpg", "x");
+    dir.write("cover.jpg.bak", "x");
+
+    REQUIRE_FALSE(findFolderArtwork(dir.path()).has_value());
+    REQUIRE_FALSE(findFolderArtwork(dir.path() / "does-not-exist").has_value());
+}
+
+TEST_CASE("a folder's cover becomes the album art of the tracks in it",
+          "[scanner][artwork]") {
+    const TempDir dir{"folderart-scan"};
+    writeSilentWav(dir.file("01 Dogs.wav"));
+    writeSilentWav(dir.file("02 Sheep.wav"));
+    dir.write("cover.jpg", "these bytes stand in for a jpeg");
+
+    const Scanner scanner{codecRegistry()};
+    const Url     root    = Url::fromLocalPath(dir.path());
+    const auto    entries = scanner.scan({&root, 1});
+
+    REQUIRE(entries.size() == 2);
+    const std::vector<std::byte> cover = bytesOf(dir.file("cover.jpg"));
+    for (const PlaylistEntry& entry : entries) {
+        REQUIRE_FALSE(entry.error);
+        const std::vector<std::byte>* art = entry.metadata.bytes("albumart");
+        REQUIRE(art != nullptr);
+        REQUIRE(*art == cover);
+    }
+
+    // Where the library is in reach the cover then moves into it, which is
+    // the same path embedded art takes, so one album holds one copy.
+    Library library;
+    REQUIRE(library.open(":memory:"));
+    PlaylistEntry first = entries[0];
+    PlaylistEntry second = entries[1];
+    REQUIRE(library.adoptArtwork(first));
+    REQUIRE(library.adoptArtwork(second));
+    REQUIRE(first.artHash == second.artHash);
+}
+
+TEST_CASE("folder artwork can be switched off", "[scanner][artwork]") {
+    const TempDir dir{"folderart-off"};
+    writeSilentWav(dir.file("01 Dogs.wav"));
+    dir.write("cover.jpg", "x");
+
+    Scanner::Options options;
+    options.readFolderArtwork = false;
+    const Scanner scanner{codecRegistry(), options};
+    const Url     root    = Url::fromLocalPath(dir.path());
+    const auto    entries = scanner.scan({&root, 1});
+
+    REQUIRE(entries.size() == 1);
+    REQUIRE_FALSE(entries[0].metadata.contains("albumart"));
+}
+
+TEST_CASE("a picture embedded in the file beats the folder's", "[scanner][artwork]") {
+    const TempDir dir{"folderart-embedded"};
+    // A real PNG, because flac --picture reads the header to fill in the
+    // picture block: 1x1, the smallest one there is.
+    static constexpr unsigned char kPng[] = {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49,
+        0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06,
+        0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44,
+        0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D,
+        0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42,
+        0x60, 0x82};
+    dir.write("embedded.png",
+              std::string_view{reinterpret_cast<const char*>(kPng), sizeof kPng});
+    if (!makeTaggedFlac(dir.file("01 Dogs.flac"), {"TITLE=Dogs"}, dir.file("embedded.png"))) {
+        SKIP("flac is not installed");
+    }
+    // Named so the folder lookup would find it if it looked.
+    dir.write("cover.jpg", "the folder's cover, which must lose");
+
+    const Scanner scanner{codecRegistry()};
+    const Url     track = Url::fromLocalPath(dir.file("01 Dogs.flac"));
+    const auto    entries = scanner.scan({&track, 1});
+
+    REQUIRE(entries.size() == 1);
+    const std::vector<std::byte>* art = entries[0].metadata.bytes("albumart");
+    REQUIRE(art != nullptr);
+    REQUIRE(*art == bytesOf(dir.file("embedded.png")));
+}
+
+TEST_CASE("a cue sheet's tracks take the cover from the sheet's folder",
+          "[scanner][artwork]") {
+    const TempDir dir{"folderart-cue"};
+    writeSilentWav(dir.file("album.wav"));
+    dir.write("album.cue",
+              "FILE \"album.wav\" WAVE\n"
+              "  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n"
+              "  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:00:30\n");
+    dir.write("folder.jpg", "the album's cover");
+
+    Scanner::Options options;
+    options.readCueSheets = true;
+    const Scanner scanner{codecRegistry(), options};
+    const Url     sheet   = Url::fromLocalPath(dir.file("album.cue"));
+    const auto    entries = scanner.scan({&sheet, 1});
+
+    REQUIRE(entries.size() == 2);
+    for (const PlaylistEntry& entry : entries) {
+        REQUIRE_FALSE(entry.url.fragment().empty());
+        const std::vector<std::byte>* art = entry.metadata.bytes("albumart");
+        REQUIRE(art != nullptr);
+        REQUIRE(*art == bytesOf(dir.file("folder.jpg")));
+    }
 }

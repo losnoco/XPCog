@@ -78,6 +78,25 @@ duration or size check would miss. Adding a codec means adding a row to that tab
 `decode` output is byte-identical to `flac -d` with the WAV header stripped, which
 is how the decoder is regression-tested.
 
+## Artwork
+
+A picture embedded in the file is the track's cover. A track that carries none
+takes the folder's: `cover`, `folder`, `front`, `album` or `albumart`, as
+`.jpg`, `.jpeg` or `.png`, matched without regard to case and in that order of
+preference, so `Cover.JPG` and `Folder.jpg` both count and a folder holding
+two candidates always resolves the same way. Nothing looser than that list --
+a folder scanned for "any image" would hand back the booklet scan as the
+cover.
+
+Cog reads embedded art only, so an album ripped with a `cover.jpg` beside it
+plays there with a blank Info pane; here it shows the cover, and the same file
+reaches the notifications, the OS's now-playing card and the remote control's
+artwork route, because all of those read the same field. A cue sheet's tracks
+take the cover from the sheet's folder. The lookup lives in the scanner rather
+than the window, so `xpcog-cli info` reports it too, and the folder is listed
+and the file read once per scan rather than once per track. Where both exist
+the embedded picture wins: it was put in that file on purpose.
+
 ## Gapless playback
 
 When a decoder reaches end of stream the engine opens the next track immediately,

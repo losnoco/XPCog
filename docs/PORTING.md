@@ -3731,6 +3731,20 @@ All of these are also documented at the call site.
   index and the stop-after mark are kept, because getting that backwards would be
   a reload that silently reset them and still looked like it had worked.
 
+- **A track with no embedded picture takes the folder's cover.** Cog's readers
+  hand back an `albumArt` tag from inside the file and nothing looks beside it,
+  so an album ripped with a `cover.jpg` -- which is what EAC and dBpoweramp
+  write by default -- plays there with a blank Info pane. The scanner here
+  looks in the file's folder for `cover`, `folder`, `front`, `album` or
+  `albumart` as `.jpg`, `.jpeg` or `.png`, in that order and without regard to
+  case, and attaches the bytes under the same `albumart` key the readers use,
+  so everything downstream -- the library's content-addressed artwork table,
+  the Info pane, notifications, the OS's now-playing card, the remote control
+  -- sees no difference. Embedded art wins where both exist. The list is
+  fixed on purpose: a folder scanned for "any image" returns the booklet scan.
+  `core/include/xpcog/core/library/FolderArtwork.hpp`; `Scanner::Options::
+  readFolderArtwork` switches it off.
+
 - **The seek bar can draw the track's waveform; Cog's cannot.** Cog's position
   slider is a plain `NSSlider` with a time tooltip (`Window/PositionSlider.m`),
   so this is new work on the terms `docs/REST.md` set rather than a port. View →

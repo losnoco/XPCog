@@ -127,6 +127,10 @@ emulated OPL3, or a Roland SC-55 if you have the ROMs — see
 sheet or a Monkey's Audio Link is a range within one file. Selection is by
 extension, then MIME type, with FFmpeg deliberately last.
 
+**Artwork.** Embedded pictures, and for a track that has none, the folder's
+`cover.jpg` or `folder.png` — the usual names, any case, embedded art winning
+where both exist.
+
 **Gapless and HDCD.** The next track opens while the last is still playing and
 writes into the same ring, across formats and across sample rates. HDCD is
 decoded when present and is bit-transparent when it is not; both are asserted by

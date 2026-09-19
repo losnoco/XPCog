@@ -20,7 +20,10 @@
 #include <atomic>
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <span>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -41,6 +44,10 @@ public:
         /// playable, but they keep the extension of the file they shadow, so a
         /// folder scan otherwise adds one unopenable error row per track.
         bool skipAppleDoubleFiles = true;
+        /// Take `cover.jpg` and its relatives from the file's folder as the
+        /// album art of a track that carries none of its own. See
+        /// FolderArtwork.hpp for the names; embedded art always wins.
+        bool readFolderArtwork = true;
     };
 
     // Not a defaulted argument: Options is still being defined at that point,
@@ -90,9 +97,10 @@ public:
     [[nodiscard]] std::vector<Url> expand(std::span<const Url> inputs) const;
 
     /// Fills in `entry` from its URL: stream properties from the decoder, tags
-    /// from the metadata readers. Returns false and records the reason on
-    /// `entry` when the file cannot be opened -- a broken file becomes a visible
-    /// error row rather than disappearing.
+    /// from the metadata readers, and the folder's cover when the file has no
+    /// picture of its own. Returns false and records the reason on `entry` when
+    /// the file cannot be opened -- a broken file becomes a visible error row
+    /// rather than disappearing.
     bool readMetadata(PlaylistEntry& entry) const;
 
     /// expand() followed by readMetadata() for each result.
@@ -112,12 +120,25 @@ private:
     void report(Phase phase, const Url& url, std::size_t done,
                 std::size_t total = 0) const;
 
+    /// Puts the folder's cover into `tags` as `albumart` when `url` is a local
+    /// file, its folder has one, and the tags carry no picture already.
+    void attachFolderArtwork(const Url& url, MetadataMap& tags) const;
+
     const PluginRegistry& registry_;
     Options               options_;
     PluginCache*          cache_ = nullptr;
     ProgressFn            progress_;
     ActivityFn            activity_;
     mutable std::atomic<bool> cancelled_{false};
+
+    /// The cover each folder resolved to, or null for a folder that has none,
+    /// so an album's twelve tracks list the folder and read the file once
+    /// rather than twelve times. Keyed by the folder's UTF-8 path. Lives as
+    /// long as the scanner does, which is one scan in the application and the
+    /// CLI; not synchronised, like the rest of this class.
+    mutable std::unordered_map<std::string,
+                               std::shared_ptr<const std::vector<std::byte>>>
+        folderArtwork_;
 };
 
 /// Promotes the ReplayGain and cue-sheet tags a reader returned into

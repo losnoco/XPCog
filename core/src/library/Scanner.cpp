@@ -1,12 +1,14 @@
 #include "xpcog/core/library/Scanner.hpp"
 
 #include "xpcog/core/FilePath.hpp"
-
 #include "xpcog/core/NaturalOrder.hpp"
+#include "xpcog/core/library/FolderArtwork.hpp"
 
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -306,6 +308,10 @@ bool Scanner::readMetadata(PlaylistEntry& entry) const {
     entry.properties = opened.decoder->properties();
     tags.mergeFrom(opened.decoder->metadata());
 
+    if (options_.readFolderArtwork) {
+        attachFolderArtwork(entry.url, tags);
+    }
+
     promoteReplayGain(tags, entry.properties);
     entry.applyMetadata(tags);
 
@@ -313,6 +319,48 @@ bool Scanner::readMetadata(PlaylistEntry& entry) const {
         cache_->store(entry.url, stamp, entry);
     }
     return true;
+}
+
+void Scanner::attachFolderArtwork(const Url& url, MetadataMap& tags) const {
+    // Embedded first: the picture inside the file was put there for that
+    // file, and the folder's is what stands in when there is none.
+    if (tags.contains("albumart")) {
+        return;
+    }
+    // A cue track's URL is the sheet's path with a fragment, and localPath()
+    // drops the fragment, so the sheet's folder is what gets looked in --
+    // which is the folder the audio is in as well. Anything that is not a
+    // local file has no folder to look in.
+    const auto path = url.localPath();
+    if (!path) {
+        return;
+    }
+    const std::filesystem::path folder = path->parent_path();
+    const std::string           key    = pathToUtf8(folder);
+
+    auto cached = folderArtwork_.find(key);
+    if (cached == folderArtwork_.end()) {
+        std::shared_ptr<const std::vector<std::byte>> image;
+        if (const auto cover = findFolderArtwork(folder)) {
+            std::ifstream in{*cover, std::ios::binary | std::ios::ate};
+            const auto    size = in.tellg();
+            if (in && size > 0) {
+                std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+                in.seekg(0);
+                in.read(reinterpret_cast<char*>(bytes.data()),
+                        static_cast<std::streamsize>(bytes.size()));
+                if (in) {
+                    image = std::make_shared<const std::vector<std::byte>>(
+                        std::move(bytes));
+                }
+            }
+        }
+        cached = folderArtwork_.emplace(key, std::move(image)).first;
+    }
+
+    if (cached->second) {
+        tags.setBytes("albumart", *cached->second);
+    }
 }
 
 std::vector<PlaylistEntry> Scanner::scan(std::span<const Url> inputs) const {
