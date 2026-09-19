@@ -3745,6 +3745,22 @@ All of these are also documented at the call site.
   `core/include/xpcog/core/library/FolderArtwork.hpp`; `Scanner::Options::
   readFolderArtwork` switches it off.
 
+- **Scrobbling reaches ListenBrainz too; Cog's reaches Last.fm only.** The
+  queue that makes scrobbling trustworthy -- `core/src/scrobble/Scrobbler.cpp`,
+  the half Cog's `AudioScrobbler.swift` leaves as a TODO -- turned out to need
+  four things of the service behind it: whether it is usable, an announcement,
+  a batch submission, and a verdict that says whether waiting could help. Those
+  four are `IScrobbleClient` (`ScrobbleClient.hpp`), `LastFmClient` implements
+  it, and `ListenBrainzClient` is the second implementation: a user token in an
+  `Authorization` header, JSON bodies, HTTP statuses for verdicts, no
+  application key and no grant flow. The application runs one `Scrobbler` per
+  service over its own queue file, because the two accept and refuse plays
+  independently and a shared queue would have to remember which service each
+  entry was still owed to. The server root is a setting so that a self-hosted
+  ListenBrainz or Maloja can be named; the token is in the secret store beside
+  the Last.fm session. `[listenbrainz]` pins the protocol against the scripted
+  transport, including which statuses the queue waits out.
+
 - **The seek bar can draw the track's waveform; Cog's cannot.** Cog's position
   slider is a plain `NSSlider` with a time tooltip (`Window/PositionSlider.m`),
   so this is new work on the terms `docs/REST.md` set rather than a port. View →

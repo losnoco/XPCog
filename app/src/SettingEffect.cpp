@@ -94,7 +94,11 @@ SettingEffect effectOf(std::string_view key) {
     if (key.starts_with("waveform")) {
         return {Effect::WaveformSeekBar, Applies::Immediately};
     }
-    if (key == "enableAudioScrobbler") {
+    // Both scrobblers, and the ListenBrainz root with them: the worker reads
+    // the root on its next request, and the switch is applied to the worker
+    // at once.
+    if (key == "enableAudioScrobbler" || key == "enableListenBrainz" ||
+        key == "listenBrainzUrl") {
         return {Effect::Scrobbler, Applies::Immediately};
     }
     if (key == "sentryConsented") {

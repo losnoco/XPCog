@@ -19,6 +19,7 @@ add_executable(xpcog-tests
     core/test_loop_policy.cpp
     core/test_lastfm.cpp
     core/test_lastfm_live.cpp
+    core/test_listenbrainz.cpp
     core/test_md5.cpp
     core/test_playmonitor.cpp
     core/test_scrobbler.cpp

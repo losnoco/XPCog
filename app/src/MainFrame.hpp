@@ -74,6 +74,7 @@ class wxToolBar;
 namespace xpcog::app {
 
 class LastFmAccount;
+class ListenBrainzAccount;
 
 class EqualizerPanel;
 class FileTree;
@@ -467,7 +468,12 @@ private:
     std::unique_ptr<LastFmAccount> lastFm_;
     std::unique_ptr<Scrobbler>     scrobbler_;
 
-    /// Wires the monitor's two thresholds to the library and the scrobbler.
+    /// The same again for ListenBrainz: its own account, its own queue. One
+    /// play goes to both, and each service accepts or refuses it on its own.
+    std::unique_ptr<ListenBrainzAccount> listenBrainz_;
+    std::unique_ptr<Scrobbler>           listenBrainzScrobbler_;
+
+    /// Wires the monitor's two thresholds to the library and the scrobblers.
     void wireScrobbling();
 
     /// Starts the monitor for `id`, and announces it as now playing.

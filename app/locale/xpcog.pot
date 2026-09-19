@@ -473,11 +473,11 @@ msgstr ""
 msgid "&Edit"
 msgstr ""
 
-#: app/src/Commands.cpp:124 app/src/MainFrame.cpp:1799
+#: app/src/Commands.cpp:124 app/src/MainFrame.cpp:1810
 msgid "&Undo"
 msgstr ""
 
-#: app/src/Commands.cpp:125 app/src/MainFrame.cpp:1806
+#: app/src/Commands.cpp:125 app/src/MainFrame.cpp:1817
 msgid "&Redo"
 msgstr ""
 
@@ -517,7 +517,7 @@ msgstr ""
 msgid "&Next"
 msgstr ""
 
-#: app/src/Commands.cpp:145 app/src/Commands.cpp:189 app/src/MainFrame.cpp:1933
+#: app/src/Commands.cpp:145 app/src/Commands.cpp:189 app/src/MainFrame.cpp:1944
 msgid "Add to &Queue"
 msgstr ""
 
@@ -638,11 +638,11 @@ msgstr ""
 msgid "Preset"
 msgstr ""
 
-#: app/src/FileTree.cpp:51 app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1978 app/src/MainFrame.cpp:2147 app/src/PreferencesDialog.cpp:1373 app/src/PreferencesDialog.cpp:1375
+#: app/src/FileTree.cpp:51 app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1989 app/src/MainFrame.cpp:2158 app/src/PreferencesDialog.cpp:1394 app/src/PreferencesDialog.cpp:1396
 msgid "All Files"
 msgstr ""
 
-#: app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1978
+#: app/src/FileTree.cpp:53 app/src/MainFrame.cpp:1989
 msgid "Audio Files"
 msgstr ""
 
@@ -730,7 +730,7 @@ msgstr ""
 msgid "Sample Rate"
 msgstr ""
 
-#: app/src/InfoPanel.cpp:230 app/src/PreferencesDialog.cpp:1333 app/src/PreferencesDialog.cpp:1595
+#: app/src/InfoPanel.cpp:230 app/src/PreferencesDialog.cpp:1354 app/src/PreferencesDialog.cpp:1616
 msgid "Channels"
 msgstr ""
 
@@ -778,40 +778,64 @@ msgstr ""
 msgid "no"
 msgstr ""
 
-#: app/src/LastFmAccount.cpp:118
+#: app/src/LastFmAccount.cpp:124
 msgid ""
 "This build was configured without HTTP support, so it cannot reach Last.fm."
 msgstr ""
 
-#: app/src/LastFmAccount.cpp:122
+#: app/src/LastFmAccount.cpp:128
 msgid ""
 "This build carries no Last.fm API key. Enter your own below to scrobble."
 msgstr ""
 
-#: app/src/LastFmAccount.cpp:136
+#: app/src/LastFmAccount.cpp:142
 msgid ""
 "This build of wxWidgets has no secret store, so a Last.fm session could not be kept safely."
 msgstr ""
 
-#: app/src/LastFmAccount.cpp:307
+#: app/src/LastFmAccount.cpp:313
 msgid "Could not reach Last.fm. Check your connection and try again."
 msgstr ""
 
-#: app/src/LastFmAccount.cpp:330
+#: app/src/LastFmAccount.cpp:336
 msgid "Cancelled."
 msgstr ""
 
-#: app/src/LastFmAccount.cpp:347
+#: app/src/LastFmAccount.cpp:353
 msgid ""
 "Connected to Last.fm, but the session could not be saved, so it would be lost on restart."
 msgstr ""
 
-#: app/src/LastFmAccount.cpp:364
+#: app/src/LastFmAccount.cpp:370
 msgid "Lost contact with Last.fm."
 msgstr ""
 
-#: app/src/LastFmAccount.cpp:371
+#: app/src/LastFmAccount.cpp:377
 msgid "Timed out waiting for authorisation in your browser."
+msgstr ""
+
+#: app/src/ListenBrainzAccount.cpp:60
+msgid ""
+"This build was configured without HTTP support, so it cannot reach ListenBrainz."
+msgstr ""
+
+#: app/src/ListenBrainzAccount.cpp:131
+msgid "Paste your user token first."
+msgstr ""
+
+#: app/src/ListenBrainzAccount.cpp:156
+msgid ""
+"Could not reach ListenBrainz. Check your connection and the server address, and try again."
+msgstr ""
+
+#: app/src/ListenBrainzAccount.cpp:160
+msgid ""
+"ListenBrainz does not know that token. Copy it again from your settings page."
+msgstr ""
+
+#: app/src/ListenBrainzAccount.cpp:184
+msgid ""
+"Connected to ListenBrainz, but the token could not be saved, so it would be lost on restart."
 msgstr ""
 
 #: app/src/LyricsPanel.cpp:25
@@ -822,315 +846,319 @@ msgstr ""
 msgid "Nothing selected or playing."
 msgstr ""
 
-#: app/src/MainFrame.cpp:110
+#: app/src/MainFrame.cpp:116
 msgid "Looking for files…"
 msgstr ""
 
-#: app/src/MainFrame.cpp:112
+#: app/src/MainFrame.cpp:118
 msgid "Looking for files in %s…"
 msgstr ""
 
-#: app/src/MainFrame.cpp:117
+#: app/src/MainFrame.cpp:123
 msgid "Reading %s — %d of %d"
 msgstr ""
 
-#: app/src/MainFrame.cpp:120
+#: app/src/MainFrame.cpp:126
 msgid "Reading %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:161
+#: app/src/MainFrame.cpp:167
 msgid "Crash reporting"
 msgstr ""
 
-#: app/src/MainFrame.cpp:165
+#: app/src/MainFrame.cpp:171
 msgid ""
 "Would you like to allow Sentry to submit crash reports?\n"
 "\n"
 "You may turn this off again in Preferences. We won't ask you again."
 msgstr ""
 
-#: app/src/MainFrame.cpp:170 app/src/PreferencesDialog.cpp:1019
+#: app/src/MainFrame.cpp:176 app/src/PreferencesDialog.cpp:1040
 msgid "Privacy policy"
 msgstr ""
 
-#: app/src/MainFrame.cpp:222
+#: app/src/MainFrame.cpp:228
 msgid "Library unavailable: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:572
+#: app/src/MainFrame.cpp:578
 msgid "Stop reading files"
 msgstr ""
 
-#: app/src/MainFrame.cpp:663 app/src/MiniFrame.cpp:84
+#: app/src/MainFrame.cpp:669 app/src/MiniFrame.cpp:84
 msgid "Volume"
 msgstr ""
 
-#: app/src/MainFrame.cpp:669
+#: app/src/MainFrame.cpp:675
 msgid "Filter"
 msgstr ""
 
-#: app/src/MainFrame.cpp:672
+#: app/src/MainFrame.cpp:678
 msgid "Filter the playlist"
 msgstr ""
 
-#: app/src/MainFrame.cpp:700
+#: app/src/MainFrame.cpp:706
 msgid "Connecting to %s..."
 msgstr ""
 
-#: app/src/MainFrame.cpp:702
+#: app/src/MainFrame.cpp:708
 msgid "Connecting..."
 msgstr ""
 
-#: app/src/MainFrame.cpp:949
+#: app/src/MainFrame.cpp:955
 msgid "XPCog is still running"
 msgstr ""
 
-#: app/src/MainFrame.cpp:950
+#: app/src/MainFrame.cpp:956
 msgid ""
 "Playback continues. Use the tray icon to bring the window back or to quit."
 msgstr ""
 
-#: app/src/MainFrame.cpp:1414
+#: app/src/MainFrame.cpp:1424
 msgid "Now Playing"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1623 app/src/MiniFrame.cpp:222 app/src/StatusPresence.cpp:182
+#: app/src/MainFrame.cpp:1634 app/src/MiniFrame.cpp:222 app/src/StatusPresence.cpp:182
 msgid "Pause"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1623 app/src/MiniFrame.cpp:222 app/src/StatusPresence.cpp:182
+#: app/src/MainFrame.cpp:1634 app/src/MiniFrame.cpp:222 app/src/StatusPresence.cpp:182
 msgid "Play"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1672
+#: app/src/MainFrame.cpp:1683
 msgid "The playing track is hidden by the filter"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1798
+#: app/src/MainFrame.cpp:1809
 msgid "&Undo %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1805
+#: app/src/MainFrame.cpp:1816
 msgid "&Redo %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1832
+#: app/src/MainFrame.cpp:1843
 msgid "&Pause"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1832
+#: app/src/MainFrame.cpp:1843
 msgid "&Play"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1935
+#: app/src/MainFrame.cpp:1946
 msgid "Remove from &Queue"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1937
+#: app/src/MainFrame.cpp:1948
 msgid "&Toggle Queued"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1980
+#: app/src/MainFrame.cpp:1991
 msgid "Open Files"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1999
+#: app/src/MainFrame.cpp:2010
 msgid "Open Folder"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2039
+#: app/src/MainFrame.cpp:2050
 msgid "Save Playlist"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2041
+#: app/src/MainFrame.cpp:2052
 msgid "M3U Playlist (*.m3u8)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2042
+#: app/src/MainFrame.cpp:2053
 msgid "PLS Playlist (*.pls)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2043
+#: app/src/MainFrame.cpp:2054
 msgid "XSPF Playlist (*.xspf)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2100
+#: app/src/MainFrame.cpp:2111
 msgid "Could not write the playlist."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2113
+#: app/src/MainFrame.cpp:2124
 msgid "Playlist saved: %zu selected track."
 msgid_plural "Playlist saved: %zu selected tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2119
+#: app/src/MainFrame.cpp:2130
 msgid "Playlist saved: %zu of %zu tracks, the rest hidden by the filter."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2122
+#: app/src/MainFrame.cpp:2133
 msgid "Playlist saved."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2143
+#: app/src/MainFrame.cpp:2154
 msgid "Open a Cog library"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2145
+#: app/src/MainFrame.cpp:2156
 msgid "Cog library (DataModel.sqlite)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2146
+#: app/src/MainFrame.cpp:2157
 msgid "SQLite databases (*.sqlite)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2157
+#: app/src/MainFrame.cpp:2168
 msgid ""
 "That file could not be read as a Cog library.\n"
 "\n"
 "Cog's is DataModel.sqlite, under Application Support/Cog. If Cog is running, copy it along with its -wal and -shm files, or the most recent tracks will be missing."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2161 app/src/MainFrame.cpp:2168
+#: app/src/MainFrame.cpp:2172 app/src/MainFrame.cpp:2179
 msgid "Import from Cog"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2167
+#: app/src/MainFrame.cpp:2178
 msgid "That Cog library has no playlist entries in it."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2230
+#: app/src/MainFrame.cpp:2241
 msgid "Importing %zu track from Cog..."
 msgid_plural "Importing %zu tracks from Cog..."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2242
+#: app/src/MainFrame.cpp:2253
 msgid "(%zu row Cog would not have shown either)"
 msgid_plural "(%zu rows Cog would not have shown either)"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2365
+#: app/src/MainFrame.cpp:2376
 msgid "Nothing was added."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2366
+#: app/src/MainFrame.cpp:2377
 msgid "Nothing playable was found."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2415
+#: app/src/MainFrame.cpp:2426
 msgid "Imported %zu track from Cog"
 msgid_plural "Imported %zu tracks from Cog"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2419
+#: app/src/MainFrame.cpp:2430
 msgid ", %zu with play counts"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2423
+#: app/src/MainFrame.cpp:2434
 msgid "; %zu could not be resolved off a Mac"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2647
+#: app/src/MainFrame.cpp:2658
 msgid "Nothing could be read."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2705
+#: app/src/MainFrame.cpp:2716
 msgid "Re-read %zu track."
 msgid_plural "Re-read %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2714
+#: app/src/MainFrame.cpp:2725
 msgid "Play count reset for %zu track."
 msgid_plural "Play count reset for %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2729
+#: app/src/MainFrame.cpp:2740
 msgid "Rating removed from %zu track."
 msgid_plural "Rating removed from %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2743
+#: app/src/MainFrame.cpp:2754
 msgid "Could not show the file."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2769
+#: app/src/MainFrame.cpp:2780
 msgid ""
 "Undo puts the rows back in the playlist. It does not bring the files back -- restore those from the trash itself."
 msgstr ""
 
-#: app/src/MainFrame.cpp:2771
+#: app/src/MainFrame.cpp:2782
 msgid "Move %u file to the trash?"
 msgid_plural "Move %u files to the trash?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2777
+#: app/src/MainFrame.cpp:2788
 msgid "Do not ask again"
 msgstr ""
 
-#: app/src/MainFrame.cpp:2803
+#: app/src/MainFrame.cpp:2814
 msgid "%zu file could not be moved to the trash."
 msgid_plural "%zu files could not be moved to the trash."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:2869
+#: app/src/MainFrame.cpp:2880
 msgid "Last.fm access was withdrawn. Reconnect in Preferences."
 msgstr ""
 
-#: app/src/MainFrame.cpp:3089
+#: app/src/MainFrame.cpp:2895
+msgid "ListenBrainz rejected the token. Reconnect in Preferences."
+msgstr ""
+
+#: app/src/MainFrame.cpp:3124
 msgid "%zu track — %s"
 msgid_plural "%zu tracks — %s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/MainFrame.cpp:3102 app/src/PreferencesDialog.cpp:1538
+#: app/src/MainFrame.cpp:3137 app/src/PreferencesDialog.cpp:1559
 msgid "Spectrum"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3103 app/src/PreferencesDialog.cpp:1586
+#: app/src/MainFrame.cpp:3138 app/src/PreferencesDialog.cpp:1607
 msgid "Oscilloscope"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3104
+#: app/src/MainFrame.cpp:3139
 msgid "Equalizer"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3105 app/src/PreferencesDialog.cpp:850
+#: app/src/MainFrame.cpp:3140 app/src/PreferencesDialog.cpp:868
 msgid "Pitch & Tempo"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3106
+#: app/src/MainFrame.cpp:3141
 msgid "Info"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3107
+#: app/src/MainFrame.cpp:3142
 msgid "Lyrics"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3109
+#: app/src/MainFrame.cpp:3144
 msgid "SC-55 Panel"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3247
+#: app/src/MainFrame.cpp:3282
 msgid "Could not save the playlist: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3280
+#: app/src/MainFrame.cpp:3315
 msgid "The remote control could not create an access token."
 msgstr ""
 
-#: app/src/MainFrame.cpp:3314
+#: app/src/MainFrame.cpp:3349
 msgid "Remote control unavailable: %s"
 msgstr ""
 
-#: app/src/MainFrame.cpp:3320
+#: app/src/MainFrame.cpp:3355
 msgid "Remote control listening on http://%s:%d"
 msgstr ""
 
@@ -1155,35 +1183,35 @@ msgstr ""
 msgid "Invalid URL"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:369 app/src/PreferencesDialog.cpp:1589
+#: app/src/OscilloscopePanel.cpp:369 app/src/PreferencesDialog.cpp:1610
 msgid "Mono"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:370 app/src/PreferencesDialog.cpp:1590
+#: app/src/OscilloscopePanel.cpp:370 app/src/PreferencesDialog.cpp:1611
 msgid "Left"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:371 app/src/PreferencesDialog.cpp:1591
+#: app/src/OscilloscopePanel.cpp:371 app/src/PreferencesDialog.cpp:1612
 msgid "Right"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:372 app/src/PreferencesDialog.cpp:1592
+#: app/src/OscilloscopePanel.cpp:372 app/src/PreferencesDialog.cpp:1613
 msgid "Stereo, stacked"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:373 app/src/PreferencesDialog.cpp:1593
+#: app/src/OscilloscopePanel.cpp:373 app/src/PreferencesDialog.cpp:1614
 msgid "Stereo, overlaid"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:375 app/src/PreferencesDialog.cpp:1602
+#: app/src/OscilloscopePanel.cpp:375 app/src/PreferencesDialog.cpp:1623
 msgid "Hold a steady tone still"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:376 app/src/PreferencesDialog.cpp:1605
+#: app/src/OscilloscopePanel.cpp:376 app/src/PreferencesDialog.cpp:1626
 msgid "Fill under the trace"
 msgstr ""
 
-#: app/src/OscilloscopePanel.cpp:377 app/src/PreferencesDialog.cpp:1606
+#: app/src/OscilloscopePanel.cpp:377 app/src/PreferencesDialog.cpp:1627
 msgid "Logarithmic scale"
 msgstr ""
 
@@ -1207,843 +1235,886 @@ msgstr ""
 msgid "No playable track found"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:64
+#: app/src/PreferencesDialog.cpp:65
 msgid "None"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:65
+#: app/src/PreferencesDialog.cpp:66
 msgid "Volume tag"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:66
+#: app/src/PreferencesDialog.cpp:67
 msgid "iTunes Sound Check"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:67
+#: app/src/PreferencesDialog.cpp:68
 msgid "Track gain"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:68
+#: app/src/PreferencesDialog.cpp:69
 msgid "Track gain, peak-limited"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:69
+#: app/src/PreferencesDialog.cpp:70
 msgid "Album gain"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:70
+#: app/src/PreferencesDialog.cpp:71
 msgid "Album gain, peak-limited"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:74
+#: app/src/PreferencesDialog.cpp:75
 msgid "Quick"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:74
+#: app/src/PreferencesDialog.cpp:75
 msgid "Low"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:74
+#: app/src/PreferencesDialog.cpp:75
 msgid "Medium"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:75
+#: app/src/PreferencesDialog.cpp:76
 msgid "High"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:75
+#: app/src/PreferencesDialog.cpp:76
 msgid "Best"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:82
+#: app/src/PreferencesDialog.cpp:83
 msgid "Disabled"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:83
+#: app/src/PreferencesDialog.cpp:84
 msgid "Varispeed — resample, pitch follows tempo"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:84
+#: app/src/PreferencesDialog.cpp:85
 msgid "Signalsmith Stretch"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:85
+#: app/src/PreferencesDialog.cpp:86
 msgid "Rubber Band — Faster"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:86
+#: app/src/PreferencesDialog.cpp:87
 msgid "Rubber Band — Finer"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:89
+#: app/src/PreferencesDialog.cpp:90
 msgid "Crisp"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:89
+#: app/src/PreferencesDialog.cpp:90
 msgid "Mixed"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:89
+#: app/src/PreferencesDialog.cpp:90
 msgid "Smooth"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:92
+#: app/src/PreferencesDialog.cpp:93
 msgid "Compound"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:93
+#: app/src/PreferencesDialog.cpp:94
 msgid "Percussive"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:94
+#: app/src/PreferencesDialog.cpp:95
 msgid "Soft"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:97
+#: app/src/PreferencesDialog.cpp:98
 msgid "Laminar"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:98
+#: app/src/PreferencesDialog.cpp:99
 msgid "Independent"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:101
+#: app/src/PreferencesDialog.cpp:102
 msgid "Standard"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:101
+#: app/src/PreferencesDialog.cpp:102
 msgid "Short"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:101
+#: app/src/PreferencesDialog.cpp:102
 msgid "Long"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:104
+#: app/src/PreferencesDialog.cpp:105
 msgid "Off"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:105
+#: app/src/PreferencesDialog.cpp:106
 msgid "On"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:108
+#: app/src/PreferencesDialog.cpp:109
 msgid "Shifted"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:109
+#: app/src/PreferencesDialog.cpp:110
 msgid "Preserved"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:112
+#: app/src/PreferencesDialog.cpp:113
 msgid "High speed"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:113
+#: app/src/PreferencesDialog.cpp:114
 msgid "High quality"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:114
+#: app/src/PreferencesDialog.cpp:115
 msgid "High consistency"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:117
+#: app/src/PreferencesDialog.cpp:118
 msgid "Apart"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:118
+#: app/src/PreferencesDialog.cpp:119
 msgid "Together"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:129
+#: app/src/PreferencesDialog.cpp:130
 msgid "OPL3 — DMX default"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:130
+#: app/src/PreferencesDialog.cpp:131
 msgid "OPL3 — DMX Doom"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:131
+#: app/src/PreferencesDialog.cpp:132
 msgid "OPL3 — DMX Doom II"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:132
+#: app/src/PreferencesDialog.cpp:133
 msgid "OPL3 — DMX Raptor"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:133
+#: app/src/PreferencesDialog.cpp:134
 msgid "OPL3 — DMX Strife"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:134
+#: app/src/PreferencesDialog.cpp:135
 msgid "OPL3 — DMXOPL"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:135
+#: app/src/PreferencesDialog.cpp:136
 msgid "OPL3 — General MIDI"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:136
+#: app/src/PreferencesDialog.cpp:137
 msgid "SoundFont — SpessaSynth"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:137
+#: app/src/PreferencesDialog.cpp:138
 msgid "Roland SC-55"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:675
+#: app/src/PreferencesDialog.cpp:683
 msgid "Choose..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:694
+#: app/src/PreferencesDialog.cpp:702
 msgid "Folder..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:701
+#: app/src/PreferencesDialog.cpp:709
 msgid "Archive..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:802
+#: app/src/PreferencesDialog.cpp:818
 msgid "Preferences"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:845
+#: app/src/PreferencesDialog.cpp:863
 msgid "Playlist"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:846
+#: app/src/PreferencesDialog.cpp:864
 msgid "Output"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:851
+#: app/src/PreferencesDialog.cpp:869
 msgid "General"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:852
+#: app/src/PreferencesDialog.cpp:870
 msgid "Notifications"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:860
+#: app/src/PreferencesDialog.cpp:881
 msgid "Appearance"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:863
+#: app/src/PreferencesDialog.cpp:884
 msgid "Visualizers"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:864
+#: app/src/PreferencesDialog.cpp:885
 msgid "Remote"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:865
+#: app/src/PreferencesDialog.cpp:886
 msgid "Advanced"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:929
+#: app/src/PreferencesDialog.cpp:950
 msgid "Stop after every track"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:930
+#: app/src/PreferencesDialog.cpp:951
 msgid "Follow the playing track in the playlist"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:932
+#: app/src/PreferencesDialog.cpp:953
 msgid "Move the selection to each track as it starts."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:933
+#: app/src/PreferencesDialog.cpp:954
 msgid "Keep playing while looking for the next playable track"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:935
+#: app/src/PreferencesDialog.cpp:956
 msgid ""
 "When Next or Previous lands on a track that will not open, carry on playing the current one until a playable track is found."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:938
+#: app/src/PreferencesDialog.cpp:959
 msgid "Resume playback on startup"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:939
+#: app/src/PreferencesDialog.cpp:960
 msgid ""
 "Continue the last track from where it stopped. The track is selected either way."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:944
+#: app/src/PreferencesDialog.cpp:965
 msgid "Read cue sheets when adding folders"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:945
+#: app/src/PreferencesDialog.cpp:966
 msgid "Read playlists when adding folders"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:949
+#: app/src/PreferencesDialog.cpp:970
 msgid "Ignore AppleDouble files"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:950
+#: app/src/PreferencesDialog.cpp:971
 msgid ""
 "The \"._\" files macOS leaves beside the audio. They keep the track's extension but hold no audio."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:973
+#: app/src/PreferencesDialog.cpp:994
 msgid "Follow the system"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1000
+#: app/src/PreferencesDialog.cpp:1021
 msgid "Language"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1001
+#: app/src/PreferencesDialog.cpp:1022
 msgid "Restart XPCog to apply."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1005
+#: app/src/PreferencesDialog.cpp:1026
 msgid "Streaming buffer (bytes)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1007
+#: app/src/PreferencesDialog.cpp:1028
 msgid ""
 "How much of an internet radio stream is read ahead. Raise it for a slow or distant station."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1015
+#: app/src/PreferencesDialog.cpp:1036
 msgid "Send crash reports and usage data"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1018
+#: app/src/PreferencesDialog.cpp:1039
 msgid "Nothing is collected or sent while this is off."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1028
+#: app/src/PreferencesDialog.cpp:1049
 msgid "Crash reporting is not included in this build."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1041
+#: app/src/PreferencesDialog.cpp:1062
 msgid "Enable notifications"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1042
+#: app/src/PreferencesDialog.cpp:1063
 msgid "Show album art"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1043
+#: app/src/PreferencesDialog.cpp:1064
 msgid ""
 "Shown as each track starts. Focus Assist or Do Not Disturb can hold notifications back."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1060
+#: app/src/PreferencesDialog.cpp:1081
 msgid "System default"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1069
+#: app/src/PreferencesDialog.cpp:1090
 msgid "%s (current default)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1086
+#: app/src/PreferencesDialog.cpp:1107
 msgid "%s (not connected)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1108
+#: app/src/PreferencesDialog.cpp:1129
 msgid "Output device"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1110
+#: app/src/PreferencesDialog.cpp:1131
 msgid "Play exclusively"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1111
+#: app/src/PreferencesDialog.cpp:1132
 msgid ""
 "Use the file's own rate and format instead of the system mixer's. Other applications cannot play while this is active. Falls back to sharing if the device is unavailable."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1115
+#: app/src/PreferencesDialog.cpp:1136
 msgid "Volume scaling"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1116
+#: app/src/PreferencesDialog.cpp:1137
 msgid "Resampler quality"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1118
+#: app/src/PreferencesDialog.cpp:1139
 msgid "Decode HDCD"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1119
+#: app/src/PreferencesDialog.cpp:1140
 msgid ""
 "Applies to 16-bit 44.1 kHz stereo only. Files without HDCD codes are unaffected."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1121
+#: app/src/PreferencesDialog.cpp:1142
 msgid "Halve DSD volume"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1122
+#: app/src/PreferencesDialog.cpp:1143
 msgid ""
 "DSD is converted with a filter whose gain puts half modulation — as loud as most SACDs go — at full scale. Turn on if a loud SACD rip clips."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1125
+#: app/src/PreferencesDialog.cpp:1146
 msgid "Upmix stereo to surround"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1126
+#: app/src/PreferencesDialog.cpp:1147
 msgid "Uses FreeSurround. Takes effect when the device is next opened."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1128
+#: app/src/PreferencesDialog.cpp:1149
 msgid "Fade on seek and stop"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1132
+#: app/src/PreferencesDialog.cpp:1153
 msgid "Release the device while paused"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1133
+#: app/src/PreferencesDialog.cpp:1154
 msgid ""
 "Let other applications use the device while playback is paused. Turn off to keep an exclusive device reserved."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1136
+#: app/src/PreferencesDialog.cpp:1157
 msgid ""
 "Volume scaling and resampler quality apply from the next track. Changing the device moves playback across with a brief gap."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1225
+#: app/src/PreferencesDialog.cpp:1246
 msgid "Engine"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1286 app/src/SpeedPanel.cpp:49
+#: app/src/PreferencesDialog.cpp:1307 app/src/SpeedPanel.cpp:49
 msgid "Pitch"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1287 app/src/SpeedPanel.cpp:50
+#: app/src/PreferencesDialog.cpp:1308 app/src/SpeedPanel.cpp:50
 msgid "Tempo"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1289 app/src/SpeedPanel.cpp:54
+#: app/src/PreferencesDialog.cpp:1310 app/src/SpeedPanel.cpp:54
 msgid "Lock pitch and tempo together"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1290
+#: app/src/PreferencesDialog.cpp:1311
 msgid ""
 "Moving either slider moves both, which is what a record player's speed control does."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1293 app/src/SpeedPanel.cpp:55
+#: app/src/PreferencesDialog.cpp:1314 app/src/SpeedPanel.cpp:55
 msgid "Reset to 1.00×"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1308
+#: app/src/PreferencesDialog.cpp:1329
 msgid "Transients"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1311
+#: app/src/PreferencesDialog.cpp:1332
 msgid "Detector"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1312
+#: app/src/PreferencesDialog.cpp:1333
 msgid "Phase"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1324
+#: app/src/PreferencesDialog.cpp:1345
 msgid "Window"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1327
+#: app/src/PreferencesDialog.cpp:1348
 msgid "Smoothing"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1329
+#: app/src/PreferencesDialog.cpp:1350
 msgid "Formant"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1331
+#: app/src/PreferencesDialog.cpp:1352
 msgid "Pitch mode"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1335
+#: app/src/PreferencesDialog.cpp:1356
 msgid ""
 "Varispeed resamples, as a record player would: one tempo slider, and the pitch follows it."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1369
+#: app/src/PreferencesDialog.cpp:1390
 msgid "Synthesiser"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1371
+#: app/src/PreferencesDialog.cpp:1392
 msgid "SoundFont"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1372
+#: app/src/PreferencesDialog.cpp:1393
 msgid "SoundFont banks"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1374
+#: app/src/PreferencesDialog.cpp:1395
 msgid "SC-55 ROMs"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1375
+#: app/src/PreferencesDialog.cpp:1396
 msgid "Archives"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1381
+#: app/src/PreferencesDialog.cpp:1402
 msgid "Sample rate (Hz)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1382
+#: app/src/PreferencesDialog.cpp:1403
 msgid "Default play time (s)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1383
+#: app/src/PreferencesDialog.cpp:1404
 msgid "Default fade time (s)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1384
+#: app/src/PreferencesDialog.cpp:1405
 msgid "Default loop count"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1387
+#: app/src/PreferencesDialog.cpp:1408
 msgid ""
 "SpessaSynth needs a bank: any .sf2, .sf3 or .dls. Files that carry their own bank use that instead."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1390
+#: app/src/PreferencesDialog.cpp:1411
 msgid ""
 "The SC-55 needs its five ROM files, which are not supplied. Choose the folder or the archive they came in; they are recognised by content, so nothing needs renaming. Without them, MIDI plays on the OPL3. It also ignores the sample rate and always renders at its own."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1395
+#: app/src/PreferencesDialog.cpp:1416
 msgid "These apply to every synthesised format, not only MIDI."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1427
+#: app/src/PreferencesDialog.cpp:1448
 msgid "Close to tray"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1430
+#: app/src/PreferencesDialog.cpp:1451
 msgid ""
 "Closing the window leaves XPCog running in the notification area instead of quitting."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1438
+#: app/src/PreferencesDialog.cpp:1459
 msgid "This session has no notification area to keep XPCog in."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1450
+#: app/src/PreferencesDialog.cpp:1471
 msgid "Keep the mini player on top"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1458
+#: app/src/PreferencesDialog.cpp:1479
 msgid "Show the waveform in the seek bar"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1459
+#: app/src/PreferencesDialog.cpp:1480
 msgid ""
 "The track's shape behind the playhead, analysed the first time it plays and kept for every play after."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1462
+#: app/src/PreferencesDialog.cpp:1483
 msgid "Rectified: stand the waveform on the bottom edge"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1463
+#: app/src/PreferencesDialog.cpp:1484
 msgid "Instead of mirroring it about the centre line."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1465
+#: app/src/PreferencesDialog.cpp:1486
 msgid "Logarithmic: draw levels in decibels"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1466
+#: app/src/PreferencesDialog.cpp:1487
 msgid "So quiet material is a shape rather than a line."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1473
+#: app/src/PreferencesDialog.cpp:1494
 msgid "Height"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1499
+#: app/src/PreferencesDialog.cpp:1520
 msgid "Played part follows the system accent colour"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1500
+#: app/src/PreferencesDialog.cpp:1521
 msgid "Played colour"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1501
+#: app/src/PreferencesDialog.cpp:1522
 msgid "Unplayed part follows the theme's text colour"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1502
+#: app/src/PreferencesDialog.cpp:1523
 msgid "Unplayed colour"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1544
+#: app/src/PreferencesDialog.cpp:1565
 msgid "Musical notes (one bar per semitone)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1545
+#: app/src/PreferencesDialog.cpp:1566
 msgid "Even frequency spacing"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1552
+#: app/src/PreferencesDialog.cpp:1573
 msgid "Bands"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1556
+#: app/src/PreferencesDialog.cpp:1577
 msgid "Bar colour"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1557
+#: app/src/PreferencesDialog.cpp:1578
 msgid "Peak colour"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1559
+#: app/src/PreferencesDialog.cpp:1580
 msgid "Show peak markers"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1576
+#: app/src/PreferencesDialog.cpp:1597
 msgid "Quietest level shown (dB)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1581
+#: app/src/PreferencesDialog.cpp:1602
 msgid ""
 "Bars sit on semitones from C0, so the display lines up with the notes being played."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1596
+#: app/src/PreferencesDialog.cpp:1617
 msgid "Trace colour"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1597
+#: app/src/PreferencesDialog.cpp:1618
 msgid "Background"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1598
+#: app/src/PreferencesDialog.cpp:1619
 msgid "Stroke width"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1599
+#: app/src/PreferencesDialog.cpp:1620
 msgid "Vertical gain"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1600
+#: app/src/PreferencesDialog.cpp:1621
 msgid "Window (ms)"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1601
+#: app/src/PreferencesDialog.cpp:1622
 msgid "Frames per second"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1603
+#: app/src/PreferencesDialog.cpp:1624
 msgid ""
 "Start each frame at a rising zero crossing, so a tone does not crawl across the display."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1607
+#: app/src/PreferencesDialog.cpp:1628
 msgid ""
 "Levels in decibels rather than linear, so quiet material is a shape rather than a line."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1682
+#: app/src/PreferencesDialog.cpp:1703
 msgid "Maintained automatically, and not meant to be edited."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1690
+#: app/src/PreferencesDialog.cpp:1711
 msgid ""
 "The greyed rows are what XPCog remembers about the last session, not settings."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1706
+#: app/src/PreferencesDialog.cpp:1727
 msgid "Allow remote control over HTTP"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1709
+#: app/src/PreferencesDialog.cpp:1730
 msgid "This computer only"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1710
+#: app/src/PreferencesDialog.cpp:1731
 msgid "Any computer on the network"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1712
+#: app/src/PreferencesDialog.cpp:1733
 msgid "Listen on"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1713
+#: app/src/PreferencesDialog.cpp:1734
 msgid "Port"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1714
+#: app/src/PreferencesDialog.cpp:1735
 msgid "Allow changes, not just reading"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1720
+#: app/src/PreferencesDialog.cpp:1741
 msgid "Let programs on this computer connect without the token"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1723
+#: app/src/PreferencesDialog.cpp:1744
 msgid ""
 "For a script or a command line driving your own player. Any program on this computer can then control it, including a web page that was told to try. Other computers still need the token."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1733
+#: app/src/PreferencesDialog.cpp:1754
 msgid "Copy"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1734
+#: app/src/PreferencesDialog.cpp:1755
 msgid "Regenerate"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1740
+#: app/src/PreferencesDialog.cpp:1761
 msgid "Access token"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1767
+#: app/src/PreferencesDialog.cpp:1788
 msgid "This build has no remote-control server."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1770
+#: app/src/PreferencesDialog.cpp:1791
 msgid ""
 "The system password store is not available, so an access token cannot be kept safely."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1776
+#: app/src/PreferencesDialog.cpp:1797
 msgid "Off. Nothing is listening."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1784
+#: app/src/PreferencesDialog.cpp:1805
 msgid "Listening on %s -- open %s/docs in a browser to try it."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1788
+#: app/src/PreferencesDialog.cpp:1809
 msgid "Programs on this computer are connecting without the token."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1797
+#: app/src/PreferencesDialog.cpp:1818
 msgid ""
 "Reachable from other machines. The connection is not encrypted and the access token is sent with every request, so use this on a network you trust."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1830
+#: app/src/PreferencesDialog.cpp:1851
 msgid ""
 "Every device using the current token will stop working until it is given the new one.\n"
 "\n"
 "Generate a new token?"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1833
+#: app/src/PreferencesDialog.cpp:1854
 msgid "Regenerate Access Token"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1855
+#: app/src/PreferencesDialog.cpp:1876
 msgid "Scrobble to Last.fm"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1865
+#: app/src/PreferencesDialog.cpp:1886
 msgid "Connect..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1866
+#: app/src/PreferencesDialog.cpp:1887
 msgid "Cancel"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1867
+#: app/src/PreferencesDialog.cpp:1888 app/src/PreferencesDialog.cpp:2193
 msgid "Disconnect"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1879
+#: app/src/PreferencesDialog.cpp:1900 app/src/PreferencesDialog.cpp:2200
 msgid ""
 "Plays are sent once you have heard half a track, or four minutes of it, whichever comes first. Tracks under 30 seconds are never scrobbled."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1882
+#: app/src/PreferencesDialog.cpp:1903
 msgid "Your Last.fm applications"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1884
+#: app/src/PreferencesDialog.cpp:1905
 msgid ""
 "Revoking access there stops scrobbling immediately, whatever this pane says."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1897
+#: app/src/PreferencesDialog.cpp:1918
 msgid "API account"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1904
+#: app/src/PreferencesDialog.cpp:1925
 msgid "Create a Last.fm API account"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1917
+#: app/src/PreferencesDialog.cpp:1938
 msgid "API key"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1918
+#: app/src/PreferencesDialog.cpp:1939
 msgid "Shared secret"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1920
+#: app/src/PreferencesDialog.cpp:1941
 msgid "Use this key"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1921
+#: app/src/PreferencesDialog.cpp:1942
 msgid "Remove"
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1927
+#: app/src/PreferencesDialog.cpp:1948
 msgid ""
 "A connection belongs to the key that opened it, so changing the key disconnects you and you connect again under the new one."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1976
+#: app/src/PreferencesDialog.cpp:1997
 msgid "Using your own API key."
-msgstr ""
-
-#: app/src/PreferencesDialog.cpp:1978
-msgid ""
-"Using the key built into XPCog. Enter your own to scrobble as an application of your own."
-msgstr ""
-
-#: app/src/PreferencesDialog.cpp:1981
-msgid "This build carries no API key, so scrobbling needs one of yours."
 msgstr ""
 
 #: app/src/PreferencesDialog.cpp:1999
 msgid ""
+"Using the key built into XPCog. Enter your own to scrobble as an application of your own."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2002
+msgid "This build carries no API key, so scrobbling needs one of yours."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2020
+msgid ""
 "The system password store is not available, so a Last.fm session cannot be kept."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:2003
+#: app/src/PreferencesDialog.cpp:2024
 msgid "Waiting for you to allow access in your browser..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:2005
+#: app/src/PreferencesDialog.cpp:2026 app/src/PreferencesDialog.cpp:2248
 msgid "Connected as %s."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:2008
+#: app/src/PreferencesDialog.cpp:2029
 msgid ""
 "Not connected. Connecting opens Last.fm in your browser; XPCog never sees your password."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:2017
+#: app/src/PreferencesDialog.cpp:2038 app/src/PreferencesDialog.cpp:2258
 msgid "%zu play waiting to be sent."
 msgid_plural "%zu plays waiting to be sent."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/PreferencesDialog.cpp:2095
+#: app/src/PreferencesDialog.cpp:2116
 msgid ""
 "The key changed, so you have been disconnected. Connect again to scrobble under it."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:2100
+#: app/src/PreferencesDialog.cpp:2121
 msgid "Both the API key and the shared secret are needed."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:2103
+#: app/src/PreferencesDialog.cpp:2124
 msgid "The system password store would not keep the key."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2170
+msgid "Scrobble to ListenBrainz"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2188
+msgid "User token"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2190
+msgid "Your ListenBrainz user token"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2192
+msgid "Connect"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2206
+msgid "Server"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2207
+msgid "API address"
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2208
+msgid ""
+"The public service by default. A ListenBrainz you run yourself, or Maloja, takes the same requests at its own address."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2242
+msgid ""
+"The system password store is not available, so a ListenBrainz token cannot be kept."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2246
+msgid "Checking the token with ListenBrainz..."
+msgstr ""
+
+#: app/src/PreferencesDialog.cpp:2251
+msgid ""
+"Not connected. Paste the user token from your ListenBrainz settings page and press Connect."
 msgstr ""
 
 #: app/src/RemoteToken.cpp:29

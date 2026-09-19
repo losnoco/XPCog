@@ -29,6 +29,8 @@
 // corpus-gated codec tests make.
 
 #include "EqualizerPanel.hpp"
+#include "LastFmAccount.hpp"
+#include "ListenBrainzAccount.hpp"
 #include "OscilloscopePanel.hpp"
 #include "PlaylistColumns.hpp"
 #include "PlaylistDataModel.hpp"
@@ -39,8 +41,14 @@
 #include "xpcog/core/audio/Equalizer.hpp"
 #include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/library/PlaylistView.hpp"
+#include "xpcog/core/scrobble/LastFmClient.hpp"
+#include "xpcog/core/scrobble/ListenBrainzClient.hpp"
+#include "xpcog/core/scrobble/Scrobbler.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <filesystem>
+#include <system_error>
 
 #include <wx/app.h>
 #include <wx/arrstr.h>
@@ -218,6 +226,19 @@ TEST_CASE("every preference pane can be opened and resized", "[gui][preferences]
     auto            store = xpcog::makeMemorySettingsStore();
     xpcog::Settings settings(*store);
 
+    // The two scrobbling panes are built only when the dialog is handed an
+    // account and a queue for each, as the application does, so the walk
+    // below reaches them only if this does too. Queues in a scratch folder;
+    // nothing is submitted, because nothing is enabled or connected.
+    const std::filesystem::path scratch =
+        std::filesystem::temp_directory_path() / "xpcog-gui-tests-scrobble";
+    std::error_code ec;
+    std::filesystem::remove_all(scratch, ec);
+    xpcog::app::LastFmAccount lastFm;
+    xpcog::Scrobbler          lastFmQueue{lastFm.client(), scratch / "lastfm.json"};
+    xpcog::app::ListenBrainzAccount listenBrainz{settings.ListenBrainzUrl()};
+    xpcog::Scrobbler listenBrainzQueue{listenBrainz.client(), scratch / "listenbrainz.json"};
+
     // A parent to own the dialog, and shown because an unmapped window is never
     // given a size -- and a size is the whole subject here.
     auto* frame = new wxFrame(nullptr, wxID_ANY, "xpcog-gui-tests");
@@ -226,13 +247,23 @@ TEST_CASE("every preference pane can be opened and resized", "[gui][preferences]
     // On the heap and owned by the frame, because that is how a wxDialog is
     // taken down: Destroy() defers the delete to the next idle, which a stack
     // object cannot survive.
-    auto* dialog = new xpcog::app::PreferencesDialog(frame, settings);
+    auto* dialog = new xpcog::app::PreferencesDialog(frame, settings, &lastFm, &lastFmQueue,
+                                                     &listenBrainz, &listenBrainzQueue);
     dialog->Show();
     wxYield();
 
     wxBookCtrlBase* book = findBook(dialog);
     REQUIRE(book != nullptr);
     REQUIRE(book->GetPageCount() > 1);
+    // Proof the walk below includes the two panes that only exist when the
+    // accounts were passed in.
+    bool sawLastFm = false, sawListenBrainz = false;
+    for (std::size_t page = 0; page < book->GetPageCount(); ++page) {
+        sawLastFm |= book->GetPageText(page) == "Last.fm";
+        sawListenBrainz |= book->GetPageText(page) == "ListenBrainz";
+    }
+    REQUIRE(sawLastFm);
+    REQUIRE(sawListenBrainz);
 
     for (std::size_t page = 0; page < book->GetPageCount(); ++page) {
         INFO("pane: " << book->GetPageText(page).utf8_string());
@@ -272,6 +303,7 @@ TEST_CASE("every preference pane can be opened and resized", "[gui][preferences]
     // both deletes -- Destroy() only queues them.
     frame->Destroy();
     wxYield();
+    std::filesystem::remove_all(scratch, ec);
 }
 
 TEST_CASE("the equaliser's sliders are given room to be drawn", "[gui][equalizer]") {

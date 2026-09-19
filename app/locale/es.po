@@ -2198,3 +2198,67 @@ msgstr "Accesible desde otros equipos. La conexión no está cifrada y el token 
 #: app/src/RemoteToken.cpp
 msgid "This build of wxWidgets has no secret store, so the remote control's access token could not be kept safely."
 msgstr "Esta compilación de wxWidgets no tiene almacén de secretos, así que el token de acceso del control remoto no se puede guardar de forma segura."
+
+#: app/src/ListenBrainzAccount.cpp
+msgid "This build was configured without HTTP support, so it cannot reach ListenBrainz."
+msgstr "Esta compilación se configuró sin compatibilidad con HTTP, así que no puede conectarse a ListenBrainz."
+
+#: app/src/ListenBrainzAccount.cpp
+msgid "Paste your user token first."
+msgstr "Pega primero tu token de usuario."
+
+#: app/src/ListenBrainzAccount.cpp
+msgid "Could not reach ListenBrainz. Check your connection and the server address, and try again."
+msgstr "No se pudo conectar con ListenBrainz. Comprueba tu conexión y la dirección del servidor, e inténtalo de nuevo."
+
+#: app/src/ListenBrainzAccount.cpp
+msgid "ListenBrainz does not know that token. Copy it again from your settings page."
+msgstr "ListenBrainz no reconoce ese token. Cópialo de nuevo desde tu página de ajustes."
+
+#: app/src/ListenBrainzAccount.cpp
+msgid "Connected to ListenBrainz, but the token could not be saved, so it would be lost on restart."
+msgstr "Conectado a ListenBrainz, pero el token no se pudo guardar, así que se perdería al reiniciar."
+
+#: app/src/MainFrame.cpp
+msgid "ListenBrainz rejected the token. Reconnect in Preferences."
+msgstr "ListenBrainz rechazó el token. Vuelve a conectar en Preferencias."
+
+#: app/src/PreferencesDialog.cpp
+msgid "Scrobble to ListenBrainz"
+msgstr "Enviar los scrobbles a ListenBrainz"
+
+#: app/src/PreferencesDialog.cpp
+msgid "User token"
+msgstr "Token de usuario"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Your ListenBrainz user token"
+msgstr "Tu token de usuario de ListenBrainz"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Connect"
+msgstr "Conectar"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Server"
+msgstr "Servidor"
+
+#: app/src/PreferencesDialog.cpp
+msgid "API address"
+msgstr "Dirección de la API"
+
+#: app/src/PreferencesDialog.cpp
+msgid "The public service by default. A ListenBrainz you run yourself, or Maloja, takes the same requests at its own address."
+msgstr "El servicio público por defecto. Un ListenBrainz propio, o Maloja, acepta las mismas peticiones en su propia dirección."
+
+#: app/src/PreferencesDialog.cpp
+msgid "The system password store is not available, so a ListenBrainz token cannot be kept."
+msgstr "El almacén de contraseñas del sistema no está disponible, así que no se puede guardar un token de ListenBrainz."
+
+#: app/src/PreferencesDialog.cpp
+msgid "Checking the token with ListenBrainz..."
+msgstr "Comprobando el token con ListenBrainz…"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Not connected. Paste the user token from your ListenBrainz settings page and press Connect."
+msgstr "Sin conexión. Pega el token de usuario de tu página de ajustes de ListenBrainz y pulsa Conectar."

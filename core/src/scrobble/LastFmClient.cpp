@@ -33,7 +33,7 @@ enum ApiCode : int {
     kRateLimitExceeded  = 29,
 };
 
-void setError(LastFmError* error, LastFmError::Kind kind, int code, std::string message) {
+void setError(ScrobbleError* error, ScrobbleError::Kind kind, int code, std::string message) {
     if (error != nullptr) {
         error->kind    = kind;
         error->code    = code;
@@ -41,9 +41,9 @@ void setError(LastFmError* error, LastFmError::Kind kind, int code, std::string 
     }
 }
 
-void clearError(LastFmError* error) {
+void clearError(ScrobbleError* error) {
     if (error != nullptr) {
-        *error = LastFmError{};
+        *error = ScrobbleError{};
     }
 }
 
@@ -53,9 +53,9 @@ void clearError(LastFmError* error) {
 /// call sites: a transport failure, a body that will not parse, Last.fm's own
 /// error object, and the two codes that get their own Kind.
 [[nodiscard]] std::optional<nlohmann::json> readReply(const HttpResponse& response,
-                                                      LastFmError*        error) {
+                                                      ScrobbleError*        error) {
     if (response.transportFailed()) {
-        setError(error, LastFmError::Kind::Transport, 0, response.error);
+        setError(error, ScrobbleError::Kind::Transport, 0, response.error);
         return std::nullopt;
     }
 
@@ -66,10 +66,10 @@ void clearError(LastFmError* error) {
         // A non-JSON body with an HTTP error is the more useful message of the
         // two -- a 502 from an intermediary is not a Last.fm reply at all.
         if (response.status != 200) {
-            setError(error, LastFmError::Kind::Transport, 0,
+            setError(error, ScrobbleError::Kind::Transport, 0,
                      "HTTP " + std::to_string(response.status));
         } else {
-            setError(error, LastFmError::Kind::Malformed, 0,
+            setError(error, ScrobbleError::Kind::Malformed, 0,
                      "could not parse the reply");
         }
         return std::nullopt;
@@ -83,20 +83,31 @@ void clearError(LastFmError* error) {
 
         switch (code) {
         case kTokenNotAuthorized:
-            setError(error, LastFmError::Kind::NotAuthorized, code, std::move(message));
+            setError(error, ScrobbleError::Kind::NotAuthorized, code, std::move(message));
             break;
         case kInvalidSessionKey:
-            setError(error, LastFmError::Kind::SessionInvalid, code, std::move(message));
+            setError(error, ScrobbleError::Kind::SessionInvalid, code, std::move(message));
+            break;
+        case kOperationFailed:
+        case kServiceOffline:
+        case kTemporaryError:
+        case kRateLimitExceeded:
+            // Last.fm's own words for "not now". The queue keeps the scrobble
+            // and tries again after a backoff.
+            setError(error, ScrobbleError::Kind::Transient, code, std::move(message));
             break;
         default:
-            setError(error, LastFmError::Kind::Api, code, std::move(message));
+            // Everything else is a statement about the request rather than
+            // about the moment: a bad signature, a suspended key or a rejected
+            // parameter will be just as bad in an hour.
+            setError(error, ScrobbleError::Kind::Api, code, std::move(message));
             break;
         }
         return std::nullopt;
     }
 
     if (response.status != 200) {
-        setError(error, LastFmError::Kind::Transport, 0,
+        setError(error, ScrobbleError::Kind::Transport, 0,
                  "HTTP " + std::to_string(response.status));
         return std::nullopt;
     }
@@ -150,44 +161,6 @@ void appendTrack(HttpParams& params, const ScrobbleTrack& track,
 }
 
 }  // namespace
-
-bool LastFmError::retryable() const noexcept {
-    switch (kind) {
-    case Kind::None:
-        return false;
-    case Kind::Transport:
-        // Never reached the server, so the request is still unmade.
-        return true;
-    case Kind::Malformed:
-        // The server answered something unreadable. Rare, and more likely a
-        // captive portal or a proxy than Last.fm, so worth trying again.
-        return true;
-    case Kind::NotAuthorized:
-        // Retryable in the auth flow's sense -- the listener may yet grant it --
-        // but this is never reached from the queue, which only ever holds
-        // scrobbles.
-        return true;
-    case Kind::SessionInvalid:
-        // Retrying cannot help; the listener has to authorise again.
-        return false;
-    case Kind::Api:
-        break;
-    }
-
-    switch (code) {
-    case kOperationFailed:
-    case kServiceOffline:
-    case kTemporaryError:
-    case kRateLimitExceeded:
-        return true;
-    default:
-        // Everything else is a statement about the request rather than about the
-        // moment: a bad signature, a suspended key or a rejected parameter will
-        // be just as bad in an hour. Dropping them is what keeps one poisoned
-        // entry from blocking the queue behind it.
-        return false;
-    }
-}
 
 LastFmClient::LastFmClient(IHttpClient& http, std::string apiKey, std::string apiSecret)
     : http_(http), apiKey_(std::move(apiKey)), apiSecret_(std::move(apiSecret)) {}
@@ -254,9 +227,9 @@ HttpResponse LastFmClient::call(std::string_view method, HttpParams params,
     return usePost ? http_.post(kApiRoot, params) : http_.get(kApiRoot, params);
 }
 
-std::optional<std::string> LastFmClient::requestToken(LastFmError* error) {
+std::optional<std::string> LastFmClient::requestToken(ScrobbleError* error) {
     if (!configured()) {
-        setError(error, LastFmError::Kind::Api, kInvalidApiKey,
+        setError(error, ScrobbleError::Kind::Api, kInvalidApiKey,
                  "no Last.fm API key is configured");
         return std::nullopt;
     }
@@ -270,7 +243,7 @@ std::optional<std::string> LastFmClient::requestToken(LastFmError* error) {
 
     const auto token = body->value("token", std::string{});
     if (token.empty()) {
-        setError(error, LastFmError::Kind::Malformed, 0, "the reply carried no token");
+        setError(error, ScrobbleError::Kind::Malformed, 0, "the reply carried no token");
         return std::nullopt;
     }
     return token;
@@ -286,9 +259,9 @@ std::string LastFmClient::authorizationUrl(std::string_view token) const {
 }
 
 std::optional<LastFmSession> LastFmClient::session(std::string_view token,
-                                                   LastFmError*     error) {
+                                                   ScrobbleError*     error) {
     if (!configured()) {
-        setError(error, LastFmError::Kind::Api, kInvalidApiKey,
+        setError(error, ScrobbleError::Kind::Api, kInvalidApiKey,
                  "no Last.fm API key is configured");
         return std::nullopt;
     }
@@ -307,7 +280,7 @@ std::optional<LastFmSession> LastFmClient::session(std::string_view token,
 
     const auto it = body->find("session");
     if (it == body->end() || !it->is_object()) {
-        setError(error, LastFmError::Kind::Malformed, 0, "the reply carried no session");
+        setError(error, ScrobbleError::Kind::Malformed, 0, "the reply carried no session");
         return std::nullopt;
     }
 
@@ -315,7 +288,7 @@ std::optional<LastFmSession> LastFmClient::session(std::string_view token,
     granted.key      = it->value("key", std::string{});
     granted.username = it->value("name", std::string{});
     if (granted.key.empty()) {
-        setError(error, LastFmError::Kind::Malformed, 0,
+        setError(error, ScrobbleError::Kind::Malformed, 0,
                  "the session carried no key");
         return std::nullopt;
     }
@@ -323,9 +296,9 @@ std::optional<LastFmSession> LastFmClient::session(std::string_view token,
 }
 
 bool LastFmClient::updateNowPlaying(const ScrobbleTrack& track,
-                                    std::string_view sessionKey, LastFmError* error) {
+                                    std::string_view sessionKey, ScrobbleError* error) {
     if (!configured() || track.artist.empty() || track.title.empty()) {
-        setError(error, LastFmError::Kind::Api, kInvalidParameters,
+        setError(error, ScrobbleError::Kind::Api, kInvalidParameters,
                  "a now-playing update needs an artist and a title");
         return false;
     }
@@ -342,16 +315,16 @@ bool LastFmClient::updateNowPlaying(const ScrobbleTrack& track,
     return readReply(response, error).has_value();
 }
 
-std::optional<LastFmClient::ScrobbleResult> LastFmClient::scrobble(
+std::optional<ScrobbleResult> LastFmClient::scrobble(
     std::span<const ScrobbleTrack> tracks, std::string_view sessionKey,
-    LastFmError* error) {
+    ScrobbleError* error) {
     if (!configured()) {
-        setError(error, LastFmError::Kind::Api, kInvalidApiKey,
+        setError(error, ScrobbleError::Kind::Api, kInvalidApiKey,
                  "no Last.fm API key is configured");
         return std::nullopt;
     }
     if (tracks.empty() || tracks.size() > kMaxBatch) {
-        setError(error, LastFmError::Kind::Api, kInvalidParameters,
+        setError(error, ScrobbleError::Kind::Api, kInvalidParameters,
                  "a batch holds between one and fifty scrobbles");
         return std::nullopt;
     }
@@ -375,7 +348,7 @@ std::optional<LastFmClient::ScrobbleResult> LastFmClient::scrobble(
     // JSON, which is why they are read as strings first.
     const auto scrobbles = body->find("scrobbles");
     if (scrobbles == body->end() || !scrobbles->is_object()) {
-        setError(error, LastFmError::Kind::Malformed, 0,
+        setError(error, ScrobbleError::Kind::Malformed, 0,
                  "the reply carried no scrobble result");
         return std::nullopt;
     }

@@ -87,10 +87,10 @@ TEST_CASE("Last.fm accepts a signature we generated", "[.lastfmlive]") {
     LastFmClient client{*http, key, secret};
     REQUIRE(client.configured());
 
-    LastFmError error;
+    ScrobbleError error;
     const auto  token = client.requestToken(&error);
 
-    if (!token && error.kind == LastFmError::Kind::Transport) {
+    if (!token && error.kind == ScrobbleError::Kind::Transport) {
         // Not a verdict on the code. Said as a skip rather than a failure so a
         // machine behind a proxy does not report a signing bug it has no
         // evidence for.

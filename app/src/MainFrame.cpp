@@ -7,6 +7,7 @@
 #include "FileTree.hpp"
 #include "InfoPanel.hpp"
 #include "LastFmAccount.hpp"
+#include "ListenBrainzAccount.hpp"
 #include "LyricsPanel.hpp"
 #include "MiniFrame.hpp"
 #include "OpenUrlDialog.hpp"
@@ -26,6 +27,11 @@
 #include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/audio/EqualizerPresets.hpp"
 #include "xpcog/core/library/PlaylistFile.hpp"
+// The clients themselves, not only the accounts that own them: the scrobblers
+// are built over the client each account hands out, and a forward-declared
+// class cannot be passed where its base is wanted.
+#include "xpcog/core/scrobble/LastFmClient.hpp"
+#include "xpcog/core/scrobble/ListenBrainzClient.hpp"
 #include "xpcog/platform/CrashReporter.hpp"
 #include "xpcog/platform/FileManager.hpp"
 #include "xpcog/platform/SettingsStore.hpp"
@@ -1127,6 +1133,10 @@ void MainFrame::onSettingChanged(const std::string& key) {
             if (scrobbler_) {
                 scrobbler_->setEnabled(settings_.EnableScrobbling());
             }
+            if (listenBrainzScrobbler_) {
+                listenBrainz_->setApiRoot(settings_.ListenBrainzUrl());
+                listenBrainzScrobbler_->setEnabled(settings_.EnableListenBrainz());
+            }
             break;
 
         case Effect::CrashReporter:
@@ -1541,7 +1551,8 @@ void MainFrame::openUrl() {
 void MainFrame::showPreferences() { showPreferences(std::nullopt); }
 
 void MainFrame::showPreferences(std::optional<PreferencesPane> pane) {
-    PreferencesDialog dialog(this, settings_, lastFm_.get(), scrobbler_.get());
+    PreferencesDialog dialog(this, settings_, lastFm_.get(), scrobbler_.get(),
+                             listenBrainz_.get(), listenBrainzScrobbler_.get());
     const Subscription subscription = dialog.settingChanged.connect(
         [this](const std::string& key) { onSettingChanged(key); });
     if (pane) {
@@ -2870,6 +2881,21 @@ void MainFrame::wireScrobbling() {
         });
     });
 
+    // ListenBrainz beside it, with a queue of its own: the two services take
+    // and refuse plays independently, and one queue would have to remember
+    // which of them each entry was still owed to.
+    listenBrainz_ = std::make_unique<ListenBrainzAccount>(settings_.ListenBrainzUrl());
+    listenBrainzScrobbler_ = std::make_unique<Scrobbler>(
+        listenBrainz_->client(), queue.parent_path() / "listenbrainz-queue.json");
+    listenBrainzScrobbler_->setSession(listenBrainz_->load());
+    listenBrainzScrobbler_->setEnabled(settings_.EnableListenBrainz());
+    listenBrainzScrobbler_->onSessionInvalidated([this] {
+        dispatch_([this] {
+            listenBrainz_->forget();
+            setStatusText(_("ListenBrainz rejected the token. Reconnect in Preferences."));
+        });
+    });
+
     // Sixty seconds, which is Cog's interval for this
     // (OutputNode.m:135-138). Counted for every listener, whether or not they
     // scrobble: this is XPCog's own library, and Library::recordPlay has been
@@ -2910,8 +2936,14 @@ void MainFrame::wireScrobbling() {
     // pendingScrobble_ is submitted rather than the current entry, for the reason
     // given where it is declared.
     monitor_.onScrobbleReached([this] {
-        if (scrobbler_ && !pendingScrobble_.artist.empty()) {
+        if (pendingScrobble_.artist.empty()) {
+            return;
+        }
+        if (scrobbler_) {
             scrobbler_->submit(pendingScrobble_);
+        }
+        if (listenBrainzScrobbler_) {
+            listenBrainzScrobbler_->submit(pendingScrobble_);
         }
     });
 }
@@ -2947,6 +2979,9 @@ void MainFrame::beginScrobbleTrack(TrackId id, bool looping) {
 
     if (scrobbler_) {
         scrobbler_->nowPlaying(pendingScrobble_);
+    }
+    if (listenBrainzScrobbler_) {
+        listenBrainzScrobbler_->nowPlaying(pendingScrobble_);
     }
 }
 

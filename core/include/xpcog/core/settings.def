@@ -753,6 +753,21 @@ XPCOG_SETTING(UrlHistory, std::string, "UserDefaultURLsKey", "")
 /// readable text in a registry key or a plist. See app/src/LastFmAccount.hpp.
 XPCOG_SETTING(EnableScrobbling, bool, "enableAudioScrobbler", false)
 
+/// The same switch for ListenBrainz. No Cog key, because Cog has no
+/// ListenBrainz; the spelling follows Cog's for Last.fm. The two run as
+/// separate queues over separate accounts, so each has its own switch rather
+/// than one "scrobble" with a list of destinations -- a listener who
+/// disconnects from one has said nothing about the other. The user token is a
+/// credential and lives in the secret store, as the Last.fm session does; see
+/// app/src/ListenBrainzAccount.hpp.
+XPCOG_SETTING(EnableListenBrainz, bool, "enableListenBrainz", false)
+
+/// Where the ListenBrainz API is. The public service by default; a self-hosted
+/// ListenBrainz or Maloja speaks the same API at another address, and this is
+/// the one thing about the connection that is configuration rather than a
+/// credential. Read on every request, so a change lands without a relaunch.
+XPCOG_SETTING(ListenBrainzUrl, std::string, "listenBrainzUrl", "https://api.listenbrainz.org")
+
 // --- crash reporting ------------------------------------------------------
 
 /// Whether the listener has agreed to send crash reports and usage data.

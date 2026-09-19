@@ -28,6 +28,9 @@ public:
         std::string url;
         HttpParams  params;
         bool        post = false;
+        /// What postJson() sent, verbatim; empty for the form calls.
+        std::string body;
+        HttpHeaders headers;
     };
 
     /// Queues a reply. Replies are handed out in the order they were added.
@@ -59,6 +62,16 @@ public:
         return record(url, params, false);
     }
 
+    HttpResponse postJson(std::string_view url, std::string_view body,
+                          const HttpHeaders& headers) override {
+        return record(url, {}, true, std::string{body}, headers);
+    }
+
+    HttpResponse get(std::string_view url, const HttpParams& params,
+                     const HttpHeaders& headers) override {
+        return record(url, params, false, {}, headers);
+    }
+
     [[nodiscard]] std::size_t callCount() const {
         std::lock_guard lock(mutex_);
         return calls_.size();
@@ -84,6 +97,21 @@ public:
         return std::nullopt;
     }
 
+    /// The value of header `name` in call `index`, or nullopt.
+    [[nodiscard]] std::optional<std::string> header(std::size_t      index,
+                                                    std::string_view name) const {
+        std::lock_guard lock(mutex_);
+        if (index >= calls_.size()) {
+            return std::nullopt;
+        }
+        for (const auto& [key, value] : calls_[index].headers) {
+            if (key == name) {
+                return value;
+            }
+        }
+        return std::nullopt;
+    }
+
     /// How many calls named `method`.
     [[nodiscard]] std::size_t countOf(std::string_view method) const {
         std::lock_guard lock(mutex_);
@@ -99,9 +127,11 @@ public:
     }
 
 private:
-    HttpResponse record(std::string_view url, const HttpParams& params, bool post) {
+    HttpResponse record(std::string_view url, const HttpParams& params, bool post,
+                        std::string body = {}, HttpHeaders headers = {}) {
         std::lock_guard lock(mutex_);
-        calls_.push_back(Call{std::string{url}, params, post});
+        calls_.push_back(
+            Call{std::string{url}, params, post, std::move(body), std::move(headers)});
         if (!replies_.empty()) {
             HttpResponse next = replies_.front();
             replies_.pop_front();

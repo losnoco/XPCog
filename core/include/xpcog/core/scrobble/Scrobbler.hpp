@@ -28,10 +28,15 @@
 // Threading. Everything public is safe to call from the interface's thread. The
 // worker owns the network and the file; the queue is behind a mutex. The one
 // callback that runs on the worker is `onSessionInvalidated`, and it says so.
+//
+// One queue per service. The application runs one of these over a
+// LastFmClient and another over a ListenBrainzClient, each with its own file:
+// the two services accept and refuse independently, and a play that Last.fm
+// has taken must not be sent to it again because ListenBrainz was down.
 
 #pragma once
 
-#include "xpcog/core/scrobble/LastFmClient.hpp"
+#include "xpcog/core/scrobble/ScrobbleClient.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -50,8 +55,9 @@ namespace xpcog {
 
 class Scrobbler {
 public:
-    /// A granted Last.fm session. An empty `key` means "not connected", which is
-    /// the state a fresh installation and a disconnected one share.
+    /// A granted session -- Last.fm's session key or ListenBrainz's user token,
+    /// with the account it belongs to. An empty `key` means "not connected",
+    /// which is the state a fresh installation and a disconnected one share.
     struct Session {
         std::string key;
         std::string username;
@@ -68,7 +74,7 @@ public:
     /// `clock` supplies UTC seconds since the Unix epoch. Injected so the tests
     /// can hold time still: a queue whose retry policy depends on the wall clock
     /// is otherwise only testable by waiting.
-    Scrobbler(LastFmClient& client, std::filesystem::path queuePath,
+    Scrobbler(IScrobbleClient& client, std::filesystem::path queuePath,
               std::function<std::int64_t()> clock = nullptr);
 
     ~Scrobbler();
@@ -102,8 +108,8 @@ public:
     /// ever be rejected is how a queue stops draining.
     void submit(const ScrobbleTrack& track);
 
-    /// Called on the **worker thread** when Last.fm reports the session key is
-    /// no longer valid (error 9). The listener has to authorise again, so the
+    /// Called on the **worker thread** when the service reports the session key
+    /// is no longer valid (Last.fm's error 9, ListenBrainz's 401). The listener has to authorise again, so the
     /// caller should drop its stored credentials and say so; marshal to the
     /// interface's thread yourself.
     ///
@@ -128,6 +134,8 @@ public:
     /// Scrobbles older than this are dropped rather than submitted. Last.fm
     /// rejects timestamps far in the past, so an entry that has aged out can
     /// never succeed and would otherwise sit at the head of the queue.
+    /// ListenBrainz would take them, but a fortnight is also how long a queue
+    /// nobody has drained should be allowed to say the plays are still coming.
     static constexpr std::int64_t kMaxAgeSeconds = 14 * 24 * 60 * 60;
 
 private:
@@ -146,7 +154,7 @@ private:
     /// queued scrobble and a session that was just invalidated.
     [[nodiscard]] bool canSendLocked() const;
 
-    LastFmClient&                 client_;
+    IScrobbleClient&              client_;
     std::filesystem::path         queuePath_;
     std::function<std::int64_t()> clock_;
 

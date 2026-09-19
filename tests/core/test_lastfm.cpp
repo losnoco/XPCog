@@ -107,10 +107,10 @@ TEST_CASE("An ungranted token reports NotAuthorized rather than failing",
     http.reply(200,
                R"({"error":14,"message":"This token has not been authorized"})");
 
-    LastFmError error;
+    ScrobbleError error;
     const auto  session = client.session("TOK123", &error);
     CHECK(!session);
-    CHECK(error.kind == LastFmError::Kind::NotAuthorized);
+    CHECK(error.kind == ScrobbleError::Kind::NotAuthorized);
     CHECK(error.code == 14);
 
     CHECK(http.sent(0, "method") == "auth.getSession");
@@ -125,7 +125,7 @@ TEST_CASE("A granted token yields a session key and a username", "[lastfm]") {
     http.reply(200,
                R"({"session":{"name":"listener","key":"SESSIONKEY","subscriber":0}})");
 
-    LastFmError error;
+    ScrobbleError error;
     const auto  session = client.session("TOK123", &error);
     REQUIRE(session);
     CHECK(session->key == "SESSIONKEY");
@@ -139,9 +139,9 @@ TEST_CASE("An expired token is not retried", "[lastfm]") {
 
     http.reply(200, R"({"error":15,"message":"This token has expired"})");
 
-    LastFmError error;
+    ScrobbleError error;
     CHECK(!client.session("TOK123", &error));
-    CHECK(error.kind == LastFmError::Kind::Api);
+    CHECK(error.kind == ScrobbleError::Kind::Api);
     CHECK(error.code == 15);
     // Waiting longer cannot un-expire it; the flow has to start again.
     CHECK(error.retryable() == false);
@@ -158,7 +158,7 @@ TEST_CASE("A scrobble is posted with its timestamp", "[lastfm]") {
     const ScrobbleTrack        track = sampleTrack();
     const std::vector<ScrobbleTrack> batch{track};
 
-    LastFmError error;
+    ScrobbleError error;
     const auto  result = client.scrobble(batch, "SESSIONKEY", &error);
     REQUIRE(result);
     CHECK(result->accepted == 1);
@@ -289,21 +289,26 @@ TEST_CASE("An invalid session key is its own kind", "[lastfm]") {
     http.reply(200, R"({"error":9,"message":"Invalid session key"})");
 
     const std::vector<ScrobbleTrack> batch{sampleTrack()};
-    LastFmError                      error;
+    ScrobbleError                      error;
     CHECK(!client.scrobble(batch, "STALE", &error));
 
     // The one error whose correct handling is to discard credentials, so it must
     // not be lost among the generic ones.
-    CHECK(error.kind == LastFmError::Kind::SessionInvalid);
+    CHECK(error.kind == ScrobbleError::Kind::SessionInvalid);
     CHECK(error.retryable() == false);
 }
 
 TEST_CASE("Temporary failures are retryable and permanent ones are not",
           "[lastfm]") {
+    // Through the transport rather than by building the error by hand: which
+    // codes mean "not now" is the client's knowledge, and the queue only ever
+    // asks the verdict.
     const auto apiError = [](int code) {
-        LastFmError error;
-        error.kind = LastFmError::Kind::Api;
-        error.code = code;
+        FakeHttp     http;
+        LastFmClient client{http, std::string{kKey}, std::string{kSecret}};
+        http.reply(200, R"({"error":)" + std::to_string(code) + R"(,"message":"x"})");
+        ScrobbleError error;
+        CHECK_FALSE(client.requestToken(&error));
         return error;
     };
 
@@ -312,15 +317,17 @@ TEST_CASE("Temporary failures are retryable and permanent ones are not",
     CHECK(apiError(11).retryable());  // service offline
     CHECK(apiError(16).retryable());  // temporary error
     CHECK(apiError(29).retryable());  // rate limit
+    CHECK(apiError(29).kind == ScrobbleError::Kind::Transient);
 
     // Not worth retrying: the request itself is wrong and will be tomorrow too.
     CHECK_FALSE(apiError(4).retryable());   // authentication failed
     CHECK_FALSE(apiError(10).retryable());  // invalid api key
     CHECK_FALSE(apiError(13).retryable());  // invalid signature
     CHECK_FALSE(apiError(26).retryable());  // suspended api key
+    CHECK(apiError(26).kind == ScrobbleError::Kind::Api);
 
-    LastFmError transport;
-    transport.kind = LastFmError::Kind::Transport;
+    ScrobbleError transport;
+    transport.kind = ScrobbleError::Kind::Transport;
     CHECK(transport.retryable());
 }
 
@@ -330,9 +337,9 @@ TEST_CASE("A transport failure is not read as an API answer", "[lastfm]") {
 
     http.failTransport("could not resolve host");
 
-    LastFmError error;
+    ScrobbleError error;
     CHECK(!client.requestToken(&error));
-    CHECK(error.kind == LastFmError::Kind::Transport);
+    CHECK(error.kind == ScrobbleError::Kind::Transport);
     CHECK(error.message == "could not resolve host");
     CHECK(error.retryable());
 }
@@ -345,9 +352,9 @@ TEST_CASE("An unreadable body is not mistaken for success", "[lastfm]") {
     // here: status says fine, body is not ours.
     http.reply(200, "<html>Sign in to continue</html>");
 
-    LastFmError error;
+    ScrobbleError error;
     CHECK(!client.requestToken(&error));
-    CHECK(error.kind == LastFmError::Kind::Malformed);
+    CHECK(error.kind == ScrobbleError::Kind::Malformed);
 }
 
 TEST_CASE("A build with no API key never reaches the network", "[lastfm]") {
@@ -356,7 +363,7 @@ TEST_CASE("A build with no API key never reaches the network", "[lastfm]") {
 
     CHECK(client.configured() == false);
 
-    LastFmError error;
+    ScrobbleError error;
     CHECK(!client.requestToken(&error));
     CHECK(http.callCount() == 0);
 }

@@ -24,6 +24,8 @@ set(XPCOG_APP_SOURCES
     src/InfoPanel.hpp
     src/LastFmAccount.cpp
     src/LastFmAccount.hpp
+    src/ListenBrainzAccount.cpp
+    src/ListenBrainzAccount.hpp
     src/Localization.cpp
     src/Localization.hpp
     src/LucideIcon.cpp

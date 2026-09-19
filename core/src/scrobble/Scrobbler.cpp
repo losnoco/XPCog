@@ -37,7 +37,7 @@ constexpr auto kIdlePoll = 5s;
 
 }  // namespace
 
-Scrobbler::Scrobbler(LastFmClient& client, std::filesystem::path queuePath,
+Scrobbler::Scrobbler(IScrobbleClient& client, std::filesystem::path queuePath,
                      std::function<std::int64_t()> clock)
     : client_(client),
       queuePath_(std::move(queuePath)),
@@ -214,7 +214,7 @@ void Scrobbler::workerLoop() {
                 saveQueueLocked();
             }
 
-            const std::size_t take = std::min(queue_.size(), LastFmClient::kMaxBatch);
+            const std::size_t take = std::min(queue_.size(), client_.maxBatch());
             batch.assign(queue_.begin(),
                          queue_.begin() + static_cast<std::ptrdiff_t>(take));
         }
@@ -224,14 +224,14 @@ void Scrobbler::workerLoop() {
         bool sessionDied = false;
 
         if (announce) {
-            LastFmError error;
+            ScrobbleError error;
             if (client_.updateNowPlaying(*announce, sessionKey, &error) ) {
                 // A success here is the cheapest evidence the network is back,
                 // so it is worth retrying the queue immediately rather than
                 // waiting out a backoff that is no longer true.
                 std::lock_guard lock(mutex_);
                 backoff_ = 0ms;
-            } else if (error.kind == LastFmError::Kind::SessionInvalid) {
+            } else if (error.kind == ScrobbleError::Kind::SessionInvalid) {
                 sessionDied = true;
             }
         }
@@ -241,11 +241,11 @@ void Scrobbler::workerLoop() {
         std::size_t sent           = 0;
 
         if (!batch.empty() && !sessionDied) {
-            LastFmError error;
+            ScrobbleError error;
             const auto  result = client_.scrobble(batch, sessionKey, &error);
             if (result) {
                 sent = batch.size();
-            } else if (error.kind == LastFmError::Kind::SessionInvalid) {
+            } else if (error.kind == ScrobbleError::Kind::SessionInvalid) {
                 sessionDied = true;
             } else {
                 batchFailed    = true;

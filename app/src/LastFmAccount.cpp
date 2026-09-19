@@ -43,6 +43,12 @@ class NoTransport final : public IHttpClient {
 public:
     HttpResponse post(std::string_view, const HttpParams&) override { return refuse(); }
     HttpResponse get(std::string_view, const HttpParams&) override { return refuse(); }
+    HttpResponse postJson(std::string_view, std::string_view, const HttpHeaders&) override {
+        return refuse();
+    }
+    HttpResponse get(std::string_view, const HttpParams&, const HttpHeaders&) override {
+        return refuse();
+    }
 
 private:
     [[nodiscard]] static HttpResponse refuse() {
@@ -299,11 +305,11 @@ void LastFmAccount::connect(std::function<void(std::function<void()>)> dispatch,
         };
 
         // Step 1: a request token.
-        LastFmError error;
+        ScrobbleError error;
         const auto  token = client_->requestToken(&error);
         if (!token) {
             connecting_.store(false);
-            fail(error.kind == LastFmError::Kind::Transport
+            fail(error.kind == ScrobbleError::Kind::Transport
                      ? wxString(_("Could not reach Last.fm. Check your "
                                   "connection and try again."))
                      : wxString::FromUTF8(error.message));
@@ -331,7 +337,7 @@ void LastFmAccount::connect(std::function<void(std::function<void()>)> dispatch,
                 return;
             }
 
-            LastFmError pollError;
+            ScrobbleError pollError;
             auto        session = client_->session(*token, &pollError);
             if (session) {
                 Scrobbler::Session granted;
@@ -358,9 +364,9 @@ void LastFmAccount::connect(std::function<void(std::function<void()>)> dispatch,
             }
 
             // Error 14 is "not yet", which is the whole reason this polls.
-            if (pollError.kind != LastFmError::Kind::NotAuthorized) {
+            if (pollError.kind != ScrobbleError::Kind::NotAuthorized) {
                 connecting_.store(false);
-                fail(pollError.kind == LastFmError::Kind::Transport
+                fail(pollError.kind == ScrobbleError::Kind::Transport
                          ? wxString(_("Lost contact with Last.fm."))
                          : wxString::FromUTF8(pollError.message));
                 return;

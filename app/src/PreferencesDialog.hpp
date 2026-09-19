@@ -50,6 +50,7 @@ class wxWindow;
 namespace xpcog::app {
 
 class LastFmAccount;
+class ListenBrainzAccount;
 
 /// Which pane the dialog opens on. Only the ones something asks for by name are
 /// here; it opens on Playlist otherwise, as it always has.
@@ -66,8 +67,10 @@ public:
     /// have them -- there is no reason for a dialog to refuse to open because
     /// scrobbling is not wired up. The Last.fm pane is then not built at all.
     PreferencesDialog(wxWindow* parent, Settings& settings,
-                      LastFmAccount* account = nullptr,
-                      Scrobbler*     scrobbler = nullptr);
+                      LastFmAccount*       account              = nullptr,
+                      Scrobbler*           scrobbler            = nullptr,
+                      ListenBrainzAccount* listenBrainz         = nullptr,
+                      Scrobbler*           listenBrainzScrobbler = nullptr);
 
     ~PreferencesDialog() override;
 
@@ -121,17 +124,23 @@ private:
     /// Cog draws a username field and a password field, and there is no password
     /// field anywhere in this program. See LastFmAccount.hpp.
     [[nodiscard]] wxWindow* buildLastFmPane(wxWindow* parent);
+    /// Ours, not Cog's: a token field and a server field, since ListenBrainz
+    /// has no grant flow and more than one server speaks its API. See
+    /// ListenBrainzAccount.hpp.
+    [[nodiscard]] wxWindow* buildListenBrainzPane(wxWindow* parent);
     [[nodiscard]] wxWindow* buildRemotePane(wxWindow* parent);
 
     /// What the curated rows call when a value changes. Handed to them rather
     /// than reached for, so nothing outside this class publishes its signal.
     [[nodiscard]] std::function<void(const char*)> changeNotifier();
 
-    Settings&      settings_;
-    LastFmAccount* account_   = nullptr;
-    Scrobbler*     scrobbler_ = nullptr;
+    Settings&            settings_;
+    LastFmAccount*       account_               = nullptr;
+    Scrobbler*           scrobbler_             = nullptr;
+    ListenBrainzAccount* listenBrainz_          = nullptr;
+    Scrobbler*           listenBrainzScrobbler_ = nullptr;
 
-    /// Proof, for a reply arriving from the Last.fm connect worker, that this
+    /// Proof, for a reply arriving from either connect worker, that this
     /// dialog is still on screen. Held here so it expires with the dialog; the
     /// handlers hold a weak_ptr and skip the parts that touch widgets.
     std::shared_ptr<int> paneAlive_;

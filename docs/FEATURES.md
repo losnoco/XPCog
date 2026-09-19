@@ -199,6 +199,29 @@ one setting a Cog import deliberately does **not** carry across, because the
 credential cannot come with it and the switch alone would claim a connection that
 does not exist.
 
+## ListenBrainz
+
+The same plays go to ListenBrainz as well, or instead: Preferences →
+ListenBrainz has its own switch, and each service takes and refuses submissions
+on its own, so one being down does not hold the other up and a play Last.fm has
+accepted is never sent to it twice because ListenBrainz was not answering. Two
+queues on disk, one per service, both durable in the way the Last.fm one is.
+
+Connecting is a paste rather than a browser trip. ListenBrainz identifies the
+listener with a user token from [listenbrainz.org/settings](https://listenbrainz.org/settings/);
+XPCog asks the server whose it is, shows the answer, and keeps the token in the
+same secret store as the Last.fm session — never in the settings. There is no
+application key and nothing to sign, so a build made without Last.fm credentials
+scrobbles to ListenBrainz all the same.
+
+The server's address is a setting, `listenBrainzUrl`, because more than one
+server speaks the API: a ListenBrainz you run yourself, or Maloja's
+compatibility endpoint, take the same requests at their own root. Both `host`
+and `host/1` are accepted spellings. Every listen names XPCog and its version as
+the submitting client, which is what the service asks of clients and what tells
+these plays apart from the same ones sent by another program. Cog has no
+ListenBrainz; this is new work on the queue Cog also does not have.
+
 ## Remote control
 
 A REST API over the transport, the playlist, the equaliser, the settings and the

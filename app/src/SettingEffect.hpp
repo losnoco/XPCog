@@ -49,7 +49,7 @@ enum class Effect {
     Volume,           ///< Engine, slider and the OS's now-playing entry.
     MiniFloating,     ///< The mini window's always-on-top flag.
     WaveformSeekBar,  ///< The seek bars' waveform: shown or not, and how it is drawn.
-    Scrobbler,        ///< Start or stop the submission worker.
+    Scrobbler,        ///< Start or stop the submission workers, and re-point ListenBrainz.
     CrashReporter,    ///< Start or close the SDK, in both directions.
     RestartRemote,    ///< Rebind the REST server, so a port change needs no relaunch.
     Internal,         ///< Session state, not a preference. Never written remotely.

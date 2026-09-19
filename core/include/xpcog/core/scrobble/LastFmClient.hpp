@@ -39,6 +39,7 @@
 #pragma once
 
 #include "xpcog/core/net/HttpClient.hpp"
+#include "xpcog/core/scrobble/ScrobbleClient.hpp"
 
 #include <cstdint>
 #include <cstddef>
@@ -52,34 +53,6 @@
 
 namespace xpcog {
 
-/// One play, as Last.fm wants to be told about it.
-///
-/// `artist` and `title` are the only required fields, which is Last.fm's rule
-/// rather than a simplification: a submission missing either is rejected, so
-/// Scrobbler refuses to queue one rather than sending it to be refused.
-struct ScrobbleTrack {
-    std::string title;
-    std::string artist;
-    std::string albumArtist;
-    std::string album;
-    std::string musicBrainzId;
-
-    /// 0 when unknown, and omitted from the request in that case rather than
-    /// sent as zero -- Cog does the same (AudioScrobbler.swift:88).
-    int trackNumber = 0;
-
-    /// Seconds. 0 when unknown; omitted rather than sent as zero.
-    double duration = 0.0;
-
-    /// UTC seconds since the Unix epoch, at the moment the track **started**
-    /// playing -- not when the threshold was reached and not when it was
-    /// submitted. Last.fm builds the listening history from this, so a queued
-    /// scrobble sent an hour late still lands in the right place.
-    ///
-    /// Unused by `updateNowPlaying`, which is about the present by definition.
-    std::int64_t startedAt = 0;
-};
-
 /// A granted session. `key` does not expire; the listener revokes it from their
 /// Last.fm account page rather than here.
 struct LastFmSession {
@@ -87,43 +60,7 @@ struct LastFmSession {
     std::string username;
 };
 
-/// Why a call did not succeed.
-struct LastFmError {
-    enum class Kind : std::uint8_t {
-        None,
-        /// The request never reached the server. Always worth retrying.
-        Transport,
-        /// The server answered with one of its own error codes.
-        Api,
-        /// The server answered with something this could not read.
-        Malformed,
-        /// Step 2 of the auth flow has not happened yet: the listener has not
-        /// visited the authorisation page. Its own kind rather than an API
-        /// error, because it is the expected state while a connection is in
-        /// progress and the interface polls through it.
-        NotAuthorized,
-        /// The stored session key is no longer valid and the listener has to
-        /// authorise again. Its own kind because it is the one failure whose
-        /// correct handling is to *discard credentials*, which no other error
-        /// justifies.
-        SessionInvalid,
-    };
-
-    Kind        kind = Kind::None;
-    int         code = 0;  ///< Last.fm's code when `kind == Kind::Api`.
-    std::string message;
-
-    [[nodiscard]] bool ok() const noexcept { return kind == Kind::None; }
-
-    /// Whether sending the same request again later could succeed.
-    ///
-    /// The distinction is what makes an offline queue safe: a retryable failure
-    /// keeps the scrobble, and a permanent one drops it. Retrying a rejected
-    /// submission forever would mean one bad entry blocking every later one.
-    [[nodiscard]] bool retryable() const noexcept;
-};
-
-class LastFmClient {
+class LastFmClient final : public IScrobbleClient {
 public:
     /// `http` is borrowed and must outlive the client.
     ///
@@ -150,12 +87,12 @@ public:
     /// without touching the network. Cog ships in exactly this state:
     /// `Secrets.template.xcconfig` has both values blank and `AudioScrobbler`
     /// reports itself disabled.
-    [[nodiscard]] bool configured() const;
+    [[nodiscard]] bool configured() const override;
 
     // --- the desktop authentication flow --------------------------------
 
     /// Step 1. A request token, valid for 60 minutes and useless until granted.
-    [[nodiscard]] std::optional<std::string> requestToken(LastFmError* error = nullptr);
+    [[nodiscard]] std::optional<std::string> requestToken(ScrobbleError* error = nullptr);
 
     /// Step 2, which happens in a browser rather than here. Open this and let
     /// the listener grant access; there is nothing to send.
@@ -167,31 +104,18 @@ public:
     /// 2 yet, which is not an error so much as "not yet" -- the caller polls or
     /// waits for a button.
     [[nodiscard]] std::optional<LastFmSession> session(std::string_view token,
-                                                       LastFmError*     error = nullptr);
+                                                       ScrobbleError*   error = nullptr);
 
     // --- scrobbling -----------------------------------------------------
 
-    /// "This is playing now." Fire-and-forget by design: Last.fm keeps it for a
-    /// few minutes and it is never part of the listening history, so a failure
-    /// here is not worth queueing or retrying.
     bool updateNowPlaying(const ScrobbleTrack& track, std::string_view sessionKey,
-                          LastFmError* error = nullptr);
+                          ScrobbleError* error = nullptr) override;
 
-    /// What a batch submission did. Last.fm answers 200 for a batch it partly
-    /// rejected, so "accepted" and "ignored" both have to be read out of the
-    /// body -- a submission that silently vanished is otherwise indistinguishable
-    /// from one that worked.
-    struct ScrobbleResult {
-        int accepted = 0;
-        int ignored  = 0;
-        /// The reason the server gave for the first ignored entry, when it gave
-        /// one. Kept for the log rather than for the listener: the codes are
-        /// things like "artist name was ignored" and "timestamp too far in the
-        /// past", which are worth seeing when a scrobble does not appear.
-        std::string ignoredReason;
-    };
-
-    /// Submits up to `kMaxBatch` plays in one call.
+    /// Submits up to `kMaxBatch` plays in one call. Last.fm answers 200 for a
+    /// batch it partly rejected, so "accepted" and "ignored" are both read out
+    /// of the body; the ignored reasons are things like "artist name was
+    /// ignored" and "timestamp too far in the past", which are worth seeing
+    /// when a scrobble does not appear.
     ///
     /// Batched because the queue is: a client that has been offline for an
     /// afternoon has a backlog, and fifty single submissions is fifty round
@@ -199,10 +123,11 @@ public:
     /// 50 per request.
     [[nodiscard]] std::optional<ScrobbleResult> scrobble(
         std::span<const ScrobbleTrack> tracks, std::string_view sessionKey,
-        LastFmError* error = nullptr);
+        ScrobbleError* error = nullptr) override;
 
     /// Last.fm's documented maximum for one `track.scrobble` call.
     static constexpr std::size_t kMaxBatch = 50;
+    [[nodiscard]] std::size_t    maxBatch() const noexcept override { return kMaxBatch; }
 
     /// The signature over `params`, exposed because it is the one piece here
     /// worth pinning directly in a test: everything else can be checked through

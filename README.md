@@ -140,9 +140,11 @@ tests against a capturing output, not assumed.
 callback takes no lock and allocates nothing, and `xpcog-cli play` reports
 underruns.
 
-**Last.fm.** Desktop authentication in a browser — XPCog never sees the password
-— the session key in the platform's secret store, and a durable queue, so an
-evening offline arrives the next day.
+**Last.fm and ListenBrainz.** Desktop authentication in a browser for Last.fm —
+XPCog never sees the password — and a pasted user token for ListenBrainz, or a
+server of your own that speaks its API. Credentials live in the platform's secret
+store, and each service has a durable queue, so an evening offline arrives the
+next day.
 
 **Remote control.** A REST API over the transport, playlist, equaliser, settings
 and cover art, with a generated OpenAPI document and a Swagger page. Off until

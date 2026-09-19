@@ -48,6 +48,8 @@ add_library(xpcog-core STATIC
     src/net/HttpEncoding.cpp
     src/PlayMonitor.cpp
     src/scrobble/LastFmClient.cpp
+    src/scrobble/ListenBrainzClient.cpp
+    src/scrobble/ScrobbleClient.cpp
     src/scrobble/Scrobbler.cpp
     src/NaturalOrder.cpp
     src/Sha256.cpp

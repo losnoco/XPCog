@@ -1,6 +1,7 @@
 #include "PreferencesDialog.hpp"
 
 #include "LastFmAccount.hpp"
+#include "ListenBrainzAccount.hpp"
 #include "RemoteToken.hpp"
 #include "Localization.hpp"
 #include "SpeedCurve.hpp"
@@ -214,6 +215,9 @@ constexpr std::array kCuratedKeys = {
     // Remote control. The token is not here at all -- it lives in the system
     // password store, not in settings.
     "remoteEnable", "remoteAddress", "remotePort", "remoteAllowWrite",
+    // Scrobbling. Each switch sits on its service's pane beside the account it
+    // means something for; the credentials are in the password store.
+    "enableAudioScrobbler", "enableListenBrainz", "listenBrainzUrl",
 };
 
 /// Not settings at all, but internal state that happens to live in the same
@@ -576,11 +580,15 @@ public:
     /// switch -- and it is worth a method rather than a hand-built control there
     /// because "here is what you are agreeing to" is not something to leave as
     /// text somebody has to retype into a browser.
-    void link(const wxString& label, std::string_view url) const {
+    FormRow link(const wxString& label, std::string_view url) const {
         auto* control = new wxHyperlinkCtrl(pane_, wxID_ANY, label,
                                             wxString::FromUTF8(std::string{url}));
-        form_->AddSpacer(0);
+        // An empty label rather than a spacer, for the reason note() gives: a
+        // row that can be hidden needs both its cells to hide with it.
+        auto* pad = new wxStaticText(pane_, wxID_ANY, "");
+        form_->Add(pad, 0);
         form_->Add(control, 0, wxTOP, pane_->FromDIP(2));
+        return FormRow{pad, control, nullptr};
     }
 
     FormRow number(const wxString& label, const char* key, int minimum,
@@ -711,6 +719,12 @@ public:
         return addWithButtons(label, edit, {folder, archive});
     }
 
+    /// A plain text box for a string setting, committed on Return or on
+    /// losing focus like the path rows, without their buttons.
+    FormRow text(const wxString& label, const char* key) const {
+        return add(label, makeEdit(key));
+    }
+
     FormRow note(const wxString& text) const {
         auto* label = new NoteText(pane_, text);
         // An empty label rather than a spacer in the first cell: a spacer item
@@ -798,12 +812,16 @@ private:
 }  // namespace
 
 PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
-                                     LastFmAccount* account, Scrobbler* scrobbler)
+                                     LastFmAccount* account, Scrobbler* scrobbler,
+                                     ListenBrainzAccount* listenBrainz,
+                                     Scrobbler*           listenBrainzScrobbler)
     : wxDialog(parent, wxID_ANY, _("Preferences"), wxDefaultPosition, wxDefaultSize,
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
       settings_(settings),
       account_(account),
-      scrobbler_(scrobbler) {
+      scrobbler_(scrobbler),
+      listenBrainz_(listenBrainz),
+      listenBrainzScrobbler_(listenBrainzScrobbler) {
     // Measured rather than picked: the panes are 205 units narrower and 143
     // shorter than the dialog, and at 700x480 the Output pane wanted 672x383,
     // MIDI 481x383 and Remote 521x353 -- three of ten scrolling at the size
@@ -856,6 +874,9 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent, Settings& settings,
     // itself. Skipped entirely when the application did not pass one in.
     if (account_ != nullptr && scrobbler_ != nullptr) {
         page(buildLastFmPane(book), "Last.fm");  // a proper noun
+    }
+    if (listenBrainz_ != nullptr && listenBrainzScrobbler_ != nullptr) {
+        page(buildListenBrainzPane(book), "ListenBrainz");  // likewise
     }
     page(buildAppearancePane(book), _("Appearance"));
     page(buildMidiPane(book), "MIDI");  // an acronym, the same in every language
@@ -1938,8 +1959,11 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
     // touching a widget has to check first. `wxEvtHandler::CallAfter` on the
     // dialog itself would drop the event and take the credential with it, which
     // is the worse of the two failures.
-    // Held by this dialog, so it expires exactly when the dialog does.
-    paneAlive_               = std::make_shared<int>(0);
+    // Held by this dialog, so it expires exactly when the dialog does. Shared
+    // with the ListenBrainz pane, whichever of the two is built first.
+    if (!paneAlive_) {
+        paneAlive_ = std::make_shared<int>(0);
+    }
     const std::weak_ptr<int> token = paneAlive_;
 
     // Captured by the handlers below. `refresh` is the only thing that decides
@@ -2136,6 +2160,168 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
 
     refresh();
 
+    return finishPane(pane, form);
+}
+
+wxWindow* PreferencesDialog::buildListenBrainzPane(wxWindow* parent) {
+    auto* pane = makePane(parent);
+    auto* form = makeForm(pane->FromDIP(6));
+    auto* row  = new RowBuilder{settings_, pane, form, changeNotifier()};
+    pane->SetClientObject(row);
+
+    auto* enable = static_cast<wxCheckBox*>(
+        row->toggle(_("Scrobble to ListenBrainz"), "enableListenBrainz").control);
+
+    // The same arrangement as the Last.fm pane: one status paragraph and a
+    // `refresh` that is the only thing deciding what is shown. What differs is
+    // the connect step. There is no browser trip -- the listener pastes a
+    // token and the server says whose it is -- so the token field *is* the
+    // flow, and it is shown while disconnected and folded away once a token is
+    // held, since a second one typed over it would only mean disconnecting
+    // first.
+    auto* status = new NoteText(pane, wxEmptyString, false);
+    form->AddSpacer(0);
+    form->Add(status, 1, wxEXPAND | wxTOP | wxBOTTOM, pane->FromDIP(6));
+
+    // A password field: the token is a credential, and this is a pane people
+    // screenshot when asking why scrobbling is not working.
+    auto* tokenEdit = new wxTextCtrl(pane, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                     wxDefaultSize, wxTE_PASSWORD | wxTE_PROCESS_ENTER);
+    tokenEdit->SetMinSize(wxSize(pane->FromDIP(60), -1));
+    const FormRow tokenRow = row->add(_("User token"), tokenEdit);
+    const FormRow tokenLink =
+        row->link(_("Your ListenBrainz user token"), "https://listenbrainz.org/settings/");
+
+    auto* connect = new wxButton(pane, wxID_ANY, _("Connect"));
+    auto* forget  = new wxButton(pane, wxID_ANY, _("Disconnect"));
+    auto* buttons = new wxBoxSizer(wxHORIZONTAL);
+    buttons->Add(connect, 0, wxRIGHT, pane->FromDIP(6));
+    buttons->Add(forget, 0);
+    form->AddSpacer(0);
+    form->Add(buttons, 0, wxBOTTOM, pane->FromDIP(6));
+
+    row->note(_("Plays are sent once you have heard half a track, or four "
+                "minutes of it, whichever comes first. Tracks under 30 seconds "
+                "are never scrobbled."));
+
+    // Where the API is. Configuration rather than a credential, so it is a
+    // setting with an ordinary row; the account re-reads it on every change.
+    row->heading(_("Server"));
+    row->text(_("API address"), "listenBrainzUrl");
+    row->note(_("The public service by default. A ListenBrainz you run "
+                "yourself, or Maloja, takes the same requests at its own "
+                "address."));
+
+    if (!paneAlive_) {
+        paneAlive_ = std::make_shared<int>(0);
+    }
+    const std::weak_ptr<int> token = paneAlive_;
+
+    const auto refresh = [this, token, status, connect, forget, enable, tokenEdit,
+                          tokenRow, tokenLink] {
+        if (token.expired()) {
+            return;
+        }
+        const bool built = listenBrainz_->usable();
+        wxString   storeProblem;
+        const bool store   = LastFmAccount::storeAvailable(&storeProblem);
+        const bool working = listenBrainz_->connecting();
+        const auto session = listenBrainzScrobbler_->session();
+        const bool ready   = built && store;
+
+        enable->Enable(ready);
+        tokenRow.show(!session.connected());
+        tokenLink.show(!session.connected());
+        tokenEdit->Enable(ready && !working);
+        connect->Show(!session.connected());
+        connect->Enable(ready && !working);
+        forget->Show(session.connected());
+        forget->Enable(!working);
+
+        wxString text;
+        if (!built) {
+            enable->SetValue(false);
+            text = listenBrainz_->unavailableReason();
+        } else if (!store) {
+            text = storeProblem.empty()
+                       ? wxString(_("The system password store is not available, "
+                                    "so a ListenBrainz token cannot be kept."))
+                       : storeProblem;
+        } else if (working) {
+            text = _("Checking the token with ListenBrainz...");
+        } else if (session.connected()) {
+            text = wxString::Format(_("Connected as %s."),
+                                    wxString::FromUTF8(session.username));
+        } else {
+            text = _("Not connected. Paste the user token from your ListenBrainz "
+                     "settings page and press Connect.");
+        }
+
+        const std::size_t waiting = listenBrainzScrobbler_->pending();
+        if (waiting > 0) {
+            text += "\n";
+            text += wxString::Format(wxPLURAL("%zu play waiting to be sent.",
+                                              "%zu plays waiting to be sent.",
+                                              static_cast<unsigned>(waiting)),
+                                     waiting);
+        }
+        status->setText(text);
+        // Rows came and went, and setText() only re-lays out for its own
+        // height.
+        auto* page = status->GetParent();
+        page->Layout();
+    };
+
+    const auto startConnect = [this, refresh, token, status, tokenEdit] {
+        // Trimmed: a token is pasted out of a web page and arrives with
+        // whatever the selection caught, and the server's answer to one with a
+        // space on the end is simply "invalid".
+        const std::string typed = toUtf8(tokenEdit->GetValue().Strip(wxString::both));
+
+        // As on the Last.fm pane: the scrobbler and the settings outlive this
+        // dialog, so a reply that lands after it closes still applies.
+        Scrobbler* const scrobbler = listenBrainzScrobbler_;
+        Settings* const  settings  = &settings_;
+
+        ListenBrainzAccount::ConnectHandlers handlers;
+        handlers.connected = [refresh, scrobbler, settings, token, tokenEdit](
+                                 const Scrobbler::Session& session) {
+            scrobbler->setSession(session);
+            // Connecting is what makes the switch mean something, so it turns
+            // it on -- see the Last.fm pane.
+            settings->setEnableListenBrainz(true);
+            if (!token.expired()) {
+                tokenEdit->Clear();
+            }
+            refresh();
+        };
+        handlers.failed = [refresh, token, status](const wxString& message) {
+            refresh();
+            if (!token.expired()) {
+                status->setText(message);
+            }
+        };
+
+        listenBrainz_->connect(
+            typed,
+            [](std::function<void()> action) { wxTheApp->CallAfter(std::move(action)); },
+            std::move(handlers));
+        refresh();
+    };
+
+    connect->Bind(wxEVT_BUTTON, [startConnect](wxCommandEvent&) { startConnect(); });
+    tokenEdit->Bind(wxEVT_TEXT_ENTER, [startConnect](wxCommandEvent&) { startConnect(); });
+
+    forget->Bind(wxEVT_BUTTON, [this, refresh](wxCommandEvent&) {
+        listenBrainz_->forget();
+        listenBrainzScrobbler_->setSession({});
+        // The switch and the queue are both left alone, for the reasons the
+        // Last.fm pane gives: disconnecting is about the account, and the
+        // plays waiting really happened.
+        refresh();
+    });
+
+    refresh();
     return finishPane(pane, form);
 }
 

@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cstddef>
+#include <string>
 
 namespace xpcog {
 namespace {
@@ -38,24 +39,62 @@ std::size_t appendBody(char* data, std::size_t size, std::size_t count, void* us
     return bytes;
 }
 
+/// The header list libcurl wants, freed when this goes out of scope so that
+/// every return path below releases it.
+class HeaderList {
+public:
+    HeaderList(const HttpHeaders& headers, const char* contentType) {
+        if (contentType != nullptr) {
+            const std::string line = std::string{"Content-Type: "} + contentType;
+            list_                  = curl_slist_append(list_, line.c_str());
+        }
+        for (const auto& [name, value] : headers) {
+            list_ = curl_slist_append(list_, (name + ": " + value).c_str());
+        }
+    }
+    ~HeaderList() { curl_slist_free_all(list_); }
+
+    HeaderList(const HeaderList&)            = delete;
+    HeaderList& operator=(const HeaderList&) = delete;
+
+    [[nodiscard]] curl_slist* get() const noexcept { return list_; }
+
+private:
+    curl_slist* list_ = nullptr;
+};
+
 class CurlHttpClient final : public IHttpClient {
 public:
     HttpResponse post(std::string_view url, const HttpParams& params) override {
         const std::string body = formEncode(params);
-        return perform(std::string{url}, &body);
+        // No Content-Type of our own: libcurl sends the form one for a
+        // POSTFIELDS body, which is what these have always been.
+        return perform(std::string{url}, &body, nullptr, {});
     }
 
     HttpResponse get(std::string_view url, const HttpParams& params) override {
+        return get(url, params, {});
+    }
+
+    HttpResponse postJson(std::string_view url, std::string_view body,
+                          const HttpHeaders& headers) override {
+        const std::string payload{body};
+        return perform(std::string{url}, &payload, "application/json", headers);
+    }
+
+    HttpResponse get(std::string_view url, const HttpParams& params,
+                     const HttpHeaders& headers) override {
         std::string target{url};
         if (!params.empty()) {
             target += (target.find('?') == std::string::npos) ? '?' : '&';
             target += formEncode(params);
         }
-        return perform(target, nullptr);
+        return perform(target, nullptr, nullptr, headers);
     }
 
 private:
-    static HttpResponse perform(const std::string& url, const std::string* body) {
+    static HttpResponse perform(const std::string& url, const std::string* body,
+                                const char* contentType, const HttpHeaders& headers) {
         HttpResponse response;
 
         CURL* handle = curl_easy_init();
@@ -65,6 +104,10 @@ private:
         }
 
         std::array<char, CURL_ERROR_SIZE> errorBuffer{};
+        const HeaderList                  headerList{headers, contentType};
+        if (headerList.get() != nullptr) {
+            curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headerList.get());
+        }
 
         curl_easy_setopt(handle, CURLOPT_URL, url.c_str());
         curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, &appendBody);

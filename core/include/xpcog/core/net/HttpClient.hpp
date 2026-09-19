@@ -55,6 +55,11 @@ struct HttpResponse {
 /// under different indices (`artist[0]`, `artist[1]`).
 using HttpParams = std::vector<std::pair<std::string, std::string>>;
 
+/// Request headers beyond the ones the transport sets itself, in the order
+/// given. Last.fm needs none -- everything it wants is in the body --
+/// while ListenBrainz authenticates with an `Authorization` header.
+using HttpHeaders = std::vector<std::pair<std::string, std::string>>;
+
 class IHttpClient {
 public:
     virtual ~IHttpClient() = default;
@@ -67,6 +72,16 @@ public:
     /// `params` are percent-encoded into the query string.
     [[nodiscard]] virtual HttpResponse get(std::string_view  url,
                                            const HttpParams& params) = 0;
+
+    /// `body` is sent as-is under `Content-Type: application/json`, with
+    /// `headers` on top.
+    [[nodiscard]] virtual HttpResponse postJson(std::string_view   url,
+                                                std::string_view   body,
+                                                const HttpHeaders& headers) = 0;
+
+    /// As `get(url, params)`, with `headers` on top.
+    [[nodiscard]] virtual HttpResponse get(std::string_view url, const HttpParams& params,
+                                           const HttpHeaders& headers) = 0;
 };
 
 /// The libcurl-backed client, or **null** in a build configured without
