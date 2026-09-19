@@ -240,6 +240,7 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
         std::make_unique<PlaybackController>(registry_, playlist_, settings_, dispatch_);
 
     wireScrobbling();
+    wireLyrics();
 
     SetMenuBar(buildMenuBar());
     buildUi();
@@ -445,6 +446,7 @@ void MainFrame::buildUi() {
     equalizer_ = new EqualizerPanel(dockHost_, settings_);
     info_      = new InfoPanel(dockHost_, library_.get());
     lyrics_    = new LyricsPanel(dockHost_);
+    applyLyricsLookup();
     spectrum_  = new SpectrumPanel(dockHost_, playback_->tap());
     spectrum_->applySettings(settings_);
     // The same tap, its own cursor into it; reads settings itself.
@@ -1137,6 +1139,17 @@ void MainFrame::onSettingChanged(const std::string& key) {
                 listenBrainz_->setApiRoot(settings_.ListenBrainzUrl());
                 listenBrainzScrobbler_->setEnabled(settings_.EnableListenBrainz());
             }
+            break;
+
+        case Effect::OnlineLyrics:
+            // The root first, so a redraw that asks asks the server now named;
+            // then the switch; then the redraw, which is what turns a pane
+            // saying "no lyrics" into one that goes and looks.
+            if (lyricsLookup_) {
+                lyricsLookup_->setApiRoot(settings_.LrclibUrl());
+            }
+            applyLyricsLookup();
+            refreshLyrics();
             break;
 
         case Effect::CrashReporter:
@@ -2946,6 +2959,35 @@ void MainFrame::wireScrobbling() {
             listenBrainzScrobbler_->submit(pendingScrobble_);
         }
     });
+}
+
+// --- lyrics ---------------------------------------------------------------
+
+void MainFrame::wireLyrics() {
+    // A build without libcurl has no way to ask, and the pane is then the
+    // file's lyrics and nothing else -- which is what it was before there was
+    // a lookup, and what the General pane's greyed row says.
+    if (!httpClientAvailable()) {
+        return;
+    }
+    lyricsHttp_ = makeCurlHttpClient();
+    if (!lyricsHttp_) {
+        return;
+    }
+    // The library remembers the answers, when there is one. Without it --
+    // the database would not open -- the lookup still works, for the session.
+    if (library_) {
+        lyricsStore_ = std::make_unique<LibraryLyricsStore>(*library_);
+    }
+    lyricsLookup_ = std::make_unique<LyricsLookup>(*lyricsHttp_, dispatch_,
+                                                   lyricsStore_.get(), settings_.LrclibUrl());
+}
+
+void MainFrame::applyLyricsLookup() {
+    if (lyrics_ == nullptr) {
+        return;
+    }
+    lyrics_->setLookup(settings_.EnableLrclib() ? lyricsLookup_.get() : nullptr);
 }
 
 void MainFrame::beginScrobbleTrack(TrackId id, bool looping) {

@@ -24,7 +24,7 @@ namespace {
 /// Cog has no equivalent -- Core Data infers lightweight migrations from the
 /// model file, which is convenient right up to the point where it cannot, and
 /// then the store fails to open with nothing to fix by hand.
-constexpr std::array<std::string_view, 3> kMigrations = {
+constexpr std::array<std::string_view, 4> kMigrations = {
     R"sql(
 CREATE TABLE playlist_entry (
     id               INTEGER PRIMARY KEY,
@@ -237,6 +237,28 @@ ALTER TABLE playlist_entry DROP COLUMN encoding;
 -- Empty means "unknown", which is what every existing row gets: the first save
 -- after this migration writes everything once and settles from there.
 ALTER TABLE playlist_entry ADD COLUMN tag_hash TEXT NOT NULL DEFAULT '';
+)sql",
+    R"sql(
+-- Lyrics fetched from LRCLIB, one row per question asked, so a track's words
+-- are downloaded once per library rather than once per session. Keyed on the
+-- question -- artist, title, album and rounded length, joined with newlines,
+-- see LyricsLookup::keyOf() -- rather than on a playlist entry, because the
+-- same song in two rips is one question and an entry removed and re-added is
+-- the same question again.
+--
+-- `known` false is "the service did not have it", kept on purpose: it is the
+-- commonest answer and the one a listener would otherwise trigger again on
+-- every selection. `fetched_at` is what lets it be asked again eventually.
+-- Failures are never written here. `synced` is stored against the day the
+-- pane can follow an LRC file; nothing reads it yet.
+CREATE TABLE lyrics_cache (
+    key          TEXT    PRIMARY KEY,
+    known        INTEGER NOT NULL DEFAULT 0,
+    instrumental INTEGER NOT NULL DEFAULT 0,
+    plain        TEXT    NOT NULL DEFAULT '',
+    synced       TEXT    NOT NULL DEFAULT '',
+    fetched_at   INTEGER NOT NULL DEFAULT 0
+);
 )sql",
 };
 
@@ -1385,6 +1407,57 @@ bool Library::setRating(const PlaylistEntry& entry, float rating) {
     statement.bind(5, static_cast<double>(rating));
     if (!statement.run()) {
         return impl_->fail("cannot set the rating");
+    }
+    impl_->error.clear();
+    return true;
+}
+
+// --- lyrics cache ---------------------------------------------------------
+
+std::optional<StoredLyrics> Library::cachedLyrics(std::string_view key) const {
+    if (!isOpen() || key.empty()) {
+        return std::nullopt;
+    }
+
+    sql::Statement query{impl_->database,
+                         "SELECT known, instrumental, plain, synced, fetched_at "
+                         "FROM lyrics_cache WHERE key = ?;"};
+    query.bind(1, key);
+    if (!query.step()) {
+        return std::nullopt;
+    }
+
+    StoredLyrics record;
+    record.known        = query.columnInt(0) != 0;
+    record.instrumental = query.columnInt(1) != 0;
+    record.plain        = query.columnText(2);
+    record.synced       = query.columnText(3);
+    record.fetchedAt    = query.columnInt(4);
+    return record;
+}
+
+bool Library::storeCachedLyrics(std::string_view key, const StoredLyrics& record) {
+    if (!isOpen()) {
+        return impl_->fail("no database");
+    }
+    if (key.empty()) {
+        return impl_->fail("no key for the lyrics");
+    }
+
+    // Replace rather than ignore: a "not found" asked again a week later and
+    // answered with words is the row changing its mind, which is the point.
+    sql::Statement statement{impl_->database,
+                             "INSERT OR REPLACE INTO lyrics_cache "
+                             "(key, known, instrumental, plain, synced, fetched_at) "
+                             "VALUES (?,?,?,?,?,?);"};
+    statement.bind(1, key);
+    statement.bind(2, static_cast<std::int64_t>(record.known ? 1 : 0));
+    statement.bind(3, static_cast<std::int64_t>(record.instrumental ? 1 : 0));
+    statement.bind(4, record.plain);
+    statement.bind(5, record.synced);
+    statement.bind(6, record.fetchedAt);
+    if (!statement.run()) {
+        return impl_->fail("cannot store the lyrics");
     }
     impl_->error.clear();
     return true;

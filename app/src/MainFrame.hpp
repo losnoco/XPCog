@@ -39,6 +39,9 @@
 #include "xpcog/core/PlayMonitor.hpp"
 #include "xpcog/core/library/CogImport.hpp"
 #include "xpcog/core/library/Library.hpp"
+#include "xpcog/core/lyrics/LibraryLyricsStore.hpp"
+#include "xpcog/core/lyrics/LyricsLookup.hpp"
+#include "xpcog/core/net/HttpClient.hpp"
 #include "xpcog/core/scrobble/Scrobbler.hpp"
 #include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/library/PlaylistView.hpp"
@@ -439,6 +442,15 @@ private:
     Playlist                 playlist_;
     PluginCache              cache_;
     std::unique_ptr<Library> library_;
+
+    /// The Lyrics pane's way of asking LRCLIB, and the library as its memory
+    /// of the answers. After library_ on purpose: members go in reverse, and
+    /// the lookup borrows the store, which borrows the library. Null in a
+    /// build with no HTTP client, and the pane is then handed nothing.
+    std::unique_ptr<IHttpClient>        lyricsHttp_;
+    std::unique_ptr<LibraryLyricsStore> lyricsStore_;
+    std::unique_ptr<LyricsLookup>       lyricsLookup_;
+
     PlaylistView             view_;
     UndoStack                undo_;
 
@@ -475,6 +487,13 @@ private:
 
     /// Wires the monitor's two thresholds to the library and the scrobblers.
     void wireScrobbling();
+
+    /// Builds the lookup behind the Lyrics pane, when this build can make an
+    /// HTTP request at all.
+    void wireLyrics();
+
+    /// Hands the Lyrics pane the lookup, or nothing, as `enableLrclib` says.
+    void applyLyricsLookup();
 
     /// Starts the monitor for `id`, and announces it as now playing.
     /// `looping` is the same entry coming round again; see PlayMonitor.

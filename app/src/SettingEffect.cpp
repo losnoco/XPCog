@@ -104,6 +104,11 @@ SettingEffect effectOf(std::string_view key) {
     if (key == "sentryConsented") {
         return {Effect::CrashReporter, Applies::Immediately};
     }
+    // The pane holds its answer, and the lookup holds the server root and a
+    // memory of answers from it; both have to be told.
+    if (key == "enableLrclib" || key == "lrclibUrl") {
+        return {Effect::OnlineLyrics, Applies::Immediately};
+    }
 
     // Session state rather than preferences. Readable, never written from
     // outside: what the last session did is not something a peer gets to revise.

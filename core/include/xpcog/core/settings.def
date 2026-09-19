@@ -768,6 +768,26 @@ XPCOG_SETTING(EnableListenBrainz, bool, "enableListenBrainz", false)
 /// credential. Read on every request, so a change lands without a relaunch.
 XPCOG_SETTING(ListenBrainzUrl, std::string, "listenBrainzUrl", "https://api.listenbrainz.org")
 
+// --- lyrics ---------------------------------------------------------------
+
+/// Whether the Lyrics pane asks LRCLIB for the words of a track whose file
+/// carries none. No Cog key: Cog shows tagged lyrics and nothing else.
+///
+/// **Off by default**, for the reason the scrobbling switches are: on, the
+/// player sends the artist, title, album and length of whatever is selected
+/// or playing to a server on the internet, and that is a thing to be asked
+/// about rather than assumed, even for a service that keeps no accounts and
+/// asks for no key. The pane says so beside the switch. Answers are kept in
+/// the library, so a track is asked about once, not once per session; see
+/// core/include/xpcog/core/lyrics/LyricsLookup.hpp.
+XPCOG_SETTING(EnableLrclib, bool, "enableLrclib", false)
+
+/// Where the LRCLIB API is. The public service by default; the server is
+/// open source and documents running your own, which speaks the same API at
+/// another address. Read on every request, so a change lands without a
+/// relaunch. Both `host` and `host/api` are accepted spellings.
+XPCOG_SETTING(LrclibUrl, std::string, "lrclibUrl", "https://lrclib.net")
+
 // --- crash reporting ------------------------------------------------------
 
 /// Whether the listener has agreed to send crash reports and usage data.

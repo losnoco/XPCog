@@ -3761,6 +3761,26 @@ All of these are also documented at the call site.
   the Last.fm session. `[listenbrainz]` pins the protocol against the scripted
   transport, including which statuses the queue waits out.
 
+- **The Lyrics pane can ask LRCLIB; Cog's window shows the tag or nothing.**
+  New work on the terms `docs/REST.md` set. `LrclibClient`
+  (`core/include/xpcog/core/lyrics/`) speaks the service's one lookup call,
+  `/api/get`, over `IHttpClient`, with the `Lrclib-Client` header the service
+  asks for; `LyricsLookup` runs it on a `SerialExecutor`, remembers every
+  answer, and hands the result back through a `Dispatcher`. The memory is
+  two-tier and the rules are deliberate: a hit is kept for good, "not found"
+  for a week (the service grows), a failure for a minute and in memory only.
+  The on-disk tier is a `lyrics_cache` table in the library (migration 4),
+  reached through `ILyricsStore` so the lookup never names the database and
+  the tests drive it with a map. Keyed on the question -- artist, title,
+  album, rounded length -- rather than on a playlist entry, so two rips of one
+  song are one question. The file's own tag always wins and is never
+  second-guessed. Off by default (`enableLrclib`), for the reason the
+  scrobbling switches are: it sends track metadata to a server. Exact match
+  only, no `/api/search`: a guessed match shown as the song's lyrics is worse
+  than an honest blank. Synced lyrics are stored and not yet shown.
+  `[lrclib]` pins the protocol and the cache rules against the scripted
+  transport and a clock that is a number.
+
 - **The seek bar can draw the track's waveform; Cog's cannot.** Cog's position
   slider is a plain `NSSlider` with a time tooltip (`Window/PositionSlider.m`),
   so this is new work on the terms `docs/REST.md` set rather than a port. View →

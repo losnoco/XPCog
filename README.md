@@ -146,6 +146,10 @@ server of your own that speaks its API. Credentials live in the platform's secre
 store, and each service has a durable queue, so an evening offline arrives the
 next day.
 
+**Lyrics.** The Lyrics pane shows what the file carries, and can ask LRCLIB for
+the words of a track that carries none — off by default, exact-match only, and
+every answer kept in the library so a track is asked about once.
+
 **Remote control.** A REST API over the transport, playlist, equaliser, settings
 and cover art, with a generated OpenAPI document and a Swagger page. Off until
 Preferences → Remote turns it on, loopback by default, a bearer token on every

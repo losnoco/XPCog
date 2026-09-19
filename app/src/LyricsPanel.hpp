@@ -25,11 +25,25 @@
 // Like InfoPanel, this holds no reference to the entry it drew. Playlist entries
 // move when rows are removed or the playlist reloads; it copies the strings it
 // needs on the way through.
+//
+// **When the file carries nothing, the pane can ask LRCLIB** -- new work, not
+// port work; Cog's window is blank for an untagged file and that is the end of
+// it. The file always wins: a tag is the listener's own, and a service is asked
+// only about a track that has none. The asking is LyricsLookup's (core), which
+// runs the request on a worker, remembers every answer in the library, and
+// hands the result back on this thread; what the pane adds is the guard that
+// an answer arriving for a track the listener has since moved off is dropped
+// rather than drawn under the wrong heading. Off unless `enableLrclib` is on,
+// which MainFrame expresses by handing over a lookup or a null.
 
 #pragma once
 
+#include "xpcog/core/lyrics/LyricsLookup.hpp"
+
 #include <wx/panel.h>
 
+#include <memory>
+#include <optional>
 #include <string>
 
 class wxStaticText;
@@ -55,12 +69,50 @@ public:
 
     /// Draws `entry`'s lyrics, or the empty state when it is null or carries
     /// none. Null is ordinary -- nothing selected, nothing playing -- not an
-    /// error.
+    /// error. With a lookup set, an entry that carries none is asked about,
+    /// and the pane says it is waiting until the answer lands.
     void showEntry(const PlaylistEntry* entry);
 
+    /// Where to ask for lyrics the file does not have, or null to stop
+    /// asking. Borrowed; must outlive the panel or be cleared first. Called
+    /// again with the same pointer when its server changes, which is a reason
+    /// to redraw: the answer on screen may have come from the old one.
+    void setLookup(LyricsLookup* lookup);
+
 private:
+    /// What the pane asks about `entry`, or nullopt when the entry is not the
+    /// kind of thing the service could know -- no artist, no title.
+    [[nodiscard]] static std::optional<LyricsQuery> queryFor(const PlaylistEntry& entry);
+
+    /// Draws `answer` for the track whose query key is `key`, if that is still
+    /// the track on screen.
+    void showAnswer(const std::string& key, const LyricsLookup::Answer& answer);
+
+    /// Puts `body` on screen under the current heading, with the source line
+    /// shown or not, and updates the redraw guard.
+    void present(const wxString& body, bool fromService);
+
     wxStaticText* heading_ = nullptr;
     wxTextCtrl*   text_    = nullptr;
+    /// "From LRCLIB", shown only under words that came from there. The pane is
+    /// the file's by default and a reader is entitled to know when it is not.
+    wxStaticText* source_ = nullptr;
+
+    LyricsLookup* lookup_ = nullptr;
+
+    /// The heading currently drawn, kept as a std::string beside the key
+    /// because an answer arriving later redraws the body under it.
+    std::string shownHeading_;
+
+    /// The query key of the track on screen when it was asked about, or empty
+    /// when the track on screen was not. An answer is drawn only if its key
+    /// still matches: the lookup answers in order and the listener does not
+    /// select in order.
+    std::string awaiting_;
+
+    /// Handed to every handler as a weak pointer, so an answer dispatched
+    /// after the panel is gone finds nobody home.
+    std::shared_ptr<int> alive_;
 
     /// What is currently drawn, so that a refresh for the same track is a no-op.
     ///

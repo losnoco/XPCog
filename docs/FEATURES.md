@@ -222,6 +222,34 @@ the submitting client, which is what the service asks of clients and what tells
 these plays apart from the same ones sent by another program. Cog has no
 ListenBrainz; this is new work on the queue Cog also does not have.
 
+## Lyrics
+
+The Lyrics pane shows what the file carries — the `unsyncedlyrics` tag, from
+FLAC, Vorbis, Opus and ID3's USLT frame — and, when it carries nothing, can ask
+[LRCLIB](https://lrclib.net/) for the words. That is Preferences → General →
+*Look up lyrics on LRCLIB when the file has none*, **off by default**: on, the
+artist, title, album and length of the track you are looking at are sent to a
+server on the internet, and that is a thing to be asked about even for a
+service that keeps no accounts and wants no key. The pane says where the words
+came from when they are not the file's own. The file always wins; a tag is
+never second-guessed.
+
+Every answer is kept in the library's database, "not found" included, so a
+track is asked about once — not once per session, and not once per keypress
+as you arrow down a playlist. A hit is kept for good; a miss is asked again
+after a week, because the service grows; a failure to reach the server is
+remembered for a minute and no further. Requests go one at a time from a
+worker thread, and a track selected while another is being asked about waits
+its turn rather than opening a second connection.
+
+The lookup is exact — LRCLIB's `/api/get`, matched on the names the track was
+published under, with the length to within two seconds — rather than a search,
+because a guessed match shown as the song's lyrics is worse than an honest
+blank. The service also returns timed LRC lyrics; those are stored beside the
+plain ones for a pane that can one day follow them, and nothing shows them
+yet. `lrclibUrl` names the server, since it is open source and can be run at
+home. Cog has no online lyrics; this is new work.
+
 ## Remote control
 
 A REST API over the transport, the playlist, the equaliser, the settings and the

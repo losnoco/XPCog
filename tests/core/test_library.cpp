@@ -82,7 +82,7 @@ PlaylistEntry fullyPopulatedEntry() {
 TEST_CASE("a new database migrates to the current schema", "[library]") {
     const Library library = openMemoryLibrary();
     REQUIRE(library.isOpen());
-    REQUIRE(library.schemaVersion() == 3);
+    REQUIRE(library.schemaVersion() == 4);
 }
 
 TEST_CASE("migrations are not reapplied", "[library]") {
@@ -93,13 +93,13 @@ TEST_CASE("migrations are not reapplied", "[library]") {
     {
         Library library;
         REQUIRE(library.open(path));
-        REQUIRE(library.schemaVersion() == 3);
+        REQUIRE(library.schemaVersion() == 4);
     }
     {
         // Reopening must not try to CREATE TABLE again, which would fail.
         Library library;
         REQUIRE(library.open(path));
-        REQUIRE(library.schemaVersion() == 3);
+        REQUIRE(library.schemaVersion() == 4);
         REQUIRE(library.lastError().empty());
     }
 

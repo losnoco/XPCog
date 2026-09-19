@@ -115,8 +115,8 @@ ctest --preset macos-debug -R Gapless          # by ctest test name
 ```
 
 Tags follow the subsystem (`[dsp]`, `[playlist]`, `[library]`, `[cogimport]`,
-`[lastfm]`, `[listenbrainz]`, `[scrobbler]`, `[timestretch]`, `[gapless]`,
-`[hls]`, `[midi]`, `[remote]`…). `[remote][socket]` binds an ephemeral loopback
+`[lastfm]`, `[listenbrainz]`, `[lrclib]`, `[scrobbler]`, `[timestretch]`,
+`[gapless]`, `[hls]`, `[midi]`, `[remote]`…). `[remote][socket]` binds an ephemeral loopback
 port and runs by default; `XPCOG_NO_SOCKET_TESTS=1` skips it loudly for an environment that
 forbids listening.
 Tags starting with a dot are hidden and only run when named: `[.lastfmlive]`

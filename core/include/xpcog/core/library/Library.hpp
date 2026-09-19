@@ -19,6 +19,7 @@
 #pragma once
 
 #include "xpcog/core/library/Playlist.hpp"
+#include "xpcog/core/lyrics/LyricsStore.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -184,6 +185,17 @@ public:
     [[nodiscard]] bool resetPlayCount(const PlaylistEntry& entry);
 
     [[nodiscard]] bool setRating(const PlaylistEntry& entry, float rating);
+
+    // --- lyrics cache ---------------------------------------------------
+
+    /// What LRCLIB answered when asked `key` (LyricsLookup::keyOf()'s
+    /// spelling), if it has been asked from this library. The store behind
+    /// LyricsLookup, so a track's words are fetched once per library rather
+    /// than once per session; `LibraryLyricsStore` is the adapter.
+    [[nodiscard]] std::optional<StoredLyrics> cachedLyrics(std::string_view key) const;
+
+    /// Keeps `record` under `key`, replacing an earlier answer.
+    [[nodiscard]] bool storeCachedLyrics(std::string_view key, const StoredLyrics& record);
 
 private:
     struct Impl;

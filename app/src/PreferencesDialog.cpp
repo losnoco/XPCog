@@ -218,6 +218,8 @@ constexpr std::array kCuratedKeys = {
     // Scrobbling. Each switch sits on its service's pane beside the account it
     // means something for; the credentials are in the password store.
     "enableAudioScrobbler", "enableListenBrainz", "listenBrainzUrl",
+    // Lyrics, on General.
+    "enableLrclib", "lrclibUrl",
 };
 
 /// Not settings at all, but internal state that happens to live in the same
@@ -1047,6 +1049,35 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
         box->Enable(false);
         box->SetValue(false);
         row->note(_("Crash reporting is not included in this build."));
+    }
+
+    // Lyrics from LRCLIB, for a file that carries none. On General beside the
+    // other row that sends something out, because that is what it has in
+    // common with crash reporting and the reason it is off by default: the
+    // note says exactly what leaves the machine, and the switch is the
+    // listener's to throw. Cog has no equivalent row; its lyrics window shows
+    // the tag or nothing.
+    row->heading(_("Lyrics"));
+    auto* lyricsBox = static_cast<wxCheckBox*>(
+        row->toggle(_("Look up lyrics on LRCLIB when the file has none"), "enableLrclib")
+            .control);
+    if (httpClientAvailable()) {
+        row->note(_("The artist, title, album and length of the track you are "
+                    "looking at are sent to LRCLIB, a free lyrics service with no "
+                    "accounts. Each answer is kept in the library, so a track is "
+                    "asked about once."));
+        row->link(_("About LRCLIB"), "https://lrclib.net/");
+        // Where the API is: the server is open source and can be run at home,
+        // and it takes the same requests at its own address.
+        row->text(_("API address"), "lrclibUrl");
+    } else {
+        // The same shape as the crash-reporting row above, for the same
+        // reason: a switch that ticks and does nothing is worse than one
+        // that says why it cannot.
+        lyricsBox->Enable(false);
+        lyricsBox->SetValue(false);
+        row->note(_("This build was configured without HTTP support, so it "
+                    "cannot reach LRCLIB."));
     }
 
     return finishPane(pane, form);
