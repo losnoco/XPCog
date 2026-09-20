@@ -1153,6 +1153,10 @@ msgstr "Izquierdo"
 msgid "Right"
 msgstr "Derecho"
 
+#: app/src/PreferencesDialog.cpp:1615 app/src/SpectrumPanel.cpp:203
+msgid "Stereo, mirrored"
+msgstr "Estéreo, en espejo"
+
 #: app/src/OscilloscopePanel.cpp:337 app/src/PreferencesDialog.cpp:1547
 msgid "Stereo, stacked"
 msgstr "Estéreo, apilado"

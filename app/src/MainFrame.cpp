@@ -447,9 +447,10 @@ void MainFrame::buildUi() {
     info_      = new InfoPanel(dockHost_, library_.get());
     lyrics_    = new LyricsPanel(dockHost_);
     applyLyricsLookup();
-    spectrum_  = new SpectrumPanel(dockHost_, playback_->tap());
-    spectrum_->applySettings(settings_);
-    // The same tap, its own cursor into it; reads settings itself.
+    // Both visualisers read their settings themselves, and write the few
+    // their context menus offer.
+    spectrum_   = new SpectrumPanel(dockHost_, playback_->tap(), settings_);
+    // The same tap, its own cursor into it.
     scope_      = new OscilloscopePanel(dockHost_, playback_->tap(), settings_);
     speedPanel_ = new SpeedPanel(dockHost_, settings_);
 
@@ -800,8 +801,10 @@ void MainFrame::wireUp() {
             [this] { showPreferences(PreferencesPane::Visualizers); });
     observe(scope_->settingsRequested,
             [this] { showPreferences(PreferencesPane::Visualizers); });
-    // The oscilloscope's context menu writes settings; the change takes the
+    // The visualisers' context menus write settings; the change takes the
     // same road a Preferences change does, and ends back in the panel.
+    observe(spectrum_->settingChanged,
+            [this](const std::string& key) { onSettingChanged(key); });
     observe(scope_->settingChanged, [this](const std::string& key) { onSettingChanged(key); });
     observe(speedPanel_->settingChanged,
             [this](const std::string& key) { onSettingChanged(key); });

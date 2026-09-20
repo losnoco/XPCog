@@ -35,6 +35,7 @@
 #include "PlaylistColumns.hpp"
 #include "PlaylistDataModel.hpp"
 #include "PreferencesDialog.hpp"
+#include "SpectrumPanel.hpp"
 
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/AudioTap.hpp"
@@ -56,6 +57,7 @@
 #include <wx/dataview.h>
 #include <wx/frame.h>
 #include <wx/init.h>
+#include <wx/utils.h>
 #include <wx/panel.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
@@ -446,6 +448,117 @@ TEST_CASE("the oscilloscope draws every channel mode and its menu writes setting
 
     // Unknown spellings read as mono rather than as nothing.
     CHECK(xpcog::app::OscilloscopePanel::channelsFromKey("sideways") == Channels::Mono);
+
+    frame->Destroy();
+    wxYield();
+}
+
+TEST_CASE("the spectrum draws every channel mode and its menu writes settings",
+          "[gui][spectrum]") {
+    // The spectrum's sibling of the oscilloscope test above, for the same
+    // reasons: only a window runs the paint and timer path, and only that
+    // catches a stereo mode reading a lane the tick did not fill, or a
+    // flipped half drawing off its band. The menu is driven directly.
+    Toolkit toolkit;
+    if (!toolkit.started()) {
+        SKIP("no display: wx could not initialise the toolkit");
+    }
+
+    auto            store = xpcog::makeMemorySettingsStore();
+    xpcog::Settings settings(*store);
+
+    // A second of stereo: a tone on the left, a different one on the right,
+    // so the two analysers have different things to show.
+    xpcog::AudioTap    tap;
+    std::vector<float> stereo;
+    for (int frame = 0; frame < 48000; ++frame) {
+        const double t = frame / 48000.0;
+        stereo.push_back(static_cast<float>(0.6 * std::sin(2.0 * 3.14159265 * 220.0 * t)));
+        stereo.push_back(static_cast<float>(0.3 * std::sin(2.0 * 3.14159265 * 660.0 * t)));
+    }
+    tap.write(stereo.data(), stereo.size(), 2);
+
+    auto* frame = new wxFrame(nullptr, wxID_ANY, "xpcog-gui-tests", wxDefaultPosition,
+                              wxSize(600, 200));
+    auto* panel = new xpcog::app::SpectrumPanel(frame, tap, settings);
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(panel, 1, wxEXPAND);
+    frame->SetSizer(sizer);
+    frame->Show();
+    frame->Layout();
+    wxYield();
+
+    CHECK(panel->GetSize().GetWidth() >= panel->GetMinSize().GetWidth());
+    CHECK(panel->GetSize().GetHeight() >= panel->GetMinSize().GetHeight());
+
+    panel->setSampleRate(48000.0);
+
+    using Channels = xpcog::app::SpectrumPanel::Channels;
+    using Item     = xpcog::app::SpectrumPanel::MenuItem;
+
+    std::vector<std::string> announced;
+    const xpcog::Subscription onChange =
+        panel->settingChanged.connect([&](const std::string& key) { announced.push_back(key); });
+
+    const std::pair<int, const char*> modes[] = {
+        {Item::kMenuLeft, "left"},         {Item::kMenuRight, "right"},
+        {Item::kMenuMirrored, "mirrored"}, {Item::kMenuStacked, "stacked"},
+        {Item::kMenuOverlaid, "overlaid"}, {Item::kMenuMono, "mono"},
+    };
+    for (const auto& [item, key] : modes) {
+        panel->applyMenuItem(item);
+        CHECK(settings.SpectrumChannels() == key);
+        // What MainFrame does with the announcement.
+        panel->applySettings(settings);
+        CHECK(panel->channels() == xpcog::app::SpectrumPanel::channelsFromKey(key));
+
+        // A few frames of the clock in this mode, on a real window, in both
+        // band layouts -- the bar count differs, and so does the slot width.
+        for (const bool frequencies : {false, true}) {
+            settings.setSpectrumFreqMode(frequencies);
+            panel->applySettings(settings);
+            panel->setActive(true);
+            for (int i = 0; i < 4; ++i) {
+                wxMilliSleep(20);
+                wxYield();
+            }
+            // With XPCOG_GUI_CAPTURE naming a directory, a picture of each
+            // mode lands there, through ImageMagick's `import` of the root
+            // window -- the only way to see the panel without driving the
+            // player, and what a rendering question is answered from. Not a
+            // blit from a wxClientDC: on GTK3 that reads back nothing. Taken
+            // while the clock still runs, so the bars are up, and cropped to
+            // the panel, which under a bare Xvfb sits at the origin.
+            if (const char* dir = std::getenv("XPCOG_GUI_CAPTURE"); dir != nullptr) {
+                const wxRect area(panel->GetScreenPosition(), panel->GetClientSize());
+                const wxString file = wxString::Format("%s/spectrum-%s-%s.png", dir, key,
+                                                       frequencies ? "freq" : "notes");
+                const wxString command = wxString::Format(
+                    "import -window root -crop %dx%d+%d+%d +repage \"%s\"", area.width,
+                    area.height, area.x, area.y, file);
+                CHECK(wxExecute(command, wxEXEC_SYNC) == 0);
+            }
+            panel->setActive(false);
+            wxYield();
+        }
+    }
+    CHECK(announced.size() == 6);
+    CHECK(announced.back() == "spectrumChannels");
+
+    panel->applyMenuItem(Item::kMenuPeaks);
+    CHECK_FALSE(settings.SpectrumShowPeaks());
+    panel->applyMenuItem(Item::kMenuPeaks);
+    CHECK(settings.SpectrumShowPeaks());
+    CHECK(announced.size() == 8);
+
+    int requested = 0;
+    const xpcog::Subscription onRequest = panel->settingsRequested.connect([&] { ++requested; });
+    panel->applyMenuItem(Item::kMenuPreferences);
+    CHECK(requested == 1);
+    CHECK(announced.size() == 8);  // not a setting
+
+    // Unknown spellings read as mono rather than as nothing.
+    CHECK(xpcog::app::SpectrumPanel::channelsFromKey("sideways") == Channels::Mono);
 
     frame->Destroy();
     wxYield();

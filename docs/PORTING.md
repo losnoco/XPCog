@@ -650,8 +650,23 @@ first block after a seek, which is M4's work.
   `spectrumBarColor`, `spectrumDotColor` and `spectrumFreqMode`. Two of Cog's five
   are deliberately absent -- `spectrumSceneKit` and `spectrumProjectionMode` both
   configure the SceneKit renderer, and a checkbox for a renderer that does not
-  exist is worse than no checkbox. Two are new (`spectrumFloorDb`,
-  `spectrumShowPeaks`) and labelled as such in `settings.def`.
+  exist is worse than no checkbox. Three are new (`spectrumFloorDb`,
+  `spectrumShowPeaks`, `spectrumChannels`) and labelled as such in `settings.def`.
+
+  Stereo is the third of those and is not Cog's: its spectrum is the mix and
+  nothing else. It came after the oscilloscope, and cost almost nothing because
+  of it -- the tap already kept a lane per side and `TapCursor::readAgain()`
+  already read the second lane of the same window, so a second `SpectrumAnalyzer`
+  over the right lane is the whole of the analysis. Every setting goes to both
+  analysers, which is how their band tables stay identical. The modes are the
+  oscilloscope's -- mono, left, right, stacked, overlaid -- plus **mirrored**,
+  which a bar chart can do and a trace cannot: left rises from the centre line
+  and right falls from it, so a difference between the sides is one bar taller
+  one way than the other. Not *paired*, a slot split into a thin bar per side:
+  NoteBands slots are a few pixels wide at any real pane width, and halving them
+  reads as noise. The channels and the peak markers are on the pane's context
+  menu, which had one item before and now has the shape the oscilloscope's has,
+  writing the same keys through the same effect path.
 
   The colour keys match Cog's but their *values* do not: Cog archives NSColor
   through a value transformer, so an imported plist holds a keyed archive where a

@@ -8,6 +8,11 @@
 // Where the numbers come from is SpectrumAnalyzer, which is Cog's configuration of
 // deadbeef's analyser. This class does nothing but draw them and run the clock.
 //
+// Stereo is not Cog's: its spectrum is the mix and nothing else. The tap keeps
+// a lane per side for the oscilloscope, and a second analyser over the second
+// lane is all the spectrum needs to show them -- one transform each, the same
+// band table, drawn mirrored about the centre line, stacked, or overlaid.
+//
 // Two wx-specific requirements that are not optional, both of which produce a
 // visibly broken display if forgotten. wxBG_STYLE_PAINT stops the toolkit erasing
 // the background before the paint handler runs -- without it the bars flicker at
@@ -26,18 +31,45 @@
 #include <wx/timer.h>
 #include <wx/window.h>
 
+#include <array>
 #include <chrono>
+#include <string>
+#include <string_view>
 #include <vector>
 
 class wxContextMenuEvent;
+class wxGraphicsContext;
 
 namespace xpcog::app {
 
 class SpectrumPanel : public wxWindow {
 public:
+    /// Which channels the bars show. The `spectrumChannels` setting, decoded.
+    enum class Channels { Mono, Left, Right, Mirrored, Stacked, Overlaid };
+
+    /// The setting's spelling of each, in the order the menu and the pane list
+    /// them, and the reverse: an unknown spelling reads as Mono.
+    [[nodiscard]] static const char* channelsKey(Channels channels) noexcept;
+    [[nodiscard]] static Channels    channelsFromKey(std::string_view key) noexcept;
+
+    /// The context menu's item ids, public so a test can drive
+    /// applyMenuItem() without popping a menu -- nothing can click one under
+    /// Xvfb, which has no window manager.
+    enum MenuItem : int {
+        kMenuMono = 1,
+        kMenuLeft,
+        kMenuRight,
+        kMenuMirrored,
+        kMenuStacked,
+        kMenuOverlaid,
+        kMenuPeaks,
+        kMenuPreferences,
+    };
+
     /// `tap` is borrowed and must outlive this widget, which it does: the playback
-    /// controller owns both it and, transitively, this window.
-    SpectrumPanel(wxWindow* parent, AudioTap& tap);
+    /// controller owns both it and, transitively, this window. `settings` is
+    /// read at construction and written by the context menu.
+    SpectrumPanel(wxWindow* parent, AudioTap& tap, Settings& settings);
 
     /// Stops the clock. Explicit, because a timer that outlives the window it
     /// draws into is a callback into freed memory, and ~wxTimer running as a
@@ -50,7 +82,8 @@ public:
     /// learn either.
     void setSampleRate(double rate);
 
-    /// Re-reads every spectrum setting: colours, band mode, floor, peak markers.
+    /// Re-reads every spectrum setting: colours, band mode, floor, peak markers,
+    /// channels.
     ///
     /// One function rather than a setter each, because these are read from exactly
     /// two places -- construction and a change in Preferences -- and the failure
@@ -62,9 +95,21 @@ public:
     /// running a 4096-point FFT sixty times a second.
     void setActive(bool active);
 
-    /// The context menu's one item was chosen. MainFrame opens Preferences on
-    /// the Spectrum pane; the panel itself knows nothing about that dialog.
+    /// Does what choosing `item` from the context menu does: writes the
+    /// setting and announces it. The menu handler calls this; so does the test.
+    void applyMenuItem(int item);
+
+    /// A setting was written here, by the context menu. The owner routes it
+    /// through the same path a Preferences change takes, which ends in
+    /// applySettings() on this panel -- so the menu and the pane cannot
+    /// disagree.
+    Signal<std::string> settingChanged;
+
+    /// The context menu's Preferences item. MainFrame opens the Visualizers
+    /// pane; the panel itself knows nothing about that dialog.
     Signal<> settingsRequested;
+
+    [[nodiscard]] Channels channels() const noexcept { return channels_; }
 
 private:
     void onPaint(wxPaintEvent& event);
@@ -75,7 +120,23 @@ private:
     /// Derives the bar count from the widget's width. Frequencies mode only.
     void updateFrequencyBandCount();
 
-    AudioTap&        tap_;
+    /// Whether the current mode reads both sides, and so runs both analysers.
+    [[nodiscard]] bool stereo() const noexcept;
+
+    /// The dB gridlines in a band of the client area, `top` to `top + height`,
+    /// measured from the band's bottom edge, or from its top when `flipped` --
+    /// the lower half of the mirrored view.
+    void paintGrid(wxGraphicsContext& gc, double top, double height, bool flipped);
+
+    /// One analyser's bars in the same band, standing on its bottom edge or
+    /// hanging from its top when `flipped`, and the peak markers over them
+    /// when they are wanted.
+    void paintBars(wxGraphicsContext& gc, const SpectrumAnalyzer& analyzer, double top,
+                   double height, bool flipped, const wxColour& bar,
+                   const wxColour& peak);
+
+    AudioTap& tap_;
+    Settings& settings_;
 
     /// Where in the tap this display has got to.
     ///
@@ -87,9 +148,14 @@ private:
     /// 60 Hz and moving at 11. This advances by the measured frame interval
     /// instead, so the window slides at the rate the audio is being heard at
     /// whatever size the chunks arriving behind it are. See TapCursor.
-    TapCursor        cursor_;
-    SpectrumAnalyzer analyzer_;
-    wxTimer          timer_;
+    TapCursor cursor_;
+
+    /// One analyser per side. The first is the only one used in a single-lane
+    /// mode; the second exists so a stereo frame is two transforms of the same
+    /// instant, each with its own peak hold. Every setting goes to both, which
+    /// is how their band tables stay identical.
+    std::array<SpectrumAnalyzer, 2> analyzers_;
+    wxTimer                         timer_;
 
     /// When the last frame was drawn, for the interval the cursor advances by.
     ///
@@ -100,10 +166,10 @@ private:
     /// the fault this cursor exists to fix, arrived at from the other side.
     std::chrono::steady_clock::time_point lastTick_{};
 
-    /// The window handed to the analyser each frame. Held rather than allocated
-    /// per tick: 4096 floats, sixty times a second, is a pointless amount of churn
-    /// to hand the allocator.
-    std::vector<float> window_;
+    /// The windows handed to the analysers each frame, one per side. Held
+    /// rather than allocated per tick: 4096 floats, sixty times a second, is a
+    /// pointless amount of churn to hand the allocator.
+    std::array<std::vector<float>, 2> windows_;
 
     /// Whether playback is running. Separate from the timer, because the timer
     /// also stops when the widget is hidden and the two reasons must not be
@@ -114,6 +180,7 @@ private:
     wxColour barColor_{"#ff8000"};
     wxColour peakColor_{"#ff3b30"};
     bool     showPeaks_ = true;
+    Channels channels_  = Channels::Mono;
 
     /// Pixels per bar when the bands are evenly spaced.
     ///

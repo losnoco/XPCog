@@ -106,7 +106,11 @@ toolkit refuses to draw because it was forced narrower than its own minimum. It
 is registered as a single `add_test()` rather than discovered, so it can be run
 under `xvfb-run` where CMake found one; without a display it skips. Linux only
 because that is where a display can be conjured — the code under test is the
-same on all three.
+same on all three. With `XPCOG_GUI_CAPTURE=<dir>` the spectrum test also drops a
+PNG of every channel mode there through ImageMagick's `import`, which is how a
+rendering question gets answered without driving the player; under Xvfb on a
+Wayland desktop that needs `GDK_BACKEND=x11` and `WAYLAND_DISPLAY` unset, or GTK
+opens the test windows on the real screen and the captures come back black.
 
 ```sh
 ctest --preset macos-debug -R Gapless          # by ctest test name

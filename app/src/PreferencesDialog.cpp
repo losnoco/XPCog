@@ -202,7 +202,7 @@ constexpr std::array kCuratedKeys = {
     "language",
     // Visualizers
     "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode", "spectrumFloorDb",
-    "spectrumShowPeaks", "scopeChannels", "scopeColor", "scopeBackgroundColor",
+    "spectrumShowPeaks", "spectrumChannels", "scopeChannels", "scopeColor", "scopeBackgroundColor",
     "scopeStrokeWidth", "scopeGain", "scopeWindowMs", "scopeFrameRate", "scopeTrigger",
     "scopeFill", "scopeLogScale",
     // General
@@ -1602,6 +1602,21 @@ wxWindow* PreferencesDialog::buildVisualizersPane(wxWindow* parent) {
         settingChanged.publish("spectrumFreqMode");
     });
     row->add(_("Bands"), bands);
+
+    // Channels. Not Cog's -- its spectrum is the mix -- and the list is the
+    // oscilloscope's with one more entry, mirrored, which a bar chart can do
+    // and a trace cannot: the two sides meet at the axis, so a difference
+    // between them is a bar taller one way than the other. Both lists spell
+    // the shared entries the same, so the catalogue carries each once.
+    static constexpr std::array kSpectrumChannels = {
+        Choice{"mono", wxTRANSLATE("Mono")},
+        Choice{"left", wxTRANSLATE("Left")},
+        Choice{"right", wxTRANSLATE("Right")},
+        Choice{"mirrored", wxTRANSLATE("Stereo, mirrored")},
+        Choice{"stacked", wxTRANSLATE("Stereo, stacked")},
+        Choice{"overlaid", wxTRANSLATE("Stereo, overlaid")},
+    };
+    row->choice(_("Channels"), "spectrumChannels", kSpectrumChannels);
 
     // The fallbacks are the settings' own defaults: an imported Cog colour is
     // an archived NSColor and parses as nothing.

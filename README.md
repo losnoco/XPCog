@@ -157,9 +157,10 @@ request, no TLS. [`docs/REST.md`](docs/REST.md) is the reference; `xpcog-cli
 serve` runs the same API with no toolkit.
 
 **Visualisers.** A spectrum analyser and an oscilloscope, both docked panes fed
-from the same tap before the volume, both configured on Preferences →
-Visualizers; the oscilloscope's channels, trigger, fill and scale are on its
-right-click menu too. View → Show Waveform draws the playing track's shape in
+from the same tap before the volume, both able to show the mix, one side, or
+both sides at once, both configured on Preferences → Visualizers; the choice of
+channels is on each pane's right-click menu too, with the oscilloscope's
+trigger, fill and scale and the spectrum's peak markers. View → Show Waveform draws the playing track's shape in
 the seek bar, analysed once in the background and cached; Preferences →
 Appearance has its height, colours and drawing style.
 

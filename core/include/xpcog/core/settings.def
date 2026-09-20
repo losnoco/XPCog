@@ -546,6 +546,15 @@ XPCOG_SETTING(SpectrumFloorDb, double, "spectrumFloorDb", -80.0)
 /// the bars alone read as calmer.
 XPCOG_SETTING(SpectrumShowPeaks, bool, "spectrumShowPeaks", true)
 
+/// Which channels to draw: "mono" (the mix, Cog's only view), "left", "right",
+/// "mirrored" (left rising from the centre line, right falling from it),
+/// "stacked" (left above right) or "overlaid" (both on one baseline, right
+/// behind in a darker bar).
+///
+/// **No Cog counterpart** -- Cog's spectrum is the mix and nothing else. The
+/// spellings are the oscilloscope's, so the two Channels rows read the same.
+XPCOG_SETTING(SpectrumChannels, std::string, "spectrumChannels", "mono")
+
 // --- oscilloscope ---------------------------------------------------------
 //
 // **No Cog counterpart**, any of it: Cog has a spectrum and nothing else. The
