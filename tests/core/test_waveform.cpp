@@ -27,6 +27,8 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -106,6 +108,56 @@ std::vector<float> square(std::size_t frames, float left, std::optional<float> r
     }
     return out;
 }
+
+/// A DSD128 decoder as WavPack presents one: a frame is a byte per channel and
+/// the rate is the byte rate. The first `quietFrames` are 0xAA, DSD's zero,
+/// and the rest 0xFF, every bit positive, which the filter turns into its
+/// stated gain of 2.0. Both are exact patterns, so what a bucket should read
+/// is a number rather than a judgement.
+class DsdDecoder final : public IDecoder {
+public:
+    DsdDecoder(std::size_t quietFrames, std::size_t loudFrames, std::size_t chunkFrames = 4096)
+        : quiet_(quietFrames), total_(quietFrames + loudFrames), chunkFrames_(chunkFrames) {}
+
+    bool open(ISource*) override { return true; }
+
+    [[nodiscard]] TrackProperties properties() const override {
+        TrackProperties props;
+        props.format.sampleRate    = 705600.0;
+        props.format.channels      = 2;
+        props.format.channelConfig = 0x3;
+        props.format.format        = SampleFormat::DSD;
+        props.format.bitsPerSample = 1;
+        props.totalFrames          = static_cast<std::int64_t>(total_);
+        return props;
+    }
+
+    bool readAudio(AudioChunk& out) override {
+        if (cursor_ >= total_) {
+            return false;
+        }
+        const std::size_t frames = std::min(chunkFrames_, total_ - cursor_);
+        out.setFormat(properties().format);
+        std::byte* bytes = out.allocFrames(frames);
+        for (std::size_t f = 0; f < frames; ++f) {
+            const auto pattern = static_cast<std::byte>(cursor_ + f < quiet_ ? 0xAA : 0xFF);
+            bytes[f * 2]       = pattern;
+            bytes[f * 2 + 1]   = pattern;
+        }
+        out.setFrameCount(frames);
+        cursor_ += frames;
+        return true;
+    }
+
+    std::int64_t seek(std::int64_t) override { return -1; }
+    void         close() override {}
+
+private:
+    std::size_t quiet_;
+    std::size_t total_;
+    std::size_t chunkFrames_;
+    std::size_t cursor_ = 0;
+};
 
 class TempDir {
 public:
@@ -243,6 +295,30 @@ TEST_CASE("Waveform analyser folds a track that overruns its declaration into th
     REQUIRE(analyseWaveform(decoder, out, [] { return false; }));
     CHECK(out.complete());
     CHECK(out.peak[kWaveformBuckets - 1] == 128);
+}
+
+TEST_CASE("Waveform analyser decimates DSD rather than refusing it", "[waveform][dsd]") {
+    // Half silence, half full modulation: the boundary falls between buckets
+    // 511 and 512, and each half is long enough that the filter's 64 taps of
+    // settling are a rounding error in the bucket they land in.
+    const std::size_t half = kWaveformBuckets * 64;
+    DsdDecoder        decoder(half, half);
+
+    WaveformSummary out;
+    REQUIRE(analyseWaveform(decoder, out, [] { return false; }));
+    CHECK(out.complete());
+    // Frames are bytes, so the declared length is in bytes at the byte rate.
+    CHECK(out.duration == Catch::Approx(static_cast<double>(2 * half) / 705600.0));
+
+    // DSD's zero comes through as nothing, not as the step to negative full
+    // scale that priming the filter with zero bytes would produce.
+    CHECK(out.peak[0] == 0);
+    CHECK(out.peak[510] == 0);
+    CHECK(out.rms[510] == 0);
+    // Full modulation at the filter's gain of 2.0 pins the top of the scale.
+    CHECK(out.peak[600] == 255);
+    CHECK(out.rms[600] == 255);
+    CHECK(out.rms[kWaveformBuckets - 1] == 255);
 }
 
 TEST_CASE("Waveform analyser stops when cancelled", "[waveform]") {
@@ -555,6 +631,51 @@ TEST_CASE("Waveform analyser reads a real file through the registry", "[waveform
     };
     CHECK(meanRms(50, 450) == Catch::Approx(loudPeak / std::sqrt(2.0) * 255).margin(2));
     CHECK(meanRms(562, 962) == Catch::Approx(quietPeak / std::sqrt(2.0) * 255).margin(2));
+}
+
+TEST_CASE("Waveform analyser reads a real DSD file through the registry",
+          "[waveform][dsd]") {
+#ifdef XPCOG_DSD_FILE
+    const fs::path file{XPCOG_DSD_FILE};
+#else
+    const fs::path file;
+#endif
+    if (file.empty() || !fs::exists(file)) {
+        SKIP("no DSD file: configure with -DXPCOG_DSD_FILE=<path to a DSD .wv>");
+    }
+
+    // The whole file, which for an SACD rip is minutes of DSD; what this proves
+    // is that a real decoder's frames and the filter's output agree on what a
+    // frame is, which the synthetic decoder cannot. Progress is asked for so
+    // the partial snapshots run too.
+    auto opened = registry().open(Url::fromLocalPath(file), SkipCue::No, LoopPolicy::Never);
+    REQUIRE(opened);
+    const TrackProperties props = opened.decoder->properties();
+    REQUIRE(props.format.format == SampleFormat::DSD);
+
+    WaveformSummary out;
+    int             snapshots = 0;
+    REQUIRE(analyseWaveform(
+        *opened.decoder, out, [] { return false; },
+        [&](const WaveformSummary& partial) {
+            ++snapshots;
+            CHECK(partial.analysed <= kWaveformBuckets);
+        }));
+    CHECK(out.complete());
+    CHECK(out.duration == Catch::Approx(props.duration()));
+    CHECK(snapshots > 0);
+
+    // Music: something in most buckets, and nowhere the full-scale wall that
+    // reading the bytes as PCM would give.
+    std::uint32_t lit = 0;
+    std::uint32_t pinned = 0;
+    for (std::uint32_t i = 0; i < kWaveformBuckets; ++i) {
+        CHECK(out.rms[i] <= out.peak[i]);
+        lit += out.peak[i] > 0 ? 1 : 0;
+        pinned += out.rms[i] == 255 ? 1 : 0;
+    }
+    CHECK(lit > kWaveformBuckets / 2);
+    CHECK(pinned < kWaveformBuckets / 10);
 }
 
 // --- provider ----------------------------------------------------------------

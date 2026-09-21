@@ -351,7 +351,7 @@ int waveform(const std::vector<std::string>& arguments) {
             if (!xpcog::analyseWaveform(*opened.decoder, fresh, [] { return false; })) {
                 std::fprintf(stderr,
                              "xpcog-cli: '%s' has no waveform to draw (no declared "
-                             "length, or DSD)\n",
+                             "length)\n",
                              input.c_str());
                 ++failures;
                 continue;

@@ -13,6 +13,7 @@
 #pragma once
 
 #include "xpcog/core/AudioChunk.hpp"
+#include "xpcog/core/audio/DsdDecimator.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -133,7 +134,7 @@ private:
 
     /// Turns one chunk of DSD into float in `decoded_`. False if the filters
     /// could not be built.
-    bool decimateDsd(const AudioChunk& in, std::size_t frames);
+    bool decimateDsd(const AudioChunk& in);
 
     /// The channel count everything before the upmixer works in: two when the
     /// upmixer is running, the output count otherwise.
@@ -158,11 +159,9 @@ private:
 
     float gain_ = 1.0F;
 
-    /// One decimation filter per channel, built when DSD first arrives and
-    /// reset on seek. Opaque so the vendored header stays out of this one.
-    struct DsdFilters;
-    std::unique_ptr<DsdFilters> dsd_;
-    bool                        halveDsd_ = false;
+    /// Built when DSD first arrives, reset on seek.
+    std::unique_ptr<DsdDecimator> dsd_;
+    bool                          halveDsd_ = false;
 
     bool hdcdEnabled_  = true;
     bool hdcdDetected_ = false;

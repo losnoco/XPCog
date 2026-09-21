@@ -2,12 +2,14 @@
 
 #include "xpcog/core/AudioChunk.hpp"
 #include "xpcog/core/Plugin.hpp"
+#include "xpcog/core/audio/DsdDecimator.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <memory>
 
 namespace xpcog {
 namespace {
@@ -43,8 +45,7 @@ bool analyseWaveform(IDecoder& decoder, WaveformSummary& out,
                      const std::function<bool()>&                       cancelled,
                      const std::function<void(const WaveformSummary&)>& progress) {
     const TrackProperties props = decoder.properties();
-    if (props.totalFrames <= 0 || props.format.format == SampleFormat::DSD ||
-        props.format.sampleRate <= 0.0) {
+    if (props.totalFrames <= 0 || props.format.sampleRate <= 0.0) {
         return false;
     }
 
@@ -57,10 +58,14 @@ bool analyseWaveform(IDecoder& decoder, WaveformSummary& out,
     std::vector<Accumulator> sums(out.bucketCount);
     const auto totalFrames = static_cast<std::uint64_t>(props.totalFrames);
 
-    AudioChunk         chunk;
-    std::vector<float> samples;
-    std::uint64_t      frame    = 0;
-    auto               lastTold = std::chrono::steady_clock::now();
+    AudioChunk                    chunk;
+    std::vector<float>            samples;
+    // Built the first time a DSD chunk arrives, which for a DSD track is the
+    // first chunk. The decoder's frames are bytes for DSD and the filter
+    // gives one float per byte, so the bucket arithmetic below is the same.
+    std::unique_ptr<DsdDecimator> dsd;
+    std::uint64_t                 frame    = 0;
+    auto                          lastTold = std::chrono::steady_clock::now();
 
     while (true) {
         if (cancelled && cancelled()) {
@@ -75,12 +80,22 @@ bool analyseWaveform(IDecoder& decoder, WaveformSummary& out,
             continue;
         }
         if (chunk.format().format == SampleFormat::DSD) {
-            return false;
-        }
-
-        samples.resize(float32SampleCount(chunk));
-        if (convertToFloat32(chunk, samples) == 0) {
-            return false;
+            // At the filter's own gain of 2.0, which is what plays unless the
+            // listener has asked for DSD halved. The summary is cached on
+            // disk, so it does not follow that setting; a hot recording that
+            // would clip in playback clips at the top of the bar too, which
+            // is the honest picture.
+            if (dsd == nullptr) {
+                dsd = std::make_unique<DsdDecimator>();
+            }
+            if (!dsd->process(chunk, samples)) {
+                return false;
+            }
+        } else {
+            samples.resize(float32SampleCount(chunk));
+            if (convertToFloat32(chunk, samples) == 0) {
+                return false;
+            }
         }
 
         const float* in = samples.data();

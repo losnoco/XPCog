@@ -48,10 +48,11 @@ struct WaveformSummary {
 /// Reads `decoder` from where it is to the end and fills `out`.
 ///
 /// Returns false, leaving `out` unspecified, when the track cannot be summarised
-/// -- it has no declared length (a stream), or it is DSD, which has no PCM to
-/// measure without the decimation filter -- or when `cancelled()` answered true
-/// between two reads. The decoder is read where it stands, so open it fresh and
-/// with LoopPolicy::Never, or a looping format never ends.
+/// -- it has no declared length (a stream) -- or when `cancelled()` answered
+/// true between two reads. DSD is run through the same decimation filter the
+/// player uses, so a one-bit track gets a bar like any other. The decoder is
+/// read where it stands, so open it fresh and with LoopPolicy::Never, or a
+/// looping format never ends.
 ///
 /// `progress`, if given, is called on the calling thread at most every hundred
 /// milliseconds or so with `out` as far as it has got, `analysed` telling how

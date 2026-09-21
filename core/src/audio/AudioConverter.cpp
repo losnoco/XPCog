@@ -5,7 +5,6 @@
 
 #include "xpcog/core/audio/SampleConvert.hpp"
 
-#include <dsd2pcm.h>
 #include <hdcd_decode2.h>
 #include <lpc.h>
 #include <soxr.h>
@@ -192,18 +191,6 @@ public:
     FreeSurround decoder;
 };
 
-struct AudioConverter::DsdFilters {
-    /// One per channel: the filter carries 64 taps of history, and a stereo
-    /// stream's two channels are independent signals.
-    std::vector<dsd2pcm_state*> channels;
-
-    ~DsdFilters() {
-        for (dsd2pcm_state* filter : channels) {
-            dsd2pcm_free(filter);
-        }
-    }
-};
-
 struct AudioConverter::Hdcd {
     hdcd_state_stereo_t state{};
     bool                started = false;
@@ -304,12 +291,9 @@ void AudioConverter::reset() {
     hdcdDetected_  = false;
 
     // The filters keep 64 taps of the old position, and a seek makes those the
-    // wrong 64 taps. Reset rather than freed: rebuilding means recomputing the
-    // lookup tables, and the far side of a seek is the same DSD stream.
+    // wrong 64 taps.
     if (dsd_ != nullptr) {
-        for (dsd2pcm_state* filter : dsd_->channels) {
-            dsd2pcm_reset(filter);
-        }
+        dsd_->reset();
     }
 
     if (fsurround_ != nullptr) {
@@ -359,32 +343,16 @@ bool AudioConverter::configureFor(const AudioFormat& input) {
     return true;
 }
 
-bool AudioConverter::decimateDsd(const AudioChunk& in, std::size_t frames) {
-    const std::uint32_t channels = in.format().channels;
-    if (channels == 0) {
-        return false;
-    }
-
+bool AudioConverter::decimateDsd(const AudioChunk& in) {
     if (dsd_ == nullptr) {
-        dsd_ = std::make_unique<DsdFilters>();
+        dsd_ = std::make_unique<DsdDecimator>();
     }
-    while (dsd_->channels.size() < channels) {
-        dsd2pcm_state* filter = dsd2pcm_alloc();
-        if (filter == nullptr) {
-            return false;
-        }
-        dsd_->channels.push_back(filter);
-    }
-
     // One byte of DSD is eight one-bit samples and becomes one float, which is
     // where the eight-to-one decimation happens and why the rate does not
     // change here: a chunk that arrives at 705,600 Hz leaves at 705,600 Hz,
     // and the resampler downstream takes it to the device's rate.
-    decoded_.resize(frames * channels);
-    const auto* bytes = reinterpret_cast<const std::uint8_t*>(in.bytes().data());
-    for (std::uint32_t channel = 0; channel < channels; ++channel) {
-        dsd2pcm_process(dsd_->channels[channel], bytes, channel, channels,
-                        decoded_.data(), channel, channels, frames);
+    if (!dsd_->process(in, decoded_)) {
+        return false;
     }
 
     if (halveDsd_) {
@@ -421,7 +389,7 @@ bool AudioConverter::process(const AudioChunk& in, std::vector<float>& out) {
         // stateful across chunks, so it cannot live in the stateless sample
         // conversion. What it produces is ordinary float and the rest of this
         // function does not know the difference.
-        if (!decimateDsd(in, frames)) {
+        if (!decimateDsd(in)) {
             return false;
         }
     } else if (wantHdcd) {
