@@ -24,9 +24,9 @@
 // deliberately not used yet, because a guessed match shown as the song's
 // lyrics is worse than an honest blank.
 //
-// **Synced lyrics are carried and not yet shown.** The reply has both, and the
-// panel does not yet have a way to follow playback through an LRC file, so
-// `synced` rides along in the struct for whoever builds that.
+// **Both copies are carried.** The reply has plain and synced words, and the
+// pane prefers the synced ones, which it follows through playback; see
+// xpcog/core/lyrics/Lrc.hpp for the format.
 //
 // The server reads a `Lrclib-Client` header to know which program is asking,
 // and its documentation asks clients to send one naming the program, its

@@ -61,3 +61,12 @@ TEST_CASE("ordinary lyrics pass through unchanged", "[lyrics]") {
     CHECK(normaliseLyrics(spanish) == spanish);
     CHECK(normaliseLyrics("\n" + spanish + "\n\n") == spanish);
 }
+
+TEST_CASE("timed lyrics are drawn one line per stamp, breaks and all", "[lyrics]") {
+    // The highlight finds line N of the file as line N of the text, so nothing
+    // may be trimmed or merged -- not the leading break, not the repeat.
+    const auto lyrics =
+        xpcog::parseLrc("[00:00.00]\n[00:01.00][00:05.00]chorus\n[00:03.00]verse\n[00:07.00]\n");
+    REQUIRE(lyrics);
+    CHECK(xpcog::app::syncedDisplayText(*lyrics) == "\nchorus\nverse\nchorus\n");
+}

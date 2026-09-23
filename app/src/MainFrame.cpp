@@ -445,7 +445,7 @@ void MainFrame::buildUi() {
     // ones along the bottom and the tall column of fields at the right.
     equalizer_ = new EqualizerPanel(dockHost_, settings_);
     info_      = new InfoPanel(dockHost_, library_.get());
-    lyrics_    = new LyricsPanel(dockHost_);
+    lyrics_    = new LyricsPanel(dockHost_, [this] { return playback_->position(); });
     applyLyricsLookup();
     // Both visualisers read their settings themselves, and write the few
     // their context menus offer.
@@ -1288,7 +1288,11 @@ void MainFrame::refreshLyrics() {
     if (!paneShown(lyrics_)) {
         return;
     }
-    lyrics_->showEntry(playlist_.find(panelTrackId()));
+    // Timed lyrics are followed only for the track that is playing; for any
+    // other the position is some other song's.
+    const TrackId id = panelTrackId();
+    lyrics_->setTimed(settings_.LyricsSynced());
+    lyrics_->showEntry(playlist_.find(id), id != kInvalidTrackId && id == currentTrack_);
 }
 
 void MainFrame::restorePlayback() {
@@ -1734,6 +1738,13 @@ void MainFrame::bindCommands() {
         }
     });
 
+    // Written to the setting and redrawn at once; the pane reads the setting
+    // on every redraw, so nothing else needs telling.
+    on(ViewTimedLyrics, [this] {
+        settings_.setLyricsSynced(!settings_.LyricsSynced());
+        refreshLyrics();
+    });
+
     // Both panes redraw, because the mode is what decides which track they show
     // and neither would otherwise notice until the next selection or track
     // change -- which, for someone who switched to Follow Playback precisely so
@@ -1875,6 +1886,8 @@ void MainFrame::bindUpdateUi() {
     update(ViewInfo, [this](wxUpdateUIEvent& event) { event.Check(paneShown(info_)); });
     update(ViewLyrics,
            [this](wxUpdateUIEvent& event) { event.Check(paneShown(lyrics_)); });
+    update(ViewTimedLyrics,
+           [this](wxUpdateUIEvent& event) { event.Check(settings_.LyricsSynced()); });
     // Read from the setting rather than from a remembered flag, so the tick is
     // right on the first idle after launch without anything having to restore it.
     update(ViewFollowSelection, [this](wxUpdateUIEvent& event) {

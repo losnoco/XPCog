@@ -85,7 +85,7 @@ SettingEffect effectOf(std::string_view key) {
     if (key == "volume") {
         return {Effect::Volume, Applies::Immediately};
     }
-    if (key == "panelFollowMode") {
+    if (key == "panelFollowMode" || key == "lyricsSynced") {
         return {Effect::RefreshPanels, Applies::Immediately};
     }
     if (key == "floatingMiniWindow") {

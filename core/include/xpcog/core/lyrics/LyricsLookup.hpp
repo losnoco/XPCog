@@ -60,7 +60,7 @@ public:
     struct Answer {
         Outcome     outcome = Outcome::NotFound;
         std::string lyrics;  ///< Plain, unsynced; empty unless Found.
-        std::string synced;  ///< LRC, when the service had one; carried, not yet shown.
+        std::string synced;  ///< LRC, when the service had one; the pane prefers it.
         LyricsError error;   ///< Filled in when Failed.
     };
 

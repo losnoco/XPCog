@@ -48,6 +48,7 @@ add_library(xpcog-core STATIC
     src/Md5.cpp
     src/net/HttpEncoding.cpp
     src/PlayMonitor.cpp
+    src/lyrics/Lrc.cpp
     src/lyrics/LrclibClient.cpp
     src/lyrics/LyricsLookup.cpp
     src/scrobble/LastFmClient.cpp

@@ -24,8 +24,8 @@ struct StoredLyrics {
     bool known = false;
     /// The entry says the track has no words.
     bool instrumental = false;
-    /// Plain and LRC, either or both possibly empty. The synced text is kept
-    /// against the day the panel can follow it; nothing reads it yet.
+    /// Plain and LRC, either or both possibly empty. The pane shows the LRC
+    /// when there is one and follows it through playback.
     std::string plain;
     std::string synced;
     /// Unix seconds when the answer arrived. What decides whether a "not

@@ -225,7 +225,8 @@ ListenBrainz; this is new work on the queue Cog also does not have.
 ## Lyrics
 
 The Lyrics pane shows what the file carries — the `unsyncedlyrics` tag, from
-FLAC, Vorbis, Opus and ID3's USLT frame — and, when it carries nothing, can ask
+FLAC, Vorbis, Opus and ID3's USLT frame, or a `.lrc` file of the same name
+beside it — and, when it carries nothing, can ask
 [LRCLIB](https://lrclib.net/) for the words. That is Preferences → General →
 *Look up lyrics on LRCLIB when the file has none*, **off by default**: on, the
 artist, title, album and length of the track you are looking at are sent to a
@@ -245,10 +246,30 @@ its turn rather than opening a second connection.
 The lookup is exact — LRCLIB's `/api/get`, matched on the names the track was
 published under, with the length to within two seconds — rather than a search,
 because a guessed match shown as the song's lyrics is worse than an honest
-blank. The service also returns timed LRC lyrics; those are stored beside the
-plain ones for a pane that can one day follow them, and nothing shows them
-yet. `lrclibUrl` names the server, since it is open source and can be run at
+blank. `lrclibUrl` names the server, since it is open source and can be run at
 home. Cog has no online lyrics; this is new work.
+
+**Timed lyrics are followed.** When the words are LRC — `[01:23.45]` in front
+of each line — the pane marks the line being sung and keeps it in view while
+that track plays; for any other track it shows the same lines unmarked. LRC
+can come from three places: the lyrics tag itself, which beets, MusicBee and
+similar taggers fill with LRC rather than plain text; a `.lrc` file beside the
+track, as `lrcget` and most lyrics plugins write it; and LRCLIB, whose timed
+copy is preferred over its plain one. Between the file's own sources, timed
+beats plain: the tag if it is LRC, then the `.lrc` file, then the tag as plain
+text, and only then the service. Whether a tag is LRC is decided by reading
+it — timed lines have to outnumber untimed ones — so plain lyrics with a
+`[Chorus]` marker stay plain. The format's `[offset:]` header is honoured,
+several stamps on one line repeat it, and enhanced LRC's per-word stamps are
+dropped: the line is followed, not the syllable. A `.lrc` is looked for only
+beside a local file that is one track — not for a cue sheet's span or a
+subsong, which the file's times would not match. Following pauses while text
+in the pane is selected, so copying a verse does not have it scrolled away.
+View → *Timed Lyrics* (also Preferences → General, `lyricsSynced`) turns this
+off: timed words are then shown as plain text with their stamps stripped, and
+the tag's own words go back ahead of a `.lrc` file, since timing was the only
+reason the file ranked above them.
+ID3's binary SYLT frame is not read. Cog shows no timed lyrics either.
 
 ## Remote control
 

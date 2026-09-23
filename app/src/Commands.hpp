@@ -92,6 +92,7 @@ enum CommandId : int {
     ViewSpeed,
     ViewInfo,
     ViewLyrics,
+    ViewTimedLyrics,
     ViewFollowSelection,
     ViewFollowPlayback,
     ViewSc55Panel,

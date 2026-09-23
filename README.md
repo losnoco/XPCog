@@ -148,7 +148,9 @@ next day.
 
 **Lyrics.** The Lyrics pane shows what the file carries, and can ask LRCLIB for
 the words of a track that carries none — off by default, exact-match only, and
-every answer kept in the library so a track is asked about once.
+every answer kept in the library so a track is asked about once. Timed LRC
+lyrics — in the tag, in a `.lrc` beside the file, or from LRCLIB — are followed
+line by line while the track plays.
 
 **Remote control.** A REST API over the transport, playlist, equaliser, settings
 and cover art, with a generated OpenAPI document and a Swagger page. Off until

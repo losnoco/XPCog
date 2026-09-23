@@ -41,7 +41,7 @@ enum class Effect {
     EqualizerCurve,   ///< Reload, and refresh the window's sliders with it.
     ReopenOutput,     ///< Move the running stream to the device now named.
     RefreshSpeed,     ///< The speed popup shows a stale number until told.
-    RefreshPanels,    ///< Info and Lyrics decide what to show from this.
+    RefreshPanels,    ///< Info and Lyrics decide what to show, or how, from this.
     RefreshSpectrum,  ///< The analyser holds its own copy of these.
     RefreshScope,     ///< The oscilloscope holds its own copy of these.
     GenreEqualizer,   ///< Apply the playing track's genre curve at once.

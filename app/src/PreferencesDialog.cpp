@@ -218,8 +218,8 @@ constexpr std::array kCuratedKeys = {
     // Scrobbling. Each switch sits on its service's pane beside the account it
     // means something for; the credentials are in the password store.
     "enableAudioScrobbler", "enableListenBrainz", "listenBrainzUrl",
-    // Lyrics, on General.
-    "enableLrclib", "lrclibUrl",
+    // Lyrics, on General; `lyricsSynced` is also View -> Timed Lyrics.
+    "lyricsSynced", "enableLrclib", "lrclibUrl",
 };
 
 /// Not settings at all, but internal state that happens to live in the same
@@ -1058,6 +1058,12 @@ wxWindow* PreferencesDialog::buildGeneralPane(wxWindow* parent) {
     // listener's to throw. Cog has no equivalent row; its lyrics window shows
     // the tag or nothing.
     row->heading(_("Lyrics"));
+    // How, before where from: it applies to the file's own lyrics as much as
+    // to LRCLIB's, so it does not belong under the switch that sends
+    // something out.
+    row->toggle(_("Follow timed lyrics line by line"), "lyricsSynced");
+    row->note(_("Off, timed lyrics are shown as plain text, and a file's own "
+                "lyrics tag is preferred over a .lrc file beside it."));
     auto* lyricsBox = static_cast<wxCheckBox*>(
         row->toggle(_("Look up lyrics on LRCLIB when the file has none"), "enableLrclib")
             .control);

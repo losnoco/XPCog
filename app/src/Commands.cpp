@@ -72,6 +72,10 @@ const std::vector<MenuItem>& layout() {
         // what they do, so it is "&Lyrics" here. Ctrl+L is Open URL, so the
         // shifted form is not a second choice -- it is Cog's own (Cmd+Shift+L).
         {nullptr, ViewLyrics, wxTRANSLATE("&Lyrics"), "Ctrl+Shift+L", ItemKind::Check},
+        // How that pane shows timed lyrics: followed, or as plain text. Under
+        // the pane it governs, and above the radio pair rather than inside it,
+        // since anything between those two breaks their group.
+        {nullptr, ViewTimedLyrics, wxTRANSLATE("&Timed Lyrics"), "", ItemKind::Check},
         // Which track those two describe. A radio pair rather than one checkable
         // item, because "Follow Playback" unticked does not say what it does
         // instead -- and what it does instead is not "nothing", it is the other

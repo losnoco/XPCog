@@ -3792,9 +3792,26 @@ All of these are also documented at the call site.
   second-guessed. Off by default (`enableLrclib`), for the reason the
   scrobbling switches are: it sends track metadata to a server. Exact match
   only, no `/api/search`: a guessed match shown as the song's lyrics is worse
-  than an honest blank. Synced lyrics are stored and not yet shown.
-  `[lrclib]` pins the protocol and the cache rules against the scripted
-  transport and a clock that is a number.
+  than an honest blank. The service's synced copy is preferred and followed;
+  see the next entry. `[lrclib]` pins the protocol and the cache rules
+  against the scripted transport and a clock that is a number.
+
+- **The Lyrics pane follows timed lyrics; Cog's window shows text.** New work.
+  `parseLrc()` (`core/include/xpcog/core/lyrics/Lrc.hpp`) reads LRC as real
+  files write it and also *decides* whether text is LRC, because a lyrics tag
+  does not say: timed lines must outnumber untimed ones, which keeps plain
+  lyrics with `[Chorus]` markers plain. Sources, in order: the tag when it is
+  LRC, a `.lrc` of the same name beside a local single-track file
+  (`readSidecarLrc()`, never for a URL with a fragment), the tag as plain
+  text, then LRCLIB's synced copy over its plain one. The pane keeps its
+  `wxTextCtrl` (now `wxTE_RICH2`, for Windows) and styles the sung line in
+  place, polling `PlaybackController::position()` on a 100 ms timer only
+  while the track on screen is the one playing; line offsets are counted from
+  the text rather than asked of the control, because `XYToPosition()` means a
+  wrapped visual line on Windows. Following stops while text is selected.
+  `lyricsSynced` (View -> Timed Lyrics, on by default) shows timed words as
+  plain text instead and puts the tag back ahead of the `.lrc`. SYLT is not
+  read. `[lrc]` covers the parser and the sidecar.
 
 - **The seek bar can draw the track's waveform; Cog's cannot.** Cog's position
   slider is a plain `NSSlider` with a time tooltip (`Window/PositionSlider.m`),

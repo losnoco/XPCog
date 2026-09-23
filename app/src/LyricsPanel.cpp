@@ -10,6 +10,7 @@
 #include <wx/textctrl.h>
 #include <wx/translation.h>
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 
@@ -43,28 +44,116 @@ constexpr const char* kBusy =
 constexpr const char* kRefused =
     wxTRANSLATE("This file carries no lyrics. LRCLIB could not answer (HTTP %d).");
 
-/// What the pane shows for an answer, and whether the words are the service's.
-[[nodiscard]] wxString bodyOf(const LyricsLookup::Answer& answer, bool& fromService) {
-    fromService = false;
+constexpr const char* kFromLrclib  = wxTRANSLATE("From LRCLIB");
+constexpr const char* kFromSidecar = wxTRANSLATE("From the .lrc file beside the track");
+
+/// How often a followed track's position is read. The sung line changes every
+/// few seconds; a tenth of one is late by less than anyone reading can notice,
+/// and the work per tick is a binary search.
+constexpr int kTickMs = 100;
+
+/// Lines kept in view below the one being sung, so that what comes next is on
+/// screen before it is needed rather than scrolled up from the bottom edge as
+/// it starts.
+constexpr std::size_t kLookAhead = 3;
+
+/// What the pane draws: the body, the line under it naming where the words came
+/// from (empty for the tag), and the timed words the body was made from, if
+/// they were timed.
+struct Drawn {
+    wxString                    body;
+    wxString                    source;
+    std::optional<SyncedLyrics> synced;
+};
+
+/// What the redraw guard compares. Whether the words are timed is part of it:
+/// a timed file with no breaks and no repeats reads the same either way, and
+/// switching between the two must still redraw.
+[[nodiscard]] std::string keyOf(const std::string& heading, const wxString& body,
+                                bool timed) {
+    return heading + (timed ? "\n\x01" : "\n") + toUtf8(body);
+}
+
+[[nodiscard]] Drawn plain(const std::string& text, wxString source) {
+    Drawn drawn;
+    drawn.body   = toWx(normaliseLyrics(text));
+    drawn.source = std::move(source);
+    return drawn;
+}
+
+[[nodiscard]] Drawn timed(SyncedLyrics lyrics, wxString source) {
+    Drawn drawn;
+    drawn.body   = toWx(syncedDisplayText(lyrics));
+    drawn.source = std::move(source);
+    drawn.synced = std::move(lyrics);
+    return drawn;
+}
+
+/// Timed words as the pane should draw them: followed, or stripped to text.
+[[nodiscard]] Drawn either(SyncedLyrics lyrics, wxString source, bool asTimed) {
+    if (asTimed) {
+        return timed(std::move(lyrics), std::move(source));
+    }
+    return plain(lyrics.plainText(), std::move(source));
+}
+
+/// What the file has to show, in the order the header comment gives; an empty
+/// body when it has nothing.
+[[nodiscard]] Drawn fromFile(const PlaylistEntry& entry, bool asTimed) {
+    const std::string& tag = entry.unsyncedLyrics.str();
+    if (auto lyrics = parseLrc(tag)) {
+        return either(std::move(*lyrics), wxString{}, asTimed);
+    }
+    // Shown as text, the tag's words are as good as the file's and they are
+    // the listener's own; only timing put the file ahead of them.
+    if (!asTimed && !normaliseLyrics(tag).empty()) {
+        return plain(tag, wxString{});
+    }
+    if (const auto sidecar = readSidecarLrc(entry.url)) {
+        if (auto lyrics = parseLrc(*sidecar)) {
+            return either(std::move(*lyrics), trUtf8(kFromSidecar), asTimed);
+        }
+    }
+    return plain(tag, wxString{});
+}
+
+/// What the pane shows for an answer from the service.
+[[nodiscard]] Drawn drawnOf(const LyricsLookup::Answer& answer, bool asTimed) {
+    Drawn drawn;
     switch (answer.outcome) {
-    case LyricsLookup::Outcome::Found:
-        fromService = true;
-        return toWx(normaliseLyrics(answer.lyrics));
+    case LyricsLookup::Outcome::Found: {
+        auto lyrics = parseLrc(answer.synced);
+        if (lyrics && asTimed) {
+            return timed(std::move(*lyrics), trUtf8(kFromLrclib));
+        }
+        // The service derives a plain copy from a timed one, but an entry
+        // uploaded with only the timed file is not guaranteed to carry it.
+        if (normaliseLyrics(answer.lyrics).empty() && lyrics) {
+            return plain(lyrics->plainText(), trUtf8(kFromLrclib));
+        }
+        return plain(answer.lyrics, trUtf8(kFromLrclib));
+    }
     case LyricsLookup::Outcome::Instrumental:
-        return trUtf8(kInstrumental);
+        drawn.body = trUtf8(kInstrumental);
+        return drawn;
     case LyricsLookup::Outcome::NotFound:
-        return trUtf8(kNotFound);
+        drawn.body = trUtf8(kNotFound);
+        return drawn;
     case LyricsLookup::Outcome::Failed:
         break;
     }
     switch (answer.error.kind) {
     case LyricsError::Kind::Transport:
-        return trUtf8(kUnreachable);
+        drawn.body = trUtf8(kUnreachable);
+        break;
     case LyricsError::Kind::Transient:
-        return trUtf8(kBusy);
+        drawn.body = trUtf8(kBusy);
+        break;
     default:
-        return wxString::Format(trUtf8(kRefused), answer.error.code);
+        drawn.body = wxString::Format(trUtf8(kRefused), answer.error.code);
+        break;
     }
+    return drawn;
 }
 
 }  // namespace
@@ -104,7 +193,22 @@ std::string normaliseLyrics(std::string text) {
     return out;
 }
 
-LyricsPanel::LyricsPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY) {
+std::string syncedDisplayText(const SyncedLyrics& lyrics) {
+    // Every line, breaks included, and nothing trimmed from the ends: line N
+    // of this text is line N of the file, which is the whole of what the
+    // highlight needs to find it.
+    std::string out;
+    for (std::size_t i = 0; i < lyrics.lines.size(); ++i) {
+        if (i > 0) {
+            out.push_back('\n');
+        }
+        out += lyrics.lines[i].text;
+    }
+    return out;
+}
+
+LyricsPanel::LyricsPanel(wxWindow* parent, std::function<double()> position)
+    : wxPanel(parent, wxID_ANY), position_(std::move(position)), timer_(this) {
     // Which track these belong to. Cog's window needs no such line -- it is a
     // window you opened about the track you were looking at -- but a pane that
     // follows the selection changes underneath you as you arrow down the
@@ -120,14 +224,17 @@ LyricsPanel::LyricsPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY) {
     //
     // No wxHSCROLL, which is what makes it wrap; with it, a long line would run
     // off the side of a pane the reader has deliberately made narrow.
+    //
+    // wxTE_RICH2 so the sung line can be styled: Windows' plain edit control
+    // has one style for all of its text. GTK and macOS ignore the flag.
     text_ = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
                            wxDefaultSize,
-                           wxTE_MULTILINE | wxTE_READONLY | wxTE_BESTWRAP);
+                           wxTE_MULTILINE | wxTE_READONLY | wxTE_BESTWRAP | wxTE_RICH2);
 
     // Under the text rather than in the heading, and hidden rather than blank
     // when the words are the file's own: the heading names the track, and
     // "Artist -- Title -- LRCLIB" reads as a third name.
-    source_ = new wxStaticText(this, wxID_ANY, _("From LRCLIB"));
+    source_ = new wxStaticText(this, wxID_ANY, wxEmptyString);
     source_->SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
     source_->Hide();
 
@@ -139,8 +246,12 @@ LyricsPanel::LyricsPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY) {
 
     alive_ = std::make_shared<int>(0);
 
-    showEntry(nullptr);
+    Bind(wxEVT_TIMER, [this](wxTimerEvent&) { tick(); });
+
+    showEntry(nullptr, false);
 }
+
+LyricsPanel::~LyricsPanel() { timer_.Stop(); }
 
 void LyricsPanel::setLookup(LyricsLookup* lookup) {
     lookup_ = lookup;
@@ -170,14 +281,15 @@ std::optional<LyricsQuery> LyricsPanel::queryFor(const PlaylistEntry& entry) {
     return query;
 }
 
-void LyricsPanel::showEntry(const PlaylistEntry* entry) {
+void LyricsPanel::showEntry(const PlaylistEntry* entry, bool playing) {
+    playing_ = playing && entry != nullptr;
+
     std::string heading;
-    // A wxString rather than a std::string, because most of the things it can
-    // hold come out of the catalogue. normaliseLyrics() stays on std::string:
-    // it is the part with a test on it, and what a tagger wrote is not
-    // language this program chose.
-    wxString body;
-    bool     fromService = false;
+    // The body is a wxString rather than a std::string, because most of the
+    // things it can hold come out of the catalogue. normaliseLyrics() stays on
+    // std::string: it is the part with a test on it, and what a tagger wrote
+    // is not language this program chose.
+    Drawn drawn;
 
     // Set when the track on screen has to be asked about; the key the answer
     // must still match to be drawn.
@@ -185,13 +297,13 @@ void LyricsPanel::showEntry(const PlaylistEntry* entry) {
     std::string                askKey;
 
     if (entry == nullptr) {
-        body = trUtf8(kNoTrack);
+        drawn.body = trUtf8(kNoTrack);
     } else {
         heading = entry->artist.empty() ? entry->title()
                                         : entry->artist.str() + " \xE2\x80\x94 " + entry->title();
-        body    = toWx(normaliseLyrics(entry->unsyncedLyrics));
-        if (body.IsEmpty()) {
-            body = trUtf8(kNoLyrics);
+        drawn   = fromFile(*entry, timed_);
+        if (drawn.body.IsEmpty()) {
+            drawn.body = trUtf8(kNoLyrics);
             // The file has none. The service is asked only now -- a tag is the
             // listener's own and is never second-guessed -- and only about a
             // track it could know.
@@ -199,10 +311,10 @@ void LyricsPanel::showEntry(const PlaylistEntry* entry) {
                 if (auto query = queryFor(*entry)) {
                     askKey = LyricsLookup::keyOf(*query);
                     if (const auto known = lookup_->cached(*query)) {
-                        body = bodyOf(*known, fromService);
+                        drawn = drawnOf(*known, timed_);
                     } else {
-                        body = trUtf8(kLooking);
-                        ask  = std::move(query);
+                        drawn.body = trUtf8(kLooking);
+                        ask        = std::move(query);
                     }
                 }
             }
@@ -214,15 +326,17 @@ void LyricsPanel::showEntry(const PlaylistEntry* entry) {
     // Keyed on both halves, because the same lyrics under a different heading is a
     // different track -- two rips of one song, or a file appearing twice. A
     // redraw of a track still being asked about lands here too, with the same
-    // key, and must not ask again.
-    std::string key = heading + '\n' + toUtf8(body);
+    // key, and must not ask again. So does the track on screen starting or
+    // stopping, which changes whether it is followed and nothing else.
+    std::string key = keyOf(heading, drawn.body, drawn.synced.has_value());
     if (key == shownKey_) {
+        updateFollowing();
         return;
     }
 
     shownHeading_ = heading;
     heading_->SetLabel(toWx(heading));
-    present(body, fromService);
+    present(drawn.body, drawn.source, std::move(drawn.synced));
 
     // Answered, or being answered, for a different track than before: the key
     // an arriving answer has to match is this one now, or none.
@@ -253,13 +367,33 @@ void LyricsPanel::showAnswer(const std::string& key, const LyricsLookup::Answer&
     }
     awaiting_.clear();
 
-    bool           fromService = false;
-    const wxString body        = bodyOf(answer, fromService);
-    present(body, fromService);
+    Drawn drawn = drawnOf(answer, timed_);
+    present(drawn.body, drawn.source, std::move(drawn.synced));
 }
 
-void LyricsPanel::present(const wxString& body, bool fromService) {
-    shownKey_ = shownHeading_ + '\n' + toUtf8(body);
+void LyricsPanel::present(const wxString& body, const wxString& source,
+                          std::optional<SyncedLyrics> synced) {
+    shownKey_ = keyOf(shownHeading_, body, synced.has_value());
+
+    // Replacing the value drops every style, so whatever was marked as sung is
+    // not any more.
+    sung_ = SyncedLyrics::npos;
+    synced_ = std::move(synced);
+    lineStarts_.clear();
+    lineLengths_.clear();
+    if (synced_) {
+        // Positions counted the way the control counts them: in wxString
+        // characters, one for each line break. Counting here rather than
+        // asking the control, because XYToPosition() means the wrapped visual
+        // line on Windows and the logical one on GTK.
+        long at = 0;
+        for (const LrcLine& line : synced_->lines) {
+            const long length = static_cast<long>(toWx(line.text).length());
+            lineStarts_.push_back(at);
+            lineLengths_.push_back(length);
+            at += length + 1;
+        }
+    }
 
     text_->SetValue(body);
     // SetValue leaves the insertion point at the end on some platforms, and the
@@ -268,12 +402,81 @@ void LyricsPanel::present(const wxString& body, bool fromService) {
     text_->SetInsertionPoint(0);
     text_->ShowPosition(0);
 
-    source_->Show(fromService);
+    source_->SetLabel(source);
+    source_->Show(!source.IsEmpty());
 
     // The heading is a single line whose text just changed length, and the
     // source line has just appeared or gone; without this the sizer keeps the
     // layout it computed for the previous track.
     Layout();
+
+    updateFollowing();
+}
+
+void LyricsPanel::updateFollowing() {
+    if (!playing_ || !synced_ || !position_) {
+        timer_.Stop();
+        if (sung_ != SyncedLyrics::npos) {
+            styleLine(sung_, false);
+            sung_ = SyncedLyrics::npos;
+        }
+        return;
+    }
+    if (!timer_.IsRunning()) {
+        timer_.Start(kTickMs);
+    }
+    tick();
+}
+
+void LyricsPanel::tick() {
+    // A pane docked out of sight keeps its timer -- MainFrame redraws it on the
+    // way back in -- but has nothing to do meanwhile.
+    if (!synced_ || !position_ || !IsShownOnScreen()) {
+        return;
+    }
+    const std::size_t line = synced_->lineAt(position_());
+    if (line == sung_) {
+        return;
+    }
+    if (sung_ != SyncedLyrics::npos) {
+        styleLine(sung_, false);
+    }
+    sung_ = line;
+    if (line == SyncedLyrics::npos) {
+        return;
+    }
+    styleLine(line, true);
+
+    // Left alone while the reader has something selected: they are copying
+    // it, and scrolling it away mid-drag is the pane working against them.
+    long from = 0;
+    long to   = 0;
+    text_->GetSelection(&from, &to);
+    if (from != to) {
+        return;
+    }
+    // Ahead first, then the line itself: ShowPosition() scrolls as little as
+    // it can, so this leaves the lines to come in view without ever pushing
+    // the sung one out of it.
+    const std::size_t ahead = std::min(line + kLookAhead, lineStarts_.size() - 1);
+    text_->ShowPosition(lineStarts_[ahead]);
+    text_->ShowPosition(lineStarts_[line]);
+}
+
+void LyricsPanel::styleLine(std::size_t index, bool sung) {
+    if (index >= lineStarts_.size() || lineLengths_[index] == 0) {
+        return;
+    }
+    wxTextAttr attr;
+    if (sung) {
+        attr.SetTextColour(wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHT));
+        attr.SetFontWeight(wxFONTWEIGHT_BOLD);
+    } else {
+        attr.SetTextColour(text_->GetForegroundColour());
+        attr.SetFontWeight(wxFONTWEIGHT_NORMAL);
+    }
+    const long start = lineStarts_[index];
+    text_->SetStyle(start, start + lineLengths_[index], attr);
 }
 
 }  // namespace xpcog::app

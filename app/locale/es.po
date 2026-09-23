@@ -406,6 +406,10 @@ msgstr "&Información"
 msgid "&Lyrics"
 msgstr "&Letras"
 
+#: app/src/Commands.cpp
+msgid "&Timed Lyrics"
+msgstr "Letras si&ncronizadas"
+
 #: app/src/Commands.cpp:89
 msgid "Panels Follow &Selection"
 msgstr "Los paneles siguen la &selección"
@@ -836,6 +840,10 @@ msgstr "Este archivo no lleva letra. LRCLIB no pudo responder (HTTP %d)."
 #: app/src/LyricsPanel.cpp
 msgid "From LRCLIB"
 msgstr "De LRCLIB"
+
+#: app/src/LyricsPanel.cpp
+msgid "From the .lrc file beside the track"
+msgstr "Del archivo .lrc junto a la pista"
 
 #: app/src/MainFrame.cpp:124
 msgid "Looking for files…"
@@ -1564,6 +1572,19 @@ msgstr "Esta compilación no incluye los informes de fallos."
 #: app/src/PreferencesDialog.cpp
 msgid "Look up lyrics on LRCLIB when the file has none"
 msgstr "Buscar la letra en LRCLIB cuando el archivo no la lleva"
+
+#: app/src/PreferencesDialog.cpp
+msgid "Follow timed lyrics line by line"
+msgstr "Seguir las letras sincronizadas línea a línea"
+
+#: app/src/PreferencesDialog.cpp
+msgid ""
+"Off, timed lyrics are shown as plain text, and a file's own lyrics tag is "
+"preferred over a .lrc file beside it."
+msgstr ""
+"Desactivado, las letras sincronizadas se muestran como texto simple, y la "
+"etiqueta de letra del propio archivo tiene preferencia sobre un archivo .lrc "
+"junto a él."
 
 #: app/src/PreferencesDialog.cpp
 msgid "The artist, title, album and length of the track you are looking at are sent to LRCLIB, a free lyrics service with no accounts. Each answer is kept in the library, so a track is asked about once."

@@ -779,6 +779,17 @@ XPCOG_SETTING(ListenBrainzUrl, std::string, "listenBrainzUrl", "https://api.list
 
 // --- lyrics ---------------------------------------------------------------
 
+/// Whether the Lyrics pane shows timed lyrics as timed -- one line per stamp,
+/// the sung line marked while the track plays -- or as plain text. No Cog key:
+/// Cog shows no timed lyrics.
+///
+/// On by default, because a file that can be followed is the better copy of
+/// the same words. Off is for a reader who wants the song as a block of text:
+/// timed words have their stamps stripped, and the tag's own words are then
+/// preferred over a `.lrc` beside the file, since timing is the only reason
+/// the `.lrc` was ranked above them. View -> Timed Lyrics flips it.
+XPCOG_SETTING(LyricsSynced, bool, "lyricsSynced", true)
+
 /// Whether the Lyrics pane asks LRCLIB for the words of a track whose file
 /// carries none. No Cog key: Cog shows tagged lyrics and nothing else.
 ///
