@@ -60,6 +60,7 @@
 #include "xpcog/core/lyrics/Lrc.hpp"
 #include "xpcog/core/lyrics/LyricsLookup.hpp"
 
+#include <wx/colour.h>
 #include <wx/panel.h>
 #include <wx/timer.h>
 
@@ -92,6 +93,18 @@ namespace xpcog::app {
 /// normaliseLyrics(): the line numbering is what the highlight relies on, and
 /// it can be pinned without a display.
 [[nodiscard]] std::string syncedDisplayText(const SyncedLyrics& lyrics);
+
+/// `colour` if it reads against `background`, otherwise `colour` moved towards
+/// `text` just far enough that it does.
+///
+/// "Reads" is WCAG's 4.5:1, the ratio for body text. The sung line is drawn in
+/// the desktop's accent, which is a colour chosen for sliders and switches and
+/// says nothing about text: a yellow accent on a light pane or a dark blue one
+/// on a dark pane is barely there. `text` is the pane's own foreground, the one
+/// colour certain to contrast, so moving towards it always gets there -- and
+/// stops as soon as it does, keeping as much of the accent as legibility allows.
+[[nodiscard]] wxColour readableOn(const wxColour& colour, const wxColour& background,
+                                  const wxColour& text);
 
 class LyricsPanel : public wxPanel {
 public:

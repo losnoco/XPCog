@@ -3,6 +3,7 @@
 #include "Text.hpp"
 
 #include "xpcog/core/library/PlaylistEntry.hpp"
+#include "xpcog/platform/AccentColour.hpp"
 
 #include <wx/settings.h>
 #include <wx/sizer.h>
@@ -11,11 +12,40 @@
 #include <wx/translation.h>
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <utility>
 
 namespace xpcog::app {
 namespace {
+
+/// WCAG relative luminance of an sRGB colour.
+[[nodiscard]] double luminance(const wxColour& colour) {
+    const auto channel = [](unsigned char value) {
+        const double c = value / 255.0;
+        return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(colour.Red()) + 0.7152 * channel(colour.Green()) +
+           0.0722 * channel(colour.Blue());
+}
+
+[[nodiscard]] double contrast(const wxColour& a, const wxColour& b) {
+    const double la = luminance(a);
+    const double lb = luminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+/// The desktop's accent, or the toolkit's selection colour where there is none
+/// -- SeekBar's rule, for SeekBar's reason. wxSYS_COLOUR_HIGHLIGHT outright is
+/// what the sung line used to be drawn in, and on macOS that is
+/// selectedTextBackgroundColor: a pastel made to sit *behind* text, which is
+/// why the line was hard to read in front of it.
+[[nodiscard]] wxColour accent() {
+    if (const std::optional<platform::AccentRgb> rgb = platform::accentColour()) {
+        return wxColour(rgb->red, rgb->green, rgb->blue);
+    }
+    return wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHT);
+}
 
 /// Shown instead of an empty box when the file carries no lyrics.
 ///
@@ -205,6 +235,28 @@ std::string syncedDisplayText(const SyncedLyrics& lyrics) {
         out += lyrics.lines[i].text;
     }
     return out;
+}
+
+wxColour readableOn(const wxColour& colour, const wxColour& background,
+                    const wxColour& text) {
+    constexpr double kReadable = 4.5;
+    if (contrast(colour, background) >= kReadable) {
+        return colour;
+    }
+    // Tenths are fine enough: the eye cannot tell adjacent steps apart, and the
+    // loop ends at `text` itself, which is readable by construction.
+    for (int step = 1; step <= 10; ++step) {
+        const double   t     = step / 10.0;
+        const auto     mix   = [t](unsigned char from, unsigned char to) {
+            return static_cast<unsigned char>(std::lround(from + (to - from) * t));
+        };
+        const wxColour mixed(mix(colour.Red(), text.Red()), mix(colour.Green(), text.Green()),
+                             mix(colour.Blue(), text.Blue()));
+        if (contrast(mixed, background) >= kReadable) {
+            return mixed;
+        }
+    }
+    return text;
 }
 
 LyricsPanel::LyricsPanel(wxWindow* parent, std::function<double()> position)
@@ -467,14 +519,19 @@ void LyricsPanel::styleLine(std::size_t index, bool sung) {
     if (index >= lineStarts_.size() || lineLengths_[index] == 0) {
         return;
     }
-    wxTextAttr attr;
-    if (sung) {
-        attr.SetTextColour(wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHT));
-        attr.SetFontWeight(wxFONTWEIGHT_BOLD);
-    } else {
-        attr.SetTextColour(text_->GetForegroundColour());
-        attr.SetFontWeight(wxFONTWEIGHT_NORMAL);
-    }
+    // A whole font, never just a weight. wxTextAttr::GetFont() fills in what
+    // an attribute leaves unset with fixed defaults -- ten points, and the
+    // toolkit's generic face -- so a line styled bold by weight alone came out
+    // small on macOS and in "Sans" rather than the desktop font on GTK, and
+    // stayed that way after it was sung.
+    wxFont font = text_->GetFont();
+    font.SetWeight(sung ? wxFONTWEIGHT_BOLD : wxFONTWEIGHT_NORMAL);
+
+    const wxColour text = text_->GetForegroundColour();
+    wxTextAttr     attr;
+    attr.SetFont(font);
+    attr.SetTextColour(sung ? readableOn(accent(), text_->GetBackgroundColour(), text)
+                            : text);
     const long start = lineStarts_[index];
     text_->SetStyle(start, start + lineLengths_[index], attr);
 }

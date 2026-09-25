@@ -70,3 +70,32 @@ TEST_CASE("timed lyrics are drawn one line per stamp, breaks and all", "[lyrics]
     REQUIRE(lyrics);
     CHECK(xpcog::app::syncedDisplayText(*lyrics) == "\nchorus\nverse\nchorus\n");
 }
+
+TEST_CASE("the sung line's colour is moved only as far as it takes to read",
+          "[lyrics]") {
+    using xpcog::app::readableOn;
+    const wxColour white(255, 255, 255);
+    const wxColour black(0, 0, 0);
+
+    // A strong accent on a light pane already reads, and is left as it is.
+    const wxColour blue(0, 90, 200);
+    CHECK(readableOn(blue, white, black) == blue);
+
+    // macOS's selection pastel, which is what the line used to be drawn in:
+    // against white it is nowhere near 4.5:1, so it is darkened -- but not to
+    // black, because some of the tint survives before the ratio is reached.
+    const wxColour pastel(179, 215, 255);
+    const wxColour fixed = readableOn(pastel, white, black);
+    CHECK(fixed != pastel);
+    CHECK(fixed != black);
+    CHECK(fixed.Blue() > fixed.Red());
+
+    // A dark accent on a dark pane goes the other way, towards the pane's light
+    // text.
+    const wxColour navy(20, 30, 90);
+    const wxColour dark(30, 30, 30);
+    const wxColour light(235, 235, 235);
+    const wxColour lifted = readableOn(navy, dark, light);
+    CHECK(lifted.Red() > navy.Red());
+    CHECK(lifted != light);
+}
