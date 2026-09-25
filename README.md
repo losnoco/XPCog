@@ -136,6 +136,12 @@ writes into the same ring, across formats and across sample rates. HDCD is
 decoded when present and is bit-transparent when it is not; both are asserted by
 tests against a capturing output, not assumed.
 
+**Surround.** A multichannel track plays at full width on a device that has the
+channels. On one that does not — AirPods, a laptop's speakers — the system's
+spatializer gets the whole thing instead of a fold-down to stereo: macOS Spatial
+Audio, Windows Sonic or Dolby Atmos for Headphones, a PipeWire virtual-surround
+sink. On by default.
+
 **Internet radio.** SHOUTcast stream titles, HLS, and chained Ogg. The audio
 callback takes no lock and allocates nothing, and `xpcog-cli play` reports
 underruns.

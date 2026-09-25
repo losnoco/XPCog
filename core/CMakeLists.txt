@@ -222,6 +222,22 @@ endif()
 # should not also fail to link. bcrypt is where Windows keeps its cryptographic
 # generator; every other platform has getentropy() in libc.
 target_sources(xpcog-core PRIVATE src/remote/Token.cpp)
+
+# The path to the system's spatializer (src/audio/SpatialStream.hpp). Real on
+# macOS, where it is AVFoundation; a stand-in that declines every stream
+# elsewhere, because there the spatializer is a surround endpoint miniaudio
+# already reaches.
+if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(xpcog-core PRIVATE src/audio/SpatialStreamMac.mm)
+    set_source_files_properties(src/audio/SpatialStreamMac.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(xpcog-core PRIVATE
+        "-framework AVFoundation" "-framework CoreMedia" "-framework CoreAudio"
+        "-framework Foundation")
+else()
+    target_sources(xpcog-core PRIVATE src/audio/SpatialStreamNone.cpp)
+endif()
 if(WIN32)
     target_link_libraries(xpcog-core PRIVATE bcrypt)
 endif()

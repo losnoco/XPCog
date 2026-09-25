@@ -142,6 +142,41 @@ That is deliberately stricter than upstream Cog, whose callback
 separately for playback and for the post-stream drain, so a genuine dropout is
 never confused with the expected tail.
 
+## Surround and spatial audio
+
+A multichannel track is handed to the output at its own width. On a device with
+that many channels it plays on them; on one with fewer, the operating system's
+spatializer gets the whole thing rather than a stereo fold made in-process. This
+is on by default, as *Spatialize surround* in the Output pane, and on by default
+means a 7.1 album on AirPods offers Fixed and Head Tracked in Control Center the
+way the TV app does.
+
+Only macOS needed work for it. There a HAL client is given the device's own
+channel count, so the stream was folded to two channels before the system saw
+it, and macOS spatializes only what reaches it through AVFoundation. So a float,
+shared stream wider than its device goes to an `AVSampleBufferAudioRenderer`
+instead of the miniaudio device (`core/src/audio/SpatialStreamMac.mm`). It reads
+the same ring, but from a dispatch queue rather than the real-time callback,
+and the renderer wants about a second queued. With AirPods and 100 ms it played
+in pulses. So nothing that must be heard at a given moment is applied as audio is
+pulled. Volume and the transport fades are set as the renderer's volume. The
+visualiser is fed as the renderer's clock reaches each buffer. The playback
+clock is the renderer's own. A seek flushes the renderer along with the ring.
+After a seek or an underrun, the clock holds still until the renderer has enough
+queued to start. An exclusive or integer (DoP) stream keeps the direct path,
+because a spatializer changes the samples by definition. Turning the setting
+off folds to the device again.
+
+The choice is made when the device opens. Moving to AirPods partway through a
+track on the system default does not switch paths until the next play.
+
+Windows Sonic, Dolby Atmos for Headphones and PipeWire's virtual-surround sinks
+present themselves as surround endpoints, so there the full-width stream already
+reached the spatializer and the setting is not shown.
+
+FreeSurround's upmix counts as surround here: stereo upmixed to 5.1 goes to the
+spatializer like any other six-channel stream.
+
 ## Crash reporting
 
 **Off unless you turn it on.** On

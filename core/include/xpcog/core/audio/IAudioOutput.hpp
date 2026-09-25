@@ -38,6 +38,11 @@ public:
         /// this is a preference rather than a demand, and exclusiveHeld() says
         /// which way it went.
         bool exclusive = false;
+        /// Let the system spatialize a stream wider than the device, rather than
+        /// fold it down to the device's width in-process. A request like
+        /// `exclusive`: only a backend with such a path acts on it, and only for
+        /// a float, shared stream. See the SpatializeSurround setting.
+        bool spatialize = false;
         /// 0 lets the backend choose. Smaller means lower latency and more
         /// callbacks; the feeder must keep up either way.
         std::uint32_t bufferFrames = 0;

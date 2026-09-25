@@ -17,12 +17,22 @@
 // call -- the scratch buffer it needs is sized once, in start(), and a callback
 // asking for more frames than it holds is served in chunks rather than by
 // growing it. See the callback.
+//
+// And not every stream reaches a miniaudio device. On macOS a multichannel
+// stream bound for a narrower device goes to the system's spatializer instead
+// (SpatialStream.hpp). That is not a real-time path at all, and it queues about
+// a second, so nothing above is done at pull time there: the tap is fed as the
+// renderer's clock reaches each buffer, the gain is set on the renderer, and
+// the clock is the renderer's own. The ring, the fade and the volume are still
+// these.
 
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/audio/AudioTap.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 #include "xpcog/core/audio/TransportGain.hpp"
+
+#include "SpatialStream.hpp"
 
 #include <miniaudio.h>
 
@@ -101,15 +111,21 @@ public:
         deviceConfig.pUserData            = this;
 
         ma_device_id  deviceId{};
+        bool          resolved = false;
         if (!config.deviceId.empty() && resolveDeviceIdLocked(config.deviceId, deviceId)) {
             deviceConfig.playback.pDeviceID = &deviceId;
+            resolved                        = true;
+        }
+
+        exclusiveHeld_ = false;
+        if (startSpatialLocked(config, resolved ? &deviceId : nullptr)) {
+            return true;
         }
 
         // Exclusive is asked for, not demanded. WASAPI grants it only when
         // nothing else holds the device, backends with no such concept return
         // MA_SHARE_MODE_NOT_SUPPORTED, and either way refusing to play would be
         // the wrong answer to "I would rather not be resampled".
-        exclusiveHeld_ = false;
         if (config.exclusive) {
             deviceConfig.playback.shareMode = ma_share_mode_exclusive;
             if (ma_device_init(&context_, &deviceConfig, &device_) == MA_SUCCESS) {
@@ -187,6 +203,14 @@ public:
 
     void pause() override {
         std::lock_guard lock(deviceMutex_);
+        if (spatial_) {
+            // One mode, not two. Holding exists for a device someone else could
+            // take in the gap, and a renderer is not one -- and feeding it
+            // silence would put that silence into the queue, ahead of the music
+            // that was waiting there.
+            spatial_->pause();
+            return;
+        }
         if (!deviceValid_) {
             return;
         }
@@ -204,6 +228,10 @@ public:
 
     void resume() override {
         std::lock_guard lock(deviceMutex_);
+        if (spatial_) {
+            spatial_->resume();
+            return;
+        }
         if (!deviceValid_) {
             return;
         }
@@ -220,6 +248,9 @@ public:
     [[nodiscard]] AudioFormat negotiatedFormat() const override { return format_; }
 
     [[nodiscard]] double latencySeconds() const override {
+        if (spatial_) {
+            return spatial_->latencySeconds();
+        }
         if (!deviceValid_) {
             return 0.0;
         }
@@ -384,6 +415,12 @@ public:
     }
 
     [[nodiscard]] std::uint64_t framesPlayed() const override {
+        // Not locked: the engine reads this under its own seam lock, often, and
+        // the stream is only replaced inside start() and stop(), which the
+        // engine never runs alongside a read of the clock.
+        if (spatial_) {
+            return spatial_->framesPlayed();
+        }
         return framesPlayed_.load(std::memory_order_relaxed);
     }
 
@@ -515,16 +552,7 @@ private:
             return;
         }
 
-        auto* self = static_cast<MiniaudioOutput*>(notification->pDevice->pUserData);
-
-        std::function<void()> callback;
-        {
-            std::lock_guard lock(self->callbackMutex_);
-            callback = self->onInvalidated_;
-        }
-        if (callback) {
-            callback();
-        }
+        static_cast<MiniaudioOutput*>(notification->pDevice->pUserData)->notifyInvalidated();
     }
 
     // --- device lifecycle, caller's thread --------------------------------
@@ -540,7 +568,86 @@ private:
         return true;
     }
 
+    /// The spatial path, when this stream should take it and it can be built.
+    /// False sends start() on to the ordinary device -- including when the
+    /// renderer refuses, since folding to stereo is a better answer than
+    /// silence.
+    ///
+    /// Float and shared only. An integer device is asking for its bits to
+    /// arrive untouched, which a spatializer by definition does not do, and an
+    /// exclusive one is asking for the hardware to itself.
+    bool startSpatialLocked(const Config& config, const ma_device_id* deviceId) {
+#if defined(__APPLE__)
+        if (!config.spatialize || config.exclusive || config.format != SampleFormat::F32 ||
+            config.channels <= 2) {
+            return false;
+        }
+        // On CoreAudio the id is the device's UID, which is also what
+        // AVFoundation names a device by.
+        const std::string uid = deviceId != nullptr ? std::string{deviceId->coreaudio}
+                                                    : std::string{};
+        if (!detail::spatialStreamWanted(config.channels, uid)) {
+            return false;
+        }
+
+        prepareStreamLocked(config.sampleRate, config.channels);
+
+        detail::SpatialSource source;
+        source.pull = [this](float* out, std::size_t frames, bool& flushed) {
+            const std::size_t channels = format_.channels;
+            // Read before the read, which is what honours it -- and returns
+            // nothing that time, so the stream sees the flag with no audio.
+            flushed = sink_.flushPending();
+            return sink_.read(out, frames * channels) / channels;
+        };
+        source.heard = [this](const float* samples, std::size_t frames) {
+            if (AudioTap* tap = tap_.load(std::memory_order_relaxed); tap != nullptr) {
+                tap->write(samples, frames * format_.channels, format_.channels);
+            }
+        };
+        source.gain = [this](std::size_t elapsedFrames) {
+            return fade_.advance(elapsedFrames) * volume_.load(std::memory_order_relaxed);
+        };
+        source.failed = [this] { notifyInvalidated(); };
+
+        spatial_ = detail::openSpatialStream(config.sampleRate, config.channels,
+                                             format_.channelConfig, uid, std::move(source));
+        return spatial_ != nullptr;
+#else
+        static_cast<void>(config);
+        static_cast<void>(deviceId);
+        return false;
+#endif
+    }
+
+    /// What start() resets for any stream, whichever path it then takes.
+    void prepareStreamLocked(double sampleRate, std::uint32_t channels) {
+        format_.sampleRate    = sampleRate;
+        format_.channels      = channels;
+        format_.format        = SampleFormat::F32;
+        format_.bitsPerSample = 32;
+        format_.channelConfig = guessChannelConfig(channels);
+        framesPlayed_.store(0, std::memory_order_relaxed);
+        underruns_.store(0, std::memory_order_relaxed);
+        silenced_.store(false, std::memory_order_release);
+        fade_.reset();
+    }
+
+    void notifyInvalidated() {
+        std::function<void()> callback;
+        {
+            std::lock_guard lock(callbackMutex_);
+            callback = onInvalidated_;
+        }
+        if (callback) {
+            callback();
+        }
+    }
+
     void stopLocked() {
+        // Before the device, and on its own: it drains what it has pulled, and
+        // must be gone before the ring it pulls from is handed to anyone else.
+        spatial_.reset();
         if (deviceValid_) {
             ma_device_uninit(&device_);
             deviceValid_ = false;
@@ -603,6 +710,10 @@ private:
     /// afterwards -- the callback runs on a real-time thread and must not
     /// allocate. Empty when the device carries float, where nothing stages.
     std::vector<float> scratch_;
+
+    /// Set instead of the device when the stream went to the system's
+    /// spatializer. Never both.
+    std::unique_ptr<detail::SpatialStream> spatial_;
 
     std::mutex            callbackMutex_;
     std::function<void()> onInvalidated_;

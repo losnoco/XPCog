@@ -1638,6 +1638,16 @@ msgid ""
 msgstr ""
 "Usa la frecuencia y el formato propios del archivo en lugar de los del mezclador del sistema. Ninguna otra aplicación puede reproducir mientras esté activo. Si el dispositivo no está disponible, vuelve al modo compartido."
 
+#: app/src/PreferencesDialog.cpp:1177
+msgid "Spatialize surround"
+msgstr "Espacializar el sonido envolvente"
+
+#: app/src/PreferencesDialog.cpp:1178
+msgid ""
+"Play surround through macOS Spatial Audio when the device has fewer channels than the track, such as AirPods or built-in speakers. Off folds it down to the device instead."
+msgstr ""
+"Reproduce el sonido envolvente con el Audio espacial de macOS cuando el dispositivo tiene menos canales que la pista, como unos AirPods o los parlantes integrados. Desactivado, lo mezcla a los canales del dispositivo."
+
 #: app/src/PreferencesDialog.cpp:1051
 msgid "Volume scaling"
 msgstr "Escalado de volumen"

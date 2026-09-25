@@ -12,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <numeric>
@@ -656,4 +657,90 @@ TEST_CASE("a device opens in an integer format and runs", "[.integerdevice]") {
     // pulled, which is a different failure from a conversion bug and worth
     // separating from one.
     CHECK(output->framesPlayed() > 0);
+}
+
+// The spatial path, twice on one output -- which is what the application does
+// and a fresh xpcog-cli never does. Hidden, and audible on purpose:
+//
+//     xpcog-tests "[.spatialdevice]"
+//
+// Wants a default device with fewer than eight channels -- AirPods, built-in
+// speakers -- or it skips, because anything wider keeps the direct path. Plays
+// two rounds of a quiet steady tone on all eight channels, three seconds each,
+// stopping between them the way AudioEngine::stop() does, with a fade. The tone
+// is steady so that a dropout is unmistakable; listen to the start of each round.
+// The ring is the application's size, 1 << 14 samples, not the CLI's: that is
+// what hands the stream slivers of a buffer, and the stream once passed them to
+// the renderer as they came, which sputtered at every start on AirPods. Music
+// that opens quietly hid it; this tone does not.
+//
+// What it can assert is only the clock: each round must play about as long as
+// it ran. Whether it sputtered is for the ear.
+TEST_CASE("the spatial path starts cleanly more than once on one output",
+          "[.spatialdevice]") {
+    if (enumerateOutputDevices().empty()) {
+        SKIP("no output device on this machine");
+    }
+
+    constexpr std::uint32_t kChannels = 8;
+    RingBuffer              ring(1U << 14);
+    ring.setFrameSize(kChannels);
+    auto output = makeMiniaudioOutput(ring);
+    REQUIRE(output != nullptr);
+
+    IAudioOutput::Config config;
+    config.sampleRate = output->preferredSampleRate({});
+    if (config.sampleRate <= 0.0) {
+        config.sampleRate = 48000.0;
+    }
+    config.channels   = kChannels;
+    config.spatialize = true;
+
+    for (int round = 0; round < 2; ++round) {
+        INFO("round " << round);
+        ring.clear();
+
+        std::atomic<bool> feeding{true};
+        std::thread       feeder([&] {
+            // One frequency per channel, so the spatializer has eight distinct
+            // sources to place.
+            std::vector<float> block(512 * kChannels);
+            double             phase[kChannels] = {};
+            while (feeding.load()) {
+                for (std::size_t frame = 0; frame < 512; ++frame) {
+                    for (std::uint32_t c = 0; c < kChannels; ++c) {
+                        const double hz = 220.0 * (1.0 + 0.25 * c);
+                        phase[c] += 2.0 * 3.14159265358979 * hz / config.sampleRate;
+                        block[frame * kChannels + c] =
+                            0.05F * static_cast<float>(std::sin(phase[c]));
+                    }
+                }
+                std::size_t written = 0;
+                while (written < block.size() && feeding.load()) {
+                    written += ring.write(block.data() + written, block.size() - written);
+                    if (written < block.size()) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    }
+                }
+            }
+        });
+
+        REQUIRE(output->start(config));
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        const std::uint64_t played = output->framesPlayed();
+
+        output->rampGain(0.0F, 200.0);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+        while (output->ramping() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        output->stop();
+        feeding.store(false);
+        feeder.join();
+
+        // Three seconds of running, less the renderer's start-up and priming,
+        // which is well under a second.
+        INFO("played " << played << " frames");
+        CHECK(played > static_cast<std::uint64_t>(config.sampleRate * 1.5));
+    }
 }

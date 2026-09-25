@@ -176,8 +176,8 @@ constexpr std::array kCuratedKeys = {
     "volume", "repeat", "shuffle", "panelFollowMode",
     // Output
     "volumeScaling", "resampling", "enableHDCD", "halveDSDVolume", "outputDeviceId",
-    "outputDeviceName", "exclusiveOutput", "enableFSurround", "enableFading",
-    "suspendOutputOnPause",
+    "outputDeviceName", "exclusiveOutput", "spatializeSurround", "enableFSurround",
+    "enableFading", "suspendOutputOnPause",
     // MIDI
     "midiPlugin", "midiRomPath", "soundFontPath", "synthSampleRate",
     "synthDefaultSeconds", "synthDefaultFadeSeconds", "synthDefaultLoopCount",
@@ -1169,6 +1169,16 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
                 _("Use the file's own rate and format instead of the system "
                   "mixer's. Other applications cannot play while this is active. "
                   "Falls back to sharing if the device is unavailable."));
+
+#if defined(__APPLE__)
+    // macOS only, because only there does it change anything: Windows Sonic,
+    // Dolby Atmos for Headphones and PipeWire's virtual surround all present a
+    // surround device, and surround already reaches it. See settings.def.
+    row->toggle(_("Spatialize surround"), "spatializeSurround",
+                _("Play surround through macOS Spatial Audio when the device has "
+                  "fewer channels than the track, such as AirPods or built-in "
+                  "speakers. Off folds it down to the device instead."));
+#endif
 
     row->choice(_("Volume scaling"), "volumeScaling", kVolumeScalingChoices);
     row->choice(_("Resampler quality"), "resampling", kResamplingChoices);

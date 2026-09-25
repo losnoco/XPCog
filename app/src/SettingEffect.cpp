@@ -52,7 +52,7 @@ SettingEffect effectOf(std::string_view key) {
         return {Effect::None, Applies::NextTrack};
     }
 
-    if (key == "outputDeviceId" || key == "exclusiveOutput") {
+    if (key == "outputDeviceId" || key == "exclusiveOutput" || key == "spatializeSurround") {
         return {Effect::ReopenOutput, Applies::Immediately};
     }
     // Named for the reader's benefit rather than acted on: the device is chosen

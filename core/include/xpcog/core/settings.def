@@ -74,6 +74,25 @@ XPCOG_SETTING(HalveDsdVolume, bool, "halveDSDVolume", false)
 /// channel count, and that cannot change mid-stream without a gap.
 XPCOG_SETTING(EnableFSurround, bool, "enableFSurround", false)
 
+/// Hand surround to the system's spatial audio rather than folding it down here.
+///
+/// **No Cog counterpart.** Cog renders headphone surround itself, through its
+/// HRTF node; this asks the operating system to, which is what gets a listener
+/// the same Fixed and Head Tracked modes the TV app has on AirPods.
+///
+/// Only macOS needs the switch. There a HAL client is given the device's own
+/// channel count, so 7.1 bound for a stereo headset was folded to two channels
+/// in-process and the system never saw anything to spatialize. With this on, a
+/// multichannel stream whose device is narrower than it is played through
+/// AVSampleBufferAudioRenderer instead, which is the path macOS spatializes. A
+/// device with enough channels of its own keeps the direct path, as does an
+/// exclusive or integer one. Windows Sonic, Dolby Atmos for Headphones and a
+/// PipeWire virtual-surround sink all present a surround endpoint, so those
+/// already receive the stream at full width and this changes nothing there.
+///
+/// Read when the device is opened.
+XPCOG_SETTING(SpatializeSurround, bool, "spatializeSurround", true)
+
 /// Emit DSD as DoP rather than decimating it to PCM. M6.
 XPCOG_SETTING(OutputDSDAsDoP, bool, "outputDSDAsDoP", false)
 

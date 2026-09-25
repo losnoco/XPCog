@@ -548,7 +548,8 @@ private:
     /// granted, because that is what a later request has to be compared
     /// against. Feeder and play() only.
     std::string openDeviceId_;
-    bool        openExclusive_ = false;
+    bool        openExclusive_  = false;
+    bool        openSpatialize_ = false;
 
     /// Set when a switch has left the engine with no device at all: the new one
     /// would not open and neither would the one that was running. The feeder

@@ -308,6 +308,7 @@ bool AudioEngine::play(const Url& url) {
     config.channels   = format_.channels;
     config.deviceId   = chosenDeviceId();
     config.exclusive  = settings_.OutputExclusive();
+    config.spatialize = settings_.SpatializeSurround();
 
     // Fill the deep buffer before the device starts. Otherwise the first
     // callbacks land before the feeder has produced anything and are counted as
@@ -358,7 +359,8 @@ bool AudioEngine::play(const Url& url) {
     // apart from the same one arriving again -- a settings write that resolves
     // to the device already playing must not interrupt it.
     openDeviceId_  = config.deviceId;
-    openExclusive_ = config.exclusive;
+    openExclusive_  = config.exclusive;
+    openSpatialize_ = config.spatialize;
 
     status_.store(PlaybackStatus::Playing, std::memory_order_relaxed);
     feeder_ = std::thread([this] { feederLoop(); });
@@ -1034,7 +1036,8 @@ AudioEngine::startDeviceForSwitch(const IAudioOutput::Config& config) {
     if (negotiated.sampleRate == format_.sampleRate &&
         negotiated.channels == format_.channels) {
         openDeviceId_  = config.deviceId;
-        openExclusive_ = config.exclusive;
+        openExclusive_  = config.exclusive;
+    openSpatialize_ = config.spatialize;
         return DeviceStart::Matched;
     }
 
@@ -1051,7 +1054,8 @@ AudioEngine::startDeviceForSwitch(const IAudioOutput::Config& config) {
     }
 
     openDeviceId_  = config.deviceId;
-    openExclusive_ = config.exclusive;
+    openExclusive_  = config.exclusive;
+    openSpatialize_ = config.spatialize;
     return DeviceStart::Reformatted;
 }
 
@@ -1133,11 +1137,13 @@ bool AudioEngine::performDeviceSwitch() {
     wanted.channels   = format_.channels;
     wanted.deviceId   = chosenDeviceId();
     wanted.exclusive  = settings_.OutputExclusive();
+    wanted.spatialize = settings_.SpatializeSurround();
 
     // Asked for, not granted: a device that refused exclusive mode last time
     // will refuse it again, and comparing against what was granted would tear
     // the stream down once per settings write for no change at all.
-    if (wanted.deviceId == openDeviceId_ && wanted.exclusive == openExclusive_) {
+    if (wanted.deviceId == openDeviceId_ && wanted.exclusive == openExclusive_ &&
+        wanted.spatialize == openSpatialize_) {
         return false;
     }
 
@@ -1168,6 +1174,7 @@ bool AudioEngine::performDeviceSwitch() {
     previous.channels             = format_.channels;
     previous.deviceId             = openDeviceId_;
     previous.exclusive            = openExclusive_;
+    previous.spatialize           = openSpatialize_;
 
     // Before the device stops, not after. Following the device to another format
     // means re-preparing the chain under the pump, so the pump has to be

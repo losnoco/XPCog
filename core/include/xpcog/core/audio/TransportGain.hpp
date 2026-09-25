@@ -74,6 +74,23 @@ public:
         return level_.load(std::memory_order_relaxed);
     }
 
+    /// Moves the fade on by `frames` without touching any samples, and returns
+    /// where it got to. For an output that applies its gain as one number rather
+    /// than per sample -- the spatial path sets a renderer's volume instead,
+    /// because the audio it holds was queued before the fade was asked for.
+    float advance(std::size_t frames) noexcept {
+        const float target = target_.load(std::memory_order_relaxed);
+        const float step   = step_.load(std::memory_order_relaxed);
+        float       level  = level_.load(std::memory_order_relaxed);
+        if (level != target) {
+            const float moved = step * static_cast<float>(frames);
+            level = (target > level) ? std::min(level + moved, target)
+                                     : std::max(level - moved, target);
+            level_.store(level, std::memory_order_relaxed);
+        }
+        return level;
+    }
+
     /// Multiplies `count` interleaved samples in place by `volume` times the fade,
     /// advancing the fade one step per *frame*.
     ///
