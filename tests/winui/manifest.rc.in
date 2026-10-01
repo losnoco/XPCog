@@ -1,0 +1,5 @@
+// The WinUI player's manifest, in the test binary as in the player: Common
+// Controls 6, Per-Monitor V2 and the supported-OS list all change what the
+// windows under test do, and a test that ran without them would be testing a
+// different program.
+1 24 "@XPCOG_WINUI_MANIFEST@"

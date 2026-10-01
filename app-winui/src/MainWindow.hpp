@@ -60,6 +60,10 @@ public:
     /// that runs everything is about to stop.
     std::function<void()> closed;
 
+    /// tests/winui drives the window through its commands and looks at what
+    /// they did.
+    friend struct TestAccess;
+
 private:
     void build();
     void wireUp();

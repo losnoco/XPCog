@@ -45,6 +45,9 @@ public:
     void show(std::optional<PreferencesPage> page = std::nullopt);
     void close();
 
+    /// tests/winui walks the pages.
+    friend struct TestAccess;
+
     /// A setting was written: the session decides what it affects.
     Signal<std::string> settingChanged;
     /// The window has closed; it may be destroyed after this returns.

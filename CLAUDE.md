@@ -119,6 +119,14 @@ how a rendering question gets answered without driving the player; under Xvfb
 on a Wayland desktop that needs `GDK_BACKEND=x11` and `WAYLAND_DISPLAY` unset,
 or GTK opens the test windows on the real screen.
 
+On Windows, where the presets now build the WinUI player beside the wx one,
+`xpcog-winui-tests` is its counterpart: it opens the WinUI main window, every
+pane the View menu shows, Preferences page by page, the mini player and the
+About box, and fails on any XAML error. Also a single `add_test()`; it needs
+the Windows App Runtime, skips without it, and fails instead under `CI`, where
+the workflow installs the runtime first. It opens real windows on the desktop
+for a few seconds.
+
 ```sh
 ctest --preset linux-debug -R Gapless          # by ctest test name
 ./build/linux-debug/bin/xpcog-tests "[gapless]"  # by Catch2 tag — the usual way

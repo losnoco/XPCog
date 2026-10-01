@@ -512,6 +512,39 @@ if(XPCOG_BUILD_WX_APP)
 endif()
 
 # ---------------------------------------------------------------------------
+# The WinUI player, opened.
+#
+# Its windows built and laid out with the real runtime: every pane the View
+# menu shows, Preferences page by page, the mini player and the About box. See
+# winui/test_winui.cpp for how it runs beside the XAML loop. Registered by hand
+# as one test, like the GTK suite below and for the same reason: the cases share
+# one application, which discovery would start once per case.
+#
+# Exit code 4 is a skip: no Windows App Runtime on the machine, so no window can
+# be made. CI installs the runtime first, so there it runs.
+# ---------------------------------------------------------------------------
+if(XPCOG_BUILD_WX_APP AND XPCOG_BUILD_WINUI_APP)
+    add_executable(xpcog-winui-tests winui/test_winui.cpp)
+    target_link_libraries(xpcog-winui-tests PRIVATE
+        xpcog-winuicore
+        Catch2::Catch2
+        XPCog::warnings)
+    set(XPCOG_WINUI_MANIFEST "${CMAKE_SOURCE_DIR}/app-winui/XPCog.manifest")
+    configure_file(winui/manifest.rc.in "${CMAKE_CURRENT_BINARY_DIR}/winui-manifest.rc" @ONLY)
+    target_sources(xpcog-winui-tests PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/winui-manifest.rc")
+    set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/winui-manifest.rc"
+        APPEND PROPERTY OBJECT_DEPENDS "${XPCOG_WINUI_MANIFEST}")
+    target_link_options(xpcog-winui-tests PRIVATE "/MANIFEST:NO")
+    set_target_properties(xpcog-winui-tests PROPERTIES FOLDER tests)
+    # The player stages what the windows load beside it -- the bootstrapper,
+    # Win2D, the icon -- in the bin/ this lands in too.
+    add_dependencies(xpcog-winui-tests xpcog-winui xpcog-assets)
+
+    add_test(NAME "the WinUI windows" COMMAND "$<TARGET_FILE:xpcog-winui-tests>")
+    set_tests_properties("the WinUI windows" PROPERTIES SKIP_RETURN_CODE 4)
+endif()
+
+# ---------------------------------------------------------------------------
 # The one suite that wants a screen: the GTK frontend's.
 #
 # Everything above is deliberately free of an application object, and this is
