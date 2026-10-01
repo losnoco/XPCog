@@ -1,4 +1,5 @@
 #include "App.hpp"
+#include "Instance.hpp"
 #include "Runtime.hpp"
 #include "Win2D.hpp"
 #include "WinRT.hpp"
@@ -15,6 +16,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         ::MessageBoxW(nullptr, winrt::to_hstring(reason).c_str(), L"XPCog",
                       MB_OK | MB_ICONERROR);
         return 1;
+    }
+
+    // Before anything else is built: a later launch hands its files to the
+    // player already running and exits. See Instance.hpp.
+    if (!xpcog::winui::claimInstance()) {
+        xpcog::winui::shutdownRuntime();
+        return 0;
     }
 
     const int status = xpcog::winui::runApplication();

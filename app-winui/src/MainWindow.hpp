@@ -46,6 +46,10 @@ public:
 
     void activate();
 
+    /// Brings the window forward, restoring it when minimised: a later launch
+    /// was handed to this one.
+    void raise();
+
     [[nodiscard]] HWND hwnd() const;
 
     /// The window has closed. The session should be saved now: the dispatcher

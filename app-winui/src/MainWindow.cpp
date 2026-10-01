@@ -72,6 +72,19 @@ HWND MainWindow::hwnd() const {
     return handle;
 }
 
+void MainWindow::raise() {
+    if (const auto presenter = window_.AppWindow().Presenter().try_as<
+            winrt::Microsoft::UI::Windowing::OverlappedPresenter>();
+        presenter && presenter.State() == winrt::Microsoft::UI::Windowing::OverlappedPresenterState::Minimized) {
+        presenter.Restore();
+    }
+    window_.Activate();
+    // Allowed because the launch that asked for this gave its permission
+    // first (platform::permitForegroundHandover); without it Windows only
+    // flashes the taskbar button.
+    ::SetForegroundWindow(hwnd());
+}
+
 void MainWindow::activate() {
     window_.Activate();
     // After it is shown: maximising a window that has not been shown yet

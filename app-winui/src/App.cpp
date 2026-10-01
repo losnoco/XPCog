@@ -1,7 +1,11 @@
 #include "App.hpp"
 
+#include "Instance.hpp"
 #include "MainWindow.hpp"
 #include "WinRT.hpp"
+
+#include <winrt/Microsoft.Windows.AppLifecycle.h>
+#include <winrt/Windows.ApplicationModel.Activation.h>
 
 #include "PlaybackController.hpp"
 #include "Session.hpp"
@@ -18,6 +22,8 @@
 namespace xpcog::winui {
 
 namespace {
+
+namespace lifecycle = winrt::Microsoft::Windows::AppLifecycle;
 
 /// Everything the player is, below the window. The order of the members is the
 /// order of construction and the reverse of destruction: the registry holds a
@@ -69,6 +75,17 @@ public:
         timer_.Start();
 
         window_->activate();
+
+        // The files this launch was given, now that there is a session to add
+        // them to; and those of every later launch, which Instance.cpp hands
+        // here. Activated is raised on a thread of the runtime's, so the work
+        // is posted back to this one.
+        const auto self = lifecycle::AppInstance::GetCurrent();
+        open(self.GetActivatedEventArgs(), false);
+        activated_ = self.Activated([this, queue = queue_](auto&&,
+                                                           lifecycle::AppActivationArguments const& args) {
+            queue.TryEnqueue([this, args] { open(args, true); });
+        });
     }
 
     ~Player() {
@@ -81,7 +98,27 @@ public:
     }
 
 private:
+    /// A launch's activation: its files added, and -- for a later launch --
+    /// the window brought forward. Raising even when it named no files is
+    /// the point: someone running the player again while it is minimised is
+    /// asking for the window, and a launch that seems to do nothing reads as
+    /// one that failed (the wx player's reasoning, XPCogApp::OnInit).
+    void open(const lifecycle::AppActivationArguments& args, bool raise) {
+        if (args && args.Kind() == lifecycle::ExtendedActivationKind::Launch) {
+            if (const auto launch =
+                    args.Data().try_as<winrt::Windows::ApplicationModel::Activation::ILaunchActivatedEventArgs>()) {
+                if (std::vector<Url> urls = urlsFromCommandLine(launch.Arguments()); !urls.empty()) {
+                    session_->addUrls(urls);
+                }
+            }
+        }
+        if (raise) {
+            window_->raise();
+        }
+    }
+
     void onClosed() {
+        lifecycle::AppInstance::GetCurrent().Activated(activated_);
         if (timer_) {
             timer_.Stop();
         }
@@ -95,6 +132,7 @@ private:
     std::unique_ptr<app::Session>             session_;
     std::unique_ptr<MainWindow>               window_;
     winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer timer_{nullptr};
+    winrt::event_token                        activated_{};
 };
 
 std::unique_ptr<Player> player;
