@@ -38,6 +38,10 @@ constexpr double kMaxTreeWidth     = 640;
 constexpr double kMinPanelWidth    = 260;
 constexpr double kMaxPanelWidth    = 720;
 constexpr double kMinPlaylistWidth = 320;
+/// The title bar's track title and artist: room for most names, and the rest
+/// of the bar left to the seek bar.
+constexpr double kMaxTitleWidth    = 260;
+constexpr double kMaxSubtitleWidth = 180;
 constexpr double kMinStripHeight   = 120;
 constexpr double kMinContentHeight = 160;
 
@@ -200,6 +204,8 @@ void MainWindow::build() {
     mux::Controls::Grid::SetColumn(volume_, 4);
     transport.Children().Append(volume_);
     titleBar_.Content(transport);
+    transport_ = transport;
+    titleBar_.SizeChanged([this](auto&&, auto&&) { fitTitleBar(); });
 
     // --- the playlist, on the content layer -------------------------------------
     //
@@ -404,6 +410,66 @@ void MainWindow::build() {
     window_.SetTitleBar(titleBar_);
 
     restoreState();
+}
+
+namespace {
+
+/// The descendant of `root` called `name`, depth first, or null. For parts of
+/// a control's template, which are not reachable through the control's own
+/// namescope from out here.
+mux::FrameworkElement findNamed(const mux::DependencyObject& root, std::wstring_view name) {
+    const int count = mux::Media::VisualTreeHelper::GetChildrenCount(root);
+    for (int i = 0; i < count; ++i) {
+        const auto child = mux::Media::VisualTreeHelper::GetChild(root, i);
+        if (const auto element = child.try_as<mux::FrameworkElement>();
+            element && element.Name() == name)
+            return element;
+        if (auto found = findNamed(child, name))
+            return found;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+void MainWindow::fitTitleBar() {
+    // The TitleBar template puts its content in a presenter aligned by a theme
+    // resource, and its compact state pins that presenter Left whatever the
+    // resource says (microsoft-ui-xaml #11181) -- either way the transport
+    // gets only the width it asks for, and the seek bar's star column comes
+    // to nothing. So the transport is given the width of the template's
+    // content column outright, which is what is left once the header, icon,
+    // title and caption buttons have theirs.
+    //
+    // The title and subtitle are Auto columns before it, and a long track
+    // name would take the seek bar's room; they are capped and trim.
+    //
+    // The parts are deferred-load, realised when what they show first is
+    // set, so this looks them up each time rather than once.
+    if (!transport_)
+        return;
+    if (auto title = findNamed(titleBar_, L"PART_TitleText"))
+        title.MaxWidth(kMaxTitleWidth);
+    if (auto subtitle = findNamed(titleBar_, L"PART_SubtitleText"))
+        subtitle.MaxWidth(kMaxSubtitleWidth);
+
+    const auto column = findNamed(titleBar_, L"PART_ContentPresenterGrid");
+    if (!column)
+        return;
+    if (!contentColumn_) {
+        contentColumn_ = column;
+        column.SizeChanged([this](auto&&, auto&&) { fitTitleBar(); });
+    }
+    double inset = 0;
+    if (auto presenter = findNamed(column, L"PART_ContentPresenter")) {
+        const auto margin = presenter.Margin();
+        inset += margin.Left + margin.Right;
+    }
+    const auto margin = transport_.Margin();
+    inset += margin.Left + margin.Right;
+    const double width = column.ActualWidth() - inset;
+    if (width > 0 && width != transport_.Width())
+        transport_.Width(width);
 }
 
 mux::Controls::Button MainWindow::transportButton(const wchar_t* glyph, const std::string& tooltip,
@@ -611,6 +677,7 @@ void MainWindow::onTrackChanged(const PlaylistEntry* entry) {
     // them; the player's name when nothing is playing.
     titleBar_.Title(entry != nullptr ? toH(entry->title()) : winrt::hstring(L"XPCog"));
     titleBar_.Subtitle(entry != nullptr ? toH(entry->artist.str()) : winrt::hstring());
+    fitTitleBar();
     refreshCommands();
     refreshPanels();
 }

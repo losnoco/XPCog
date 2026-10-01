@@ -61,6 +61,10 @@ private:
     void build();
     void wireUp();
 
+    /// Sizes the transport to the title bar's content column and caps the
+    /// title, so the seek bar gets what is left of the bar.
+    void fitTitleBar();
+
     [[nodiscard]] mux::Controls::Button transportButton(const wchar_t* glyph,
                                                        const std::string& tooltip,
                                                        std::function<void()> action);
@@ -124,6 +128,10 @@ private:
 
     mux::Window                          window_{nullptr};
     mux::Controls::TitleBar              titleBar_{nullptr};
+    /// The title bar's content: the transport, sized by fitTitleBar().
+    mux::Controls::Grid                  transport_{nullptr};
+    /// The template's content column, once fitTitleBar() has found it.
+    mux::FrameworkElement                contentColumn_{nullptr};
     mux::Controls::FontIcon              playGlyph_{nullptr};
     mux::Controls::Button                playButton_{nullptr};
     std::unique_ptr<SeekBar>             seekBar_;
