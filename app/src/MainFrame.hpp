@@ -73,7 +73,8 @@ class PlaylistColumns;
 class PlaylistDataModel;
 class Sc55Panel;
 class SeekBar;
-class WinUIIsland;
+class WinUITransport;
+class WinUIPlaylist;
 class SpectrumPanel;
 class OscilloscopePanel;
 class SpeedPanel;
@@ -201,6 +202,12 @@ private:
     /// Shows or hides the folder browser, which is the splitter's left pane
     /// rather than a dockable one. Hidden on a first launch; see buildUi().
     void showFileTree(bool show);
+
+    /// Whichever playlist is in the splitter: list_, or the WinUI prototype's.
+    [[nodiscard]] wxWindow* playlistPane() const;
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    void showWinUIPlaylist(bool show);
+#endif
 
     /// Whether a pane is currently on screen -- which is not the same as
     /// wxWindow::IsShown(): a floating pane's window is shown while the pane
@@ -435,7 +442,10 @@ private:
     wxSlider*     volume_     = nullptr;
 #ifdef XPCOG_WITH_WINUI_ISLAND
     /// The prototype WinUI strip, when the runtime started. See WinUIIsland.hpp.
-    WinUIIsland*  island_     = nullptr;
+    WinUITransport* island_   = nullptr;
+    /// Made the first time the strip's switch asks for it, and swapped into the
+    /// splitter in place of list_ while the switch is on.
+    WinUIPlaylist*  winuiPlaylist_ = nullptr;
 #endif
     SpeedPanel*   speedPanel_ = nullptr;
     wxSearchCtrl* filter_     = nullptr;

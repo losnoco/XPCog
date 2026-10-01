@@ -290,6 +290,7 @@ MainFrame::~MainFrame() {
     volume_    = nullptr;
 #ifdef XPCOG_WITH_WINUI_ISLAND
     island_    = nullptr;
+    winuiPlaylist_ = nullptr;
 #endif
     filter_    = nullptr;
     clock_     = nullptr;
@@ -346,7 +347,7 @@ void MainFrame::buildUi() {
 
 #ifdef XPCOG_WITH_WINUI_ISLAND
     if (winUIRunning()) {
-        island_ = new WinUIIsland(this, settings_.Volume());
+        island_ = new WinUITransport(this, settings_.Volume());
         if (island_->ok()) {
             root->Add(island_, 0, wxEXPAND);
         } else {
@@ -873,6 +874,7 @@ void MainFrame::wireUp() {
             session_.setVolume(gain);
             volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
         };
+        island_->winUIPlaylistToggled = [this](bool on) { showWinUIPlaylist(on); };
     }
 #endif
 
@@ -1065,7 +1067,7 @@ void MainFrame::showFileTree(bool show) {
         return;
     }
     if (show) {
-        splitter_->SplitVertically(tree_, list_,
+        splitter_->SplitVertically(tree_, playlistPane(),
                                    fileTreeSash_ > 0 ? fileTreeSash_ : FromDIP(260));
     } else {
         // Kept here rather than left to the splitter. wxSplitterWindow sets its
@@ -1076,6 +1078,48 @@ void MainFrame::showFileTree(bool show) {
         splitter_->Unsplit(tree_);
     }
 }
+
+wxWindow* MainFrame::playlistPane() const {
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    if (winuiPlaylist_ != nullptr && winuiPlaylist_->IsShown()) {
+        return winuiPlaylist_;
+    }
+#endif
+    return list_;
+}
+
+#ifdef XPCOG_WITH_WINUI_ISLAND
+void MainFrame::showWinUIPlaylist(bool show) {
+    if (show == (playlistPane() != list_)) {
+        return;
+    }
+    if (show && winuiPlaylist_ == nullptr) {
+        winuiPlaylist_ = new WinUIPlaylist(splitter_, view_);
+        if (!winuiPlaylist_->ok()) {
+            winuiPlaylist_->Destroy();
+            winuiPlaylist_ = nullptr;
+            setStatusText(winUIFailure());
+            return;
+        }
+        winuiPlaylist_->rowActivated = [this](std::size_t row) {
+            activateRow(static_cast<unsigned int>(row));
+        };
+        winuiPlaylist_->Hide();
+    }
+    // ReplaceWindow swaps whichever side the list is on, split or not, and
+    // leaves the sash where it was.
+    wxWindow* from = show ? static_cast<wxWindow*>(list_) : winuiPlaylist_;
+    wxWindow* to   = show ? static_cast<wxWindow*>(winuiPlaylist_) : list_;
+    splitter_->ReplaceWindow(from, to);
+    from->Hide();
+    to->Show();
+    if (show) {
+        if (const auto row = view_.rowForTrack(session_.currentTrack())) {
+            winuiPlaylist_->reveal(*row);
+        }
+    }
+}
+#endif
 
 bool MainFrame::dockFloatingPanes() {
     wxAuiPaneInfoArray& panes = auiManager_.GetAllPanes();
@@ -1794,6 +1838,11 @@ bool MainFrame::revealTrack(TrackId id) {
     list_->UnselectAll();
     list_->Select(item);
     list_->EnsureVisible(item);
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    if (winuiPlaylist_ != nullptr) {
+        winuiPlaylist_->reveal(*row);
+    }
+#endif
     return true;
 }
 

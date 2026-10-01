@@ -132,7 +132,8 @@ target_link_libraries(xpcog-app PRIVATE xpcog-appcore XPCog::warnings)
 # The WinUI island prototype; see cmake/XPCogWinAppSdk.cmake.
 if(XPCOG_WITH_WINUI_ISLAND)
     include(XPCogWinAppSdk)
-    target_sources(xpcog-appcore PRIVATE src/WinUIIsland.cpp src/WinUIIsland.hpp)
+    target_sources(xpcog-appcore PRIVATE
+        src/WinUIHost.hpp src/WinUIIsland.cpp src/WinUIIsland.hpp src/WinUIPlaylist.cpp)
     target_link_libraries(xpcog-appcore PUBLIC XPCog::winappsdk)
     target_compile_definitions(xpcog-appcore PUBLIC XPCOG_WITH_WINUI_ISLAND=1)
     # Beside the executable, where the loader looks for it. It is the only part

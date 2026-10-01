@@ -1,37 +1,16 @@
-#include "WinUIIsland.hpp"
+#include "WinUIHost.hpp"
 
 #include <wx/apptrait.h>
 #include <wx/evtloop.h>
 #include <wx/utils.h>
 
-// <windows.h> has arrived through wx by now, and winbase.h defines
-// GetCurrentTime as a macro, which breaks the Storyboard method of that name in
-// the XAML projection. The documented workaround is exactly this.
-#undef GetCurrentTime
-
 #include <MddBootstrap.h>
-
-#include <winrt/Microsoft.UI.Content.h>
-#include <winrt/Microsoft.UI.Dispatching.h>
-#include <winrt/Microsoft.UI.Xaml.Controls.h>
-#include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
-#include <winrt/Microsoft.UI.Xaml.Hosting.h>
-#include <winrt/Microsoft.UI.Xaml.Markup.h>
-#include <winrt/Microsoft.UI.Xaml.Media.h>
-#include <winrt/Microsoft.UI.Xaml.XamlTypeInfo.h>
-#include <winrt/Microsoft.UI.Xaml.h>
-#include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Windows.Foundation.h>
-#include <winrt/Windows.Graphics.h>
-#include <winrt/Windows.UI.Xaml.Interop.h>
 
 #include <cmath>
 
 namespace xpcog::app {
 
 namespace {
-
-namespace mux = winrt::Microsoft::UI::Xaml;
 
 // A XAML Application is required even though nothing here is launched as one:
 // it is where the control templates live (XamlControlsResources) and what the
@@ -68,12 +47,6 @@ Runtime& runtime() {
     return instance;
 }
 
-wxString describe(const char* what, const winrt::hresult_error& error) {
-    return wxString::Format("%s (0x%08lX): %s", what,
-                            static_cast<unsigned long>(error.code().value),
-                            wxString(error.message().c_str()));
-}
-
 class WinUIEventLoop : public wxGUIEventLoop {
 public:
     bool PreProcessMessage(WXMSG* msg) override {
@@ -93,6 +66,12 @@ public:
 };
 
 }  // namespace
+
+wxString describeWinRTError(const char* what, const winrt::hresult_error& error) {
+    return wxString::Format("%s (0x%08lX): %s", what,
+                            static_cast<unsigned long>(error.code().value),
+                            wxString(error.message().c_str()));
+}
 
 bool startWinUI() {
     Runtime& rt = runtime();
@@ -135,7 +114,7 @@ bool startWinUI() {
         }
     } catch (const winrt::hresult_error& error) {
         stopWinUI();
-        rt.failure = describe("WinUI did not start", error);
+        rt.failure = describeWinRTError("WinUI did not start", error);
         return false;
     }
     return true;
@@ -171,118 +150,145 @@ wxAppTraits* makeWinUIAppTraits() {
     return new WinUIAppTraits;
 }
 
-// --- the island ---------------------------------------------------------------
+// --- the host -----------------------------------------------------------------
 
-struct WinUIIsland::Impl {
-    mux::Hosting::DesktopWindowXamlSource source{nullptr};
-    mux::Controls::Slider                 slider{nullptr};
-    mux::Controls::Button                 playPause{nullptr};
-    bool                                  quiet = false;
-};
-
-WinUIIsland::WinUIIsland(wxWindow* parent, double volume)
+WinUIIsland::WinUIIsland(wxWindow* parent)
     : wxWindow(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE),
-      impl_(std::make_unique<Impl>()) {
-    SetMinSize(FromDIP(wxSize(-1, 44)));
+      host_(std::make_unique<Host>()) {
     try {
-        build(volume);
+        host_->source = mux::Hosting::DesktopWindowXamlSource();
+        host_->source.Initialize(
+            winrt::Microsoft::UI::WindowId{reinterpret_cast<uint64_t>(GetHWND())});
+
+        // Focus back out to wx when Tab runs off either end of the content.
+        host_->source.TakeFocusRequested([this](auto&&, auto const& args) {
+            Navigate(args.Request().Reason() ==
+                             mux::Hosting::XamlSourceFocusNavigationReason::First
+                         ? wxNavigationKeyEvent::IsForward
+                         : wxNavigationKeyEvent::IsBackward);
+        });
     } catch (const winrt::hresult_error& error) {
-        runtime().failure = describe("The island did not build", error);
-        if (impl_->source) {
-            impl_->source.Close();
-        }
-        impl_ = std::make_unique<Impl>();
+        fail(describeWinRTError("The island did not start", error));
+        return;
     }
-}
-
-bool WinUIIsland::ok() const {
-    return static_cast<bool>(impl_->source);
-}
-
-void WinUIIsland::build(double volume) {
-    Impl& impl = *impl_;
-
-    impl.source = mux::Hosting::DesktopWindowXamlSource();
-    impl.source.Initialize(winrt::Microsoft::UI::WindowId{
-        reinterpret_cast<uint64_t>(GetHWND())});
-
-    auto row = mux::Controls::StackPanel();
-    row.Orientation(mux::Controls::Orientation::Horizontal);
-    row.Spacing(12);
-    row.Padding(mux::ThicknessHelper::FromLengths(8, 4, 8, 4));
-    row.VerticalAlignment(mux::VerticalAlignment::Center);
-
-    auto label = mux::Controls::TextBlock();
-    label.Text(L"WinUI island");
-    label.VerticalAlignment(mux::VerticalAlignment::Center);
-    row.Children().Append(label);
-
-    impl.playPause = mux::Controls::Button();
-    impl.playPause.Content(winrt::box_value(L"Play"));
-    impl.playPause.Click([this](auto&&, auto&&) {
-        if (playPauseClicked) {
-            playPauseClicked();
-        }
-    });
-    row.Children().Append(impl.playPause);
-
-    impl.slider = mux::Controls::Slider();
-    impl.slider.Minimum(0);
-    impl.slider.Maximum(100);
-    impl.slider.Width(200);
-    impl.slider.Value(volume * 100.0);
-    impl.slider.VerticalAlignment(mux::VerticalAlignment::Center);
-    impl.slider.ValueChanged([this](auto&&, auto const& args) {
-        if (!impl_->quiet && volumeChanged) {
-            volumeChanged(args.NewValue() / 100.0);
-        }
-    });
-    row.Children().Append(impl.slider);
-
-    // A Grid around the row so the island has a surface of its own colour;
-    // without one it composites as black where nothing is drawn.
-    auto root = mux::Controls::Grid();
-    root.Background(mux::Media::SolidColorBrush(
-        winrt::unbox_value<winrt::Windows::UI::Color>(mux::Application::Current().Resources().Lookup(
-            winrt::box_value(L"SolidBackgroundFillColorBase")))));
-    root.Children().Append(row);
-    impl.source.Content(root);
 
     // The island is laid out by the bridge window, which wx does not know is
     // there: it has to be told the size every time this window is.
     Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
         event.Skip();
         const wxSize size = GetClientSize();
-        if (impl_->source) {
-            impl_->source.SiteBridge().MoveAndResize({0, 0, size.x, size.y});
+        if (host_->source) {
+            host_->source.SiteBridge().MoveAndResize({0, 0, size.x, size.y});
         }
     });
 
-    // Focus in both directions: into the XAML content when wx tabs onto this
-    // window, and back out to wx when Tab runs off either end of it.
+    // And focus into the content when wx tabs onto this window.
     Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent&) {
-        if (!impl_->source) {
+        if (!host_->source) {
             return;
         }
         const bool backwards = wxGetKeyState(WXK_SHIFT);
-        impl_->source.NavigateFocus(mux::Hosting::XamlSourceFocusNavigationRequest(
+        host_->source.NavigateFocus(mux::Hosting::XamlSourceFocusNavigationRequest(
             backwards ? mux::Hosting::XamlSourceFocusNavigationReason::Last
                       : mux::Hosting::XamlSourceFocusNavigationReason::First));
-    });
-    impl.source.TakeFocusRequested([this](auto&&, auto const& args) {
-        Navigate(args.Request().Reason() == mux::Hosting::XamlSourceFocusNavigationReason::First
-                     ? wxNavigationKeyEvent::IsForward
-                     : wxNavigationKeyEvent::IsBackward);
     });
 }
 
 WinUIIsland::~WinUIIsland() {
-    if (impl_->source) {
-        impl_->source.Close();
+    if (host_->source) {
+        host_->source.Close();
     }
 }
 
-void WinUIIsland::setVolume(double gain) {
+bool WinUIIsland::ok() const {
+    return static_cast<bool>(host_->source);
+}
+
+void WinUIIsland::fail(const wxString& reason) {
+    runtime().failure = reason;
+    if (host_->source) {
+        host_->source.Close();
+        host_->source = nullptr;
+    }
+}
+
+// --- the transport strip --------------------------------------------------------
+
+struct WinUITransport::Impl {
+    mux::Controls::Slider slider{nullptr};
+    mux::Controls::Button playPause{nullptr};
+    bool                  quiet = false;
+};
+
+WinUITransport::WinUITransport(wxWindow* parent, double volume)
+    : WinUIIsland(parent), impl_(std::make_unique<Impl>()) {
+    SetMinSize(FromDIP(wxSize(-1, 64)));
+    if (!ok()) {
+        return;
+    }
+
+    try {
+        Impl& impl = *impl_;
+
+        auto row = mux::Controls::StackPanel();
+        row.Orientation(mux::Controls::Orientation::Horizontal);
+        row.Spacing(12);
+        row.Padding(mux::ThicknessHelper::FromLengths(8, 4, 8, 4));
+        row.VerticalAlignment(mux::VerticalAlignment::Center);
+
+        auto label = mux::Controls::TextBlock();
+        label.Text(L"WinUI island");
+        label.VerticalAlignment(mux::VerticalAlignment::Center);
+        row.Children().Append(label);
+
+        impl.playPause = mux::Controls::Button();
+        impl.playPause.Content(winrt::box_value(L"Play"));
+        impl.playPause.Click([this](auto&&, auto&&) {
+            if (playPauseClicked) {
+                playPauseClicked();
+            }
+        });
+        row.Children().Append(impl.playPause);
+
+        impl.slider = mux::Controls::Slider();
+        impl.slider.Minimum(0);
+        impl.slider.Maximum(100);
+        impl.slider.Width(200);
+        impl.slider.Value(volume * 100.0);
+        impl.slider.VerticalAlignment(mux::VerticalAlignment::Center);
+        impl.slider.ValueChanged([this](auto&&, auto const& args) {
+            if (!impl_->quiet && volumeChanged) {
+                volumeChanged(args.NewValue() / 100.0);
+            }
+        });
+        row.Children().Append(impl.slider);
+
+        auto toggle = mux::Controls::ToggleSwitch();
+        toggle.Header(winrt::box_value(L"WinUI playlist"));
+        toggle.VerticalAlignment(mux::VerticalAlignment::Center);
+        toggle.Toggled([this](auto const& sender, auto&&) {
+            if (winUIPlaylistToggled) {
+                winUIPlaylistToggled(sender.template as<mux::Controls::ToggleSwitch>().IsOn());
+            }
+        });
+        row.Children().Append(toggle);
+
+        // A Grid around the row so the island has a surface of its own colour;
+        // without one it composites as black where nothing is drawn.
+        auto root = mux::Controls::Grid();
+        root.Background(mux::Media::SolidColorBrush(winrt::unbox_value<winrt::Windows::UI::Color>(
+            mux::Application::Current().Resources().Lookup(
+                winrt::box_value(L"SolidBackgroundFillColorBase")))));
+        root.Children().Append(row);
+        host_->source.Content(root);
+    } catch (const winrt::hresult_error& error) {
+        fail(describeWinRTError("The transport island did not build", error));
+    }
+}
+
+WinUITransport::~WinUITransport() = default;
+
+void WinUITransport::setVolume(double gain) {
     if (!impl_->slider) {
         return;
     }
@@ -291,7 +297,7 @@ void WinUIIsland::setVolume(double gain) {
     impl_->quiet = false;
 }
 
-void WinUIIsland::setPlaying(bool playing) {
+void WinUITransport::setPlaying(bool playing) {
     if (!impl_->playPause) {
         return;
     }
