@@ -33,6 +33,16 @@ set(XPCOG_WINAPPSDK_RUNTIME_MAJOR 2)
 set(XPCOG_WINAPPSDK_RUNTIME_MINOR 5)
 set(XPCOG_WINAPPSDK_RUNTIME_PATCH 1)
 
+# Microsoft's runtime installer for that version, which the Windows installer
+# fetches on a machine that does not have the runtime yet -- 120 MB, which is
+# why it is fetched rather than carried -- and which CI installs before the
+# WinUI tests. Pinned and hashed together with the version above: a bump of one
+# is a bump of all three.
+set(XPCOG_WINAPPSDK_RUNTIME_INSTALLER_URL
+    "https://aka.ms/windowsappsdk/2.5/2.5.1/windowsappruntimeinstall-x64.exe")
+set(XPCOG_WINAPPSDK_RUNTIME_INSTALLER_SHA256
+    "931a421e8dc3e6e67724806cb67fecdbb88dfe323f0170842eb4a4b4b149f1e2")
+
 # name|NuGet id|version|sha256 -- the versions Microsoft.WindowsAppSDK 2.5.1 pins.
 set(_winappsdk_packages
     "foundation|microsoft.windowsappsdk.foundation|2.3.12|ce04d01d68cb16b5dc85a5c9efb8162dba876bc2e5b766b5968979899d4efa9e"

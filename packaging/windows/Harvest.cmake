@@ -31,9 +31,17 @@ if(NOT XPCOG_STAGE_DIR OR NOT XPCOG_OUT_DIR)
     message(FATAL_ERROR "Harvest.cmake: set XPCOG_STAGE_DIR and XPCOG_OUT_DIR")
 endif()
 
-if(NOT EXISTS "${XPCOG_STAGE_DIR}/XPCog.exe")
+# Which player, and so which executable -- packaging/windows/CMakeLists.txt's
+# XPCOG_INSTALLER_PLAYER. Both are built into the same bin/ while the two
+# coexist, so each leaves out what only the other one loads (below).
+if(NOT XPCOG_PLAYER)
+    set(XPCOG_PLAYER wx)
+    set(XPCOG_PLAYER_EXE "XPCog.exe")
+endif()
+
+if(NOT EXISTS "${XPCOG_STAGE_DIR}/${XPCOG_PLAYER_EXE}")
     message(FATAL_ERROR
-        "Harvest.cmake: no XPCog.exe in ${XPCOG_STAGE_DIR}. Build the app before "
+        "Harvest.cmake: no ${XPCOG_PLAYER_EXE} in ${XPCOG_STAGE_DIR}. Build the app before "
         "packaging it.")
 endif()
 
@@ -52,7 +60,22 @@ set(_skipped "")
 file(GLOB _entries LIST_DIRECTORIES false "${XPCOG_STAGE_DIR}/*")
 foreach(_entry IN LISTS _entries)
     get_filename_component(_name "${_entry}" NAME)
-    if(_name STREQUAL "XPCog.exe"
+    # What belongs to the other player only. wx's DLLs are named for wx; the
+    # WinUI player's two are its runtime's bootstrapper and Win2D, and its
+    # window icon, which AppWindow takes as a file beside the executable. What
+    # wx alone pulls in under its own DLLs -- its image libraries -- still comes
+    # along with the WinUI player, until app/ goes and takes them with it.
+    if(XPCOG_PLAYER STREQUAL "winui")
+        if(_name MATCHES "^wx" OR _name STREQUAL "XPCog.exe")
+            list(APPEND _skipped "${_name}")
+            continue()
+        endif()
+    elseif(_name MATCHES "^Microsoft\\.(WindowsAppRuntime\\.Bootstrap|Graphics\\.Canvas)\\.dll$")
+        list(APPEND _skipped "${_name}")
+        continue()
+    endif()
+    if(_name STREQUAL XPCOG_PLAYER_EXE
+            OR (XPCOG_PLAYER STREQUAL "winui" AND _name STREQUAL "xpcog.ico")
             OR _name STREQUAL "crashpad_handler.exe"
             OR _name MATCHES "\\.dll$")
         list(APPEND _ship "${_entry}")

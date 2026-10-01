@@ -10,13 +10,16 @@
 ;
 ; --- What this exists to do beyond copying files ---------------------------
 ;
-; Three things the build tree cannot do for itself:
+; What the build tree cannot do for itself:
 ;
 ;   * A Start menu shortcut. docs/PORTING.md records why this waits on an
 ;     installer rather than the app writing to the Start menu at first run.
-;   * File associations. `XPCog --register` has always been able to add XPCog to
-;     each extension's "Open with" list, and nothing ever ran it -- a feature
-;     reachable only by someone who read the source. It is a component here.
+;   * File associations: XPCog added to each extension's "Open with" list, for
+;     the extensions this build's codecs claim -- Associations.cmake asks the
+;     codec registry at packaging time and generates the lines. Written here,
+;     under the install's own scope, and removed by the uninstaller.
+;   * For the WinUI player, the Windows App Runtime it runs on, fetched from
+;     Microsoft when the machine does not have it already.
 ;   * An uninstaller, and an Add/Remove Programs entry, so a folder of 45 DLLs
 ;     can be removed by the means Windows users actually reach for.
 ;
@@ -26,6 +29,7 @@
 ;   /AllUsers           install for everyone (Program Files; needs elevation)
 ;   /CurrentUser        install for the running user only (no elevation)
 ;   /NOASSOC            do not touch file associations
+;   /NORUNTIME          do not fetch the Windows App Runtime (WinUI player)
 ;   /D=<dir>            installation directory; must be last, and unquoted
 ;
 ; The uninstaller takes /S and the same two scope switches; the scope it was
@@ -46,6 +50,19 @@ CRCCheck on
 !define XPCOG_VERSION   "@XPCOG_VERSION@"
 !define XPCOG_PUBLISHER "LoSnoCo"
 !define XPCOG_URL       "https://github.com/losnoco/XPCog"
+
+; The player this installer carries -- XPCOG_INSTALLER_PLAYER in
+; packaging/windows/CMakeLists.txt -- and so the executable everything below
+; points at. XPCOG_WINUI is 1 for the WinUI player, which needs the Windows App
+; Runtime installed beside it.
+!define XPCOG_EXE       "@XPCOG_PLAYER_EXE@"
+!define XPCOG_WINUI     @XPCOG_NSIS_WINUI@
+
+; The file associations' ProgID: what each extension's OpenWithProgids names,
+; and what describes the file type and how to open it. The same one the wx
+; player's --register writes, so the two never offer XPCog twice.
+!define XPCOG_PROGID    "XPCog.AudioFile"
+!define XPCOG_CLASSES   "Software\Classes"
 
 ; Where Add/Remove Programs looks, and -- because MULTIUSER_INSTALLMODE_*
 ; below point at it -- also how a second run of this installer discovers where
@@ -152,9 +169,9 @@ VIAddVersionKey "LegalCopyright"  "GNU General Public License, version 3 or late
 ; ---------------------------------------------------------------------------
 !macro XPCogAbortIfRunning UNIQUE
     xpcog_running_${UNIQUE}:
-    ${If} ${FileExists} "$INSTDIR\XPCog.exe"
+    ${If} ${FileExists} "$INSTDIR\${XPCOG_EXE}"
         ClearErrors
-        FileOpen $0 "$INSTDIR\XPCog.exe" a
+        FileOpen $0 "$INSTDIR\${XPCOG_EXE}" a
         ${If} ${Errors}
             ; Silent runs have nobody to ask; failing loudly is the only choice
             ; that does not half-install over a live process.
@@ -207,7 +224,7 @@ Section "${XPCOG_NAME}" SecCore
     ; on the install-mode page; MultiUser.nsh set it.
     WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "DisplayName"     "${XPCOG_NAME}"
     WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "DisplayVersion"  "${XPCOG_VERSION}"
-    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "DisplayIcon"     "$INSTDIR\XPCog.exe,0"
+    WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "DisplayIcon"     "$INSTDIR\${XPCOG_EXE},0"
     WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "Publisher"       "${XPCOG_PUBLISHER}"
     WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "URLInfoAbout"    "${XPCOG_URL}"
     WriteRegStr   SHCTX "${XPCOG_UNINST_KEY}" "InstallLocation" "$INSTDIR"
@@ -231,7 +248,7 @@ Section "Start menu shortcut" SecStartMenu
     ; executable rather than to the working directory -- so this is belt and
     ; braces rather than load-bearing, and cheap enough to keep that way.
     SetOutPath "$INSTDIR"
-    CreateShortcut "$SMPROGRAMS\${XPCOG_NAME}.lnk" "$INSTDIR\XPCog.exe"
+    CreateShortcut "$SMPROGRAMS\${XPCOG_NAME}.lnk" "$INSTDIR\${XPCOG_EXE}"
 
     ; Deliberately *not* carrying System.AppUserModel.ID. docs/PORTING.md works
     ; through why the SMTC card says "Unknown app": that needs package identity,
@@ -244,26 +261,117 @@ SectionEnd
 
 Section /o "Desktop shortcut" SecDesktop
     SetOutPath "$INSTDIR"
-    CreateShortcut "$DESKTOP\${XPCOG_NAME}.lnk" "$INSTDIR\XPCog.exe"
+    CreateShortcut "$DESKTOP\${XPCOG_NAME}.lnk" "$INSTDIR\${XPCOG_EXE}"
 SectionEnd
 
+; ---------------------------------------------------------------------------
+; File associations.
+;
+; The same keys the wx player's --register writes (platform/src/windows/
+; FileAssociations.cpp), written by this script instead, and the two halves of
+; a change of approach worth stating:
+;
+;   * Under SHCTX, not always HKCU. A per-machine install offers XPCog to every
+;     account on the machine; a per-user one to the user who ran it. --register
+;     wrote HKCU whatever the scope, so only the account that ran the installer
+;     was ever offered it.
+;   * The extension list is generated at packaging time from this build's codec
+;     registry (Associations.cmake), one XPCogAssociate line per extension, and
+;     the uninstaller is built from the same list -- so it removes what was
+;     written, without the executable having to be there to say what that was.
+;
+; Not written: an extension's own default value, which is its current handler.
+; Adding to OpenWithProgids offers XPCog; overwriting the default would take the
+; file type from whatever has it, and would not work anyway -- since Windows 8
+; the effective default is a hash-protected UserChoice only Settings can write.
+; ---------------------------------------------------------------------------
+!macro XPCogAssociate EXT
+    WriteRegStr SHCTX "${XPCOG_CLASSES}\Applications\${XPCOG_EXE}\SupportedTypes" ".${EXT}" ""
+    WriteRegStr SHCTX "${XPCOG_CLASSES}\.${EXT}\OpenWithProgids" "${XPCOG_PROGID}" ""
+!macroend
+
+; Values only, never keys. An extension's key and its OpenWithProgids are shared
+; with every other program that handles the type -- and DeleteRegKey /ifempty
+; counts subkeys, not values, so it would take a key holding another program's
+; entries with it. An empty key left behind costs nothing.
+!macro XPCogDissociate EXT
+    DeleteRegValue SHCTX "${XPCOG_CLASSES}\.${EXT}\OpenWithProgids" "${XPCOG_PROGID}"
+!macroend
+
+; SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSH): without it
+; Explorer shows the old "Open with" list until it restarts, which reads as the
+; registration having failed.
+!macro XPCogNotifyShell
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0x1000, p 0, p 0)'
+!macroend
+
 Section "Offer XPCog in the $\"Open with$\" lists" SecAssoc
-    ; The application's own --register, rather than this script writing the
-    ; registry. platform/src/windows/FileAssociations.cpp builds the extension
-    ; list from PluginRegistry::allExtensions(), so it cannot fall behind the
-    ; codecs the way a list pasted into an installer would -- and it writes the
-    ; ProgID, the Applications key and the OpenWithProgids entries as one
-    ; consistent set that --unregister knows how to undo.
-    ;
-    ; Note this is per-user even when the install is per-machine: those keys are
-    ; HKCU by design, so the account that ran the installer is the one offered
-    ; XPCog. Another user on the same machine runs `XPCog --register` once.
     DetailPrint "Registering file types..."
-    ExecWait '"$INSTDIR\XPCog.exe" --register' $0
-    ${If} $0 != 0
-        DetailPrint "  --register exited with $0; file types were not registered."
-    ${EndIf}
+    WriteRegStr SHCTX "${XPCOG_CLASSES}\${XPCOG_PROGID}" "" "Audio File"
+    WriteRegStr SHCTX "${XPCOG_CLASSES}\${XPCOG_PROGID}\DefaultIcon" "" "$INSTDIR\${XPCOG_EXE},0"
+    WriteRegStr SHCTX "${XPCOG_CLASSES}\${XPCOG_PROGID}\shell\open\command" "" \
+        '"$INSTDIR\${XPCOG_EXE}" "%1"'
+    ; FriendlyAppName is what "Open with" shows instead of the image name.
+    WriteRegStr SHCTX "${XPCOG_CLASSES}\Applications\${XPCOG_EXE}" "FriendlyAppName" "${XPCOG_NAME}"
+    WriteRegStr SHCTX "${XPCOG_CLASSES}\Applications\${XPCOG_EXE}\shell\open\command" "" \
+        '"$INSTDIR\${XPCOG_EXE}" "%1"'
+    !include "@XPCOG_GENERATED_DIR_NATIVE@\associations-install.nsh"
+    !insertmacro XPCogNotifyShell
 SectionEnd
+
+!if ${XPCOG_WINUI} == 1
+; ---------------------------------------------------------------------------
+; The Windows App Runtime.
+;
+; The WinUI player is unpackaged and framework-dependent: it finds the runtime's
+; framework package at start-up through the bootstrapper beside it, and without
+; one says so and stops. Microsoft's runtime installer is 120 MB, which would
+; triple this installer for the machines that already have it -- so it is
+; fetched only where the check below finds no runtime at the version the
+; player was built against, from the URL and with the hash
+; cmake/XPCogWinAppSdk.cmake pins. A machine offline at install time gets the
+; player and a message; running the runtime installer later is enough.
+; ---------------------------------------------------------------------------
+Section "Windows App Runtime (downloaded if missing)" SecRuntime
+    InitPluginsDir
+    File "/oname=$PLUGINSDIR\WindowsAppRuntime.ps1" "@XPCOG_RUNTIME_SCRIPT@"
+    StrCpy $R1 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\WindowsAppRuntime.ps1"'
+
+    nsExec::Exec '$R1 -Check -Minimum @XPCOG_RUNTIME_MINIMUM@'
+    Pop $0
+    ${If} $0 == 0
+        DetailPrint "The Windows App Runtime @XPCOG_RUNTIME_MINIMUM@ or later is installed."
+        Goto xpcog_runtime_done
+    ${EndIf}
+
+    DetailPrint "Downloading the Windows App Runtime..."
+    nsExec::Exec '$R1 -Download -Url "@XPCOG_WINAPPSDK_RUNTIME_INSTALLER_URL@" -Sha256 @XPCOG_WINAPPSDK_RUNTIME_INSTALLER_SHA256@ -OutFile "$PLUGINSDIR\WindowsAppRuntimeInstall.exe"'
+    Pop $0
+    ${If} $0 != 0
+        DetailPrint "  The download failed ($0)."
+        Goto xpcog_runtime_failed
+    ${EndIf}
+
+    DetailPrint "Installing the Windows App Runtime..."
+    ExecWait '"$PLUGINSDIR\WindowsAppRuntimeInstall.exe" --quiet' $0
+    ${If} $0 != 0
+        DetailPrint "  The runtime installer exited with $0."
+        Goto xpcog_runtime_failed
+    ${EndIf}
+    Goto xpcog_runtime_done
+
+    xpcog_runtime_failed:
+    ; Not fatal: the player is installed, and the runtime can be added after.
+    ${IfNot} ${Silent}
+        MessageBox MB_OK|MB_ICONEXCLAMATION \
+            "The Windows App Runtime could not be installed, and ${XPCOG_NAME} needs it to \
+             start.$\n$\nInstall it from @XPCOG_WINAPPSDK_RUNTIME_INSTALLER_URL@ \
+             and then run ${XPCOG_NAME}."
+    ${EndIf}
+
+    xpcog_runtime_done:
+SectionEnd
+!endif
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
     !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} \
@@ -276,6 +384,11 @@ SectionEnd
         "Add ${XPCOG_NAME} to the $\"Open with$\" list for the audio formats this \
          build understands. It does not take any file type away from the program \
          that currently opens it."
+!if ${XPCOG_WINUI} == 1
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecRuntime} \
+        "The Microsoft runtime ${XPCOG_NAME} is built on, downloaded from Microsoft \
+         (about 120 MB) only if this computer does not have it yet."
+!endif
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ---------------------------------------------------------------------------
@@ -284,15 +397,18 @@ SectionEnd
 Section "Uninstall"
     !insertmacro XPCogAbortIfRunning uninstall
 
-    ; Before the executable is deleted, because it is what knows which
-    ; extensions were claimed -- it reads them back out of its own SupportedTypes
-    ; key. Unconditional: the associations may have been registered by hand after
-    ; an install that skipped that component, and --unregister on a machine that
-    ; has none is a no-op.
-    ${If} ${FileExists} "$INSTDIR\XPCog.exe"
-        DetailPrint "Removing file type registrations..."
-        ExecWait '"$INSTDIR\XPCog.exe" --unregister'
-    ${EndIf}
+    ; Unconditional, and harmless where the component was not chosen: every
+    ; step removes one value or key this installer may have written, and
+    ; removing one that is absent does nothing. The list is the one the
+    ; installer wrote, generated with it.
+    DetailPrint "Removing file type registrations..."
+    !include "@XPCOG_GENERATED_DIR_NATIVE@\associations-uninstall.nsh"
+    DeleteRegKey SHCTX "${XPCOG_CLASSES}\${XPCOG_PROGID}"
+    DeleteRegKey SHCTX "${XPCOG_CLASSES}\Applications\${XPCOG_EXE}"
+    !insertmacro XPCogNotifyShell
+
+    ; The Windows App Runtime stays: it is Microsoft's, shared by every app on
+    ; the machine built on it, and not this program's to remove.
 
     ; Every Delete line, generated alongside the File lines it undoes.
     !include "@XPCOG_GENERATED_DIR_NATIVE@\payload-uninstall.nsh"
@@ -325,7 +441,7 @@ Function .onInit
     ; script keeps in the registry is read back by something on the other side of
     ; that: Add/Remove Programs finds the entry either way, but a second run of
     ; this installer looks up InstallLocation to discover where the first one put
-    ; things, and the app's own --register writes its file associations natively.
+    ; things, and the file associations are read by the 64-bit shell.
     ; Without this line an upgrade built with a different NSIS would fail to see
     ; the earlier install and put a second copy beside it.
     ;
@@ -378,6 +494,17 @@ Function .onInit
     ${IfNot} ${Errors}
         !insertmacro UnselectSection ${SecAssoc}
     ${EndIf}
+
+!if ${XPCOG_WINUI} == 1
+    ; /NORUNTIME, for a deployment that puts the Windows App Runtime on its
+    ; machines by its own means and does not want each install reaching out to
+    ; Microsoft for it.
+    ClearErrors
+    ${GetOptions} $R0 "/NORUNTIME" $R1
+    ${IfNot} ${Errors}
+        !insertmacro UnselectSection ${SecRuntime}
+    ${EndIf}
+!endif
 FunctionEnd
 
 Function un.onInit
@@ -402,5 +529,5 @@ FunctionEnd
 
 Function XPCogLaunch
     ; See MUI_FINISHPAGE_RUN above for why this goes through Explorer.
-    Exec '"$WINDIR\explorer.exe" "$INSTDIR\XPCog.exe"'
+    Exec '"$WINDIR\explorer.exe" "$INSTDIR\${XPCOG_EXE}"'
 FunctionEnd

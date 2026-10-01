@@ -107,13 +107,17 @@ endif()
 
 if(XPCOG_BUILD_WX_APP)
     add_subdirectory(app)
-    # Packaging, after the thing being packaged. `installer` is never built by
-    # ALL; see packaging/windows/CMakeLists.txt.
-    add_subdirectory(packaging/windows)
 endif()
 
 if(XPCOG_BUILD_WX_APP AND XPCOG_BUILD_WINUI_APP)
     add_subdirectory(app-winui)
+endif()
+
+# Packaging, after both of the things it can package -- the installer carries
+# one player or the other, XPCOG_INSTALLER_PLAYER. `installer` is never built
+# by ALL; see packaging/windows/CMakeLists.txt.
+if(XPCOG_BUILD_WX_APP)
+    add_subdirectory(packaging/windows)
 endif()
 
 if(XPCOG_BUILD_GTK_APP)

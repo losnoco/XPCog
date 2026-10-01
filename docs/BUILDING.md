@@ -89,10 +89,15 @@ DLLs by hand, so the installer cannot fall behind `vcpkg.json`. The CLI, the tes
 binaries and the `.pdb`s are left out, and the build log names what it skipped.
 
 The installer offers **per-machine or per-user**, writes a Start menu shortcut and
-an Add/Remove Programs entry, and — as a component the user can untick — runs
-XPCog's own `--register` to add it to the *Open with* lists for every format this
-build understands. The uninstaller reverses all of it and leaves settings and the
-library database alone. For unattended use:
+an Add/Remove Programs entry, and — as a component the user can untick — adds
+XPCog to the *Open with* lists for every format this build understands. The list
+is not written down anywhere: `packaging/windows/Associations.cmake` runs
+`xpcog-list-extensions`, a small program linking the same codecs the player does,
+and turns what the codec registry claims into the installer's registry lines and
+the uninstaller's matching removals. They are written under the install's own
+scope, so a per-machine install offers XPCog to every account. The uninstaller
+reverses all of it and leaves settings and the library database alone. For
+unattended use:
 
 ```bat
 XPCog-2.0.2-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
@@ -103,11 +108,21 @@ with nobody there to answer it; without it, pushing XPCog to a fleet would
 rearrange every machine's file associations on a default chosen for someone
 clicking through a wizard.
 
+**Which player it carries** is `XPCOG_INSTALLER_PLAYER`: `wx`, the default and
+what releases ship, or `winui`, which packages `XPCog-WinUI.exe` as
+`XPCog-<version>-x64-winui-setup.exe`. The WinUI player runs on the Windows App
+Runtime, which Microsoft's 120 MB installer provides; the WinUI installer checks
+for runtime 2.5.1 or later and, only where it is missing, downloads that
+installer from the URL `cmake/XPCogWinAppSdk.cmake` pins, checks its hash and
+runs it. `/NORUNTIME` skips that for a deployment that installs the runtime by
+its own means.
+
 **CI builds one on every run.** The `Windows installer` job installs the fork
 through [`negrutiu/nsis-install`](https://github.com/negrutiu/nsis-install) at a
 pinned release, configures `windows-app-release`, packages it, and attaches
 `XPCog-<version>-x64-setup.exe` to the run as an artifact — so a pull request that breaks the packaging says so
-where it broke rather than at release time. It is unsigned, as a locally built
+where it broke rather than at release time. It then builds the WinUI installer
+from the same tree as a second artifact, to try rather than to release. It is unsigned, as a locally built
 one is. Its Last.fm credentials come from repository secrets; see
 [Last.fm credentials](#lastfm-credentials) below.
 
