@@ -320,6 +320,24 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
 
+      # The Windows App Runtime, which the WinUI suite (tests/winui) needs to
+      # make a window at all and which no runner image carries. The version,
+      # URL and hash are cmake/XPCogWinAppSdk.cmake's, read out of it rather
+      # than restated, and the same script the installer runs fetches it.
+      - name: Install the Windows App Runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $sdk = Get-Content cmake/XPCogWinAppSdk.cmake -Raw
+          $url = [regex]::Match($sdk, 'XPCOG_WINAPPSDK_RUNTIME_INSTALLER_URL\s+"([^"]+)"').Groups[1].Value
+          $sha = [regex]::Match($sdk, 'XPCOG_WINAPPSDK_RUNTIME_INSTALLER_SHA256\s+"([^"]+)"').Groups[1].Value
+          if (-not $url -or -not $sha) { throw "no runtime installer URL or hash in cmake/XPCogWinAppSdk.cmake" }
+          $out = Join-Path $env:RUNNER_TEMP 'WindowsAppRuntimeInstall.exe'
+          & packaging/windows/WindowsAppRuntime.ps1 -Download -Url $url -Sha256 $sha -OutFile $out
+          if ($LASTEXITCODE -ne 0) { throw "runtime download failed ($LASTEXITCODE)" }
+          & $out --quiet
+          if ($LASTEXITCODE -ne 0) { throw "runtime installer exited with $LASTEXITCODE" }
+
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
@@ -718,6 +736,24 @@ jobs:
         with:
           name: XPCog-windows-x64-installer
           path: build/windows-app-release/XPCog-*-x64-setup.exe
+          if-no-files-found: error
+
+      # The WinUI player's installer, from the same tree, after the one above
+      # has been uploaded -- the -D lands in the cache, so it comes last. An
+      # artifact to try, not a release asset: the release job takes the one
+      # above by name, and this one's file name says winui so it cannot be
+      # taken for it. When app/ goes, XPCOG_INSTALLER_PLAYER's default flips
+      # and this step goes with it.
+      - name: Build the WinUI installer
+        run: |
+          cmake --preset windows-app-release -D XPCOG_INSTALLER_PLAYER=winui
+          cmake --build --preset windows-app-release --target installer
+
+      - name: Upload the WinUI installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: XPCog-windows-x64-winui-installer
+          path: build/windows-app-release/XPCog-*-x64-winui-setup.exe
           if-no-files-found: error
   linux-package:
     # The Linux tarball, built the way it would ship.
