@@ -10,6 +10,7 @@
 #endif
 #include "PlaylistTable.hpp"
 #include "SeekBar.hpp"
+#include "Sizer.hpp"
 #include "WinRT.hpp"
 
 #include "xpcog/core/Signal.hpp"
@@ -83,6 +84,8 @@ private:
     [[nodiscard]] bool panelShown() const;
     void showTool(const std::string& name, bool show);
     void refreshVisualizers();
+    /// Each sizer shown exactly when the pane it resizes is.
+    void syncSizers();
     /// The track Info and Lyrics describe: the selection's first, or the
     /// playing one, as the follow setting says.
     [[nodiscard]] TrackId panelTrackId() const;
@@ -144,6 +147,11 @@ private:
     std::unique_ptr<SpeedPane>           speed_;
     std::unique_ptr<ToolsStrip>          tools_;
     mux::FrameworkElement                toolsHost_{nullptr};
+    /// The grid the panes and the gaps between them sit in.
+    mux::Controls::Grid                  middle_{nullptr};
+    std::unique_ptr<Sizer>               treeSizer_;
+    std::unique_ptr<Sizer>               panelSizer_;
+    std::unique_ptr<Sizer>               toolsSizer_;
     /// The window's last size and place while it was neither maximised nor
     /// minimised -- what to restore it to, which AppWindow does not remember.
     winrt::Windows::Graphics::RectInt32  normalBounds_{};

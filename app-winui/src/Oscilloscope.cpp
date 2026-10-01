@@ -101,7 +101,15 @@ void OscilloscopeView::applySettings(const Settings& settings) {
     fill_        = settings.ScopeFill();
     trigger_     = settings.ScopeTrigger();
     logScale_    = settings.ScopeLogScale();
-    channels_    = app::scopeChannelsFromKey(settings.ScopeChannels());
+    // A new layout reads lanes the last frame did not fill: switching from
+    // mono to a stereo layout left `left_` and `right_` empty while the frame
+    // still said where in them to start, and the redraw below read past their
+    // end. The frame is dropped; the next tick reads every lane it needs.
+    if (const Channels channels = app::scopeChannelsFromKey(settings.ScopeChannels());
+        channels != channels_) {
+        channels_  = channels;
+        haveFrame_ = false;
+    }
 
     const int frameRate = std::clamp(settings.ScopeFrameRate(), 15, 120);
     if (frameRate != frameRate_) {
@@ -183,8 +191,11 @@ void OscilloscopeView::draw(const canvas::CanvasDrawingSession& ds, float width,
     const int columns = static_cast<int>(width);
 
     const std::size_t count = haveFrame_ ? traceFrames_ : 0;
-    const auto        lane  = [&](const std::vector<float>& samples) -> const float* {
-        return haveFrame_ ? samples.data() + traceStart_ : nullptr;
+    // And a lane that does not hold the whole slice is drawn as nothing rather
+    // than read past -- the belt to the braces in applySettings().
+    const auto lane = [&](const std::vector<float>& samples) -> const float* {
+        return haveFrame_ && samples.size() >= traceStart_ + count ? samples.data() + traceStart_
+                                                                   : nullptr;
     };
 
     switch (channels_) {

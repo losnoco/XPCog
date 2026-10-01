@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 
@@ -28,6 +29,17 @@ constexpr const wchar_t* kGlyphStop     = L"\xE71A";
 constexpr const wchar_t* kGlyphPrevious = L"\xE892";
 constexpr const wchar_t* kGlyphNext     = L"\xE893";
 constexpr const wchar_t* kGlyphVolume   = L"\xE767";
+
+// How far the sizers let the panes go, in DIPs. Narrower than the minimums
+// and a pane stops being able to show what it is for; wider than the maximums
+// and it only crowds the playlist.
+constexpr double kMinTreeWidth     = 180;
+constexpr double kMaxTreeWidth     = 640;
+constexpr double kMinPanelWidth    = 260;
+constexpr double kMaxPanelWidth    = 720;
+constexpr double kMinPlaylistWidth = 320;
+constexpr double kMinStripHeight   = 120;
+constexpr double kMinContentHeight = 160;
 
 constexpr const wchar_t* kXmlns = L"xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'";
 
@@ -250,40 +262,74 @@ void MainWindow::build() {
     tools_->addSection("scope", app::commandLabel(app::CommandId::ViewOscilloscope),
                        scope_->element());
     tools_->addSection("equalizer", app::commandLabel(app::CommandId::ViewEqualizer),
-                       equalizer_->element());
-    tools_->addSection("speed", app::commandLabel(app::CommandId::ViewSpeed), speed_->element());
+                       equalizer_->element(), ToolsStrip::Scroll::Both);
+    tools_->addSection("speed", app::commandLabel(app::CommandId::ViewSpeed), speed_->element(),
+                       ToolsStrip::Scroll::Vertical);
 #ifdef XPCOG_HAVE_SC55_PANEL
     tools_->addSection("sc55", app::commandLabel(app::CommandId::ViewSc55Panel), sc55_->element());
 #endif
     tools_->closeRequested = [this](const std::string& name) { showTool(name, false); };
 
-    auto middle = mux::Controls::Grid();
+    // The gaps between the cards are the sizers: columns tree | gap | playlist
+    // | gap | panel, rows content | gap | tools. A gap whose pane is hidden
+    // goes with it, so a hidden pane leaves no handle and no space behind.
+    middle_ = mux::Controls::Grid();
+    auto& middle = middle_;
     middle.Margin(mux::ThicknessHelper::FromLengths(12, 0, 12, 0));
-    middle.ColumnSpacing(8);
-    middle.RowSpacing(8);
-    for (const auto& width : {mux::GridLengthHelper::Auto(),
+    for (const auto& width : {mux::GridLengthHelper::Auto(), mux::GridLengthHelper::Auto(),
                               mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
-                              mux::GridLengthHelper::Auto()}) {
+                              mux::GridLengthHelper::Auto(), mux::GridLengthHelper::Auto()}) {
         auto column = mux::Controls::ColumnDefinition();
         column.Width(width);
         middle.ColumnDefinitions().Append(column);
     }
+    // The playlist keeps a usable width however far the panes are dragged.
+    middle.ColumnDefinitions().GetAt(2).MinWidth(kMinPlaylistWidth);
     for (const auto& height : {mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
-                               mux::GridLengthHelper::Auto()}) {
+                               mux::GridLengthHelper::Auto(), mux::GridLengthHelper::Auto()}) {
         auto row = mux::Controls::RowDefinition();
         row.Height(height);
         middle.RowDefinitions().Append(row);
     }
-    mux::Controls::Grid::SetColumn(playlistCard, 1);
-    mux::Controls::Grid::SetColumn(panelCard_, 2);
+
+    treeSizer_ = std::make_unique<Sizer>(
+        Sizer::Axis::Columns, [this] { return treeCard_.Width(); },
+        [this](double width) { treeCard_.Width(std::clamp(width, kMinTreeWidth, kMaxTreeWidth)); },
+        +1.0);
+    panelSizer_ = std::make_unique<Sizer>(
+        Sizer::Axis::Columns, [this] { return panelCard_.Width(); },
+        [this](double width) { panelCard_.Width(std::clamp(width, kMinPanelWidth, kMaxPanelWidth)); },
+        -1.0);
+    toolsSizer_ = std::make_unique<Sizer>(
+        Sizer::Axis::Rows, [this] { return toolsHost_.ActualHeight(); },
+        [this](double height) {
+            // Up to whatever leaves the playlist a few rows to show.
+            const double most = std::max(kMinStripHeight, middle_.ActualHeight() - kMinContentHeight);
+            toolsHost_.Height(std::clamp(height, kMinStripHeight, most));
+        },
+        -1.0);
+    for (Sizer* sizer : {treeSizer_.get(), panelSizer_.get(), toolsSizer_.get()}) {
+        sizer->finished = [this] { persistState(); };
+    }
+
+    mux::Controls::Grid::SetColumn(treeSizer_->element(), 1);
+    mux::Controls::Grid::SetColumn(playlistCard, 2);
+    mux::Controls::Grid::SetColumn(panelSizer_->element(), 3);
+    mux::Controls::Grid::SetColumn(panelCard_, 4);
     toolsHost_ = tools_->element().as<mux::FrameworkElement>();
-    mux::Controls::Grid::SetRow(toolsHost_, 1);
-    mux::Controls::Grid::SetColumnSpan(toolsHost_, 3);
+    mux::Controls::Grid::SetRow(toolsSizer_->element(), 1);
+    mux::Controls::Grid::SetColumnSpan(toolsSizer_->element(), 5);
+    mux::Controls::Grid::SetRow(toolsHost_, 2);
+    mux::Controls::Grid::SetColumnSpan(toolsHost_, 5);
     toolsHost_.Visibility(mux::Visibility::Collapsed);
     middle.Children().Append(treeCard_);
+    middle.Children().Append(treeSizer_->element());
     middle.Children().Append(playlistCard);
+    middle.Children().Append(panelSizer_->element());
     middle.Children().Append(panelCard_);
+    middle.Children().Append(toolsSizer_->element());
     middle.Children().Append(toolsHost_);
+    syncSizers();
 
     // After the playlist, which the enabled states read.
     commands_ = std::make_unique<CommandMenus>(CommandMenus::Hooks{
@@ -875,7 +921,15 @@ bool MainWindow::fileTreeShown() const {
 
 void MainWindow::showFileTree(bool show) {
     treeCard_.Visibility(show ? mux::Visibility::Visible : mux::Visibility::Collapsed);
+    syncSizers();
     refreshCommands();
+}
+
+void MainWindow::syncSizers() {
+    const auto shown = [](bool on) { return on ? mux::Visibility::Visible : mux::Visibility::Collapsed; };
+    treeSizer_->element().Visibility(shown(fileTreeShown()));
+    panelSizer_->element().Visibility(shown(panelShown()));
+    toolsSizer_->element().Visibility(shown(tools_->anyShown()));
 }
 
 bool MainWindow::panelShown() const {
@@ -905,6 +959,7 @@ void MainWindow::togglePanel(const std::string& page) {
         panelCard_.Visibility(mux::Visibility::Visible);
         showPanelPage(page);
     }
+    syncSizers();
     refreshCommands();
 }
 
@@ -924,6 +979,7 @@ void MainWindow::showTool(const std::string& name, bool show) {
     tools_->setShown(name, show);
     toolsHost_.Visibility(tools_->anyShown() ? mux::Visibility::Visible : mux::Visibility::Collapsed);
     refreshVisualizers();
+    syncSizers();
     refreshCommands();
 }
 
@@ -1001,6 +1057,13 @@ void MainWindow::persistState() {
     }
     panes += std::string("panels=") + (panelShown() ? "1" : "0") + ";";
     panes += "page=" + panelPage_ + ";";
+    // The sizes the sizers left, in DIPs. The strip's only once it has been
+    // dragged: until then it is as tall as its contents, which is not a size.
+    panes += "tree=" + std::to_string(std::lround(treeCard_.Width())) + ";";
+    panes += "panel=" + std::to_string(std::lround(panelCard_.Width())) + ";";
+    if (const double strip = toolsHost_.Height(); !std::isnan(strip)) {
+        panes += "strip=" + std::to_string(std::lround(strip)) + ";";
+    }
     settings.setRawValue(kPanesKey, panes);
 }
 
@@ -1049,8 +1112,27 @@ void MainWindow::restoreState() {
         }
         const std::string key(entry.substr(0, equals));
         const std::string value(entry.substr(equals + 1));
+        const auto number = [&value](double low, double high) -> std::optional<double> {
+            double parsed = 0;
+            if (std::sscanf(value.c_str(), "%lf", &parsed) != 1 || parsed < low || parsed > high) {
+                return std::nullopt;  // hand-edited, or from a larger screen
+            }
+            return parsed;
+        };
         if (key == "panels") {
             panels = value == "1";
+        } else if (key == "tree") {
+            if (const auto width = number(kMinTreeWidth, kMaxTreeWidth)) {
+                treeCard_.Width(*width);
+            }
+        } else if (key == "panel") {
+            if (const auto width = number(kMinPanelWidth, kMaxPanelWidth)) {
+                panelCard_.Width(*width);
+            }
+        } else if (key == "strip") {
+            if (const auto height = number(kMinStripHeight, 4000)) {
+                toolsHost_.Height(*height);
+            }
         } else if (key == "page" && (value == "info" || value == "lyrics")) {
             showPanelPage(value);
         } else if (key == "spectrum" || key == "scope" || key == "equalizer" || key == "speed" ||
@@ -1059,6 +1141,7 @@ void MainWindow::restoreState() {
         }
     }
     panelCard_.Visibility(panels ? mux::Visibility::Visible : mux::Visibility::Collapsed);
+    syncSizers();
     refreshPanels();
 }
 

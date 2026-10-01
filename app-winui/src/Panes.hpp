@@ -163,7 +163,15 @@ public:
 
     [[nodiscard]] mux::UIElement element() const { return root_; }
 
-    void addSection(const std::string& name, const std::string& title, const mux::UIElement& content);
+    /// How a section's content meets a card smaller than it wants.
+    enum class Scroll {
+        None,      ///< it scales to fit: the analysers, the SC-55
+        Vertical,  ///< it reflows to the card's width and scrolls down
+        Both,      ///< it has a natural width of its own: the equaliser's bands
+    };
+
+    void addSection(const std::string& name, const std::string& title,
+                    const mux::UIElement& content, Scroll scroll = Scroll::None);
     void setShown(const std::string& name, bool shown);
     [[nodiscard]] bool shown(const std::string& name) const;
     [[nodiscard]] bool anyShown() const;

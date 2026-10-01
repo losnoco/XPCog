@@ -32,6 +32,8 @@ set(XPCOG_WINUI_SOURCES
     src/Runtime.hpp
     src/SeekBar.cpp
     src/SeekBar.hpp
+    src/Sizer.cpp
+    src/Sizer.hpp
     src/Visualizers.cpp
     src/Visualizers.hpp
     src/Win2D.cpp

@@ -489,13 +489,11 @@ EqualizerPane::EqualizerPane(Settings& settings)
     for (std::size_t band = 0; band < keys.size(); ++band) {
         addBand(columns, frequencyLabel(frequencies[band]), keys[band]);
     }
-    auto scroller = mux::Controls::ScrollViewer();
-    scroller.HorizontalScrollBarVisibility(mux::Controls::ScrollBarVisibility::Auto);
-    scroller.HorizontalScrollMode(mux::Controls::ScrollMode::Enabled);
-    scroller.VerticalScrollBarVisibility(mux::Controls::ScrollBarVisibility::Disabled);
-    scroller.VerticalScrollMode(mux::Controls::ScrollMode::Disabled);
-    scroller.Content(columns);
-    root_.Children().Append(scroller);
+    // No scroller of its own: the strip's section scrolls the whole pane both
+    // ways (ToolsStrip::Scroll::Both), header row and footer included, which a
+    // scroller around the bands alone did not -- and the one that was here
+    // scrolled only sideways, which a mouse wheel does not reach.
+    root_.Children().Append(columns);
 
     auto footer = mux::Controls::Grid();
     footer.ColumnSpacing(12);
@@ -514,7 +512,9 @@ EqualizerPane::EqualizerPane(Settings& settings)
                                       "makes the equaliser bit-transparent again."))));
     flat.Click([this](auto&&, auto&&) { flatten(); });
     footer.Children().Append(flat);
-    auto note = secondaryText(L"TextWrapping='Wrap' VerticalAlignment='Center' Style='{StaticResource CaptionTextBlockStyle}'");
+    // A width to wrap at: inside a pane that scrolls sideways there is no
+    // width otherwise, and the note would run out in one line.
+    auto note = secondaryText(L"TextWrapping='Wrap' VerticalAlignment='Center' MaxWidth='560' Style='{StaticResource CaptionTextBlockStyle}'");
     note.Text(toH(tr("31 bands, \xC2\xB1""20 dB. Changes apply to the track already playing. A boost can "
                      "clip; the preamp is the headroom for it.")));
     mux::Controls::Grid::SetColumn(note, 1);
@@ -776,7 +776,7 @@ ToolsStrip::ToolsStrip() {
 }
 
 void ToolsStrip::addSection(const std::string& name, const std::string& title,
-                            const mux::UIElement& content) {
+                            const mux::UIElement& content, Scroll scroll) {
     auto section = card();
     auto body    = mux::Controls::Grid();
     {
@@ -813,8 +813,25 @@ void ToolsStrip::addSection(const std::string& name, const std::string& title,
     header.Children().Append(close);
     body.Children().Append(header);
 
-    mux::Controls::Grid::SetRow(content.as<mux::FrameworkElement>(), 1);
-    body.Children().Append(content);
+    if (scroll == Scroll::None) {
+        mux::Controls::Grid::SetRow(content.as<mux::FrameworkElement>(), 1);
+        body.Children().Append(content);
+    } else {
+        // Scroll bars that show when the content does not fit and the pointer
+        // is over it, as WinUI's do; the wheel scrolls down, and Shift with it
+        // across.
+        auto scroller = mux::Controls::ScrollViewer();
+        scroller.VerticalScrollMode(mux::Controls::ScrollMode::Auto);
+        scroller.VerticalScrollBarVisibility(mux::Controls::ScrollBarVisibility::Auto);
+        const bool across = scroll == Scroll::Both;
+        scroller.HorizontalScrollMode(across ? mux::Controls::ScrollMode::Auto
+                                             : mux::Controls::ScrollMode::Disabled);
+        scroller.HorizontalScrollBarVisibility(across ? mux::Controls::ScrollBarVisibility::Auto
+                                                      : mux::Controls::ScrollBarVisibility::Disabled);
+        scroller.Content(content);
+        mux::Controls::Grid::SetRow(scroller, 1);
+        body.Children().Append(scroller);
+    }
     section.Child(body);
     section.Visibility(mux::Visibility::Collapsed);
 
