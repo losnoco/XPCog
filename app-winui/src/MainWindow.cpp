@@ -9,9 +9,11 @@
 #include <winrt/Microsoft.Windows.Storage.Pickers.h>
 
 #include <microsoft.ui.xaml.window.h>
+#include <shlobj.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 
 namespace xpcog::winui {
@@ -77,6 +79,15 @@ HWND MainWindow::hwnd() const {
 
 void MainWindow::activate() {
     window_.Activate();
+    // After it is shown: maximising a window that has not been shown yet
+    // shows it, and before Activate that is a flash of the wrong size.
+    if (maximizeOnShow_) {
+        if (const auto presenter = window_.AppWindow().Presenter().try_as<
+                winrt::Microsoft::UI::Windowing::OverlappedPresenter>()) {
+            presenter.Maximize();
+        }
+        maximizeOnShow_ = false;
+    }
 }
 
 // --- building -------------------------------------------------------------------
@@ -186,16 +197,99 @@ void MainWindow::build() {
 
     // --- the playlist, on the content layer -------------------------------------
     //
-    // A card: LayerFillColorDefault over Mica, with the card stroke and corner
-    // radius the design guidance gives the content layer. ThemeResource, so it
-    // follows a switch between light and dark while the window is open.
-    auto card = load<mux::Controls::Border>(
-        std::wstring(L"<Border ") + kXmlns +
-        L" Background='{ThemeResource LayerFillColorDefaultBrush}'"
-        L" BorderBrush='{ThemeResource CardStrokeColorDefaultBrush}'"
-        L" BorderThickness='1' CornerRadius='8' Margin='12,0,12,0'/>");
+    // On a card -- see card() in WinRT.hpp -- as every region holding content is.
     playlist_ = std::make_unique<PlaylistTable>(session_.view(), session_.settings());
-    card.Child(playlist_->element());
+    auto playlistCard = card();
+    playlistCard.Child(playlist_->element());
+
+    // --- the panes, as GTK lays them out -------------------------------------------
+    //
+    // The folders on the left, Info and Lyrics on the right, the tools in a
+    // strip along the bottom: fixed places, shown and hidden from the View
+    // menu, and each its own card on the Mica. No docking or floating -- the
+    // GTK player's decision, and for the same reason: nothing in the toolkit
+    // manages a dock, and a layout that cannot be lost needs no "reset".
+    fileTree_ = std::make_unique<FileTreePane>(session_.registry(),
+                                               [this] { return window_.AppWindow().Id(); });
+    treeCard_ = card();
+    treeCard_.Width(280);
+    treeCard_.Child(fileTree_->element());
+    treeCard_.Visibility(mux::Visibility::Collapsed);
+
+    info_   = std::make_unique<InfoPane>(session_.library(),
+                                       [this] { return window_.Content().XamlRoot(); });
+    lyrics_ = std::make_unique<LyricsPane>([this] { return session_.playback().position(); });
+    lyrics_->setLookup(session_.lyricsLookup());
+    lyrics_->setTimed(session_.settings().LyricsSynced());
+    lyrics_->timedToggled = [this] { onCommand(app::CommandId::ViewTimedLyrics); };
+
+    panelSelector_ = mux::Controls::SelectorBar();
+    for (const auto& [page, id] : {std::pair{"info", app::CommandId::ViewInfo},
+                                   std::pair{"lyrics", app::CommandId::ViewLyrics}}) {
+        auto item = mux::Controls::SelectorBarItem();
+        item.Text(toH(app::commandLabel(id)));
+        item.Tag(winrt::box_value(toH(page)));
+        panelSelector_.Items().Append(item);
+    }
+    panelSelector_.SelectionChanged([this](auto&&, auto&&) {
+        if (const auto item = panelSelector_.SelectedItem()) {
+            showPanelPage(toUtf8(winrt::unbox_value<winrt::hstring>(item.Tag())));
+        }
+    });
+    auto panelBody = mux::Controls::Grid();
+    for (const auto& height : {mux::GridLengthHelper::Auto(),
+                               mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star)}) {
+        auto row = mux::Controls::RowDefinition();
+        row.Height(height);
+        panelBody.RowDefinitions().Append(row);
+    }
+    panelSelector_.Margin(mux::ThicknessHelper::FromLengths(8, 4, 8, 0));
+    panelBody.Children().Append(panelSelector_);
+    for (const mux::UIElement page : {info_->element(), lyrics_->element()}) {
+        mux::Controls::Grid::SetRow(page.as<mux::FrameworkElement>(), 1);
+        panelBody.Children().Append(page);
+    }
+    panelCard_ = card();
+    panelCard_.Width(360);
+    panelCard_.Child(panelBody);
+    panelCard_.Visibility(mux::Visibility::Collapsed);
+    showPanelPage("info");
+
+    equalizer_ = std::make_unique<EqualizerPane>(session_.settings());
+    speed_     = std::make_unique<SpeedPane>(session_.settings());
+    tools_     = std::make_unique<ToolsStrip>();
+    tools_->addSection("equalizer", app::commandLabel(app::CommandId::ViewEqualizer),
+                       equalizer_->element());
+    tools_->addSection("speed", app::commandLabel(app::CommandId::ViewSpeed), speed_->element());
+    tools_->closeRequested = [this](const std::string& name) { showTool(name, false); };
+
+    auto middle = mux::Controls::Grid();
+    middle.Margin(mux::ThicknessHelper::FromLengths(12, 0, 12, 0));
+    middle.ColumnSpacing(8);
+    middle.RowSpacing(8);
+    for (const auto& width : {mux::GridLengthHelper::Auto(),
+                              mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
+                              mux::GridLengthHelper::Auto()}) {
+        auto column = mux::Controls::ColumnDefinition();
+        column.Width(width);
+        middle.ColumnDefinitions().Append(column);
+    }
+    for (const auto& height : {mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
+                               mux::GridLengthHelper::Auto()}) {
+        auto row = mux::Controls::RowDefinition();
+        row.Height(height);
+        middle.RowDefinitions().Append(row);
+    }
+    mux::Controls::Grid::SetColumn(playlistCard, 1);
+    mux::Controls::Grid::SetColumn(panelCard_, 2);
+    toolsHost_ = tools_->element().as<mux::FrameworkElement>();
+    mux::Controls::Grid::SetRow(toolsHost_, 1);
+    mux::Controls::Grid::SetColumnSpan(toolsHost_, 3);
+    toolsHost_.Visibility(mux::Visibility::Collapsed);
+    middle.Children().Append(treeCard_);
+    middle.Children().Append(playlistCard);
+    middle.Children().Append(panelCard_);
+    middle.Children().Append(toolsHost_);
 
     // After the playlist, which the enabled states read.
     commands_ = std::make_unique<CommandMenus>(CommandMenus::Hooks{
@@ -227,20 +321,17 @@ void MainWindow::build() {
     }
     mux::Controls::Grid::SetRow(menuBar, 1);
     mux::Controls::Grid::SetRow(transport, 2);
-    mux::Controls::Grid::SetRow(card, 3);
+    mux::Controls::Grid::SetRow(middle, 3);
     mux::Controls::Grid::SetRow(status_, 4);
     root.Children().Append(titleBar_);
     root.Children().Append(menuBar);
     root.Children().Append(transport);
-    root.Children().Append(card);
+    root.Children().Append(middle);
     root.Children().Append(status_);
     window_.Content(root);
     window_.SetTitleBar(titleBar_);
 
-    // A first size, in physical pixels, scaled from the 96-DPI one. Remembering
-    // the last size and place is the window-state step, not this one.
-    const double scale = ::GetDpiForWindow(hwnd()) / 96.0;
-    window_.AppWindow().Resize({static_cast<int32_t>(1280 * scale), static_cast<int32_t>(820 * scale)});
+    restoreState();
 }
 
 mux::Controls::Button MainWindow::transportButton(const wchar_t* glyph, const std::string& tooltip,
@@ -345,6 +436,7 @@ void MainWindow::wireUp() {
     });
 
     window_.Closed([this](auto&&, auto&&) {
+        persistState();
         if (closed) {
             closed();
         }
@@ -355,7 +447,53 @@ void MainWindow::wireUp() {
     // Everything an enabled or checked state reads from, so the shortcuts are
     // live the moment they become meaningful rather than when a menu is next
     // opened. See CommandMenus.
-    playlist_->selectionChanged = [this] { refreshCommands(); };
+    playlist_->selectionChanged = [this] {
+        refreshCommands();
+        if (session_.settings().PanelFollowMode() == 0) {
+            refreshPanels();
+        }
+    };
+
+    // --- the panes ------------------------------------------------------------
+    subscriptions_.push_back(equalizer_->settingChanged.connect(
+        [this](const std::string& key) { session_.settingChanged(key); }));
+    subscriptions_.push_back(speed_->settingChanged.connect(
+        [this](const std::string& key) { session_.settingChanged(key); }));
+    // What the session changes on its own -- a genre's preset at a track
+    // boundary, a setting from the remote control -- reaches the panes here.
+    observe(session_.effectApplied, [this](app::Effect effect, const std::string&) {
+        switch (effect) {
+            case app::Effect::EqualizerCurve:
+                equalizer_->refresh();
+                break;
+            case app::Effect::RefreshSpeed:
+                speed_->refresh();
+                break;
+            case app::Effect::RefreshPanels:
+                lyrics_->setTimed(session_.settings().LyricsSynced());
+                refreshPanels();
+                break;
+            default:
+                break;
+        }
+        refreshCommands();
+    });
+    const auto add = [this](const std::vector<Url>& urls) { session_.addUrls(urls); };
+    subscriptions_.push_back(fileTree_->activated.connect(add));
+    subscriptions_.push_back(fileTree_->addRequested.connect(add));
+    subscriptions_.push_back(fileTree_->rootChosen.connect([this] {
+        session_.settings().setRawValue("xpcog.fileTree.root", fileTree_->rootPath());
+    }));
+
+    // The size and place to come back to: AppWindow reports the maximised
+    // bounds while maximised, and those are not what a restore should use.
+    window_.AppWindow().Changed([this](winrt::Microsoft::UI::Windowing::AppWindow const& window, auto&&) {
+        const auto presenter = window.Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>();
+        if (presenter && presenter.State() == winrt::Microsoft::UI::Windowing::OverlappedPresenterState::Restored) {
+            normalBounds_ = {window.Position().X, window.Position().Y, window.Size().Width,
+                             window.Size().Height};
+        }
+    });
     playlist_->contextMenuRequested =
         [this](const mux::UIElement& target, std::optional<winrt::Windows::Foundation::Point> at) {
             showPlaylistMenu(target, at);
@@ -385,6 +523,7 @@ void MainWindow::onTrackChanged(const PlaylistEntry* entry) {
     window_.Title(text.empty() ? winrt::hstring(L"XPCog") : toH(text + " \xE2\x80\x94 XPCog"));
     titleBar_.Subtitle(toH(text));
     refreshCommands();
+    refreshPanels();
 }
 
 void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
@@ -397,6 +536,7 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
         onPositionChanged(0, 0);
     }
     refreshCommands();
+    refreshPanels();
 }
 
 void MainWindow::onPositionChanged(double seconds, double duration) {
@@ -448,21 +588,12 @@ bool MainWindow::offered(app::CommandId id) {
         // No docking, so nothing ever floats to be docked -- the GTK player's
         // decision too, and for good: there is no dock manager to come back.
         case CommandId::ViewDockPanes:
-        // The rest have nowhere to go yet: the panes, the preferences and the
-        // mini player are later steps of the port, and a menu item that does
-        // nothing is worse than one that is not there.
-        case CommandId::ViewFileTree:
-        case CommandId::ViewFileTreeRoot:
+        // The rest have nowhere to go yet: the painted panes, the preferences
+        // and the mini player are later steps of the port, and a menu item
+        // that does nothing is worse than one that is not there.
         case CommandId::ViewSpectrum:
         case CommandId::ViewOscilloscope:
         case CommandId::ViewWaveform:
-        case CommandId::ViewEqualizer:
-        case CommandId::ViewSpeed:
-        case CommandId::ViewInfo:
-        case CommandId::ViewLyrics:
-        case CommandId::ViewTimedLyrics:
-        case CommandId::ViewFollowSelection:
-        case CommandId::ViewFollowPlayback:
         case CommandId::ViewSc55Panel:
         case CommandId::ViewMiniPlayer:
         case CommandId::FilePreferences:
@@ -523,6 +654,26 @@ std::optional<bool> MainWindow::checked(app::CommandId id) const {
     if (id >= CommandId::OrderShuffleOff && id <= CommandId::OrderShuffleAll) {
         return std::clamp(settings.ShuffleMode(), 0, 2) ==
                value - static_cast<int>(CommandId::OrderShuffleOff);
+    }
+    switch (id) {
+        case CommandId::ViewFileTree:
+            return fileTreeShown();
+        case CommandId::ViewInfo:
+            return panelShown() && panelPage_ == "info";
+        case CommandId::ViewLyrics:
+            return panelShown() && panelPage_ == "lyrics";
+        case CommandId::ViewTimedLyrics:
+            return settings.LyricsSynced();
+        case CommandId::ViewFollowSelection:
+            return settings.PanelFollowMode() == 0;
+        case CommandId::ViewFollowPlayback:
+            return settings.PanelFollowMode() == 1;
+        case CommandId::ViewEqualizer:
+            return tools_ && tools_->shown("equalizer");
+        case CommandId::ViewSpeed:
+            return tools_ && tools_->shown("speed");
+        default:
+            break;
     }
     return std::nullopt;
 }
@@ -654,6 +805,37 @@ void MainWindow::onCommand(app::CommandId id) {
             session_.settingChanged("shuffle");
             break;
 
+        case CommandId::ViewFileTree:
+            showFileTree(!fileTreeShown());
+            break;
+        case CommandId::ViewFileTreeRoot:
+            fileTree_->chooseRootPath();
+            break;
+        case CommandId::ViewInfo:
+            togglePanel("info");
+            break;
+        case CommandId::ViewLyrics:
+            togglePanel("lyrics");
+            break;
+        case CommandId::ViewTimedLyrics:
+            settings.setLyricsSynced(!settings.LyricsSynced());
+            session_.settingChanged("lyricsSynced");
+            lyrics_->setTimed(settings.LyricsSynced());
+            refreshPanels();
+            break;
+        case CommandId::ViewFollowSelection:
+        case CommandId::ViewFollowPlayback:
+            settings.setPanelFollowMode(id == CommandId::ViewFollowSelection ? 0 : 1);
+            session_.settingChanged("panelFollowMode");
+            refreshPanels();
+            break;
+        case CommandId::ViewEqualizer:
+            showTool("equalizer", !tools_->shown("equalizer"));
+            break;
+        case CommandId::ViewSpeed:
+            showTool("speed", !tools_->shown("speed"));
+            break;
+
         default:
             break;
     }
@@ -668,6 +850,187 @@ void MainWindow::showPlaylistMenu(const mux::UIElement& target,
         options.Position(*at);
     }
     menu.ShowAt(target, options);
+}
+
+// --- the panes ----------------------------------------------------------------------
+
+bool MainWindow::fileTreeShown() const {
+    return treeCard_.Visibility() == mux::Visibility::Visible;
+}
+
+void MainWindow::showFileTree(bool show) {
+    treeCard_.Visibility(show ? mux::Visibility::Visible : mux::Visibility::Collapsed);
+    refreshCommands();
+}
+
+bool MainWindow::panelShown() const {
+    return panelCard_.Visibility() == mux::Visibility::Visible;
+}
+
+void MainWindow::showPanelPage(const std::string& page) {
+    panelPage_ = page;
+    info_->element().Visibility(page == "info" ? mux::Visibility::Visible : mux::Visibility::Collapsed);
+    lyrics_->element().Visibility(page == "lyrics" ? mux::Visibility::Visible
+                                                   : mux::Visibility::Collapsed);
+    // The selector follows when the page was chosen from the menu. Setting
+    // the item it already has raises nothing, so this does not come back here.
+    for (const auto& item : panelSelector_.Items()) {
+        if (toUtf8(winrt::unbox_value<winrt::hstring>(item.Tag())) == page) {
+            panelSelector_.SelectedItem(item);
+        }
+    }
+    refreshPanels();
+    refreshCommands();
+}
+
+void MainWindow::togglePanel(const std::string& page) {
+    if (panelShown() && panelPage_ == page) {
+        panelCard_.Visibility(mux::Visibility::Collapsed);
+    } else {
+        panelCard_.Visibility(mux::Visibility::Visible);
+        showPanelPage(page);
+    }
+    refreshCommands();
+}
+
+void MainWindow::showTool(const std::string& name, bool show) {
+    tools_->setShown(name, show);
+    toolsHost_.Visibility(tools_->anyShown() ? mux::Visibility::Visible : mux::Visibility::Collapsed);
+    refreshCommands();
+}
+
+TrackId MainWindow::panelTrackId() const {
+    if (session_.settings().PanelFollowMode() == 1) {
+        return session_.currentTrack();
+    }
+    const std::vector<TrackId> selection = selectedTracks();
+    return selection.empty() ? session_.currentTrack() : selection.front();
+}
+
+void MainWindow::refreshPanels() {
+    // A hidden panel is not kept up to date: the lyrics page would look the
+    // track up on the network for nobody. Showing it refreshes it.
+    if (!panelCard_ || !panelShown()) {
+        return;
+    }
+    const TrackId        id    = panelTrackId();
+    const PlaylistEntry* entry = session_.playlist().find(id);
+    if (panelPage_ == "lyrics") {
+        lyrics_->showEntry(entry, id != kInvalidTrackId && id == session_.currentTrack() &&
+                                      session_.playback().playing());
+    } else {
+        info_->showEntry(entry);
+    }
+}
+
+// --- what is remembered -------------------------------------------------------------
+//
+// The file tree's root and whether it is shown are the keys the wx and GTK
+// players use, so a library folder chosen in one is the one the others open
+// at. The window's size and the panes are this player's own: its layout is
+// not either of theirs.
+
+namespace {
+
+constexpr std::string_view kPlacementKey = "xpcog.winui.window.placement";
+constexpr std::string_view kPanesKey     = "xpcog.winui.window.panes";
+
+std::string musicFolder() {
+    PWSTR path = nullptr;
+    std::string found;
+    if (SUCCEEDED(::SHGetKnownFolderPath(FOLDERID_Music, 0, nullptr, &path))) {
+        found = winrt::to_string(path);
+    }
+    ::CoTaskMemFree(path);
+    return found;
+}
+
+}  // namespace
+
+void MainWindow::persistState() {
+    Settings& settings = session_.settings();
+
+    const auto window    = window_.AppWindow();
+    const auto presenter = window.Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>();
+    const bool maximised = presenter && presenter.State() ==
+                                            winrt::Microsoft::UI::Windowing::OverlappedPresenterState::Maximized;
+    if (normalBounds_.Width > 0 && normalBounds_.Height > 0) {
+        char text[96];
+        std::snprintf(text, sizeof text, "%d,%d,%d,%d,%d", normalBounds_.X, normalBounds_.Y,
+                      normalBounds_.Width, normalBounds_.Height, maximised ? 1 : 0);
+        settings.setRawValue(kPlacementKey, text);
+    }
+
+    // Not the tree's root: that is saved when it is chosen (rootChosen, in
+    // wireUp) and never here. A root the tree could not open -- a share that
+    // is offline -- leaves rootPath() empty, and writing that back at close
+    // wiped the remembered root for all three players.
+    settings.setRawValue("xpcog.window.fileTree", fileTreeShown() ? "1" : "0");
+
+    std::string panes;
+    for (const char* name : {"equalizer", "speed"}) {
+        panes += std::string(name) + "=" + (tools_->shown(name) ? "1" : "0") + ";";
+    }
+    panes += std::string("panels=") + (panelShown() ? "1" : "0") + ";";
+    panes += "page=" + panelPage_ + ";";
+    settings.setRawValue(kPanesKey, panes);
+}
+
+void MainWindow::restoreState() {
+    Settings& settings = session_.settings();
+    const auto window  = window_.AppWindow();
+
+    // Size and place, in physical pixels -- but only onto a display that is
+    // still there. A window saved on a monitor since unplugged would open
+    // nowhere anyone can see it; that one gets the default size instead.
+    const double scale = ::GetDpiForWindow(hwnd()) / 96.0;
+    winrt::Windows::Graphics::RectInt32 bounds{0, 0, static_cast<int32_t>(1280 * scale),
+                                               static_cast<int32_t>(820 * scale)};
+    int x = 0, y = 0, width = 0, height = 0, maximised = 0;
+    const std::string placement = settings.rawValue(kPlacementKey);
+    if (std::sscanf(placement.c_str(), "%d,%d,%d,%d,%d", &x, &y, &width, &height, &maximised) == 5 &&
+        width > 0 && height > 0 &&
+        winrt::Microsoft::UI::Windowing::DisplayArea::GetFromRect(
+            {x, y, width, height}, winrt::Microsoft::UI::Windowing::DisplayAreaFallback::None)) {
+        bounds = {x, y, width, height};
+        window.MoveAndResize(bounds);
+        maximizeOnShow_ = maximised != 0;
+    } else {
+        window.Resize({bounds.Width, bounds.Height});
+        bounds = {window.Position().X, window.Position().Y, bounds.Width, bounds.Height};
+    }
+    normalBounds_ = bounds;
+
+    // The Music folder only when nothing was ever chosen. A saved root that
+    // cannot be reached now -- the share is offline -- leaves the tree empty
+    // instead: showing Music would look like the choice had been forgotten.
+    const std::string root = settings.rawValue("xpcog.fileTree.root");
+    fileTree_->setRootPath(root.empty() ? musicFolder() : root);
+    showFileTree(settings.rawValue("xpcog.window.fileTree") == "1");
+
+    const std::string panes = settings.rawValue(kPanesKey);
+    std::string_view  rest  = panes;
+    bool              panels = false;
+    while (!rest.empty()) {
+        const std::size_t      semicolon = rest.find(';');
+        const std::string_view entry     = rest.substr(0, semicolon);
+        rest = semicolon == std::string_view::npos ? std::string_view{} : rest.substr(semicolon + 1);
+        const std::size_t equals = entry.find('=');
+        if (equals == std::string_view::npos) {
+            continue;
+        }
+        const std::string key(entry.substr(0, equals));
+        const std::string value(entry.substr(equals + 1));
+        if (key == "panels") {
+            panels = value == "1";
+        } else if (key == "page" && (value == "info" || value == "lyrics")) {
+            showPanelPage(value);
+        } else if (key == "equalizer" || key == "speed") {
+            showTool(key, value == "1");
+        }
+    }
+    panelCard_.Visibility(panels ? mux::Visibility::Visible : mux::Visibility::Collapsed);
+    refreshPanels();
 }
 
 // --- dialogs ----------------------------------------------------------------------

@@ -48,6 +48,33 @@ namespace mux = winrt::Microsoft::UI::Xaml;
     return winrt::to_string(text);
 }
 
+/// XAML text, parsed. For what code cannot say: chiefly {ThemeResource}
+/// references, which follow a light/dark switch where a brush looked up from
+/// code stays the colour of the moment it was looked up.
+template <typename T>
+[[nodiscard]] T loadXaml(const std::wstring& xaml) {
+    return mux::Markup::XamlReader::Load(xaml).as<T>();
+}
+
+/// A content-layer card: LayerFillColorDefault over the Mica, with the card
+/// stroke and corner radius the Windows 11 layering guidance gives it. What
+/// every region holding content sits on, so they read as one surface.
+[[nodiscard]] inline mux::Controls::Border card() {
+    return loadXaml<mux::Controls::Border>(
+        L"<Border xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'"
+        L" Background='{ThemeResource LayerFillColorDefaultBrush}'"
+        L" BorderBrush='{ThemeResource CardStrokeColorDefaultBrush}'"
+        L" BorderThickness='1' CornerRadius='8'/>");
+}
+
+/// A secondary-text TextBlock: captions, readouts, notes.
+[[nodiscard]] inline mux::Controls::TextBlock secondaryText(const wchar_t* extra = L"") {
+    return loadXaml<mux::Controls::TextBlock>(
+        std::wstring(L"<TextBlock xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'"
+                     L" Foreground='{ThemeResource TextFillColorSecondaryBrush}' ") +
+        extra + L"/>");
+}
+
 /// A brush from the theme resources by key. Looked up when called, so it is the
 /// current theme's -- which is the reason to ask rather than to build a colour.
 [[nodiscard]] inline mux::Media::Brush themeBrush(const wchar_t* key) {

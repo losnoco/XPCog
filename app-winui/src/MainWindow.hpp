@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CommandMenus.hpp"
+#include "FileTreePane.hpp"
+#include "Panes.hpp"
 #include "PlaylistTable.hpp"
 #include "WinRT.hpp"
 
@@ -65,6 +67,24 @@ private:
     void showPlaylistMenu(const mux::UIElement& target,
                           std::optional<winrt::Windows::Foundation::Point> at);
 
+    // --- the panes ------------------------------------------------------------
+    void showFileTree(bool show);
+    [[nodiscard]] bool fileTreeShown() const;
+    /// The View menu's Info or Lyrics: show the panel at that page, or hide it
+    /// when it is already showing that page -- GTK's togglePanel().
+    void togglePanel(const std::string& page);
+    void showPanelPage(const std::string& page);
+    [[nodiscard]] bool panelShown() const;
+    void showTool(const std::string& name, bool show);
+    /// The track Info and Lyrics describe: the selection's first, or the
+    /// playing one, as the follow setting says.
+    [[nodiscard]] TrackId panelTrackId() const;
+    void refreshPanels();
+
+    // --- what is remembered -------------------------------------------------------
+    void persistState();
+    void restoreState();
+
     // --- dialogs --------------------------------------------------------------
     winrt::fire_and_forget openFiles();
     winrt::fire_and_forget openFolder();
@@ -96,6 +116,25 @@ private:
     mux::Controls::TextBlock             status_{nullptr};
     std::unique_ptr<PlaylistTable>       playlist_;
     std::unique_ptr<CommandMenus>        commands_;
+
+    // --- the panes ------------------------------------------------------------
+    std::unique_ptr<FileTreePane>        fileTree_;
+    mux::Controls::Border                treeCard_{nullptr};
+    std::unique_ptr<InfoPane>            info_;
+    std::unique_ptr<LyricsPane>          lyrics_;
+    mux::Controls::SelectorBar           panelSelector_{nullptr};
+    mux::Controls::Border                panelCard_{nullptr};
+    /// "info" or "lyrics": which page the side panel shows, whether or not
+    /// the panel itself is shown.
+    std::string                          panelPage_;
+    std::unique_ptr<EqualizerPane>       equalizer_;
+    std::unique_ptr<SpeedPane>           speed_;
+    std::unique_ptr<ToolsStrip>          tools_;
+    mux::FrameworkElement                toolsHost_{nullptr};
+    /// The window's last size and place while it was neither maximised nor
+    /// minimised -- what to restore it to, which AppWindow does not remember.
+    winrt::Windows::Graphics::RectInt32  normalBounds_{};
+    bool                                 maximizeOnShow_ = false;
 
     double duration_ = 0.0;
     /// Set while the code moves a slider, so its ValueChanged is not taken for

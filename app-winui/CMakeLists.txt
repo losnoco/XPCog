@@ -17,8 +17,12 @@ set(XPCOG_WINUI_SOURCES
     src/App.hpp
     src/CommandMenus.cpp
     src/CommandMenus.hpp
+    src/FileTreePane.cpp
+    src/FileTreePane.hpp
     src/MainWindow.cpp
     src/MainWindow.hpp
+    src/Panes.cpp
+    src/Panes.hpp
     src/PlaylistTable.cpp
     src/PlaylistTable.hpp
     src/Runtime.cpp
@@ -34,7 +38,10 @@ target_link_libraries(xpcog-winuicore PUBLIC
     xpcog-uicore
     xpcog-codecs
     XPCog::winappsdk
-    PRIVATE XPCog::warnings)
+    PRIVATE XPCog::warnings
+    # The cover art's memory stream (SHCreateMemStream, and the WinRT
+    # stream over it) and the Music folder's path.
+    Shlwapi.lib ShCore.lib Shell32.lib Ole32.lib)
 
 set_target_properties(xpcog-winuicore PROPERTIES FOLDER app-winui)
 

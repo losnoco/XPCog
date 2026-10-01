@@ -233,6 +233,9 @@ struct PlaylistTable::Impl {
     /// Bumped whenever order or widths change; a row's Tag says which layout it
     /// was last given, so scrolling does not rebuild column definitions.
     int32_t layout = 0;
+    /// The share of their saved width the wide columns are drawn at; see
+    /// shownWidth().
+    double fit = 1.0;
 
     struct Drag {
         bool     pressed  = false;
@@ -348,8 +351,45 @@ struct PlaylistTable::Impl {
             definitions.GetAt(static_cast<uint32_t>(p))
                 .Width(kColumns[c].fills
                            ? mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star)
-                           : mux::GridLengthHelper::FromPixels(widths[c]));
+                           : mux::GridLengthHelper::FromPixels(shownWidth(c)));
         }
+    }
+
+    /// How wide column `c` is drawn. Its saved width, unless the table is too
+    /// narrow for the saved widths and the filling column's floor together --
+    /// the side panes take a third of the window, and widths saved in a wider
+    /// one would otherwise squeeze Title to nothing and push Length off the
+    /// edge. Then the wide columns give way in proportion, and only on screen:
+    /// what is saved is still what the listener set.
+    [[nodiscard]] double shownWidth(std::size_t c) const {
+        return yields(c) ? widths[c] * fit : widths[c];
+    }
+
+    /// The columns that give way: the wide ones. The status glyph, the track
+    /// number and the length are already as narrow as they can usefully be.
+    [[nodiscard]] bool yields(std::size_t c) const {
+        return !kColumns[c].fixed && !kColumns[c].fills && widths[c] > 120;
+    }
+
+    /// Recomputes `fit` for the table's current width; true when it changed.
+    bool refit() {
+        const double total = root ? root.ActualWidth() : 0.0;
+        double       firm = 0.0, give = 0.0;
+        for (std::size_t c = 0; c < kColumns.size(); ++c) {
+            if (kColumns[c].fills) {
+                continue;
+            }
+            (yields(c) ? give : firm) += widths[c];
+        }
+        // The header's padding, the gaps between columns and the scroll bar.
+        const double chrome = 32 + kSpacing * static_cast<double>(kColumns.size() - 1) + 16;
+        const double room   = total - chrome - firm - kMinFillWidth;
+        const double next   = (total <= 0 || give <= 0 || room >= give) ? 1.0 : std::max(0.25, room / give);
+        if (std::abs(next - fit) < 0.005) {
+            return false;
+        }
+        fit = next;
+        return true;
     }
 
     void relayout() {
@@ -754,6 +794,11 @@ PlaylistTable::PlaylistTable(PlaylistView& view, Settings& settings)
         });
 
         impl.root = root;
+        root.SizeChanged([this](auto&&, auto&&) {
+            if (impl_->refit()) {
+                impl_->relayout();
+            }
+        });
 
         impl.reload();
         impl.rebuilt    = view.rebuilt.connect([this] { impl_->reload(); });
