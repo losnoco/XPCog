@@ -40,6 +40,21 @@ set(_winappsdk_packages
     "winui|microsoft.windowsappsdk.winui|2.3.9|d36145bd6c0f46fc04e07fb4af365d093fb42c39b625948d0ead07a0b26fce96"
     "webview2|microsoft.web.webview2|1.0.3719.77|2f6be3a10a1a8d6d1fde986af4131dab344f8181fffe75590824e0f4b037ed73")
 
+# Win2D, for the WinUI player's painted panes -- the spectrum, the
+# oscilloscope, the waveform seek bar, the SC-55. Only that player draws with
+# it, so only that player fetches it. It is not part of the Windows App
+# Runtime: its DLL ships beside the executable, and its classes are activated
+# from that DLL directly rather than looked up by the system -- see
+# app-winui/src/Win2D.cpp.
+#
+# 1.4.0 is built against WinUI 1.8 and runs here on the 2.x runtime. That
+# leans on WinUI keeping its interfaces stable across the major version,
+# which is a bet worth knowing is being made.
+if(XPCOG_BUILD_WINUI_APP)
+    list(APPEND _winappsdk_packages
+        "win2d|microsoft.graphics.win2d|1.4.0|e13866088b3c50205aae36e9e4cb3c23b21d11c4b4590ddcbeaafa9ea2c79f48")
+endif()
+
 foreach(_entry IN LISTS _winappsdk_packages)
     string(REPLACE "|" ";" _entry "${_entry}")
     list(GET _entry 0 _name)
@@ -72,6 +87,10 @@ file(GLOB _winappsdk_winmds
     "${_winappsdk_interactiveexperiences}/metadata/10.0.17763.0/*.winmd"
     "${_winappsdk_winui}/metadata/*.winmd"
     "${_winappsdk_webview2}/lib/*.winmd")
+if(XPCOG_BUILD_WINUI_APP)
+    list(APPEND _winappsdk_winmds "${_winappsdk_win2d}/lib/uap10.0/Microsoft.Graphics.Canvas.winmd")
+    set(XPCOG_WIN2D_DLL "${_winappsdk_win2d}/runtimes/win-x64/native/Microsoft.Graphics.Canvas.dll")
+endif()
 
 # Regenerated only when the inputs or the generator change; it takes a while and
 # writes a few hundred headers.

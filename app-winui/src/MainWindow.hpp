@@ -3,6 +3,7 @@
 #include "CommandMenus.hpp"
 #include "FileTreePane.hpp"
 #include "Panes.hpp"
+#include "Visualizers.hpp"
 #include "PlaylistTable.hpp"
 #include "WinRT.hpp"
 
@@ -76,6 +77,7 @@ private:
     void showPanelPage(const std::string& page);
     [[nodiscard]] bool panelShown() const;
     void showTool(const std::string& name, bool show);
+    void refreshVisualizers();
     /// The track Info and Lyrics describe: the selection's first, or the
     /// playing one, as the follow setting says.
     [[nodiscard]] TrackId panelTrackId() const;
@@ -127,6 +129,7 @@ private:
     /// "info" or "lyrics": which page the side panel shows, whether or not
     /// the panel itself is shown.
     std::string                          panelPage_;
+    std::unique_ptr<SpectrumView>        spectrum_;
     std::unique_ptr<EqualizerPane>       equalizer_;
     std::unique_ptr<SpeedPane>           speed_;
     std::unique_ptr<ToolsStrip>          tools_;

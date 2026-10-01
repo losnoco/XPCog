@@ -255,9 +255,12 @@ void MainWindow::build() {
     panelCard_.Visibility(mux::Visibility::Collapsed);
     showPanelPage("info");
 
+    spectrum_  = std::make_unique<SpectrumView>(session_.playback().tap(), session_.settings());
     equalizer_ = std::make_unique<EqualizerPane>(session_.settings());
     speed_     = std::make_unique<SpeedPane>(session_.settings());
     tools_     = std::make_unique<ToolsStrip>();
+    tools_->addSection("spectrum", app::commandLabel(app::CommandId::ViewSpectrum),
+                       spectrum_->element());
     tools_->addSection("equalizer", app::commandLabel(app::CommandId::ViewEqualizer),
                        equalizer_->element());
     tools_->addSection("speed", app::commandLabel(app::CommandId::ViewSpeed), speed_->element());
@@ -469,6 +472,9 @@ void MainWindow::wireUp() {
             case app::Effect::RefreshSpeed:
                 speed_->refresh();
                 break;
+            case app::Effect::RefreshSpectrum:
+                spectrum_->applySettings(session_.settings());
+                break;
             case app::Effect::RefreshPanels:
                 lyrics_->setTimed(session_.settings().LyricsSynced());
                 refreshPanels();
@@ -527,6 +533,10 @@ void MainWindow::onTrackChanged(const PlaylistEntry* entry) {
 }
 
 void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
+    // The band table is built against the device's rate, which is known
+    // only once a track has opened one.
+    spectrum_->setSampleRate(session_.playback().sampleRate());
+    refreshVisualizers();
     const bool showsPause = playing && !paused;
     playGlyph_.Glyph(showsPause ? kGlyphPause : kGlyphPlay);
     const winrt::hstring label = toH(app::tr(showsPause ? "Pause" : "Play"));
@@ -591,7 +601,6 @@ bool MainWindow::offered(app::CommandId id) {
         // The rest have nowhere to go yet: the painted panes, the preferences
         // and the mini player are later steps of the port, and a menu item
         // that does nothing is worse than one that is not there.
-        case CommandId::ViewSpectrum:
         case CommandId::ViewOscilloscope:
         case CommandId::ViewWaveform:
         case CommandId::ViewSc55Panel:
@@ -668,6 +677,8 @@ std::optional<bool> MainWindow::checked(app::CommandId id) const {
             return settings.PanelFollowMode() == 0;
         case CommandId::ViewFollowPlayback:
             return settings.PanelFollowMode() == 1;
+        case CommandId::ViewSpectrum:
+            return tools_ && tools_->shown("spectrum");
         case CommandId::ViewEqualizer:
             return tools_ && tools_->shown("equalizer");
         case CommandId::ViewSpeed:
@@ -829,6 +840,9 @@ void MainWindow::onCommand(app::CommandId id) {
             session_.settingChanged("panelFollowMode");
             refreshPanels();
             break;
+        case CommandId::ViewSpectrum:
+            showTool("spectrum", !tools_->shown("spectrum"));
+            break;
         case CommandId::ViewEqualizer:
             showTool("equalizer", !tools_->shown("equalizer"));
             break;
@@ -893,9 +907,16 @@ void MainWindow::togglePanel(const std::string& page) {
     refreshCommands();
 }
 
+void MainWindow::refreshVisualizers() {
+    // Running only while shown and something is audible, as GTK's do.
+    const bool playing = session_.playback().playing() && !session_.playback().paused();
+    spectrum_->setActive(tools_->shown("spectrum") && playing);
+}
+
 void MainWindow::showTool(const std::string& name, bool show) {
     tools_->setShown(name, show);
     toolsHost_.Visibility(tools_->anyShown() ? mux::Visibility::Visible : mux::Visibility::Collapsed);
+    refreshVisualizers();
     refreshCommands();
 }
 
@@ -968,7 +989,7 @@ void MainWindow::persistState() {
     settings.setRawValue("xpcog.window.fileTree", fileTreeShown() ? "1" : "0");
 
     std::string panes;
-    for (const char* name : {"equalizer", "speed"}) {
+    for (const char* name : {"spectrum", "equalizer", "speed"}) {
         panes += std::string(name) + "=" + (tools_->shown(name) ? "1" : "0") + ";";
     }
     panes += std::string("panels=") + (panelShown() ? "1" : "0") + ";";
@@ -1025,7 +1046,7 @@ void MainWindow::restoreState() {
             panels = value == "1";
         } else if (key == "page" && (value == "info" || value == "lyrics")) {
             showPanelPage(value);
-        } else if (key == "equalizer" || key == "speed") {
+        } else if (key == "spectrum" || key == "equalizer" || key == "speed") {
             showTool(key, value == "1");
         }
     }

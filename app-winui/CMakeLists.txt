@@ -22,11 +22,16 @@ set(XPCOG_WINUI_SOURCES
     src/MainWindow.cpp
     src/MainWindow.hpp
     src/Panes.cpp
+    src/Painting.hpp
     src/Panes.hpp
     src/PlaylistTable.cpp
     src/PlaylistTable.hpp
     src/Runtime.cpp
     src/Runtime.hpp
+    src/Visualizers.cpp
+    src/Visualizers.hpp
+    src/Win2D.cpp
+    src/Win2D.hpp
     src/WinRT.hpp
 )
 
@@ -71,7 +76,11 @@ add_custom_command(TARGET xpcog-winui POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${XPCOG_WINAPPSDK_BOOTSTRAP_DLL}" "$<TARGET_FILE_DIR:xpcog-winui>"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "${XPCOG_RC_ICON}" "$<TARGET_FILE_DIR:xpcog-winui>/xpcog.ico")
+            "${XPCOG_RC_ICON}" "$<TARGET_FILE_DIR:xpcog-winui>/xpcog.ico"
+    # Win2D, which the painted panes draw with; see src/Win2D.cpp for how its
+    # classes are found without being registered.
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${XPCOG_WIN2D_DLL}" "$<TARGET_FILE_DIR:xpcog-winui>")
 add_dependencies(xpcog-winui xpcog-assets)
 xpcog_stage_crashpad(xpcog-winui)
 
