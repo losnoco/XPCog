@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include "VisualizerChannels.hpp"
+
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/audio/AudioTap.hpp"
@@ -37,13 +39,16 @@ namespace xpcog::app {
 
 class OscilloscopePanel : public wxWindow {
 public:
-    /// Which channels the trace shows. The `scopeChannels` setting, decoded.
-    enum class Channels { Mono, Left, Right, Stacked, Overlaid };
+    /// Which channels the trace shows. The `scopeChannels` setting, decoded;
+    /// the names and their spellings are uicore's, shared with the GTK view.
+    using Channels = ScopeChannels;
 
-    /// The setting's spelling of each, in the order the menu and the pane list
-    /// them, and the reverse: an unknown spelling reads as Mono.
-    [[nodiscard]] static const char* channelsKey(Channels channels) noexcept;
-    [[nodiscard]] static Channels    channelsFromKey(std::string_view key) noexcept;
+    [[nodiscard]] static const char* channelsKey(Channels channels) noexcept {
+        return scopeChannelsKey(channels);
+    }
+    [[nodiscard]] static Channels channelsFromKey(std::string_view key) noexcept {
+        return scopeChannelsFromKey(key);
+    }
 
     /// The context menu's item ids, public so a test can drive
     /// applyMenuItem() without popping a menu -- nothing can click one under

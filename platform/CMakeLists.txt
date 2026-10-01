@@ -62,11 +62,14 @@ if(WIN32)
         src/windows/WindowsSettings.cpp
         src/windows/WindowsFileManager.cpp
         src/windows/WindowsAccentColour.cpp
-        src/common/CommonPropertyList.cpp
         src/common/NullTrayIcon.cpp
         src/common/NullDesktopIdentity.cpp
         src/windows/WindowsTaskbarIntegration.cpp
-        src/windows/WindowsMediaIntegration.cpp)
+        src/windows/WindowsMediaIntegration.cpp
+        src/windows/WindowsSecretStore.cpp
+        src/windows/WindowsOpenUrl.cpp
+        src/common/NullSecretStore.cpp
+        src/common/NullNotifier.cpp)
 
     # Shell32 for SHChangeNotify and SHGetKnownFolderPath; Ole32 for the COM
     # apartment calls and CoTaskMemFree; Advapi32 for the registry. WindowsApp is
@@ -80,41 +83,25 @@ if(WIN32)
     # so there is no NuGet package to restore.
     target_link_libraries(xpcog-platform PRIVATE
         Shell32.lib Ole32.lib Advapi32.lib WindowsApp.lib ShCore.lib Shlwapi.lib)
-elseif(APPLE)
-    enable_language(OBJCXX)
-    target_sources(xpcog-platform PRIVATE
-        src/common/Foreground.cpp
-        src/common/FileAssociations.cpp
-        src/common/NullTaskbarIntegration.cpp
-        src/mac/MacSettings.cpp
-        src/mac/MacPropertyList.cpp
-        src/common/NullTrayIcon.cpp
-        src/common/NullDesktopIdentity.cpp
-        src/mac/MacFileManager.mm
-        src/mac/MacAccentColour.mm
-        src/mac/MacMediaIntegration.mm)
-    # ARC, so the Objective-C objects there need no manual retain or release.
-    set_source_files_properties(src/mac/MacMediaIntegration.mm src/mac/MacFileManager.mm
-        src/mac/MacAccentColour.mm
-        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    # CoreFoundation is for the settings store, which talks to CFPreferences
-    # directly rather than through any config library -- see MacSettings.cpp for
-    # why reading a real plist is the requirement.
-    target_link_libraries(xpcog-platform PRIVATE
-        "-framework MediaPlayer" "-framework AppKit" "-framework Foundation"
-        "-framework CoreFoundation")
+    # Credential Manager, behind src/windows/WindowsSecretStore.cpp. CredWriteW
+    # and friends are in Advapi32 above, so this is only the capability flag.
+    target_compile_definitions(xpcog-platform PRIVATE XPCOG_HAS_SECRET_STORE=1)
 elseif(UNIX)
     target_sources(xpcog-platform PRIVATE
         src/common/Foreground.cpp
         src/common/FileAssociations.cpp
         src/common/NullTaskbarIntegration.cpp
         src/common/CommonSettings.cpp
-        src/common/CommonPropertyList.cpp
         src/common/NullAccentColour.cpp
         src/linux/GioFileManager.cpp
+        src/linux/GioOpenUrl.cpp
         src/linux/GDbusMediaIntegration.cpp
         src/linux/SniTrayIcon.cpp
-        src/linux/DesktopIdentity.cpp)
+        src/linux/DesktopIdentity.cpp
+        src/linux/GDbusNotifier.cpp
+        src/common/NullSecretStore.cpp
+        src/common/NullNotifier.cpp)
+
 
     # MPRIS is D-Bus, and GDBus is the binding. REQUIRED rather than optional: a
     # Linux desktop without a session bus is possible, which the code handles at
@@ -134,6 +121,38 @@ elseif(UNIX)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(XPCOG_GIO REQUIRED IMPORTED_TARGET gio-2.0 glib-2.0 gobject-2.0)
     target_link_libraries(xpcog-platform PRIVATE PkgConfig::XPCOG_GIO)
+    # Selects the GDBus notifier over the refusing one; see
+    # src/common/NullNotifier.cpp.
+    target_compile_definitions(xpcog-platform PRIVATE XPCOG_HAS_GIO=1)
+
+    # The password store, which is libsecret on this platform.
+    #
+    # Below the GIO block on purpose: find_package(PkgConfig) happens there, and
+    # pkg_check_modules before it produces a malformed if() deep inside
+    # FindPkgConfig rather than saying what is wrong. It configured anyway in a
+    # tree where something earlier had already loaded PkgConfig, which is the
+    # kind of accident that holds until the one build that does not.
+    #
+    # Optional rather than REQUIRED, unlike GLib above, and the difference is
+    # what happens without it. No GLib means no MPRIS and no explanation, which
+    # is a broken build; no libsecret means a player that plays and declines to
+    # keep a Last.fm session, which is a defined state the interface already
+    # reports -- see app/src/RemoteToken.hpp on why refusing beats writing a
+    # token into the settings.
+    #
+    # The schema is wxSecretStore's, byte for byte, so the records the wx build
+    # made are the records this reads. src/linux/LibSecretStore.cpp says why that
+    # is not a detail.
+    pkg_check_modules(XPCOG_SECRET QUIET IMPORTED_TARGET libsecret-1)
+    if(TARGET PkgConfig::XPCOG_SECRET)
+        target_sources(xpcog-platform PRIVATE src/linux/LibSecretStore.cpp)
+        target_link_libraries(xpcog-platform PRIVATE PkgConfig::XPCOG_SECRET)
+        target_compile_definitions(xpcog-platform PRIVATE XPCOG_HAS_SECRET_STORE=1)
+        message(STATUS "XPCog: libsecret ${XPCOG_SECRET_VERSION} for the password store")
+    else()
+        message(STATUS "XPCog: no libsecret; the password store reports itself "
+                       "unavailable and scrobbling will say so")
+    endif()
 
     # The application ID, for MPRIS's DesktopEntry and for the process name a
     # shell matches a window against. From the build rather than from a literal

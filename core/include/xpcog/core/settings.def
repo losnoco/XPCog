@@ -2,8 +2,10 @@
 //
 //   XPCOG_SETTING(Ident, Type, "cogKey", default)
 //
-// Keys are deliberately identical to Cog's NSUserDefaults keys, so an existing
-// Cog preferences plist imports verbatim rather than resetting the user's setup.
+// Keys are deliberately identical to Cog's NSUserDefaults keys -- the port's
+// inheritance, kept because renaming one would orphan the value in every
+// existing XPCog settings file. (They once let a Cog plist import verbatim;
+// that import was removed in 2.0.0.)
 // Cog has 126 of these; the ones the engine actually reads are listed here and
 // the rest arrive with the features that consume them.
 //
@@ -74,25 +76,6 @@ XPCOG_SETTING(HalveDsdVolume, bool, "halveDSDVolume", false)
 /// channel count, and that cannot change mid-stream without a gap.
 XPCOG_SETTING(EnableFSurround, bool, "enableFSurround", false)
 
-/// Hand surround to the system's spatial audio rather than folding it down here.
-///
-/// **No Cog counterpart.** Cog renders headphone surround itself, through its
-/// HRTF node; this asks the operating system to, which is what gets a listener
-/// the same Fixed and Head Tracked modes the TV app has on AirPods.
-///
-/// Only macOS needs the switch. There a HAL client is given the device's own
-/// channel count, so 7.1 bound for a stereo headset was folded to two channels
-/// in-process and the system never saw anything to spatialize. With this on, a
-/// multichannel stream whose device is narrower than it is played through
-/// AVSampleBufferAudioRenderer instead, which is the path macOS spatializes. A
-/// device with enough channels of its own keeps the direct path, as does an
-/// exclusive or integer one. Windows Sonic, Dolby Atmos for Headphones and a
-/// PipeWire virtual-surround sink all present a surround endpoint, so those
-/// already receive the stream at full width and this changes nothing there.
-///
-/// Read when the device is opened.
-XPCOG_SETTING(SpatializeSurround, bool, "spatializeSurround", true)
-
 /// Emit DSD as DoP rather than decimating it to PCM. M6.
 XPCOG_SETTING(OutputDSDAsDoP, bool, "outputDSDAsDoP", false)
 
@@ -128,8 +111,8 @@ XPCOG_SETTING(Volume, double, "volume", 1.0)
 
 // --- playlist -------------------------------------------------------------
 
-/// Integers, not names, because Cog stores the raw enum value and the point of
-/// matching its keys is that its plist imports without translation.
+/// Integers, not names, because Cog stores the raw enum value and these keys
+/// keep Cog's meaning as well as its spelling.
 /// RepeatMode: 0 none, 1 one, 2 album, 3 all. ShuffleMode: 0 off, 1 albums, 2 all.
 XPCOG_SETTING(RepeatMode, int, "repeat", 3)
 XPCOG_SETTING(ShuffleMode, int, "shuffle", 0)
@@ -759,12 +742,7 @@ XPCOG_SETTING(UrlHistory, std::string, "UserDefaultURLsKey", "")
 
 /// Whether plays are reported to Last.fm.
 ///
-/// Cog's `enableAudioScrobbler`, same key -- but **deliberately not imported**
-/// from a Cog plist, which is the one place `settings.def` sharing Cog's
-/// spellings does not mean the value comes across. See `neverImported()` in
-/// core/src/library/CogImport.cpp for the reasoning; the short version is that
-/// the credential cannot follow the switch, so importing the switch alone would
-/// show scrobbling as enabled with nothing behind it.
+/// Cog's `enableAudioScrobbler`, same key.
 ///
 /// **Off by default, and Cog's own default is the interesting part.** Cog
 /// registers this as `@YES` (PlaybackEventController.m:39) and then gates every

@@ -52,53 +52,10 @@
       }
     },
     {
-      "name": "macos",
-      "hidden": true,
-      "inherits": "base",
-      "description": "CMAKE_OSX_DEPLOYMENT_TARGET used to be set here, and is not any more. It has a second reader -- the overlay triplets in triplets/, which govern the separate CMake build vcpkg runs for every dependency and inherit nothing from this one -- so it moved to cmake/XPCogOsxDeploymentTarget.cmake, which the root CMakeLists includes before project() and the triplets include too. Setting it here as well would be a second place to change and a second place to forget; 1.5.1 shipped a bundle whose executable said 13.0 and whose bundled dylib said 26.0 for exactly that reason.",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
-      }
-    },
-    {
-      "name": "macos-debug",
-      "displayName": "macOS (Debug)",
-      "inherits": [
-        "macos",
-        "debug"
-      ]
-    },
-    {
-      "name": "macos-release",
-      "displayName": "macOS (RelWithDebInfo)",
-      "inherits": [
-        "macos",
-        "release"
-      ]
-    },
-    {
-      "name": "macos-app-debug",
-      "displayName": "macOS (Debug, app only)",
-      "inherits": [
-        "app-only",
-        "macos-debug"
-      ]
-    },
-    {
-      "name": "macos-app-release",
-      "displayName": "macOS (RelWithDebInfo, app only)",
-      "inherits": [
-        "app-only",
-        "macos-release"
-      ]
-    },
-    {
       "name": "linux",
       "hidden": true,
       "inherits": "base",
-      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui`, which is how the toolkit is left to the distribution here. vcpkg's wxwidgets port depends on its gtk3 port, so asking vcpkg for wx on Linux builds GTK and about thirty packages under it -- glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus, seven X11 libraries -- from source, on a machine that already has every one of them. Install libwxgtk3.2-dev instead; cmake/XPCogWx.cmake finds it. A feature cannot be subtracted from an inherited list, hence the restatement rather than an override, the same way macos-headless does it. `sentry` stays: it is the toolkit that comes from the distribution here, not the crash reporter.",
+      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui`: the player on Linux is the GTK4/libadwaita one in app-gtk/, and GTK, libadwaita and blueprint-compiler come from the distribution through pkg-config (cmake/XPCogGtk.cmake), never from vcpkg -- its gtk ports would build the whole stack from source on a machine that already has it. wxWidgets is the Windows toolkit only. A feature cannot be subtracted from an inherited list, hence the restatement rather than an override. `sentry` stays: it is the toolkit that comes from the distribution here, not the crash reporter.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -144,7 +101,7 @@
       "name": "linux-repo",
       "hidden": true,
       "inherits": "linux",
-      "description": "The Linux build, taking every dependency the distribution already has at a version this code can use, and asking vcpkg only for the rest. Same source, same options and the same feature list as `linux` -- the one cache variable below is what makes cmake/XPCogSystemDeps.cmake probe with pkg-config before project() and subtract what it finds from VCPKG_MANIFEST_FEATURES. On a developer machine with the -dev packages installed that is most of the manifest, FFmpeg and OpenSSL included, which is nearly all of a cold build. The plain linux-debug and linux-release presets stay as they were and take everything from vcpkg: that is what CI builds, and what a build has to be to be reproducible on a machine other than the one it was configured on.",
+      "description": "The Linux build, taking every dependency the distribution already has at a version this code can use, and asking vcpkg only for the rest. Same source, same options and the same feature list as `linux` -- the one cache variable below is what makes cmake/XPCogSystemDeps.cmake probe with pkg-config before project() and subtract what it finds from VCPKG_MANIFEST_FEATURES. On a developer machine with the -dev packages installed that is most of the manifest, FFmpeg and OpenSSL included, which is nearly all of a cold build. The plain linux-debug and linux-release presets take everything from vcpkg but the toolkit: that is what CI builds, and what a build has to be to be reproducible on a machine other than the one it was configured on.",
       "cacheVariables": {
         "XPCOG_USE_SYSTEM_LIBS": "ON"
       }
@@ -224,21 +181,7 @@
         "linux",
         "debug"
       ],
-      "description": "What CI's headless Linux job builds. It used to say `--preset linux-debug -D XPCOG_BUILD_APP=OFF`, which stopped being enough when the crash reporter arrived: XPCOG_BUILD_APP=OFF means platform/ is never added and nothing links sentry, but vcpkg decides what to install from the feature list and installed it anyway -- so the job built crashpad, and libunwind under it, for a target that could not use either. Features cannot be subtracted from an inherited list, so `sentry` is dropped by restating, the same way macos-headless drops `gui`. The list lives here rather than in a -D on the CI step for the reason the comment on that step gives: one list, in one file.",
-      "cacheVariables": {
-        "XPCOG_BUILD_APP": "OFF",
-        "XPCOG_WITH_SENTRY": "OFF",
-        "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
-      }
-    },
-    {
-      "name": "macos-headless",
-      "displayName": "macOS headless (core + cli + tests, no Qt)",
-      "inherits": [
-        "macos",
-        "debug"
-      ],
-      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui` because it inherits the list and a feature cannot be subtracted. Building wx here would cost a GTK build for a target that links no toolkit. `sentry` goes too, and for the matching reason: XPCOG_BUILD_APP is off, so the platform layer that holds the crash reporter is never added, and building crashpad for it would be a helper executable with nothing to sit beside.",
+      "description": "What CI's headless Linux job builds. It used to say `--preset linux-debug -D XPCOG_BUILD_APP=OFF`, which stopped being enough when the crash reporter arrived: XPCOG_BUILD_APP=OFF means platform/ is never added and nothing links sentry, but vcpkg decides what to install from the feature list and installed it anyway -- so the job built crashpad, and libunwind under it, for a target that could not use either. Features cannot be subtracted from an inherited list, so `sentry` is dropped by restating. The list lives here rather than in a -D on the CI step for the reason the comment on that step gives: one list, in one file.",
       "cacheVariables": {
         "XPCOG_BUILD_APP": "OFF",
         "XPCOG_WITH_SENTRY": "OFF",
@@ -247,26 +190,6 @@
     }
   ],
   "buildPresets": [
-    {
-      "name": "macos-debug",
-      "configurePreset": "macos-debug"
-    },
-    {
-      "name": "macos-release",
-      "configurePreset": "macos-release"
-    },
-    {
-      "name": "macos-app-debug",
-      "configurePreset": "macos-app-debug"
-    },
-    {
-      "name": "macos-app-release",
-      "configurePreset": "macos-app-release"
-    },
-    {
-      "name": "macos-headless",
-      "configurePreset": "macos-headless"
-    },
     {
       "name": "linux-headless",
       "configurePreset": "linux-headless"
@@ -313,20 +236,6 @@
     }
   ],
   "testPresets": [
-    {
-      "name": "macos-debug",
-      "configurePreset": "macos-debug",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "macos-headless",
-      "configurePreset": "macos-headless",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
     {
       "name": "linux-headless",
       "configurePreset": "linux-headless",

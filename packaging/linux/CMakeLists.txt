@@ -1,8 +1,8 @@
 # Desktop integration for Linux: the three files that make an installed XPCog an
 # application rather than a binary in bin/.
 #
-# Unlike packaging/windows/ and packaging/macos/, nothing here is a target you
-# ask for. There is no `installer` and no `dmg` to build, because on Linux the
+# Unlike packaging/windows/, nothing here is a target you ask for. There is no
+# `installer` to build, because on Linux the
 # artefact is the install tree itself -- `cmake --install`, and then whatever
 # wraps it: a tarball, a distribution package, a Flatpak. So this directory adds
 # install() rules and two configured text files, and that is all.
@@ -125,7 +125,7 @@ install(FILES "${_metainfo}"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/metainfo")
 
 # The icons, renamed on the way in. app/icons/ names them for the size because
-# that is what the Windows .ico and the macOS iconset were built from; the
+# that is what the Windows .ico was built from; the
 # hicolor theme puts the size in the directory instead and wants every file
 # named for the application. Flatpak requires that name specifically, and the
 # tray icon's IconName resolves through the same theme.
@@ -153,7 +153,7 @@ endforeach()
 #     cmake --build build/linux-repo-release --target package
 #
 # produces build/linux-repo-release/XPCog-<version>-<arch>.tar.gz, which is the
-# Linux counterpart of `installer` on Windows and `dmg` on macOS -- one artefact
+# Linux counterpart of `installer` on Windows -- one artefact
 # to attach to a release, for someone who wants to run XPCog without building
 # it.
 #
@@ -169,7 +169,7 @@ endforeach()
 #
 # --- What this tarball is, and is not --------------------------------------
 #
-# It is not an AppImage and does not pretend to be. wxWidgets, GTK and most of
+# It is not an AppImage and does not pretend to be. GTK, libadwaita and most of
 # the codec libraries are the distribution's, linked dynamically, so the tarball
 # runs on the distribution release that built it or a compatible newer one -- it
 # is a convenience for that case, not a portable binary for any Linux.

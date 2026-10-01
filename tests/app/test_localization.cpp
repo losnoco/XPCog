@@ -20,6 +20,7 @@
 
 #include "Localization.hpp"
 
+#include "Translations.hpp"
 #include "catalogs.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -343,4 +344,116 @@ TEST_CASE("the picker offers the system, English and every catalogue",
         CHECK_FALSE(found->name.empty());
         CHECK(found->name != found->code);
     }
+}
+
+// --- the two lookups must agree ----------------------------------------------
+
+namespace {
+
+/// Installs a language in the toolkit-free lookup and puts back what was there.
+///
+/// Needed because that lookup is process-wide, exactly as wxTranslations::Set()
+/// is -- and for the same reason the `Loaded` helper above is deliberately
+/// local: test_infopanel asserts on English labels and would start reading them
+/// in Spanish if this leaked.
+class Installed {
+public:
+    explicit Installed(const std::string& language)
+        : previous_(xpcog::app::currentLanguage()) {
+        xpcog::app::installNeutralTranslations(language);
+    }
+    Installed(const Installed&)            = delete;
+    Installed& operator=(const Installed&) = delete;
+    ~Installed() { xpcog::app::installNeutralTranslations(previous_); }
+
+private:
+    std::string previous_;
+};
+
+}  // namespace
+
+TEST_CASE("both lookups answer every message identically", "[wx][locale]") {
+    // The gate for moving anything out of app/. There are now two paths to the
+    // catalogue -- wxTranslations for the window, xpcog::uicore for a frontend
+    // with no wx to ask -- and they are only safe because they read one table
+    // and are installed from one call. A divergence between them would show up
+    // as two halves of the same window disagreeing about what language it is
+    // in, which is not a symptom anyone traces back to a lookup.
+    //
+    // So: every message, both ways, rather than a sample. It is 456 of them and
+    // the comparison is a string compare.
+    const Catalog& catalog = spanish();
+    const Loaded   viaWx{catalog};
+    const Installed viaUs{catalog.language};
+
+    std::size_t compared = 0;
+    std::size_t plurals  = 0;
+
+    for (const CatalogEntry& entry : catalog.entries) {
+        // The header, which is not a message.
+        if (entry.singular == nullptr || entry.singular[0] == '\0') {
+            continue;
+        }
+
+        if (entry.plural == nullptr) {
+            const wxString* wx = viaWx.find(wxString::FromUTF8(entry.singular));
+            REQUIRE(wx != nullptr);
+            INFO("msgid: " << entry.singular);
+            CHECK(xpcog::app::tr(entry.singular) == std::string(wx->utf8_string()));
+            ++compared;
+            continue;
+        }
+
+        // Both sides of the plural rule, and the boundary between them. 0 is
+        // included because it is the count a hand-written `n == 1` and a real
+        // Plural-Forms rule are most likely to disagree about.
+        for (const unsigned n : {0U, 1U, 2U, 5U, 21U, 100U}) {
+            const wxString* wx = viaWx.find(wxString::FromUTF8(entry.singular), n);
+            REQUIRE(wx != nullptr);
+            INFO("msgid: " << entry.singular << ", n = " << n);
+            CHECK(xpcog::app::trn(entry.singular, entry.plural, n) ==
+                  std::string(wx->utf8_string()));
+        }
+        ++plurals;
+        ++compared;
+    }
+
+    // A comparison that compared nothing would pass. It has caught an empty
+    // table before, in the test below this one, and the same guard belongs here.
+    CHECK(compared > 300);
+    CHECK(plurals > 0);
+}
+
+TEST_CASE("an untranslated message comes back as its msgid", "[locale]") {
+    const Installed viaUs{"es"};
+
+    // Not in any catalogue, and must not become empty. A lookup that answered
+    // with "" would replace a perfectly good English label with nothing, which
+    // is the failure cmake/CompileCatalog.cmake drops empty msgstrs to avoid.
+    CHECK(xpcog::app::tr("Not a message this build has ever had") ==
+          "Not a message this build has ever had");
+    CHECK(xpcog::app::trn("One nonexistent thing", "Some nonexistent things", 1) ==
+          "One nonexistent thing");
+    CHECK(xpcog::app::trn("One nonexistent thing", "Some nonexistent things", 3) ==
+          "Some nonexistent things");
+}
+
+TEST_CASE("the substituter fills specifiers in order", "[locale]") {
+    using xpcog::app::fmt;
+
+    CHECK(fmt("Add %zu Tracks", std::size_t{3}) == "Add 3 Tracks");
+    CHECK(fmt("%s (remote)", std::string{"Remove 2 Tracks"}) ==
+          "Remove 2 Tracks (remote)");
+    CHECK(fmt("%s of %d", "one", 5) == "one of 5");
+    CHECK(fmt("100%% done") == "100% done");
+
+    // A translation that disagrees with its msgid still has to produce a
+    // sentence. Neither of these is worth losing the message over, and both are
+    // things a translator does by hand.
+    CHECK(fmt("Add %zu Tracks and %zu more", std::size_t{3}) ==
+          "Add 3 Tracks and %zu more");
+    CHECK(fmt("No specifiers here", std::size_t{3}) == "No specifiers here");
+
+    // The one that would be a hole if this were snprintf.
+    CHECK(fmt("%n%s", std::string{"safe"}) == "%nsafe");
 }

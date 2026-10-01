@@ -1,0 +1,213 @@
+// The main window: a header bar carrying the transport buttons, the position
+// row under it, the content in the middle and the status line along the
+// bottom.
+//
+// Nothing here names a command: every button is bound to an action by name,
+// and the actions are installed from the shared command table (Actions.cpp),
+// which is also where the primary menu is built from. That keeps this file
+// about layout. The one exception is the scan's cancel button, which is not a
+// command anybody types.
+
+using Gtk 4.0;
+using Adw 1;
+
+translation-domain "xpcog";
+
+Adw.ApplicationWindow main_window {
+  title: "XPCog";
+  default-width: 1100;
+  default-height: 680;
+
+  content: Adw.ToolbarView toolbar_view {
+    [top]
+    Adw.HeaderBar header_bar {
+      [start]
+      MenuButton add_button {
+        icon-name: "list-add-symbolic";
+        tooltip-text: _("Add music");
+        // The menu is installed from code; see Menus.cpp.
+      }
+
+      [start]
+      // The transport buttons, in the header rather than in the row under
+      // it: that row grows to the waveform's height, and buttons in it
+      // grew with it.
+      Box transport_buttons {
+        styles ["linked"]
+        Button previous_button {
+          icon-name: "media-skip-backward-symbolic";
+          action-name: "win.previous";
+          tooltip-text: _("Previous");
+        }
+        Button play_button {
+          icon-name: "media-playback-start-symbolic";
+          action-name: "win.play-pause";
+          tooltip-text: _("Play/Pause");
+        }
+        Button stop_button {
+          icon-name: "media-playback-stop-symbolic";
+          action-name: "win.stop";
+          tooltip-text: _("Stop");
+        }
+        Button next_button {
+          icon-name: "media-skip-forward-symbolic";
+          action-name: "win.next";
+          tooltip-text: _("Next");
+        }
+      }
+
+      title-widget: Adw.WindowTitle window_title {
+        title: "XPCog";
+      };
+
+      [end]
+      MenuButton primary_button {
+        primary: true;
+        icon-name: "open-menu-symbolic";
+        tooltip-text: _("Main Menu");
+      }
+    }
+
+    // The position row. A second top bar rather than part of the header bar:
+    // the seek bar has to stretch, and a header bar's title area is not a
+    // place a control can stretch into. Everything in it is centred, so the
+    // waveform's height is the seek bar's alone.
+    [top]
+    Box transport {
+      orientation: horizontal;
+      spacing: 6;
+      margin-start: 8;
+      margin-end: 8;
+      margin-top: 4;
+      margin-bottom: 4;
+
+      // The seek bar goes here: built in code (SeekBar.hpp).
+      Box seek_slot {
+        hexpand: true;
+        valign: center;
+      }
+
+      Label clock_label {
+        label: "0:00 / 0:00";
+        styles ["numeric", "dim-label"]
+        width-chars: 13;
+        xalign: 1;
+        valign: center;
+      }
+
+      Scale volume_scale {
+        width-request: 110;
+        valign: center;
+        draw-value: false;
+        tooltip-text: _("Volume");
+        adjustment: Adjustment volume_adjustment {
+          lower: 0;
+          upper: 100;
+          step-increment: 5;
+          page-increment: 10;
+        };
+      }
+
+      SearchEntry filter_entry {
+        placeholder-text: _("Filter");
+        width-chars: 18;
+        valign: center;
+      }
+    }
+
+    // What the window is for. libadwaita has no docking, so the wx docks
+    // become places: the folder browser is a sidebar on the left, Info and
+    // Lyrics share a sidebar on the right, and the visualisers, the equaliser,
+    // pitch & tempo and the SC-55 panel are a strip under the playlist, each
+    // section shown or hidden by its View action. See docs/GTKPORT.md.
+    content: Adw.OverlaySplitView split_view {
+      sidebar-position: start;
+      show-sidebar: false;
+      min-sidebar-width: 180;
+      max-sidebar-width: 420;
+      sidebar-width-fraction: 0.24;
+
+      sidebar: Adw.Bin file_tree_bin {};
+
+      content: Adw.OverlaySplitView panels_view {
+        sidebar-position: end;
+        show-sidebar: false;
+        min-sidebar-width: 220;
+        max-sidebar-width: 480;
+        sidebar-width-fraction: 0.28;
+
+        sidebar: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            show-start-title-buttons: false;
+            show-end-title-buttons: false;
+            title-widget: Adw.ViewSwitcher {
+              stack: panels_stack;
+              policy: narrow;
+            };
+          }
+
+          content: Adw.ViewStack panels_stack {
+            Adw.ViewStackPage {
+              name: "info";
+              title: _("Info");
+              icon-name: "dialog-information-symbolic";
+              child: Adw.Bin info_bin {};
+            }
+            Adw.ViewStackPage {
+              name: "lyrics";
+              title: _("Lyrics");
+              icon-name: "format-text-rich-symbolic";
+              child: Adw.Bin lyrics_bin {};
+            }
+          };
+        };
+
+        content: Paned tools_paned {
+          orientation: vertical;
+          shrink-start-child: false;
+          shrink-end-child: false;
+          resize-start-child: true;
+          resize-end-child: false;
+
+          start-child: Adw.Bin content_bin {};
+
+          end-child: Adw.Bin tools_bin {
+            visible: false;
+          };
+        };
+      };
+    };
+
+    [bottom]
+    ActionBar status_bar {
+      [start]
+      Label status_label {
+        ellipsize: end;
+        xalign: 0;
+      }
+
+      [end]
+      Box scan_box {
+        spacing: 6;
+        visible: false;
+        ProgressBar scan_bar {
+          valign: center;
+          width-request: 160;
+        }
+        Button scan_cancel {
+          icon-name: "process-stop-symbolic";
+          tooltip-text: _("Cancel");
+          styles ["flat"]
+        }
+      }
+
+      [end]
+      Label now_playing_label {
+        ellipsize: end;
+        xalign: 1;
+        styles ["dim-label"]
+      }
+    }
+  };
+}

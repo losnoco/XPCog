@@ -1,33 +1,23 @@
 # Finding wxWidgets.
 #
 # Unlike the Qt this replaced, there is no XPCOG_WX_ROOT to set and no deploy tool
-# to run afterwards, which is most of the point of the move. Where the toolkit
-# comes from, though, is not the same on every platform, and deliberately so:
+# to run afterwards, which is most of the point of the move. wx is the Windows
+# toolkit only -- Linux has its own frontend in app-gtk/ -- and it comes from
+# vcpkg, via the `gui` feature in vcpkg.json: Windows packages no wx, so
+# building it is the only option, and it is a self-contained build over an SDK
+# that is already installed.
 #
-#   Windows, macOS  vcpkg, via the `gui` feature in vcpkg.json. Neither platform
-#                   packages wx, so building it is the only option, and on both
-#                   it is a self-contained build of wx over an SDK that is
-#                   already installed.
-#   Linux           the distribution. vcpkg's wxwidgets port depends on its gtk3
-#                   port, so asking vcpkg for wx on Linux builds 57 packages from
-#                   source -- wx, GTK and 55 more beneath them: glib, pango,
-#                   cairo, harfbuzz, fontconfig, at-spi2, dbus, seven X11
-#                   libraries -- none of which is anything a Linux machine is
-#                   short of. 98 packages for that configuration against 41
-#                   without. The `gui` feature is therefore absent from the Linux
-#                   presets and `libwxgtk3.2-dev` supplies the toolkit.
-#
-# Two discovery modes follow from that, tried in this order:
+# Two discovery modes, tried in this order:
 #
 #   CONFIG  what vcpkg's own `usage` file recommends, and what its wxwidgets port
 #           installs. Gives namespaced targets (wx::core and friends).
-#   MODULE  CMake's bundled FindwxWidgets, which reads `wx-config` -- the Linux
-#           path, and equally the way to build against a hand-built wx anywhere.
+#   MODULE  CMake's bundled FindwxWidgets, the way to build against a hand-built
+#           wx instead.
 #
 # Either way the result is one target, XPCog::wx, so nothing downstream has to
 # know which was used, and both ask for the same components.
 
-if(NOT XPCOG_BUILD_APP)
+if(NOT XPCOG_BUILD_WX_APP)
     return()
 endif()
 
@@ -102,24 +92,13 @@ else()
         # was not found, and worth saying two different things: reaching here means
         # a missing apt package on Linux and a missing vcpkg feature anywhere else,
         # which have nothing in common but the symptom.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            message(FATAL_ERROR
-                    "wxWidgets 3.2 or newer was not found.\n"
-                    "  On Linux the toolkit comes from the distribution rather "
-                    "than from vcpkg: install libwxgtk3.2-dev (Debian/Ubuntu), "
-                    "wxGTK-devel (Fedora) or wxgtk3 (Arch).\n"
-                    "  To build it through vcpkg instead -- 57 packages, GTK among "
-                    "them -- add `gui` to VCPKG_MANIFEST_FEATURES.")
-        else()
-            message(FATAL_ERROR
-                    "wxWidgets 3.2 or newer was not found.\n"
-                    "  vcpkg supplies it on this platform, and cheaply: no GTK is "
-                    "involved off Linux. Add `gui` to VCPKG_MANIFEST_FEATURES, or "
-                    "configure with a preset that already has it -- windows-debug, "
-                    "macos-debug and their release counterparts all do.\n"
-                    "  A wx from anywhere else is picked up here instead when its "
-                    "wx-config is on PATH.")
-        endif()
+        message(FATAL_ERROR
+                "wxWidgets 3.2 or newer was not found.\n"
+                "  vcpkg supplies it: add `gui` to VCPKG_MANIFEST_FEATURES, or "
+                "configure with a preset that already has it -- windows-debug, "
+                "windows-release and their app-only counterparts all do.\n"
+                "  A wx from anywhere else is picked up here instead when its "
+                "wx-config is on PATH.")
     endif()
 
     add_library(xpcog-wx INTERFACE)

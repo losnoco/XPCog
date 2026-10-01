@@ -1,5 +1,7 @@
 #include "Localization.hpp"
 
+#include "Translations.hpp"
+
 #include "Text.hpp"
 
 #include <wx/arrstr.h>
@@ -7,9 +9,7 @@
 #include <wx/translation.h>
 #include <wx/uilocale.h>
 
-#include <algorithm>
 #include <array>
-#include <cstdint>
 #include <cstring>
 #include <string_view>
 
@@ -31,35 +31,6 @@ constexpr const char* kDomain = "xpcog";
 ///
 /// A code with no row here falls back to the code itself, which is ugly and
 /// visible, rather than to a blank row, which is not.
-struct Endonym {
-    const char* code;
-    const char* name;
-};
-
-constexpr std::array kEndonyms = {
-    Endonym{"en", "English"},
-    Endonym{"es", "Espa\xC3\xB1ol"},
-};
-
-[[nodiscard]] std::string endonymFor(std::string_view code) {
-    for (const Endonym& entry : kEndonyms) {
-        if (code == entry.code) {
-            return entry.name;
-        }
-    }
-    return std::string{code};
-}
-
-/// gettext's `.mo` is little-endian when its magic is written this way round,
-/// on every machine -- the format carries the byte order in the magic rather
-/// than following the host's.
-void appendLittleEndian(std::string& out, std::uint32_t value) {
-    out.push_back(static_cast<char>(value & 0xFFU));
-    out.push_back(static_cast<char>((value >> 8) & 0xFFU));
-    out.push_back(static_cast<char>((value >> 16) & 0xFFU));
-    out.push_back(static_cast<char>((value >> 24) & 0xFFU));
-}
-
 /// Serves the compiled-in catalogues to wxTranslations.
 ///
 /// The loader interface is the whole extension point wx offers here: the two
@@ -107,116 +78,6 @@ public:
 
 }  // namespace
 
-std::vector<LanguageOption> availableLanguages() {
-    std::vector<LanguageOption> options;
-    // Empty rather than a code, because "follow the system" is not a language:
-    // storing `en` for a listener whose desktop is Spanish would pin them to
-    // English for good the first time they opened this row to look at it.
-    options.push_back(LanguageOption{"", ""});
-    options.push_back(LanguageOption{"en", endonymFor("en")});
-    for (const Catalog& catalog : catalogs()) {
-        options.push_back(
-            LanguageOption{catalog.language, endonymFor(catalog.language)});
-    }
-    return options;
-}
-
-std::string assembleCatalog(const Catalog& catalog) {
-    // Key and value in gettext's own shape: a context is joined to the msgid
-    // with EOT, and the plural forms of either side are joined with NUL. Both
-    // are what the format says and what wx's parser splits on again -- doing it
-    // here is what lets the generated table stay a list of plain C strings.
-    struct Message {
-        std::string key;
-        std::string value;
-    };
-
-    std::vector<Message> messages;
-    messages.reserve(catalog.entries.size());
-
-    for (const CatalogEntry& entry : catalog.entries) {
-        Message message;
-        if (entry.context != nullptr) {
-            message.key = entry.context;
-            message.key.push_back('\x04');
-        }
-        message.key += entry.singular;
-        if (entry.plural != nullptr) {
-            message.key.push_back('\0');
-            message.key += entry.plural;
-        }
-
-        bool first = true;
-        for (const char* form : entry.forms) {
-            if (form == nullptr) {
-                break;
-            }
-            if (!first) {
-                message.value.push_back('\0');
-            }
-            message.value += form;
-            first = false;
-        }
-        messages.push_back(std::move(message));
-    }
-
-    // Sorted by key, which the format requires so that a reader may binary
-    // search. wx builds a hash map instead and would not notice, but a .mo that
-    // is only readable by the one parser that happens to be lenient is not the
-    // format it claims to be -- and this image is exactly what would be written
-    // out if these ever needed handing to msgunfmt.
-    std::sort(messages.begin(), messages.end(),
-              [](const Message& left, const Message& right) {
-                  return left.key < right.key;
-              });
-
-    const auto count = static_cast<std::uint32_t>(messages.size());
-
-    // The layout, in order: a 28-byte header, the originals' index, the
-    // translations' index, then the strings themselves. The hash table is
-    // optional and omitted -- a size of zero is how the format says so.
-    constexpr std::uint32_t kHeaderSize = 28;
-    const std::uint32_t     originals   = kHeaderSize;
-    const std::uint32_t     translated  = originals + (count * 8);
-    const std::uint32_t     strings     = translated + (count * 8);
-
-    std::string image;
-    appendLittleEndian(image, 0x950412DEU);  // magic
-    appendLittleEndian(image, 0);            // revision
-    appendLittleEndian(image, count);
-    appendLittleEndian(image, originals);
-    appendLittleEndian(image, translated);
-    appendLittleEndian(image, 0);  // hash table size
-    appendLittleEndian(image, 0);  // hash table offset
-
-    // Every string is stored NUL-terminated and its length is reported *without*
-    // that NUL -- which is what makes the embedded NULs above work: the reported
-    // length is what a parser slices on, and the terminator is only there so a
-    // C string function reaching the buffer finds an end.
-    std::uint32_t at = strings;
-    for (const Message& message : messages) {
-        appendLittleEndian(image, static_cast<std::uint32_t>(message.key.size()));
-        appendLittleEndian(image, at);
-        at += static_cast<std::uint32_t>(message.key.size()) + 1;
-    }
-    for (const Message& message : messages) {
-        appendLittleEndian(image, static_cast<std::uint32_t>(message.value.size()));
-        appendLittleEndian(image, at);
-        at += static_cast<std::uint32_t>(message.value.size()) + 1;
-    }
-
-    for (const Message& message : messages) {
-        image += message.key;
-        image.push_back('\0');
-    }
-    for (const Message& message : messages) {
-        image += message.value;
-        image.push_back('\0');
-    }
-
-    return image;
-}
-
 void installTranslations(const std::string& language) {
     // A code this build has no catalogue for is treated as "follow the system"
     // rather than honoured: a settings file that has travelled from a build with
@@ -257,6 +118,18 @@ void installTranslations(const std::string& language) {
     // worth reporting: the interface is in the language the msgids are written
     // in, which is a working player rather than a degraded one.
     static_cast<void>(translations->AddCatalog(wxString::FromAscii(kDomain)));
+
+    // And the same catalogue again, for the lookup that has no wx to ask. See
+    // Translations.hpp for why there are two and why they must not disagree.
+    //
+    // The language handed over is the one wx *settled on*, not the one asked
+    // for. They differ in the ordinary case: with no setting, the code above
+    // leaves the choice to AddCatalog, which matches the desktop's languages
+    // against what the loader has -- so asking for "" here would put a Spanish
+    // desktop's window half in Spanish and half in English, and only for the
+    // listeners who never set the language by hand.
+    installNeutralTranslations(
+        toUtf8(translations->GetBestTranslation(wxString::FromAscii(kDomain))));
 }
 
 }  // namespace xpcog::app

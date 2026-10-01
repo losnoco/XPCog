@@ -50,9 +50,8 @@ add_custom_target(xpcog-assets ALL DEPENDS ${_copied})
 set_target_properties(xpcog-assets PROPERTIES FOLDER assets)
 
 # Installed layouts. Windows deploys by copying the whole output directory, so
-# it needs nothing here beyond the staging above; macOS carries them inside the
-# bundle, which app/CMakeLists.txt arranges because only it has the bundle.
-if(UNIX AND NOT APPLE)
+# it needs nothing here beyond the staging above.
+if(UNIX)
     install(FILES ${XPCOG_SOUNDFONTS} DESTINATION share/xpcog/soundfonts)
     install(FILES ${XPCOG_EQ_PRESETS} DESTINATION share/xpcog/equalizer)
 endif()

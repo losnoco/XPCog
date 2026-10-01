@@ -16,8 +16,8 @@
 // answers a failed open by moving on and remembering the failure
 // (`failedStarts_`), which is a different and mostly better answer than playing
 // a gap. This is the piece that makes the other one *possible*, and it is also
-// what lets a Cog playlist holding `silence://10` -- which `cogimport` will
-// eventually read -- play the same thing here.
+// what lets a Cog playlist holding `silence://10` -- which the Cog XML playlist
+// reader reads -- play the same thing here.
 //
 // Two differences from Cog:
 //

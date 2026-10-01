@@ -34,7 +34,7 @@
 # and they are declared in different directories: xpcog-app in app/, xpcog-cli in
 # tools/cli/, and a headless build installs the second without the first.
 function(xpcog_install_linux_runtime target)
-    if(NOT UNIX OR APPLE)
+    if(NOT UNIX)
         return()
     endif()
 

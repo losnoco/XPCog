@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "UrlHistory.hpp"
+
 #include "xpcog/core/Settings.hpp"
 
 #include <wx/dialog.h>
@@ -24,17 +26,6 @@ namespace xpcog::app {
 /// Splits the stored history newest-last. Free functions rather than members so
 /// they can be tested without a display -- which is the whole of what the old
 /// suite's test_openurldialog covered.
-[[nodiscard]] std::vector<std::string> urlHistoryFrom(const std::string& stored);
-
-/// Folds `url` into `history` and returns the result, newest last and capped.
-/// A repeat moves to the end rather than being added twice, so re-opening a
-/// station keeps it to hand instead of filling the list with itself.
-[[nodiscard]] std::vector<std::string> urlHistoryWith(std::vector<std::string> history,
-                                                      const std::string&       url);
-
-/// Joins for storage. The inverse of urlHistoryFrom().
-[[nodiscard]] std::string joinUrlHistory(const std::vector<std::string>& history);
-
 class OpenUrlDialog : public wxDialog {
 public:
     OpenUrlDialog(wxWindow* parent, Settings& settings);

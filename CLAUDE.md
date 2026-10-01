@@ -2,8 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-XPCog is a wxWidgets audio player for Windows, macOS and Linux, ported from
-[Cog](https://github.com/losnoco/Cog) (macOS, Objective-C). C++20, CMake, vcpkg.
+XPCog is an audio player for Windows and Linux, ported from
+[Cog](https://github.com/losnoco/Cog) (macOS, Objective-C). One engine under two
+native interfaces: wxWidgets on Windows (`app/`), GTK4 and libadwaita on Linux
+(`app-gtk/`). C++20, CMake, vcpkg. There is no macOS build since 2.0.0 — Cog is
+the player there.
 
 ## Versioning
 
@@ -27,8 +30,8 @@ The version lives in exactly two places, and they are kept identical:
 Everything else derives from the first of those and must not be edited by hand:
 `core/include/xpcog/core/Version.hpp.in` is configured into `Version.hpp`
 (`kVersionMajor`/`Minor`/`Patch`, `kVersionString`), `app/XPCog.rc.in` takes the
-Windows `FileVersion` and `ProductVersion`, and `app/CMakeLists.txt` sets the
-macOS bundle's `CFBundleShortVersionString` and `CFBundleVersion`. The version
+Windows `FileVersion` and `ProductVersion`, and the Linux AppStream metainfo's
+`<release>` comes from it too. The version
 string is user-visible in the About dialog, in `xpcog-cli`'s banner and in
 every `User-Agent` the program sends (`userAgent()`, beside it in `Version.hpp`).
 
@@ -73,17 +76,22 @@ Everything is preset-driven; each preset builds into `build/<preset-name>/`, and
 binaries land in `build/<preset-name>/bin/`.
 
 ```sh
-cmake --preset macos-debug            # configure  (or linux-debug / windows-debug)
-cmake --build --preset macos-debug    # build
-ctest --preset macos-debug            # test
+cmake --preset linux-debug            # configure  (or windows-debug)
+cmake --build --preset linux-debug    # build
+ctest --preset linux-debug            # test
 ```
 
-Preset families: `macos-*`, `linux-*`, `windows-*`, each with `-debug` and
-`-release`. Variants on top of those:
+Preset families: `linux-*` and `windows-*`, each with `-debug` and `-release`.
+`XPCOG_BUILD_APP` builds the player, and the toolkit follows the platform rather
+than an option: wx on Windows, GTK on Linux (`cmake/XPCogOptions.cmake` derives
+`XPCOG_BUILD_WX_APP` / `XPCOG_BUILD_GTK_APP` from it, and refuses elsewhere).
+On Linux GTK 4.22, libadwaita 1.9 and blueprint-compiler come from the
+distribution through pkg-config, never vcpkg. Variants on top of those:
 
 - `*-app-debug` / `*-app-release` — application only, no CLI and no tests.
-- `macos-headless` / `linux-headless` — `XPCOG_BUILD_APP=OFF`, no toolkit built at
-  all. The fastest way to exercise `core` and `codecs`.
+- `linux-headless` — `XPCOG_BUILD_APP=OFF`, no toolkit built at all. The fastest
+  way to exercise `core` and `codecs`, and the shape a headless build takes on
+  any other platform.
 - `linux-repo-debug` / `linux-repo-release` — Linux, taking every dependency the
   distribution already has via pkg-config and asking vcpkg only for the rest
   (`XPCOG_USE_SYSTEM_LIBS=ON`, probed in `cmake/XPCogSystemDeps.cmake` **before**
@@ -94,31 +102,30 @@ The presets turn on more than the option defaults do — FFmpeg, vgmstream, PSF,
 SID, MIDI, AdPlug, libvgm, Sentry and the REST remote control are all `OFF` for a
 bare `cmake` and `ON` in `base`. Configure with a preset unless you specifically want a minimal build.
 
-Two test binaries, both Catch2 v3 and both registered with ctest through
-`catch_discover_tests`: `xpcog-tests` (core and codecs) and `xpcog-app-tests`
-(app-layer, built as `xpcog-appcore`).
+Catch2 v3 throughout, registered with ctest through `catch_discover_tests`:
+`xpcog-tests` (core and codecs) everywhere, `xpcog-uicore-tests` (the
+toolkit-free application layer) wherever the player is built, and
+`xpcog-app-tests` (the wx half, built as `xpcog-appcore`) on Windows.
+`xpcog-uicore-tests` links `xpcog-uicore` and nothing else, so a widget
+dependency creeping into `uicore/` fails to link rather than passing.
 
-On Linux there is a third, `xpcog-gui-tests`, and it is the one that needs a
-screen: it opens the preferences dialog and walks its panes, which is the only
-way to catch a layout handler that recurses until the stack runs out, and it
-measures the equaliser's sliders, which is the only way to catch a control the
-toolkit refuses to draw because it was forced narrower than its own minimum. It
-is registered as a single `add_test()` rather than discovered, so it can be run
-under `xvfb-run` where CMake found one; without a display it skips. Linux only
-because that is where a display can be conjured — the code under test is the
-same on all three. With `XPCOG_GUI_CAPTURE=<dir>` the spectrum test also drops a
-PNG of every channel mode there through ImageMagick's `import`, which is how a
-rendering question gets answered without driving the player; under Xvfb on a
-Wayland desktop that needs `GDK_BACKEND=x11` and `WAYLAND_DISPLAY` unset, or GTK
-opens the test windows on the real screen and the captures come back black.
+On Linux there is `xpcog-gtk-tests`, and it is the one that needs a screen: it
+walks the preferences dialog page by page, measures the equaliser's scales,
+runs the painted panes, and fails on any GTK warning or critical. It is
+registered as a single `add_test()` rather than discovered, so it can be run
+under `xvfb-run` where CMake found one; without a display it skips. With
+`XPCOG_GUI_CAPTURE=<dir>` it renders widgets through GSK to PNGs there, which is
+how a rendering question gets answered without driving the player; under Xvfb
+on a Wayland desktop that needs `GDK_BACKEND=x11` and `WAYLAND_DISPLAY` unset,
+or GTK opens the test windows on the real screen.
 
 ```sh
-ctest --preset macos-debug -R Gapless          # by ctest test name
-./build/macos-debug/bin/xpcog-tests "[gapless]"  # by Catch2 tag — the usual way
-./build/macos-debug/bin/xpcog-tests --list-tests
+ctest --preset linux-debug -R Gapless          # by ctest test name
+./build/linux-debug/bin/xpcog-tests "[gapless]"  # by Catch2 tag — the usual way
+./build/linux-debug/bin/xpcog-tests --list-tests
 ```
 
-Tags follow the subsystem (`[dsp]`, `[playlist]`, `[library]`, `[cogimport]`,
+Tags follow the subsystem (`[dsp]`, `[playlist]`, `[library]`,
 `[lastfm]`, `[listenbrainz]`, `[lrclib]`, `[scrobbler]`, `[timestretch]`,
 `[gapless]`, `[hls]`, `[midi]`, `[remote]`…). `[remote][socket]` binds an ephemeral loopback
 port and runs by default; `XPCOG_NO_SOCKET_TESTS=1` skips it loudly for an environment that
@@ -127,13 +134,8 @@ Tags starting with a dot are hidden and only run when named: `[.lastfmlive]`
 (hits the real Last.fm API), `[.ratedevice]` and `[.integerdevice]` (want real
 hardware).
 
-Other targets: `xpcog-no-toolkit` (layering check, runs as part of `ALL`),
-`installer` on Windows (needs NSIS; use a **release** tree), and on macOS
-`xpcog-doctypes` plus `xpcog-bundle-plist` (in `ALL`; write the document types
-into the bundle's `Info.plist` from the codec registry — never edit them by
-hand), and `sign`, `dmg` and `notarize` (`packaging/macos/`; the identity comes from
-`XPCOG_CODESIGN_IDENTITY` and the notary credentials from the environment only —
-see `docs/BUILDING.md`).
+Other targets: `xpcog-no-toolkit` (layering check, runs as part of `ALL`), and
+`installer` on Windows (needs NSIS; use a **release** tree).
 
 On Linux `package` builds `XPCog-<version>-<arch>.tar.gz` — CPack's `TGZ`
 generator over the install rules, stripped, and the only generator enabled on
@@ -180,19 +182,23 @@ rest.
 ## Architecture
 
 ```
-xpcog-app ──┬── xpcog-platform (per-OS integration; NO toolkit)
-            └── xpcog-codecs ──┐
-                               ├── xpcog-core   (NO toolkit)
-xpcog-cli ── core + codecs ────┘
+xpcog-app (wx, Windows) ──┐
+                          ├── xpcog-uicore ──┬── xpcog-platform (per-OS; NO toolkit)
+xpcog-gtk (GTK4, Linux) ──┘                  └── xpcog-codecs ──┬── xpcog-core (NO toolkit)
+xpcog-cli ── core + codecs ─────────────────────────────────────┘
 ```
 
-**Only `xpcog-app` links a UI toolkit.** `core`, `codecs` and `platform`'s *public
-headers* name no toolkit at all — `platform`'s implementations talk to Win32,
-C++/WinRT, CoreFoundation, MediaPlayer.framework and GDBus, but nothing they do
-may leak into a header the app includes. This is enforced by
-`cmake/CheckNoToolkit.cmake` (which also fails on any Qt include anywhere), and
-again by `xpcog-cli` linking no toolkit, so a leak breaks that target. Keep it
-that way; it is the rule the Qt→wxWidgets move was a test of.
+**Only the two frontends link a UI toolkit, and each links its own.** `core`,
+`codecs`, `uicore` and `platform`'s *public headers* name no toolkit at all —
+`platform`'s implementations talk to Win32, C++/WinRT, GDBus and libsecret,
+but nothing they do may leak into a header the app includes. `app/` (wxWidgets,
+Windows) includes no GTK or GLib and `app-gtk/` (GTK4/libadwaita, Linux)
+includes no wx; what both need lives in `uicore/` or `platform/`. This is
+enforced by `cmake/CheckNoToolkit.cmake` (which also fails on any Qt include
+anywhere), and again by `xpcog-cli` linking no toolkit and by every Linux build
+having no wx at all, so a leak breaks a target. Keep it that way; it is the
+rule the Qt→wxWidgets move was a test of, and `docs/GTKPORT.md` is the second
+frontend's record.
 
 **Codecs register at compile time.** Each codec exposes one registrar function and
 is declared with `xpcog_add_codec(NAME … REGISTER … SOURCES … DEPS …)`
@@ -226,12 +232,16 @@ well, and `docs/REST.md` explains why both.
 **Settings are an X-macro.** `core/include/xpcog/core/settings.def` is the single
 source of truth — `XPCOG_SETTING(Ident, Type, "cogKey", default)` — included
 several times with the macro defined differently. Keys are deliberately identical
-to Cog's `NSUserDefaults` keys so an existing Cog plist imports verbatim. Add a
+to Cog's `NSUserDefaults` keys -- inherited, and kept because renaming one
+orphans the value in every existing settings file. Add a
 setting there, not in `Settings.hpp`.
 
 **The interface is translated; nothing below it is.** User-visible strings are
-marked in `app/src` with `_()`, `wxPLURAL()` or `wxTRANSLATE()`, compiled from
-`app/locale/*.po` into the binary by `cmake/CompileCatalog.cmake`, and installed
+marked in `app/src` with `_()`, `wxPLURAL()` or `wxTRANSLATE()` and in `uicore/src`
+with the toolkit-free `tr()`, `trn()`, `trf()` and `XPCOG_TRANSLATE()` (see
+`uicore/src/Translations.hpp`, and note it needs no `trUtf8()` twin because
+nothing there goes near a `wxString`), compiled from
+`uicore/locale/*.po` into the binary by `cmake/CompileCatalog.cmake`, and installed
 by `app/src/Localization.cpp` before the first window. There is one trap and it
 is silent: `_()` converts its literal to a `wxString` *implicitly*, which on
 Windows goes through the current 8-bit locale — so **a message whose English is
@@ -239,7 +249,7 @@ not pure ASCII must use `trUtf8()`** (see `app/src/Text.hpp`). Regenerating the
 template with `python tools/extract-messages.py` refuses to run when that rule is
 broken. `core`, `codecs` and `platform` have no catalogue and never will; the few
 strings of theirs a listener reads are mapped in the app layer, which is what
-`PlaylistView::heading()`'s comment is about. `app/locale/README.md` covers
+`PlaylistView::heading()`'s comment is about. `uicore/locale/README.md` covers
 adding a language and what is deliberately left untranslated.
 
 **The audio path**: a feeder thread decodes into a lock-free SPSC ring
@@ -256,22 +266,16 @@ cannot exercise wall-clock timing.
 
 **Where things live**: `core/` (engine, plugin registry, SQLite library, playlist
 model, settings, HTTP, scrobbling), `codecs/` (one directory per decoder),
-`platform/` (per-OS integration behind toolkit-free headers), `app/` (wxWidgets
-UI), `tools/cli/`, `tests/`, `assets/`, `triplets/`, `packaging/windows/`,
-`packaging/macos/`, `packaging/linux/`.
+`platform/` (per-OS integration behind toolkit-free headers), `uicore/` (the
+application layer that links no toolkit -- playback controller, command tables,
+playlist edits, the remote control's player, the translation lookup, the
+catalogues), `app/` (the Windows player, wxWidgets), `app-gtk/` (the Linux
+player, GTK4/libadwaita, its interface in Blueprint under `app-gtk/ui/`),
+`tools/cli/`, `tests/`, `assets/`, `packaging/windows/`, `packaging/linux/`,
+`packaging/arch/`, `packaging/flatpak/`.
 
-**`triplets/` is registered as `overlay-triplets`** and holds `arm64-osx` and
-`x64-osx`: vcpkg's own triplets of those names plus `cmake/XPCogOsxTriplet.cmake`.
-It exists because vcpkg's build of the dependencies inherits nothing from
-XPCog's build of itself, so a macOS deployment target set only in
-`CMakeLists.txt` left every dependency targeting the build machine — which is
-how 1.5.1 shipped a bundle whose executable said macOS 13 and whose bundled
-`libvgmstream.dylib` said macOS 26, dead at launch on 13 with all of CI green.
-The number lives in `cmake/XPCogOsxDeploymentTarget.cmake`, which both builds
-read and neither may restate. The same file puts vcpkg's `.pc` files ahead of
-Homebrew's, without which a CMake-based port calling `pkg_check_modules()` finds
-Homebrew first and bakes a Cellar path into the bundle. `triplets/README.md` has the
-detail; editing any of it rebuilds every cached macOS binary, on purpose.
+`uicore/` keeps the namespace `xpcog::app`: it names the layer, not the library.
+The split is enforced by `cmake/CheckNoToolkit.cmake`, not by a name.
 
 **`vendor/` vs `ports/`**: `ports/` holds vcpkg overlay ports for dependencies
 with a real upstream release or pinned commit (vgmstream, libsidplayfp, mGBA,
@@ -294,8 +298,8 @@ keeps a paragraph on each and points here; put detail in these, not there.
 the **deliberate differences from Cog**, the verification strategy, known gaps,
 and a *Where to pick up next* section at the end. Consult it before changing
 behaviour that mirrors Cog — differences are meant to be documented, not
-accidental. `docs/MIDI.md` covers the three MIDI backends, `docs/COGIMPORT.md` the
-Cog library import, `docs/HIGHLYCOMPLETE.md` the eight PSF emulator cores, and
+accidental. `docs/MIDI.md` covers the three MIDI backends, `docs/HIGHLYCOMPLETE.md`
+the eight PSF emulator cores,
 `docs/WXPORT.md` the Qt→wxWidgets move, and `docs/REST.md` the remote control.
 
 Not ported, and macOS-only: the Mac App Store sandbox, AudioUnit MIDI instrument

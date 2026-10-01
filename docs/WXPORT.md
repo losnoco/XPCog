@@ -1,5 +1,10 @@
 # Moving the interface from Qt to wxWidgets
 
+> **Since 2.0.0 wx is the Windows player's toolkit only.** Linux has its own
+> frontend, written for GTK4 and libadwaita (`docs/GTKPORT.md`), and there is no
+> macOS port. What follows about wxGTK, the macOS bundle and the three-platform
+> build is the record of 1.x.
+
 `docs/PORTING.md` is the record of getting Cog off macOS and into Qt. This is the
 record of getting XPCog off Qt, which is a much smaller job than that one and for
 entirely different reasons.

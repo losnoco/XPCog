@@ -14,14 +14,12 @@
 #   __imp_PathRemoveFileSpecW referenced in function mCoreConfigPortableIniPath
 #
 # -- PathRemoveFileSpecW and PathIsRelativeW being shlwapi. Taken from mGBA's own
-# CMakeLists: `list(APPEND OS_LIB ws2_32 shlwapi)` on Win32, Foundation on Apple,
+# CMakeLists: `list(APPEND OS_LIB ws2_32 shlwapi)` on Win32,
 # libm everywhere else, and zlib because the port builds with USE_ZLIB=ON.
 find_package(ZLIB REQUIRED)
 set(XPCOG_MGBA_LINK ZLIB::ZLIB)
 if(WIN32)
     list(APPEND XPCOG_MGBA_LINK ws2_32 shlwapi)
-elseif(APPLE)
-    list(APPEND XPCOG_MGBA_LINK "-framework Foundation")
 else()
     list(APPEND XPCOG_MGBA_LINK m)
 endif()

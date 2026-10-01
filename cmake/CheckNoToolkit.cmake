@@ -1,4 +1,4 @@
-# Two layering rules, both enforced rather than documented.
+# The layering rules, enforced rather than documented.
 #
 # Invoked in script mode (cmake -P) by the xpcog-no-toolkit target.
 #
@@ -7,13 +7,19 @@
 # branch, or a habit. If Qt is ever wanted again that is a decision, and a
 # decision can edit this file.
 #
-# **2. core, codecs and platform's public headers link no UI toolkit at all.**
-# This is the rule that actually matters, and it is the one the port was a test
-# of. core stays embeddable and testable without a display; platform's *interface*
-# stays free of any toolkit, which is what makes the application above it
-# replaceable. platform's implementations are exempt -- they talk to Win32,
-# C++/WinRT, CoreFoundation and GDBus, which is their whole job -- but nothing
-# they do may leak into a header the application includes.
+# **2. core, codecs, uicore and platform's public headers link no UI toolkit at
+# all.** This is the rule that actually matters, and it is the one the port was
+# a test of. core stays embeddable and testable without a display; platform's
+# *interface* stays free of any toolkit, which is what makes the application
+# above it replaceable. platform's implementations are exempt -- they talk to
+# Win32, C++/WinRT and GDBus, which is their whole job -- but
+# nothing they do may leak into a header the application includes.
+#
+# **3. The two frontends do not include each other's toolkit.** app/ is the
+# Windows player on wxWidgets and app-gtk/ the Linux one on GTK4 and
+# libadwaita, and everything they share lives below both. A wx include under
+# app-gtk/, or a GTK or GLib one under app/, is the sharing happening in the
+# wrong place.
 #
 # The check that replaced this one was CheckNoQt.cmake, scoped to core alone. It
 # had become tautological: with Qt gone from the tree it could only ever pass.
@@ -75,7 +81,7 @@ function(xpcog_scan label regex advice)
 endfunction()
 
 # --- 1. No Qt, anywhere ----------------------------------------------------
-xpcog_gather(_everything core codecs platform app tools tests)
+xpcog_gather(_everything core codecs platform uicore app app-gtk tools tests)
 xpcog_scan(
     "Qt was removed from this project, but Qt includes were found:"
     # Q followed by a capital, which is what every Qt header is: QString,
@@ -87,12 +93,27 @@ xpcog_scan(
     "If Qt is coming back, that is a decision -- edit cmake/CheckNoToolkit.cmake."
     ${_everything})
 
-# --- 2. No UI toolkit below the application --------------------------------
-xpcog_gather(_below core codecs)
+# --- 2. No UI toolkit below the applications -------------------------------
+#
+# uicore/ is in the list from the day it exists: it is the half of the
+# application both frontends share, and it is only shareable while it names
+# neither toolkit.
+xpcog_gather(_below core codecs uicore)
 xpcog_scan(
-    "xpcog-core and xpcog-codecs must link no UI toolkit, but toolkit includes were found:"
+    "xpcog-core, xpcog-codecs and xpcog-uicore must link no UI toolkit, but wx includes were found:"
     "^[ \t]*#[ \t]*include[ \t]*[<\"]wx/"
     "Move the toolkit-dependent code to app/."
+    ${_below})
+
+# GLib and GIO are on this list as well as GTK, and that is deliberate. They are
+# legitimate in exactly one place, platform/src/linux, which is not scanned;
+# anywhere lower they would make core Linux-only in a way that compiles fine on
+# Linux and is found on the first Windows build.
+set(_gtk_regex "^[ \t]*#[ \t]*include[ \t]*[<\"](gtk/|gdk/|adwaita\\.h|graphene|cairo|gio/|glib)")
+xpcog_scan(
+    "xpcog-core, xpcog-codecs and xpcog-uicore must link no UI toolkit, but GTK or GLib includes were found:"
+    "${_gtk_regex}"
+    "Move the toolkit-dependent code to app-gtk/, or the GLib-dependent code to platform/src/linux."
     ${_below})
 
 # platform's *headers* only. Its implementations talk to the OS and may include
@@ -100,7 +121,27 @@ xpcog_scan(
 # application through an interface.
 xpcog_gather(_platform_headers platform/include)
 xpcog_scan(
-    "platform's public headers must name no UI toolkit, but toolkit includes were found:"
+    "platform's public headers must name no UI toolkit, but wx includes were found:"
     "^[ \t]*#[ \t]*include[ \t]*[<\"]wx/"
     "The interface is what makes app/ replaceable -- keep the toolkit inside the implementation."
     ${_platform_headers})
+xpcog_scan(
+    "platform's public headers must name no UI toolkit, but GTK or GLib includes were found:"
+    "${_gtk_regex}"
+    "The interface is what makes the frontends replaceable -- keep GLib inside platform/src/linux."
+    ${_platform_headers})
+
+# --- 3. Each frontend on its own toolkit -----------------------------------
+xpcog_gather(_wx_app app)
+xpcog_scan(
+    "app/ is the wxWidgets frontend, but GTK or GLib includes were found:"
+    "${_gtk_regex}"
+    "Code both frontends need belongs in uicore/ or platform/, not in either app directory."
+    ${_wx_app})
+
+xpcog_gather(_gtk_app app-gtk)
+xpcog_scan(
+    "app-gtk/ is the GTK frontend, but wx includes were found:"
+    "^[ \t]*#[ \t]*include[ \t]*[<\"]wx/"
+    "Code both frontends need belongs in uicore/ or platform/, not in either app directory."
+    ${_gtk_app})

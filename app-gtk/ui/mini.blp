@@ -1,0 +1,96 @@
+// The mini player: the track, the transport, a seek bar and the volume, in a
+// window the size of a toolbar. A mode of the application rather than a
+// second view -- one of the two windows is shown, never both -- as Cog's is.
+
+using Gtk 4.0;
+using Adw 1;
+
+translation-domain "xpcog";
+
+Adw.Window mini_window {
+  title: "XPCog";
+  default-width: 540;
+  resizable: false;
+  // Adw.Window asks for 360x200 by default, a floor for windows with
+  // breakpoints (adw-window.c: gtk_widget_set_size_request in init). This
+  // one is a toolbar: the row decides the height.
+  width-request: 360;
+  height-request: -1;
+
+  content: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      title-widget: Adw.WindowTitle mini_title {
+        title: "XPCog";
+      };
+
+      [end]
+      Button restore_button {
+        icon-name: "view-restore-symbolic";
+        action-name: "win.mini-player";
+        tooltip-text: _("Full window");
+      }
+    }
+
+    content: Box {
+      orientation: vertical;
+      spacing: 6;
+      margin-start: 8;
+      margin-end: 8;
+      margin-top: 4;
+      margin-bottom: 8;
+
+      Box {
+        orientation: horizontal;
+        spacing: 6;
+
+        // Centred, so a waveform in the seek bar does not stretch them.
+        Box {
+          styles ["linked"]
+          valign: center;
+          Button {
+            icon-name: "media-skip-backward-symbolic";
+            action-name: "win.previous";
+          }
+          Button mini_play_button {
+            icon-name: "media-playback-start-symbolic";
+            action-name: "win.play-pause";
+          }
+          Button {
+            icon-name: "media-playback-stop-symbolic";
+            action-name: "win.stop";
+          }
+          Button {
+            icon-name: "media-skip-forward-symbolic";
+            action-name: "win.next";
+          }
+        }
+
+        // The seek bar goes here: built in code (SeekBar.hpp).
+        Box mini_seek_slot {
+          hexpand: true;
+          valign: center;
+        }
+
+        Label mini_clock {
+          label: "0:00 / 0:00";
+          styles ["numeric", "dim-label"]
+          width-chars: 11;
+          xalign: 1;
+          valign: center;
+        }
+
+        Scale mini_volume {
+          width-request: 90;
+          valign: center;
+          draw-value: false;
+          adjustment: Adjustment mini_volume_adjustment {
+            lower: 0;
+            upper: 100;
+            step-increment: 5;
+          };
+        }
+      }
+    };
+  };
+}

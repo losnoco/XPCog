@@ -2,6 +2,7 @@
 
 #include "AppIcon.hpp"
 #include "Commands.hpp"
+#include "WxMenus.hpp"
 #include "LucideIcon.hpp"
 #include "PlaybackController.hpp"
 #include "SeekBar.hpp"

@@ -1,9 +1,11 @@
 #include "PreferencesDialog.hpp"
 
 #include "LastFmAccount.hpp"
+#include "SettingChoices.hpp"
 #include "ListenBrainzAccount.hpp"
 #include "RemoteToken.hpp"
 #include "Localization.hpp"
+#include "Translations.hpp"
 #include "SpeedCurve.hpp"
 
 #include "Text.hpp"
@@ -52,92 +54,6 @@
 namespace xpcog::app {
 namespace {
 
-/// A setting whose values are a closed set, so it deserves a named list rather
-/// than a text box. The **values** are Cog's stored values, unchanged; only the
-/// labels beside them are language. Translating a value would write a Spanish
-/// word into a settings file Cog is expected to be able to read.
-struct Choice {
-    const char* value;
-    const char* label;  ///< marked with wxTRANSLATE; looked up by choice()
-};
-
-constexpr std::array kVolumeScalingChoices = {
-    Choice{"none", wxTRANSLATE("None")},
-    Choice{"volumeScale", wxTRANSLATE("Volume tag")},
-    Choice{"soundcheck", wxTRANSLATE("iTunes Sound Check")},
-    Choice{"trackGain", wxTRANSLATE("Track gain")},
-    Choice{"trackGainWithPeak", wxTRANSLATE("Track gain, peak-limited")},
-    Choice{"albumGain", wxTRANSLATE("Album gain")},
-    Choice{"albumGainWithPeak", wxTRANSLATE("Album gain, peak-limited")},
-};
-
-constexpr std::array kResamplingChoices = {
-    Choice{"quick", wxTRANSLATE("Quick")}, Choice{"low", wxTRANSLATE("Low")},   Choice{"medium", wxTRANSLATE("Medium")},
-    Choice{"high", wxTRANSLATE("High")},   Choice{"best", wxTRANSLATE("Best")},
-};
-
-// The stretch engines and the Rubber Band option vocabularies, values and
-// defaults from Cog's Rubber Band pane (Preferences/Panes/RubberbandPaneView
-// .swift). `varispeed` is ours: Cog has no resampling speed control.
-constexpr std::array kStretchEngineChoices = {
-    Choice{"disabled", wxTRANSLATE("Disabled")},
-    Choice{"varispeed", wxTRANSLATE("Varispeed \xE2\x80\x94 resample, pitch follows tempo")},
-    Choice{"signalsmith", wxTRANSLATE("Signalsmith Stretch")},
-    Choice{"faster", wxTRANSLATE("Rubber Band \xE2\x80\x94 Faster")},
-    Choice{"finer", wxTRANSLATE("Rubber Band \xE2\x80\x94 Finer")},
-};
-constexpr std::array kRubberTransientsChoices = {
-    Choice{"crisp", wxTRANSLATE("Crisp")}, Choice{"mixed", wxTRANSLATE("Mixed")}, Choice{"smooth", wxTRANSLATE("Smooth")},
-};
-constexpr std::array kRubberDetectorChoices = {
-    Choice{"compound", wxTRANSLATE("Compound")},
-    Choice{"percussive", wxTRANSLATE("Percussive")},
-    Choice{"soft", wxTRANSLATE("Soft")},
-};
-constexpr std::array kRubberPhaseChoices = {
-    Choice{"laminar", wxTRANSLATE("Laminar")},
-    Choice{"independent", wxTRANSLATE("Independent")},
-};
-constexpr std::array kRubberWindowChoices = {
-    Choice{"standard", wxTRANSLATE("Standard")}, Choice{"short", wxTRANSLATE("Short")}, Choice{"long", wxTRANSLATE("Long")},
-};
-constexpr std::array kRubberSmoothingChoices = {
-    Choice{"off", wxTRANSLATE("Off")},
-    Choice{"on", wxTRANSLATE("On")},
-};
-constexpr std::array kRubberFormantChoices = {
-    Choice{"shifted", wxTRANSLATE("Shifted")},
-    Choice{"preserved", wxTRANSLATE("Preserved")},
-};
-constexpr std::array kRubberPitchChoices = {
-    Choice{"highspeed", wxTRANSLATE("High speed")},
-    Choice{"highquality", wxTRANSLATE("High quality")},
-    Choice{"highconsistency", wxTRANSLATE("High consistency")},
-};
-constexpr std::array kRubberChannelsChoices = {
-    Choice{"apart", wxTRANSLATE("Apart")},
-    Choice{"together", wxTRANSLATE("Together")},
-};
-
-/// The synthesisers `midiPlugin` can name, in Cog's own spelling.
-///
-/// Nuked OPL3 twice over -- id's DMX driver, once per instrument bank, and
-/// Nuke.YKT's General MIDI one -- and then an emulated Roland. The OPL labels are
-/// the drivers' own bank names (vendor/nuked-opl3), spelled out here rather than
-/// read back from them so the dialog does not have to construct a synthesiser to
-/// draw a list. See docs/MIDI.md.
-constexpr std::array kMidiSynthChoices = {
-    Choice{"DOOM0", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX default")},
-    Choice{"DOOM1", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX Doom")},
-    Choice{"DOOM2", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX Doom II")},
-    Choice{"DOOM3", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX Raptor")},
-    Choice{"DOOM4", wxTRANSLATE("OPL3 \xE2\x80\x94 DMX Strife")},
-    Choice{"DOOM5", wxTRANSLATE("OPL3 \xE2\x80\x94 DMXOPL")},
-    Choice{"OPL3W0", wxTRANSLATE("OPL3 \xE2\x80\x94 General MIDI")},
-    Choice{"Spessa", wxTRANSLATE("SoundFont \xE2\x80\x94 SpessaSynth")},
-    Choice{"NukeSc55", wxTRANSLATE("Roland SC-55")},
-};
-
 [[nodiscard]] bool isTrue(const std::string& text) {
     // Cog's plist stores YES/NO; Settings accepts both those and true/false.
     return text == "1" || text == "true" || text == "YES";
@@ -157,111 +73,6 @@ constexpr std::array kMidiSynthChoices = {
     } catch (const std::exception&) {
         return 0.0;
     }
-}
-
-/// Settings that already have a hand-written row in one of the panes above. The
-/// generated pane skips them, so each setting is edited in exactly one place --
-/// otherwise a curated list and a raw text box for the same key sit two clicks
-/// apart, disagreeing about what the value should look like.
-constexpr std::array kCuratedKeys = {
-    // Playlist
-    "alwaysStopAfterCurrent", "readCueSheetsInFolders", "readPlaylistsInFolders",
-    "skipAppleDoubleFiles",
-    "selectionFollowsPlayback", "resumePlaybackOnStartup",
-    // Owned by a control outside this dialog, and listed here so that Advanced
-    // does not offer a second one that disagrees with it. `volume` is the
-    // transport slider; `repeat` and `shuffle` are the Order menu's radio
-    // groups; `panelFollowMode` is View -> Panels Follow. All four are state a
-    // gesture sets, not preferences someone comes here to type.
-    "volume", "repeat", "shuffle", "panelFollowMode",
-    // Output
-    "volumeScaling", "resampling", "enableHDCD", "halveDSDVolume", "outputDeviceId",
-    "outputDeviceName", "exclusiveOutput", "spatializeSurround", "enableFSurround",
-    "enableFading", "suspendOutputOnPause",
-    // MIDI
-    "midiPlugin", "midiRomPath", "soundFontPath", "synthSampleRate",
-    "synthDefaultSeconds", "synthDefaultFadeSeconds", "synthDefaultLoopCount",
-    // Appearance
-    //
-    //
-    // widgetStyle is listed even though no pane draws a row for it any more. The
-    // toolkit has no style engine -- see docs/WXPORT.md -- so the key is dead
-    // rather than merely unused, and a dead key belongs in Advanced even less
-    // than it belongs in Appearance. Kept in settings.def so a settings file that
-    // has travelled from a Qt build keeps its value rather than losing it.
-    //
-    // Both stay listed on macOS, where the pane has no row for either. Curated
-    // is the right side of this list for them there too: closeToTray is
-    // answered by the platform and widgetStyle is dead, and neither belongs in
-    // Advanced, where a raw editable row would offer control that does not
-    // exist.
-    "widgetStyle", "closeToTray",
-    // General. `language` has a picker there, and Advanced must not offer a
-    // second one: its generated row would be a free-text box for a value that
-    // has exactly three valid answers, one of which is the empty string.
-    "language",
-    // Visualizers
-    "spectrumBarColor", "spectrumDotColor", "spectrumFreqMode", "spectrumFloorDb",
-    "spectrumShowPeaks", "spectrumChannels", "scopeChannels", "scopeColor", "scopeBackgroundColor",
-    "scopeStrokeWidth", "scopeGain", "scopeWindowMs", "scopeFrameRate", "scopeTrigger",
-    "scopeFill", "scopeLogScale",
-    // General
-    "sentryConsented", "httpStreamingBufferSize",
-    // Appearance
-    "floatingMiniWindow", "waveformSeekBar", "waveformRectified", "waveformLogScale",
-    "waveformHeight", "waveformPlayedColor", "waveformUnplayedColor",
-    // Notifications
-    "notifications.enable", "notifications.show-album-art",
-    // Remote control. The token is not here at all -- it lives in the system
-    // password store, not in settings.
-    "remoteEnable", "remoteAddress", "remotePort", "remoteAllowWrite",
-    // Scrobbling. Each switch sits on its service's pane beside the account it
-    // means something for; the credentials are in the password store.
-    "enableAudioScrobbler", "enableListenBrainz", "listenBrainzUrl",
-    // Lyrics, on General; `lyricsSynced` is also View -> Timed Lyrics.
-    "lyricsSynced", "enableLrclib", "lrclibUrl",
-};
-
-/// Not settings at all, but internal state that happens to live in the same
-/// store. Shown, because the generated pane's whole point is that nothing is
-/// hidden, but not editable: settingsSchemaVersion drives
-/// Settings::applyMigrations(), so typing into it makes migrations re-run or be
-/// skipped, and nothing about a spin box suggests that. UserDefaultURLsKey is the
-/// Open URL history -- a newline-separated list the dialog maintains, where a
-/// hand edit can only produce entries that will not parse. sentryAskedConsent
-/// records that the prompt has been shown; it is the answer next to it on General
-/// that decides anything, and a checkbox here that re-armed a one-time dialog
-/// would read as a second consent switch.
-/// The rest are the session's own record of itself rather than anything asked
-/// for: which mode the window was in, how playback was left and where, whether
-/// the tray notice has been shown, and the pre-split `outputDevice` a settings
-/// file may still carry. Editing any of them changes what the *last* session is
-/// remembered to have done, which is not a preference.
-constexpr std::array kInternalKeys = {"settingsSchemaVersion", "UserDefaultURLsKey",
-                                      "sentryAskedConsent",    "lastPlaybackStatus",
-                                      "miniMode",              "trayHideAnnounced",
-                                      "outputDevice"};
-
-[[nodiscard]] bool contains(std::span<const char* const> keys, std::string_view key) {
-    return std::any_of(keys.begin(), keys.end(),
-                       [key](const char* candidate) { return key == candidate; });
-}
-
-[[nodiscard]] bool hasCuratedRow(std::string_view key) {
-    // Every equaliser key -- eqPreamp and the 31 bands -- has a slider of its own
-    // in the equaliser panel, so they are matched by prefix rather than listed
-    // twice. 32 raw spin boxes in Advanced would be a second, worse equaliser.
-    if (key.starts_with("eq")) {
-        return true;
-    }
-    // And the two the preset row owns, which do not share that prefix because
-    // they are Cog's names. `GraphicEQpreset` is the worse of the two to leave
-    // here: it is an index into a list this dialog cannot show, so a spin box
-    // would offer a number with no way to find out which preset it means.
-    if (key.starts_with("GraphicEQ")) {
-        return true;
-    }
-    return contains(kCuratedKeys, key);
 }
 
 /// A two-column form: a caption and a control, with the control column growing.
@@ -1170,16 +981,6 @@ wxWindow* PreferencesDialog::buildOutputPane(wxWindow* parent) {
                   "mixer's. Other applications cannot play while this is active. "
                   "Falls back to sharing if the device is unavailable."));
 
-#if defined(__APPLE__)
-    // macOS only, because only there does it change anything: Windows Sonic,
-    // Dolby Atmos for Headphones and PipeWire's virtual surround all present a
-    // surround device, and surround already reaches it. See settings.def.
-    row->toggle(_("Spatialize surround"), "spatializeSurround",
-                _("Play surround through macOS Spatial Audio when the device has "
-                  "fewer channels than the track, such as AirPods or built-in "
-                  "speakers. Off folds it down to the device instead."));
-#endif
-
     row->choice(_("Volume scaling"), "volumeScaling", kVolumeScalingChoices);
     row->choice(_("Resampler quality"), "resampling", kResamplingChoices);
 
@@ -1491,7 +1292,6 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
     // explanation and is therefore worse at being a label: close-to-tray is what
     // this behaviour is called, it is what somebody arrives looking for, and it
     // is what the tooltip and the notice both already say.
-#ifndef __WXOSX__
     auto* closeToTray = new wxCheckBox(pane, wxID_ANY, _("Close to tray"));
     closeToTray->SetValue(settings_.CloseToTray());
     closeToTray->SetToolTip(
@@ -1511,7 +1311,6 @@ wxWindow* PreferencesDialog::buildAppearancePane(wxWindow* parent) {
         settingChanged.publish("closeToTray");
     });
     row->add("", closeToTray);
-#endif
 
     // The mini player's own control is a button on the mini player, which is only
     // reachable once you are in it. Here as well, so it can be set beforehand.
@@ -1759,7 +1558,7 @@ wxWindow* PreferencesDialog::buildAdvancedPane(wxWindow* parent) {
             editor = edit;
         }
 
-        if (contains(kInternalKeys, descriptor.key)) {
+        if (isInternalKey(descriptor.key)) {
             editor->Enable(false);
             editor->SetToolTip(
                 _("Maintained automatically, and not meant to be edited."));
@@ -1832,8 +1631,11 @@ wxWindow* PreferencesDialog::buildRemotePane(wxWindow* parent) {
     // there is no way for two paths to disagree about it.
     const auto refresh = [this, pane, enable, local, token, copy, regenerate, status] {
         const bool built = remote::remoteServerAvailable();
-        wxString   storeProblem;
-        const bool store = RemoteToken::storeAvailable(&storeProblem);
+        std::string problem;
+        const bool  store = RemoteToken::storeAvailable(&problem);
+        // The store answers in plain UTF-8 now that it is platform's rather than
+        // wx's, so the boundary is here.
+        const wxString storeProblem = toWx(problem);
 
         enable->Enable(built && store);
         local->Enable(built && store);
@@ -2036,8 +1838,11 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
             return;
         }
         const bool built = account_->usable();
-        wxString   storeProblem;
-        const bool store   = LastFmAccount::storeAvailable(&storeProblem);
+        std::string problem;
+        const bool  store = LastFmAccount::storeAvailable(&problem);
+        // uicore answers in UTF-8 now that the store is platform's; this is the
+        // boundary.
+        const wxString storeProblem = toWx(problem);
         const bool working = account_->connecting();
         const auto session = scrobbler_->session();
 
@@ -2079,7 +1884,7 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
             // crash-reporting checkbox handles a build without Sentry. A control
             // that does nothing is worse than one that says why.
             enable->SetValue(false);
-            text = account_->unavailableReason();
+            text = toWx(account_->unavailableReason());
         } else if (!store) {
             text = storeProblem.empty()
                        ? wxString(_("The system password store is not available, "
@@ -2128,10 +1933,10 @@ wxWindow* PreferencesDialog::buildLastFmPane(wxWindow* parent) {
             settings->setEnableScrobbling(true);
             refresh();
         };
-        handlers.failed = [refresh, token, status](const wxString& message) {
+        handlers.failed = [refresh, token, status](const std::string& message) {
             refresh();
             if (!token.expired()) {
-                status->setText(message);
+                status->setText(toWx(message));
             }
         };
 
@@ -2285,8 +2090,9 @@ wxWindow* PreferencesDialog::buildListenBrainzPane(wxWindow* parent) {
             return;
         }
         const bool built = listenBrainz_->usable();
-        wxString   storeProblem;
-        const bool store   = LastFmAccount::storeAvailable(&storeProblem);
+        std::string problem;
+        const bool  store = LastFmAccount::storeAvailable(&problem);
+        const wxString storeProblem = toWx(problem);
         const bool working = listenBrainz_->connecting();
         const auto session = listenBrainzScrobbler_->session();
         const bool ready   = built && store;
@@ -2303,7 +2109,7 @@ wxWindow* PreferencesDialog::buildListenBrainzPane(wxWindow* parent) {
         wxString text;
         if (!built) {
             enable->SetValue(false);
-            text = listenBrainz_->unavailableReason();
+            text = toWx(listenBrainz_->unavailableReason());
         } else if (!store) {
             text = storeProblem.empty()
                        ? wxString(_("The system password store is not available, "
@@ -2357,10 +2163,10 @@ wxWindow* PreferencesDialog::buildListenBrainzPane(wxWindow* parent) {
             }
             refresh();
         };
-        handlers.failed = [refresh, token, status](const wxString& message) {
+        handlers.failed = [refresh, token, status](const std::string& message) {
             refresh();
             if (!token.expired()) {
-                status->setText(message);
+                status->setText(toWx(message));
             }
         };
 

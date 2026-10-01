@@ -21,8 +21,9 @@
 
   <description>
     <p>
-      XPCog is an audio player for Windows, macOS and Linux, ported from Cog,
-      the macOS player by Vincent Spader and Christopher Snowhill.
+      XPCog is an audio player for Windows and Linux, ported from Cog, the
+      macOS player by Vincent Spader and Christopher Snowhill. On Linux it is
+      a GNOME application, written for GTK 4 and libadwaita.
     </p>
     <p>
       Alongside the formats every player handles, it decodes the ones that need
@@ -34,8 +35,8 @@
     <ul>
       <li>Gapless playback, including across the spans of a cue sheet</li>
       <li>ReplayGain, a ten-band equaliser, and tempo and pitch control</li>
-      <li>A SQLite music library, and import of an existing Cog library</li>
-      <li>Last.fm scrobbling</li>
+      <li>A SQLite music library that remembers play counts and ratings</li>
+      <li>Last.fm and ListenBrainz scrobbling, and timed lyrics</li>
       <li>MPRIS, so the desktop's own media controls work</li>
     </ul>
   </description>

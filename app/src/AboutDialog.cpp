@@ -234,7 +234,7 @@ AboutDialog::AboutDialog(wxWindow* parent, const PluginRegistry& registry)
 
     tabs->AddPage(
         page(tabs,
-             wxString("<p>") + _("An audio player for Windows, macOS and Linux.") +
+             wxString("<p>") + _("An audio player for Windows and Linux.") +
                  "</p><p>" +
                  trUtf8("Copyright \xC2\xA9 2026 the XPCog authors.") + "<br>" +
                  trUtf8("Copyright \xC2\xA9 2005\xE2\x80\x93""2026 Vincent Spader, "

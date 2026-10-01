@@ -6,7 +6,12 @@
 // machinery. Everything above it uses `_()`, `wxPLURAL()` and `wxTRANSLATE()`
 // and knows nothing about where a catalogue came from.
 //
-// **This is app-layer only, and deliberately.** `core`, `codecs` and `platform`
+// **What is left here is app-layer only, and deliberately.** The picker's list
+// of languages and the lookup itself are in Translations.hpp, which names no
+// toolkit; what stays is the part that only exists because wx is on the other
+// side of it -- the loader that hands wxMsgCatalog the `.mo` image
+// Translations.hpp assembles, and the one call that installs both lookups.
+// `core`, `codecs` and `platform`
 // link no toolkit, so they have no `_()` to call and no catalogue to call it
 // against -- see the layering rule in CLAUDE.md. The few strings they do produce
 // that a listener ever reads are translated where they are shown: the playlist's
@@ -22,27 +27,6 @@
 #include <vector>
 
 namespace xpcog::app {
-
-/// One entry in the Preferences picker.
-struct LanguageOption {
-    std::string code;  ///< the stored setting; empty means "follow the system"
-    std::string name;  ///< what that language calls itself, in that language
-};
-
-/// English, every compiled-in catalogue, and the system option in front.
-///
-/// English is always here and is never a catalogue: it is the language the
-/// msgids are written in, so choosing it means loading nothing at all.
-[[nodiscard]] std::vector<LanguageOption> availableLanguages();
-
-/// The `.mo` image a catalogue assembles to.
-///
-/// Exposed for the test rather than for callers. wxMsgCatalog can be built from
-/// a file or from a block of bytes in gettext's binary format and from nothing
-/// else, so this is the one shape a compiled-in catalogue can reach wx in --
-/// which makes the offset arithmetic below worth pinning down independently of
-/// whether a window happens to come out in Spanish.
-[[nodiscard]] std::string assembleCatalog(const Catalog& catalog);
 
 /// Installs the catalogues and chooses one. Called once, before any window.
 ///

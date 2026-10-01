@@ -1,4 +1,4 @@
-# Porting Cog to Qt: plan, progress and decisions
+# Porting Cog: plan, progress and decisions
 
 This is the working document for the port. The README describes what XPCog *is*;
 this describes what has been done, what is left, and why each structural choice was
@@ -6,6 +6,16 @@ made — including the ones that look arbitrary until you hit the thing they avo
 
 Upstream Cog is assumed to be checked out alongside for reference. File references
 like `Audio/Chain/ChunkList.m` are paths inside Cog's tree.
+
+> **2.0.0 (2026-09-30): Windows and Linux only.** The macOS port was removed, and
+> Linux builds the GTK4/libadwaita player in `app-gtk/` with no wx at all; wx is
+> the Windows toolkit and nothing else's. Everything below about macOS -- the
+> bundle, the icon, the Dock menu, MediaPlayer.framework, the spatializer, the
+> triplets -- is a record of work that shipped in 1.x and no longer exists in the
+> tree. So is the Cog library and settings import (`cogimport`, File → Import
+> from Cog), removed in the same release: it existed for moving off a Mac. Cog's
+> XML playlists still open. It is all kept for what it explains, not as a
+> description of the code. `docs/GTKPORT.md` step 12 lists what went.
 
 ---
 
@@ -2718,11 +2728,11 @@ to the top of item 6. What is left on this page is `cogimport`, scrobbling, and
 work that is blocked on hardware or fixtures rather than on effort.
 
 **Two of these are blocked on hardware rather than on effort**, and it is worth
-knowing which before picking one up cold. Item 1 needs a Mac to read a real Cog
-installation; item 5 needs a DoP-capable DAC, because a DoP path that has never
+knowing which before picking one up cold. Item 1's remainder needed a Mac and
+is closed by 2.0.0 (below); item 5 needs a DoP-capable DAC, because a DoP path that has never
 locked a real device is a guess with a test around it. Everything else on this
-list — items 3, 6, 8 and 9 — is reachable from a clean checkout on any of the
-three platforms. If you have neither machine, start at item 6.
+list — items 3, 6, 8 and 9 — is reachable from a clean checkout on either
+platform. If you have no DAC, start at item 6.
 
 **1. `cogimport` — done, apart from the macOS convenience.**
 
@@ -2757,16 +2767,17 @@ it drops what it cannot open and expands what turns out to be a container -- so
 the two sequences are different lengths and an index pairs a row with somebody
 else's ReplayGain.
 
-**The macOS half that remains**, and it is genuinely small: finding
+**The macOS half that remained** -- finding
 `~/Library/Application Support/Cog/DataModel.sqlite` without being pointed at it,
-and resolving `file:///.file/id=` URLs through Foundation. Those entries are
-imported and marked as errors today rather than dropped, so a playlist imported
-off a Mac is never quietly shorter than the one it came from.
+and resolving `file:///.file/id=` URLs through Foundation -- will not be done:
+2.0.0 has no macOS build. `file:///.file/id=` entries are imported and marked as
+errors rather than dropped, so a playlist imported off a Mac is never quietly
+shorter than the one it came from.
 
 **Original entry, kept for the archaeology it records:**
 
 **Updated 2026-08-24.** The gathering half, which was the part blocked on
-hardware, is finished and written up in [`COGIMPORT.md`](COGIMPORT.md): the
+hardware, is finished and written up in `COGIMPORT.md` (removed in 2.0.0, with the import): the
 schema, the column semantics, the two prunes Cog applies on load, the
 NSKeyedArchiver layer over the metadata blob, the sparse-plist shape of the
 settings, and synthetic fixtures in `tests/fixtures/cog/`. What is left is
@@ -4113,8 +4124,8 @@ so each process creates what it needs. To check for this, delete the fixture
 directories and run the suite:
 
 ```sh
-rm -rf "${TMPDIR:-/tmp}"/xpcog-*    # note: $TMPDIR on macOS, not /tmp
-ctest --preset macos-debug
+rm -rf /tmp/xpcog-*
+ctest --preset linux-debug
 ```
 
 **`OfflineOutput` drains at maximum speed.** Any bug whose symptom is measured in

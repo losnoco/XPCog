@@ -1,7 +1,7 @@
 # Building XPCog
 
 The long form of the README's [Building](../README.md#building) section: the
-disk image and its signing, the installer, the Linux install tree and tarball,
+Windows installer, the Linux install tree and tarball,
 how a release is made, building against a distribution's libraries, and what
 each platform needs installed. Moved here from the README whole; nothing was
 cut.
@@ -9,16 +9,19 @@ cut.
 ## The build
 
 Requires **CMake 3.24+**, **Ninja**, a **C++20** compiler, and
-[**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set. Every
-dependency, wxWidgets included, comes from vcpkg — there is nothing to install
-separately and no environment variable to point at a toolkit. On Linux the
-toolkit is the distribution's, and the `linux-repo-*` presets take as much of the
-rest from it as the machine can supply; both are below.
+[**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set. XPCog
+builds on two platforms, and the player is written for each one's own
+toolkit: **wxWidgets on Windows** (`app/`), from vcpkg like every other
+dependency, and **GTK 4 and libadwaita on Linux** (`app-gtk/`), from the
+distribution. On Linux the `linux-repo-*` presets also take as much of the rest
+from the distribution as the machine can supply; both are below. macOS is not a
+target — Cog is the player there — though a headless build of the engine and
+`xpcog-cli` still configures on it.
 
 ```sh
-cmake --preset macos-debug                   # or linux-debug / windows-debug
-cmake --build --preset macos-debug
-ctest --preset macos-debug
+cmake --preset linux-debug                   # Linux
+cmake --build --preset linux-debug
+ctest --preset linux-debug
 ```
 
 ```bat
@@ -30,149 +33,26 @@ ctest --preset windows-debug
 
 There is no deploy step. On Windows, vcpkg's applocal pass copies every dependent
 DLL beside `XPCog.exe` as part of the build — the same pass that has always placed
-FFmpeg's and TagLib's — so a freshly built binary starts from Explorer. On macOS the
-triplet is static and there is nothing to copy. The one thing the build stages
-itself is `crashpad_handler`, which is a second executable rather than a library
-and so is not something applocal knows about; it lands beside the binary as a
-post-build step. What remains is signing and packaging, which are targets of
-their own on both platforms — a disk image on macOS, an installer on Windows,
-both below.
+FFmpeg's and TagLib's — so a freshly built binary starts from Explorer. The one
+thing the build stages itself is `crashpad_handler`, which is a second executable
+rather than a library and so is not something applocal knows about; it lands
+beside the binary as a post-build step, on both platforms. What remains is
+packaging — an installer on Windows, an install tree and a tarball on Linux, both
+below.
 
 wxWidgets is declared under a `gui` feature rather than as a plain dependency, so
-a headless configuration (`-D XPCOG_BUILD_APP=OFF`) builds no toolkit at all.
+a headless configuration (`-D XPCOG_BUILD_APP=OFF`) and the Linux presets build
+no wx at all.
 
-**On Linux the toolkit comes from the distribution**, not from vcpkg — install
-`libwxgtk3.2-dev` and `libgtk-3-dev` (Debian/Ubuntu), `wxGTK-devel` (Fedora)
-or `wxgtk3` (Arch). The GTK headers are named separately on Debian because the
-wx package does not depend on them, and one file in `app/` uses GTK directly.
-vcpkg's `wxwidgets` port depends on its `gtk3` port, so asking vcpkg for wx there
-builds 57 packages from source — wx, GTK and 55 more beneath them: glib, pango,
-cairo, harfbuzz, fontconfig, at-spi2, dbus, seven X11 libraries — on a machine
-that already has all of them. 98 packages for the Linux build against 41
-without. The Linux presets therefore leave `gui` out, and
-`cmake/XPCogWx.cmake` finds the system wx through CMake's `FindwxWidgets`. It
-needs **wxWidgets 3.2 or newer** — the oldest release carrying `wxTaskBarIcon` and
-`wxNotificationMessage` in `core` rather than in the since-merged `adv` library.
-To build the toolkit through vcpkg anyway, add the feature back:
-`cmake --preset linux-debug -D "VCPKG_MANIFEST_FEATURES=gui;sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"`.
-
-## macOS: the disk image
-
-Three targets in `packaging/macos/`, none of them built by `all` and each asked
-for by name after a build:
-
-```sh
-cmake --build build/macos-release --target sign      # signs XPCog.app in place
-cmake --build build/macos-release --target dmg       # signs, then packages
-cmake --build build/macos-release --target notarize  # submits, waits, staples
-```
-
-`dmg` produces `build/macos-release/XPCog-<version>-arm64.dmg`: the bundle, a
-symlink to `/Applications`, drag to install. It is compressed, read-only and
-plain — no background picture and no scripted Finder window, which would mean
-creating a writable image, mounting it, driving the Finder to arrange the icons
-and converting the result, on a machine with a logged-in window server. That is
-the most fragile machinery in a macOS release and it buys a prettier window.
-
-**The bundle declares what it opens**, so the Finder's *Open With* menu, the
-Dock icon and a double-click on a game-music file all reach XPCog. The
-declarations are not written by hand: `xpcog-doctypes` (`tools/doctypes/`) runs
-after every build, reads the codec registry, and writes `CFBundleDocumentTypes`
-and `UTImportedTypeDeclarations` for every extension this build decodes; a
-splice step puts them into the bundle's `Info.plist` between two markers
-`app/Info.plist.in` carries, and `plutil` checks the result. Every entry ranks
-XPCog as an *alternate* handler, which is the plist's way of saying what
-`--register` says on Windows: XPCog is offered, and takes nothing from whatever
-opened these files before. Where XPCog is the only application to declare a
-type at all — most of the game-music formats — that still makes it the one a
-double-click opens. To make it the default for a type it is not alone in, use
-Get Info → *Open with* → *Change All…*, which is the user's step, as it is on
-Windows. A handful of vgmstream's extensions are left out on purpose, because
-macOS already knows them as something that is not audio (`.m` is Objective-C
-source, `.svg` is an image); the build log names them.
-
-**Signing is inside out**, and the order is the substance of it. A nested
-signature is part of the bytes the enclosing one covers, so `libvgmstream.dylib`
-and `crashpad_handler` are signed first, then the bundle, then the image. This
-replaced a single `codesign --deep`, which Apple's own guidance calls unsuitable
-for nested code: it applies the outer bundle's identity and entitlements to
-everything it finds and silently skips whatever it does not recognise as code.
-
-There is **no entitlements file**, and that is the intended state. An entitlement
-is a hole in the hardened runtime, and this program wants none: not sandboxed, so
-no file-access entitlement; records nothing, so no microphone; nothing JITs; and
-every library in the bundle carries the same signature, so library validation has
-nothing to disable. `packaging/macos/SignBundle.cmake` names the three that would
-arrive if any of that changed.
-
-Set the identity in the cache or, better, in the environment:
-
-```sh
-export XPCOG_CODESIGN_IDENTITY="Developer ID Application: NAME (TEAMID)"
-```
-
-`security find-identity -v -p codesigning` lists what the machine holds. Without
-one, `dmg` packages an unsigned image and says so; `sign` refuses, because
-someone who typed that target name and got a zero exit status has been told
-nothing.
-
-**Notarisation** takes an App Store Connect API key, from the environment only —
-no cache variable and no `-D`, because a `.p8` is a private key that can notarise
-anything under the team's name and both of those land in files that get committed
-by accident:
-
-```sh
-export XPCOG_NOTARY_KEY=~/keys/AuthKey_XXXXXXXXXX.p8
-export XPCOG_NOTARY_KEY_ID=XXXXXXXXXX
-export XPCOG_NOTARY_ISSUER_ID=00000000-0000-0000-0000-000000000000
-cmake --build build/macos-release --target notarize
-```
-
-An API key rather than an Apple ID and an app-specific password, which
-`notarytool` also accepts: the password form ties releases to one person's Apple
-ID and unlocks a great deal more than notarisation, while a notary key does one
-thing and revokes without anyone losing anything else. The target waits for
-Apple's answer, prints Apple's log on a rejection rather than leaving you to fetch
-it by submission id, staples the ticket to the image and finishes by asking
-`spctl` the question the user's Mac will ask. Stapling is what makes the ticket
-travel with the download: without it Gatekeeper asks Apple over the network at
-first launch and fails closed on a machine that is offline.
-
-**CI builds one on every run**, and notarises on `main` and on tags. The `macOS
-disk image` job configures `macos-app-release`, imports the certificate into a
-keychain that exists for the length of that job, packages, and attaches
-`XPCog-<version>-arm64.dmg` to the run — so a pull request that breaks the
-bundle says so where it broke. Notarisation is drawn at a different line than
-packaging because the costs differ in kind: packaging is a minute of the runner's
-own time, notarisation is minutes of waiting on a service this project does not
-control, answering a question that only matters for an image somebody downloads.
-A pull request from a fork sees no secrets and produces an unsigned image, which
-is the correct outcome — packaging is what it is testing.
-
-Five repository secrets, under Settings → Secrets and variables → Actions:
-
-| Secret | What it is |
-| --- | --- |
-| `MACOS_CERTIFICATE_P12` | the Developer ID Application certificate *and its private key*, exported from Keychain Access as `.p12`, then `base64 -i cert.p12 \| pbcopy` |
-| `MACOS_CERTIFICATE_PASSWORD` | the password given to that export |
-| `MACOS_NOTARY_KEY_P8` | the App Store Connect `.p8`, base64 the same way |
-| `MACOS_NOTARY_KEY_ID` | the key's ten-character id |
-| `MACOS_NOTARY_ISSUER_ID` | the issuer UUID shown above the key list |
-
-The signing identity is *not* a sixth secret: the job reads it out of the
-imported certificate, which is one less thing to keep in step and makes "that
-`.p12` holds no Developer ID Application certificate" a message at import time
-rather than a `codesign` error twenty minutes later. It is not secret in any
-case — the team name and id are in every signature XPCog ships.
-
-**arm64 only — not a universal binary.** The runner builds natively and an Intel
-Mac cannot run the result. Configure says so in as many words, because `arm64` in
-a filename is a fact about the build and "will not launch" is what that fact means
-to somebody on an Intel Mac, and nothing else in the chain draws the distinction:
-`codesign`, `hdiutil` and `notarytool` are all perfectly happy with a
-single-architecture image. A universal one means a second vcpkg tree, a second
-build and a `lipo` pass over the executable and `libvgmstream`, which is not what
-this does today.
+**On Linux the toolkit comes from the distribution**, never from vcpkg, whose
+gtk ports would build the whole GNOME stack from source on a machine that
+already has it. `cmake/XPCogGtk.cmake` finds it through pkg-config, and the
+floor is **GTK 4.22, libadwaita 1.9 and GLib 2.88** — Ubuntu 26.04, Fedora 44,
+Arch, or anything on GNOME 50 or later; Ubuntu 24.04 and Debian 13 are below
+it. The interface is written in [Blueprint](https://gnome.pages.gitlab.gnome.org/blueprint-compiler/),
+so **blueprint-compiler 0.16 or newer** is needed at build time, with the
+Gtk-4.0 and Adw-1 typelibs it checks the files against. See
+[Other prerequisites](#other-prerequisites) for the package names.
 
 ## Windows: the installer
 
@@ -194,7 +74,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-1.20.0-x64-setup.exe
+:: -> build\windows-release\XPCog-2.0.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
@@ -215,7 +95,7 @@ build understands. The uninstaller reverses all of it and leaves settings and th
 library database alone. For unattended use:
 
 ```bat
-XPCog-1.20.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-2.0.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -273,10 +153,7 @@ gtk-update-icon-cache /usr/local/share/icons/hicolor
 `CMakeLists.txt`. Four things have to agree on it or the desktop quietly does
 nothing: the `.desktop` file's basename, the AppStream `<id>`, the installed
 icon's filename, and the `DesktopEntry` property MPRIS publishes — which is how
-a panel gets from the transport it is showing to XPCog's icon and name. The
-macOS bundle identifier beside it is the lowercase `co.losno.xpcog` and stays
-that way; it is a different platform's namespace, and on macOS it is also where
-a user's preferences are keyed.
+a panel gets from the transport it is showing to XPCog's icon and name.
 
 The two generated files are worth validating after changing either template,
 because nothing at run time reads them and a mistake is silent:
@@ -292,7 +169,7 @@ for a Musepack file it cannot play. See `packaging/linux/CMakeLists.txt`.
 
 **The tarball.** `cmake --build build/linux-repo-release --target package`
 produces `XPCog-<version>-<arch>.tar.gz` beside the build, which is the Linux
-counterpart of `installer` on Windows and `dmg` on macOS. It is CPack's `TGZ`
+counterpart of `installer` on Windows. It is CPack's `TGZ`
 generator over the install rules above, stripped — 120 MB of executable becomes
 24, and the symbols stay in the build tree where a debugger and a crash report
 want them.
@@ -302,8 +179,8 @@ cmake --build build/linux-repo-release --target package
 tar tzf build/linux-repo-release/XPCog-1.6.0-x86_64.tar.gz
 ```
 
-**It is not an AppImage and does not pretend to be.** wxWidgets, GTK and most of
-the codec libraries are the distribution's, linked dynamically, so the tarball
+**It is not an AppImage and does not pretend to be.** GTK, libadwaita and
+libsecret are the distribution's, linked dynamically, so the tarball
 runs on the distribution release that built it or a compatible newer one. That
 is a convenience for that case, not a portable binary for any Linux; the
 portable answer is the Flatpak below.
@@ -317,7 +194,7 @@ archive at that prefix, or edit the one line. Everything else works from
 anywhere.
 
 **CI builds one on every run.** The `Linux tarball` job configures
-`linux-release` on `ubuntu-24.04`, packages it, and attaches
+`linux-release` on `ubuntu-26.04`, packages it, and attaches
 `XPCog-<version>-x86_64.tar.gz` to the run — so a pull request that breaks the
 install rules says so where it broke rather than at release time. It also
 validates the desktop file and the metainfo out of the *staged archive* rather
@@ -331,9 +208,10 @@ choice: the system-libs presets exist for a machine that already has the
 libraries, which is the opposite of a machine downloading a tarball. Building
 against vcpkg's copies links seventeen of them in — `libtag`, `libavcodec`,
 `libopenmpt` and the rest — so what the download needs from its host is GTK,
-wxWidgets and the C library. **The C library is the floor:** built on
-`ubuntu-24.04`, the tarball wants glibc 2.39 or newer, which rules out Ubuntu
-22.04, Debian 12 and RHEL 9. Moving that line means moving the runner.
+libadwaita, libsecret and the C library. **GTK is the floor:** 4.22, with
+libadwaita 1.9 — Ubuntu 26.04, Fedora 44, Arch, anything on GNOME 50 or later.
+The C library is one too, since the runner is `ubuntu-26.04`, but in practice
+it is the lower of the two.
 
 No `DEB` or `RPM` generator, deliberately. CPack can emit both, but a package
 worth installing needs a dependency list, and `CPACK_DEBIAN_PACKAGE_SHLIBDEPS`
@@ -385,10 +263,10 @@ want screenshots, which the metainfo has none of.
 
 ## Releases
 
-**A release per version bump, made from the run that built it.** All three
+**A release per version bump, made from the run that built it.** Both
 packages above are attached to every run as artifacts, which is where a pull
 request's go and where they stay. On `main` the `Release` job takes the same
-three files — downloaded, not rebuilt — creates the tag `v<version>` on the
+two files — downloaded, not rebuilt — creates the tag `v<version>` on the
 commit that was built, and publishes them.
 
 What decides that a bump happened is whether a release for the version in
@@ -400,7 +278,7 @@ answers the same question from the state that matters, does nothing when re-run
 on a commit already released, and repairs itself — a version that reaches `main`
 without a release gets one on the next run.
 
-It waits on the three packaging jobs and the version check, and on nothing else.
+It waits on the two packaging jobs and the version check, and on nothing else.
 A failing test, a broken system-libs build or a headless link error does not hold
 the release: those jobs say something about the tree, while the packaging jobs say
 whether there is anything to publish. Failing to *build* any one package still stops it,
@@ -410,9 +288,8 @@ run says which job failed, so what this changes is who decides: a release that
 went out on a known failure is something to see and yank, rather than a packaged
 build nobody can have because an unrelated job broke.
 
-The notes name both files and say what was done to each: the installer is
-unsigned, and the disk image says whether that run signed and notarised it rather
-than asserting that it usually does. Everything after the notes is GitHub's own
+The notes name both files and what each needs: the installer is unsigned, and
+the tarball wants GTK 4.22 and libadwaita 1.9 from the distribution. Everything after the notes is GitHub's own
 list of what changed, read from the previous `v` release.
 
 Once the release is up, the job POSTs to a Netlify build hook so that
@@ -433,7 +310,7 @@ one thing holding an installer named another.
 
 ## Linux: building against the distribution's libraries
 
-wxWidgets is not the only dependency a Linux machine already has. The
+GTK is not the only dependency a Linux machine already has. The
 `linux-repo-debug` and `linux-repo-release` presets are the ordinary Linux build
 with one difference — before anything is asked of vcpkg, `pkg-config` is asked
 what is installed, and every library the system has at a version this code can
@@ -496,7 +373,8 @@ These two are also the only ones CI cannot exercise the system half of — no
 Debian or Ubuntu release packages either library — so the job below asserts the
 fallback for them instead.
 
-CI builds this configuration too, on Ubuntu 24.04, where TagLib and Catch2 fall
+CI builds this configuration too — without the player, whose GTK floor is
+newer than the runner — on Ubuntu 24.04, where TagLib and Catch2 fall
 below their floors, vgmstream and SpessaSynth are not packaged at all, and the
 other twelve do not — so one job exercises the system path and the fallback path
 at once, and asserts against vcpkg's installed tree which of the two each
@@ -523,21 +401,23 @@ whatever is in the slot.
 ## Other prerequisites
 
 `nasm` is required on every platform for FFmpeg's assembly — vcpkg downloads it
-itself on Windows, and expects the package manager to supply it elsewhere. macOS
-also needs `pkg-config` for vcpkg's ports.
+itself on Windows, and expects the package manager to supply it on Linux.
 
 ```sh
-brew install ninja pkg-config nasm                              # macOS
-sudo apt install ninja-build pkg-config nasm autoconf automake libtool \
-                libwxgtk3.2-dev libgtk-3-dev libglib2.0-dev     # Debian/Ubuntu
+# Debian/Ubuntu (26.04 or newer)
+sudo apt install ninja-build pkg-config nasm autoconf autoconf-archive automake libtool \
+                libgtk-4-dev libadwaita-1-dev gir1.2-gtk-4.0 gir1.2-adw-1 \
+                blueprint-compiler libglib2.0-dev libsecret-1-dev
+# Fedora (44 or newer)
+sudo dnf install ninja-build pkgconf nasm autoconf autoconf-archive automake libtool \
+                gtk4-devel libadwaita-devel blueprint-compiler glib2-devel libsecret-devel
+# Arch
+sudo pacman -S ninja pkgconf nasm autoconf autoconf-archive automake libtool \
+                gtk4 libadwaita blueprint-compiler glib2 libsecret
 ```
 
-macOS builds the app icon from `app/icons/xpcog.icon`, an Icon Composer package,
-using `actool` from **Xcode 26 or newer** — not the Command Line Tools. Without
-it the build still succeeds and falls back to a committed `.icns`, saying so as
-it configures; what is lost is the icon's container and its dark and tinted
-appearances, which the system composes from the layered source and cannot
-recover from a bitmap.
+`xvfb` as well, to run `xpcog-gtk-tests` — the GTK suite that opens real
+widgets — without a desktop; on a desktop session it uses the display it has.
 
 Forty-one tests build their fixtures by shelling out to command-line
 **encoders**, and *skip silently* when those are absent — a skip is not a failure,
@@ -545,7 +425,6 @@ so the suite still reports success while the gapless, seek and cue-span tests ne
 run. Install them to get real coverage:
 
 ```sh
-brew install flac vorbis-tools opus-tools lame wavpack ffmpeg    # macOS
 sudo apt install flac vorbis-tools opus-tools lame wavpack ffmpeg  # Debian/Ubuntu
 ```
 
@@ -582,8 +461,8 @@ which every call site read as "encoder missing". See `tests/TestShell.hpp`.
 To build the engine with no toolkit at all:
 
 ```sh
-cmake --preset macos-headless && cmake --build --preset macos-headless
-./build/macos-headless/bin/xpcog-cli codecs
+cmake --preset linux-headless && cmake --build --preset linux-headless
+./build/linux-headless/bin/xpcog-cli codecs
 ```
 
 ## Last.fm credentials
@@ -614,8 +493,8 @@ Configure prints `Last.fm: API key configured`, or says one will have to be
 entered in preferences. CI reads the same two values out of the
 `LASTFM_API_KEY` and `LASTFM_API_SECRET` repository secrets, by that same
 environment path, and only in the two jobs that package something — the Windows
-installer and the macOS disk image. No other job produces something a person
-downloads. That job fails when configure
+installer and the Linux tarball. No other job produces something a person
+downloads. Each fails when configure
 reports no key, because the alternative is shipping an installer that asks
 every listener to apply for an API account before it scrobbles. A pull request
 from a fork cannot see secrets and packages exactly such a build, deliberately. To check a key works before wiring anything up:

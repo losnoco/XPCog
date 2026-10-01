@@ -72,7 +72,8 @@ finish-args:
   # platform/src/linux/GioFileManager.cpp calls ShowItems to reveal a track.
   - --talk-name=org.freedesktop.FileManager1
 
-  # The Last.fm session key lives in wxSecretStore, which is libsecret here.
+  # The Last.fm and ListenBrainz credentials and the remote-control token live
+  # in the password store, through libsecret (platform::SecretStore).
   - --talk-name=org.freedesktop.secrets
 
 cleanup:
@@ -84,42 +85,9 @@ cleanup:
   - '*.la'
 
 modules:
-  # The toolkit, and the one dependency that has to be a module rather than
-  # left to vcpkg. vcpkg's wxwidgets port depends on its gtk3 port, which would
-  # build GTK, glib, pango, cairo, harfbuzz and seven X11 libraries from source
-  # inside a runtime that already has every one of them -- the same trade
-  # cmake/XPCogWx.cmake makes on a Linux desktop, for the same reason.
-  #
-  # secretstore is on because core keeps the Last.fm session key in
-  # wxSecretStore rather than in settings; webview is off because nothing here
-  # displays a web page, and it is the one wx component that would want WebKit.
-  - name: wxwidgets
-    buildsystem: cmake-ninja
-    config-opts:
-      - -DCMAKE_BUILD_TYPE=Release
-      - -DwxBUILD_SHARED=ON
-      - -DwxBUILD_TOOLKIT=gtk3
-      - -DwxBUILD_SAMPLES=OFF
-      - -DwxBUILD_TESTS=OFF
-      - -DwxBUILD_DEMOS=OFF
-      - -DwxUSE_SECRETSTORE=ON
-      - -DwxUSE_WEBVIEW=OFF
-      # Off because it does not work here, not merely because it is unused.
-      # wx's exported targets put CURL::libcurl_shared in wxnet's link
-      # interface, and resolving that name needs CURL's own CMake config -- but
-      # find_package inside this build goes through vcpkg's toolchain wrapper,
-      # which looks for vcpkg's curl rather than the runtime's, finds neither,
-      # and fails at generate time with "the target was not found".
-      #
-      # Nothing is lost. XPCog does its own HTTP: codecs/httpsource is libcurl
-      # directly, ported from Cog's HTTPSource, and wxWebRequest appears
-      # nowhere in app/, core/ or platform/.
-      - -DwxUSE_WEBREQUEST=OFF
-    sources:
-      - type: archive
-        url: https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.8.1/wxWidgets-3.2.8.1.tar.bz2
-        sha256: ad0cf6c18815dcf1a6a89ad3c3d21a306cd7b5d99a602f77372ef1d92cb7d756
-
+  # No toolkit module: GTK 4.22, libadwaita 1.9, GLib 2.88, libsecret and
+  # blueprint-compiler are all in the GNOME 50 SDK, which is the floor
+  # cmake/XPCogGtk.cmake checks.
   - name: xpcog
     buildsystem: simple
     # The line that keeps this off Flathub. See the note at the top.

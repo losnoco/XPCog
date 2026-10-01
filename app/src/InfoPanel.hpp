@@ -53,6 +53,8 @@
 
 #pragma once
 
+#include "TrackText.hpp"
+
 #include "xpcog/core/library/PlaylistEntry.hpp"
 
 #include <wx/dc.h>
@@ -76,29 +78,6 @@ namespace xpcog::app {
 /// because they are the testable part -- and testable without a display at all,
 /// since none of them touches a widget.
 namespace info {
-
-/// Cog's -trackText: "03", or "1.03" when the disc is known, or empty.
-[[nodiscard]] std::string trackText(std::int32_t track, std::int32_t disc);
-
-/// Cog's -lengthInfo, which unlike the playlist column keeps the fraction --
-/// this is the panel you open when you care whether a gapless rip is 4:07.000.
-[[nodiscard]] std::string lengthText(double seconds);
-
-/// Cog's -gainInfo: every gain value that is present, one per line. Empty when
-/// the file carries none, which is most files.
-[[nodiscard]] std::string replayGainText(const ReplayGainInfo& gain);
-
-/// Cog's -playCountInfo, with the count on the first line. `firstSeen` and
-/// `lastPlayed` are Unix seconds; 0 means never set.
-[[nodiscard]] std::string playCountText(std::int64_t count, std::int64_t firstSeen,
-                                        std::int64_t lastPlayed);
-
-/// The pieces a value may be broken between: after the platform's path
-/// separator, and after a space, which is a break wxHTML would take anyway.
-///
-/// Concatenating the result gives the input back exactly -- each piece keeps the
-/// character that ended it -- so what is measured is what is drawn.
-[[nodiscard]] std::vector<std::string> breakPieces(std::string_view text);
 
 /// One tag value as it goes into the page: the four characters that mean
 /// something to a parser escaped, and newlines turned into breaks.
@@ -125,36 +104,9 @@ public:
     void showEntry(const PlaylistEntry* entry);
 
 private:
-    /// The fields, in Cog's order. The three groups are where Cog's own order
-    /// already breaks: who made it, what it is, and what we know about it.
-    enum Field {
-        AlbumArtist,
-        Artist,
-        Composer,
-        Album,
-        Title,
-        Track,
-        Length,
-        Date,
-        Genre,
-        Filename,
+    using Field = info::Field;
+    static constexpr std::size_t FieldCount = info::FieldCount;
 
-        SampleRate,
-        Channels,
-        Bitrate,
-        BitsPerSample,
-        Codec,
-        Encoding,
-
-        Cuesheet,
-        ReplayGain,
-        PlayCount,
-        Comment,
-
-        FieldCount,
-    };
-
-    void set(Field field, const std::string& value);
 
     /// The size, in DIP, the cover is worth drawing at in the width there is.
     ///

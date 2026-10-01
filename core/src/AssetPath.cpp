@@ -7,9 +7,6 @@
 
 #if defined(_WIN32)
 #include <windows.h>
-#elif defined(__APPLE__)
-#include <mach-o/dyld.h>
-#include <cstdint>
 #else
 #include <unistd.h>
 #endif
@@ -19,10 +16,9 @@ namespace {
 
 /// The running executable's own path.
 ///
-/// Three platforms, three APIs, and each has a way of failing that the obvious
+/// Two platforms, two APIs, and each has a way of failing that the obvious
 /// call does not report. GetModuleFileNameW truncates rather than failing when
-/// the buffer is too small, and only says so through GetLastError; macOS's
-/// _NSGetExecutablePath answers -1 and *writes back* the size it wanted; and
+/// the buffer is too small, and only says so through GetLastError; and
 /// /proc/self/exe is a link whose target can be longer than any guess.
 [[nodiscard]] std::filesystem::path executablePath() {
 #if defined(_WIN32)
@@ -42,22 +38,6 @@ namespace {
         }
         buffer.resize(buffer.size() * 2);
     }
-#elif defined(__APPLE__)
-    std::uint32_t size = 0;
-    _NSGetExecutablePath(nullptr, &size);  // asks for the size it needs
-    if (size == 0) {
-        return {};
-    }
-    std::vector<char> buffer(size);
-    if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
-        return {};
-    }
-    // Resolved, because the answer may hold symlinks and `..`, and the layouts
-    // below are all relative to where the binary really is.
-    std::error_code     error;
-    std::filesystem::path path{buffer.data()};
-    std::filesystem::path resolved = std::filesystem::canonical(path, error);
-    return error ? path : resolved;
 #else
     std::error_code error;
     std::filesystem::path resolved =
@@ -74,12 +54,7 @@ namespace {
     }
     const std::filesystem::path dir = exe.parent_path();
 
-#if defined(__APPLE__)
-    // Inside a bundle the binary is at Contents/MacOS and resources are at
-    // Contents/Resources. Outside one -- a plain command-line build of the CLI
-    // or the tests -- they sit beside it, so both are tried.
-    return {dir / ".." / "Resources", dir};
-#elif defined(_WIN32)
+#if defined(_WIN32)
     return {dir};
 #else
     // An installed layout puts the binary in <prefix>/bin and its data in

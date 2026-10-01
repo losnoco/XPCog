@@ -45,4 +45,4 @@ browser, so nothing noticed that the two disagreed. There is a test now that eve
 Its strings are English only. Nothing in this project translates HTML, and core
 — where the server lives — has no catalogue and never will; the JSON keys and
 error codes it serves are protocol rather than interface text. See
-`app/locale/README.md` for what else is deliberately left untranslated.
+`uicore/locale/README.md` for what else is deliberately left untranslated.

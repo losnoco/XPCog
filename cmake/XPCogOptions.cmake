@@ -1,6 +1,28 @@
 # Build-shape options. Codec toggles live next to their xpcog_add_codec() call.
 
-option(XPCOG_BUILD_APP   "Build the wxWidgets application" ON)
+# The player. Which toolkit it is written in follows the platform rather than an
+# option, because each platform has exactly one: wxWidgets on Windows (app/),
+# GTK4 and libadwaita on Linux (app-gtk/). macOS is not a target -- Cog is the
+# player there -- so the option is refused on it; a headless build of core,
+# codecs and xpcog-cli still configures anywhere.
+option(XPCOG_BUILD_APP   "Build the player (wxWidgets on Windows, GTK4 on Linux)" ON)
+
+# Which frontend that means, as two plain variables the rest of the build reads.
+# Not options: a cache entry would let a tree ask for the wrong one.
+set(XPCOG_BUILD_WX_APP OFF)
+set(XPCOG_BUILD_GTK_APP OFF)
+if(XPCOG_BUILD_APP)
+    if(WIN32)
+        set(XPCOG_BUILD_WX_APP ON)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(XPCOG_BUILD_GTK_APP ON)
+    else()
+        message(FATAL_ERROR
+                "XPCog's player is built for Windows and Linux only; there is none "
+                "for ${CMAKE_SYSTEM_NAME}. Configure with -D XPCOG_BUILD_APP=OFF "
+                "for core, codecs and xpcog-cli alone.")
+    endif()
+endif()
 option(XPCOG_BUILD_CLI   "Build the headless xpcog-cli"    ON)
 option(XPCOG_BUILD_TESTS "Build the test suite"            ON)
 

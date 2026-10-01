@@ -1,4 +1,4 @@
-# Compiling app/locale/*.po into the binary.
+# Compiling uicore/locale/*.po into the binary.
 #
 # The counterpart of xpcog_embed_resources(), and it is separate for a reason
 # beyond tidiness: a catalogue is not a blob. Embedding the .po bytes and parsing

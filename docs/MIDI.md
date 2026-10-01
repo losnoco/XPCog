@@ -262,8 +262,9 @@ player, this paragraph is the first thing to re-read.
 **Finding it at run time** is `xpcog::assetPath()`, which is new
 (`core/include/xpcog/core/AssetPath.hpp`). Cog uses `NSBundle`; there is no
 portable equivalent, so it is the executable's own path plus a per-platform
-layout — beside it on Windows, `../Resources` in a macOS bundle,
-`../share/xpcog` for an installed Linux tree.
+layout — beside it on Windows, beside it or at `../share/xpcog` for a Linux
+build tree or install. (A macOS bundle's `../Resources` was the third, until
+2.0.0 dropped the port.)
 
 Note what is *not* there: a build-tree special case. CMake stages the assets
 into the output directory beside every binary that plays MIDI, so the lookup the

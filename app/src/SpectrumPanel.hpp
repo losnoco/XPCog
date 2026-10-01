@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include "VisualizerChannels.hpp"
+
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Signal.hpp"
 // For TapCursor, which is held by value. The tap itself is still only borrowed.
@@ -44,13 +46,16 @@ namespace xpcog::app {
 
 class SpectrumPanel : public wxWindow {
 public:
-    /// Which channels the bars show. The `spectrumChannels` setting, decoded.
-    enum class Channels { Mono, Left, Right, Mirrored, Stacked, Overlaid };
+    /// Which channels the bars show. The `spectrumChannels` setting, decoded;
+    /// the names and their spellings are uicore's, shared with the GTK view.
+    using Channels = SpectrumChannels;
 
-    /// The setting's spelling of each, in the order the menu and the pane list
-    /// them, and the reverse: an unknown spelling reads as Mono.
-    [[nodiscard]] static const char* channelsKey(Channels channels) noexcept;
-    [[nodiscard]] static Channels    channelsFromKey(std::string_view key) noexcept;
+    [[nodiscard]] static const char* channelsKey(Channels channels) noexcept {
+        return spectrumChannelsKey(channels);
+    }
+    [[nodiscard]] static Channels channelsFromKey(std::string_view key) noexcept {
+        return spectrumChannelsFromKey(key);
+    }
 
     /// The context menu's item ids, public so a test can drive
     /// applyMenuItem() without popping a menu -- nothing can click one under

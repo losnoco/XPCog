@@ -1,5 +1,7 @@
 #include "StatusPresence.hpp"
 
+#include "TrayMenu.hpp"
+
 #include "AppIcon.hpp"
 #include "Commands.hpp"
 #include "MainFrame.hpp"
@@ -18,28 +20,6 @@
 
 namespace xpcog::app {
 namespace {
-
-/// Ids for the two entries that exist only where there is a tray.
-enum : int {
-    kShowWindowId = FirstWidgetId + 80,
-};
-
-/// Long titles get cut rather than stretching a tooltip across the screen.
-constexpr std::size_t kMaxTooltipRun = 60;
-
-[[nodiscard]] std::string elide(const std::string& text) {
-    if (text.size() <= kMaxTooltipRun) {
-        return text;
-    }
-    // Cut on a byte boundary that is not mid-sequence: UTF-8 continuation bytes
-    // are 10xxxxxx, so walking back off them lands on a character start. A
-    // tooltip ending in half a codepoint renders as a replacement glyph.
-    std::size_t cut = kMaxTooltipRun;
-    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
-        --cut;
-    }
-    return text.substr(0, cut) + "\xE2\x80\xA6";
-}
 
 /// The application icon at every size a panel is plausibly going to want.
 ///
@@ -113,18 +93,12 @@ void raiseWindow(wxTopLevelWindow* window) {
 // It is guarded rather than passed everywhere because the three platforms do not
 // agree on the signature: wxMSW and wxOSX take a wxTaskBarIconType, and
 // wx/unix/taskbarx11.h declares `wxTaskBarIcon()` with no parameter at all.
-#ifdef __WXOSX__
-StatusPresence::StatusPresence(MainFrame* frame, platform::Dispatcher dispatch)
-    : wxTaskBarIcon(wxTBI_DOCK), frame_(frame) {
-#else
 StatusPresence::StatusPresence(MainFrame* frame, platform::Dispatcher dispatch)
     : frame_(frame) {
-#endif
     // Constructed on every platform, because the base class is a working
     // do-nothing and asking it is cheaper than an #ifdef around the question.
     tray_ = platform::TrayIcon::create(std::move(dispatch));
 
-#ifndef __WXOSX__
     // StatusNotifierItem first, where a panel answers for it. It is preferred
     // rather than merely tried because it is the one that works on a Wayland
     // session, which is most of them -- and where both routes exist, it is also
@@ -141,12 +115,6 @@ StatusPresence::StatusPresence(MainFrame* frame, platform::Dispatcher dispatch)
         // caller has to be able to tell that from "a tray that ignores updates".
         hasTrayIcon_ = SetIcon(applicationIconAt(16), "XPCog");
     }
-#else
-    // The Dock menu. Nothing to set on it, because the tile already carries the
-    // bundle's icon and replacing it would lose the layered treatment macOS
-    // composes from icons/xpcog.icon.
-    hasTrayIcon_ = false;
-#endif
 
     // Whichever route came up gets its tooltip and its menu, which is also the
     // first time the StatusNotifierItem one has a menu at all -- an item exported
@@ -158,43 +126,10 @@ StatusPresence::StatusPresence(MainFrame* frame, platform::Dispatcher dispatch)
 }
 
 std::vector<platform::TrayMenuItem> StatusPresence::menuModel() const {
-    // Id 0 is "no command", which is what the two track rows and the separators
-    // are. Nothing can activate them, so nothing needs to know what they mean.
-    constexpr int kNoCommand = 0;
-    const auto    separator  = [] {
-        return platform::TrayMenuItem{kNoCommand, {}, false, true};
-    };
-
-    std::vector<platform::TrayMenuItem> items;
-
-    // The track, as two disabled rows at the top, exactly as Cog's dock menu
-    // does. Absent rather than blank when there is nothing: an empty row reads as
-    // a broken menu.
-    if (!title_.empty()) {
-        items.push_back({kNoCommand, elide(title_), false, false});
-        if (!artist_.empty()) {
-            items.push_back({kNoCommand, elide(artist_), false, false});
-        }
-        items.push_back(separator());
-    }
-
-    items.push_back({PlaybackPlayPause,
-                     toUtf8(playing_ && !paused_ ? _("Pause") : _("Play")), true, false});
-    items.push_back({PlaybackStop, toUtf8(_("Stop")), true, false});
-    items.push_back(separator());
-    items.push_back({PlaybackPrevious, toUtf8(_("Previous")), true, false});
-    items.push_back({PlaybackNext, toUtf8(_("Next")), true, false});
-
-#ifndef __WXOSX__
-    // Only where there is a tray. AppKit appends Quit and the window list to a
-    // Dock menu itself, and clicking the Dock icon already raises the window --
-    // adding these there would produce a menu with two Quits.
-    items.push_back(separator());
-    items.push_back({kShowWindowId, toUtf8(_("Show XPCog")), true, false});
-    items.push_back({FileQuit, toUtf8(_("Quit")), true, false});
-#endif
-
-    return items;
+    // Show and Quit only where there is a tray; see TrayMenu.hpp for why a
+    // Dock menu must not carry them.
+    constexpr bool withWindowItems = true;
+    return trayMenuModel(TrayState{title_, artist_, playing_, paused_}, withWindowItems);
 }
 
 wxMenu* StatusPresence::CreatePopupMenu() {
@@ -224,7 +159,7 @@ wxMenu* StatusPresence::CreatePopupMenu() {
 }
 
 void StatusPresence::activateCommand(int id) {
-    if (id == kShowWindowId) {
+    if (id == kTrayShowWindowId) {
         raiseWindow(frame_);
         return;
     }
@@ -253,20 +188,7 @@ void StatusPresence::clear() {
 }
 
 std::string StatusPresence::tooltipBody() const {
-    std::string body;
-    if (!title_.empty()) {
-        body = elide(title_);
-        if (!artist_.empty()) {
-            body += "\n" + elide(artist_);
-        }
-    }
-    if (playing_ && paused_) {
-        if (!body.empty()) {
-            body += "\n";
-        }
-        body += toUtf8(_("(paused)"));
-    }
-    return body;
+    return trayTooltipBody(TrayState{title_, artist_, playing_, paused_});
 }
 
 void StatusPresence::refresh() {
@@ -318,7 +240,6 @@ void StatusPresence::notify(const std::string& title, const std::string& body,
         message.SetIcon(icon);
     }
 
-#if defined(__WXMSW__)
     // Only when there is one to offer. UseTaskBarIcon() hands wx *our* icon to
     // hang the balloon on; handing it one that was never installed would leave
     // the balloon with nothing to come from, where passing nothing at all lets
@@ -326,7 +247,6 @@ void StatusPresence::notify(const std::string& title, const std::string& body,
     if (hasTrayIcon_) {
         message.UseTaskBarIcon(this);
     }
-#endif
 
     message.Show();
 }

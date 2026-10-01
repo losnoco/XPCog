@@ -6,6 +6,12 @@
 // question is "what updates when the track changes", there is exactly one place
 // to look -- and it is worth as much here.
 //
+// What this window no longer is: the composition root. The playlist, the
+// library, the playback controller, the scan queue, the scrobblers, the remote
+// server and the desktop integration are uicore's Session, which assembles
+// them once for both frontends and tells this window what happened through
+// its signals. What is left here is what draws. See Session.hpp.
+//
 // Two lifetime rules, both of which the toolkit used to enforce and no longer
 // does:
 //
@@ -25,35 +31,17 @@
 
 #pragma once
 
-#include "AppCommands.hpp"
-#include "AppPlayerControl.hpp"
-#include "RemoteJobs.hpp"
 #include "SeekBar.hpp"
-#include "PlaybackController.hpp"
+#include "Session.hpp"
 #include "StatusPresence.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Signal.hpp"
-#include "xpcog/core/UndoStack.hpp"
-#include "xpcog/core/PlayMonitor.hpp"
-#include "xpcog/core/library/CogImport.hpp"
-#include "xpcog/core/library/Library.hpp"
-#include "xpcog/core/lyrics/LibraryLyricsStore.hpp"
-#include "xpcog/core/lyrics/LyricsLookup.hpp"
-#include "xpcog/core/net/HttpClient.hpp"
-#include "xpcog/core/scrobble/Scrobbler.hpp"
-#include "xpcog/core/library/Playlist.hpp"
-#include "xpcog/core/library/PlaylistView.hpp"
-#include "xpcog/core/library/PluginCache.hpp"
-#include "xpcog/core/library/ScanTask.hpp"
-#include "xpcog/core/audio/WaveformProvider.hpp"
-#include "xpcog/core/remote/RemoteServer.hpp"
-#include "xpcog/platform/MediaIntegration.hpp"
-#include "xpcog/platform/TaskbarIntegration.hpp"
 
 #include <wx/aui/aui.h>
 #include <wx/frame.h>
+#include <wx/timer.h>
 
 #include <functional>
 #include <cstddef>
@@ -76,9 +64,6 @@ class wxToolBar;
 
 namespace xpcog::app {
 
-class LastFmAccount;
-class ListenBrainzAccount;
-
 class EqualizerPanel;
 class FileTree;
 class InfoPanel;
@@ -92,8 +77,6 @@ class SpectrumPanel;
 class OscilloscopePanel;
 class SpeedPanel;
 enum class PreferencesPane;
-
-using Dispatcher = std::function<void(std::function<void()>)>;
 
 class MainFrame : public wxFrame {
 public:
@@ -162,12 +145,10 @@ private:
     /// something that cannot happen is not worth interrupting anyone for.
     void askCrashReportingConsent();
 
-    /// A setting changed and something has to be told. Shared by the
-    /// preferences dialog and the equaliser panel, which both publish the same
-    /// keys -- and the equaliser's is the case that must not be forgotten,
-    /// since a band that does not reach the engine is a slider that does
-    /// nothing.
-    void onSettingChanged(const std::string& key);
+    /// A setting changed and the session has done its half -- the engine, the
+    /// playlist, the scrobblers. This is the widget half: the sliders, the
+    /// panes and the bars that show the setting and would otherwise be stale.
+    void onEffectApplied(Effect effect, const std::string& key);
 
     /// Switches between the full window and the mini player. A mode, as in
     /// Cog: one is shown and the other hidden, never both.
@@ -179,19 +160,6 @@ private:
     void applyWaveformSetting();
     [[nodiscard]] SeekBar::WaveformStyle waveformStyle() const;
 
-    /// Asks the provider for `id`'s shape, when the setting is on, and clears
-    /// both bars until it answers. The prefetch of what probably follows is
-    /// asked for when this one completes, not here.
-    void requestWaveform(TrackId id);
-
-    /// The provider's answer, on this thread. Ignored unless it is for the
-    /// track that is audible now -- a prefetch's result waits in the cache.
-    void onWaveformUpdated(const Url& url, const std::shared_ptr<const WaveformSummary>& summary);
-
-    /// The current entry's URL, if there is one. Comparing URLs rather than
-    /// ids because the provider speaks URLs and knows nothing of the playlist.
-    [[nodiscard]] std::optional<Url> currentTrackUrl() const;
-
     /// Which track the Info and Lyrics panes should be describing.
     ///
     /// One function because the two panes must never disagree -- they sit next
@@ -202,61 +170,17 @@ private:
     /// alternative exists and why there are two modes and not three.
     [[nodiscard]] TrackId panelTrackId() const;
 
+    /// Shows the session's track announcement through the tray icon's
+    /// notification, with the cover decoded to a wxIcon when there is one.
+    /// The text and the once-per-track rule are the session's.
+    void showNotification(const std::string& title, const std::string& body,
+                          const std::shared_ptr<const std::vector<std::byte>>& cover);
+
     /// Redraws the info panel. Cheap to call from anywhere, because it returns
     /// immediately while the panel is hidden -- which is most of the time, and
     /// matters because metadata arriving during a scan would otherwise redraw
     /// twenty fields per file.
     void refreshInfo();
-
-    /// Announces a track as it starts, if the listener wants announcing.
-    ///
-    /// Cog's, from PlaybackEventController -performPlaybackDidBeginActions:
-    /// (:148-200), including the shape of the text and the decision not to
-    /// suppress it while the window is in front -- Cog does not check, and a
-    /// player whose notification depends on where the focus is is a player whose
-    /// notifications look unreliable.
-    void notifyTrack(const PlaylistEntry* entry);
-
-    /// Points the equaliser at the preset matching `entry`'s genre, when
-    /// `GraphicEQtrackgenre` says to. Cog does this from -didBeginStream:, as
-    /// each track actually starts.
-    ///
-    /// Here rather than in the panel because it is the frame that learns a track
-    /// began, and rather than in core because choosing a preset for a genre is a
-    /// policy about the library the interface presents -- core knows how to match
-    /// a genre and stops there.
-    ///
-    /// Worth knowing before turning it on: an untagged track matches nothing and
-    /// Cog's fallback for matching nothing is Flat, so this rewrites the curve at
-    /// every track boundary rather than only when it has something to say.
-    void applyGenreEqualizer(const PlaylistEntry* entry);
-
-    /// Puts the last session back: selects the track that was current, and
-    /// starts it where it left off when resumePlaybackOnStartup says to.
-    /// Does nothing when the last session ended stopped.
-    void restorePlayback();
-
-    /// The track the last notification was about, so one track produces one.
-    /// kInvalidTrackId while nothing is playing, which is what lets the same
-    /// track announce itself again the next time it is started.
-    TrackId lastNotified_ = kInvalidTrackId;
-
-    /// What genre tracking last acted on, so one track produces one preset
-    /// change.
-    ///
-    /// The same guard notifications need, and for a sharper reason.
-    /// onCurrentTrackChanged is a redraw-everything handler that runs two or
-    /// three times per track by design, and each extra run here would rewrite 32
-    /// settings -- which is not merely wasteful: it would undo a slider the
-    /// listener moved between the decoder opening the track and the gapless seam
-    /// reaching the speaker.
-    ///
-    /// Paired with the genre rather than keyed on the track alone, because
-    /// metadata can arrive after playback starts. A track whose genre was empty
-    /// at the first call and filled in by the second should be matched again,
-    /// and the pair is what tells that apart from the same call arriving twice.
-    TrackId     lastGenreTrack_ = kInvalidTrackId;
-    std::string lastGenre_;
 
     /// Redraws the lyrics pane, on the same rule and with the same guard.
     ///
@@ -265,6 +189,10 @@ private:
     /// a single function would do the hidden one's work anyway. They are called
     /// from the same three places.
     void refreshLyrics();
+
+    /// Hands the Lyrics pane the session's lookup, or nothing, as
+    /// `enableLrclib` says.
+    void applyLyricsLookup();
 
     /// Shows or hides one of the dockable panes.
     void togglePane(wxWindow* pane, bool show);
@@ -294,28 +222,13 @@ private:
 
     void addUrls(const std::vector<Url>& urls, int atRow = -1);
 
-    /// Starts the next queued scan, if any and if none is running.
-    void pumpScanQueue();
-
-    /// Reads a Cog library and adds it to this playlist. The picker, the scan
-    /// and the summary; the reading and the conversion are core's.
-    void importFromCog();
-    void addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled);
-
     void onPositionChanged(double seconds, double duration);
 
-    /// Why the current track is being announced, which the two listening
-    /// thresholds need and nothing else does.
-    enum class ListenChange {
-        /// The seam reached the speaker. The same id arriving twice running is
-        /// the same entry looping -- repeat-one, or a playlist of one under
-        /// repeat-all -- rather than a second listen.
-        Announced,
-        /// The entry did not change but the song did: a stream renamed itself.
-        /// A new listen, on a row that was already current.
-        NewSong,
-    };
-    void onCurrentTrackChanged(TrackId id, ListenChange change = ListenChange::Announced);
+    /// The session's track changed: to `entry`, or to nothing. Everything
+    /// below the window -- the scrobble clock, the desktop's card, the
+    /// notification -- has been dealt with; this is the title bar, the status
+    /// field, the presence and the panes.
+    void onTrackChanged(TrackId id, const PlaylistEntry* entry, bool looping);
     void onPlaybackStateChanged(bool playing, bool paused);
 
     void removeSelected();
@@ -369,13 +282,6 @@ private:
     /// Re-reads the tags of the selected tracks, in place.
     void reloadSelectedInfo();
 
-    /// Merges a reload's results back onto the entries they came from.
-    ///
-    /// By URL, never by position: the scan drops what it cannot open and expands
-    /// a container into several, so the two sequences are different lengths --
-    /// the same rule the Cog import follows and for the same reason.
-    void applyReloadedEntries(std::vector<PlaylistEntry> entries);
-
     void resetPlayCountSelected();
     void removeRatingSelected();
 
@@ -401,9 +307,6 @@ private:
 
     [[nodiscard]] std::vector<TrackId> selectedTracks() const;
 
-    /// Tells the OS what is playing. Reads the artwork from the library, which
-    /// is why it lives here and not in PlaybackController.
-    void publishNowPlaying(TrackId id);
 
     /// Saves everything that has to outlive the session: window geometry, the
     /// splitter, the file tree's root, the playlist, and the settings store.
@@ -439,65 +342,31 @@ private:
     Settings&             settings_;
     Dispatcher            dispatch_;
 
-    Playlist                 playlist_;
-    PluginCache              cache_;
-    std::unique_ptr<Library> library_;
+    /// Everything that is not a window. Declared before every widget, so it
+    /// outlives all of them -- the panes read the view and the tap, the data
+    /// model reads the playlist -- and after the references above, which it
+    /// borrows.
+    Session session_;
 
-    /// The Lyrics pane's way of asking LRCLIB, and the library as its memory
-    /// of the answers. After library_ on purpose: members go in reverse, and
-    /// the lookup borrows the store, which borrows the library. Null in a
-    /// build with no HTTP client, and the pane is then handed nothing.
-    std::unique_ptr<IHttpClient>        lyricsHttp_;
-    std::unique_ptr<LibraryLyricsStore> lyricsStore_;
-    std::unique_ptr<LyricsLookup>       lyricsLookup_;
+    // The session's objects, by the names this file has always used them
+    // under. References, not copies: they are the session's.
+    Playlist&           playlist_;
+    PlaylistView&       view_;
+    UndoStack&          undo_;
+    AppCommands&        commands_;
+    PlaybackController* playback_;
 
-    PlaylistView             view_;
-    UndoStack                undo_;
-
-    /// The playlist edits, with the selection taken out of them. Declared after
-    /// what it refers to, so it is destroyed before any of it.
-    AppCommands              commands_;
-
-    std::unique_ptr<PlaybackController> playback_;
-
-    // --- scrobbling -----------------------------------------------------
-    // Owned here, beside the library and the playback controller, because it
-    // needs both: what was played comes from one and where to record it from the
-    // other. Cog puts the equivalent in a singleton reached from anywhere; this
-    // is the same objects with the ownership visible.
-
-    /// How much of the audible track has actually been heard. Drives two
-    /// thresholds, exactly as Cog's OutputNode does: the play count at sixty
-    /// seconds and the scrobble at half the track or four minutes.
-    PlayMonitor monitor_;
-
-    /// The play to submit when the threshold is crossed, captured when the track
-    /// became audible rather than read back at submission time -- by then the
-    /// entry may have been edited, or removed from the playlist entirely, and
-    /// the play still happened.
-    ScrobbleTrack pendingScrobble_;
-
-    std::unique_ptr<LastFmAccount> lastFm_;
-    std::unique_ptr<Scrobbler>     scrobbler_;
-
-    /// The same again for ListenBrainz: its own account, its own queue. One
-    /// play goes to both, and each service accepts or refuses it on its own.
-    std::unique_ptr<ListenBrainzAccount> listenBrainz_;
-    std::unique_ptr<Scrobbler>           listenBrainzScrobbler_;
-
-    /// Wires the monitor's two thresholds to the library and the scrobblers.
-    void wireScrobbling();
-
-    /// Builds the lookup behind the Lyrics pane, when this build can make an
-    /// HTTP request at all.
-    void wireLyrics();
-
-    /// Hands the Lyrics pane the lookup, or nothing, as `enableLrclib` says.
-    void applyLyricsLookup();
-
-    /// Starts the monitor for `id`, and announces it as now playing.
-    /// `looping` is the same entry coming round again; see PlayMonitor.
-    void beginScrobbleTrack(TrackId id, bool looping);
+    /// The heartbeat behind PlaybackController::positionChanged.
+    ///
+    /// The controller used to own a wxTimer; it does not any more, because it no
+    /// longer links a toolkit. What it kept is everything that made the timer
+    /// correct -- the 250 ms cadence and the two guards about when a position is
+    /// safe to read -- so this is only a clock, and it runs from construction to
+    /// destruction rather than being started and stopped with the transport.
+    ///
+    /// Declared after session_ so it is destroyed first: a timer that fired
+    /// into a half-destroyed controller would be reading freed memory.
+    wxTimer positionTicker_;
 
     /// The docking manager. Declared before the panes it manages so it is
     /// destroyed after them -- though UnInit() in the destructor is what
@@ -583,87 +452,9 @@ private:
     /// in step with toolbarLayout() -- which is what the old button list was.
     wxToolBar* toolBar_ = nullptr;
 
-    /// The OS's Now Playing entry and media keys. Never null -- platforms
-    /// without an implementation get a base-class instance that does nothing.
-    std::unique_ptr<platform::MediaIntegration> media_;
-    /// The position last pushed to the OS. It extrapolates from the rate, so
-    /// pushing every transport tick would be four rewrites a second for a
-    /// display that is already counting correctly on its own.
-    double mediaPosition_ = -1.0;
-
-    /// The taskbar button's overlay badge and progress bar. Never null; the base
-    /// class does nothing where the platform has no such surface.
-    std::unique_ptr<platform::TaskbarIntegration> taskbar_;
-
-    /// One scan at a time: the PluginCache the scans share is not synchronised.
-    /// Requests arriving while one runs wait their turn, which also keeps a burst
-    /// of drops landing in the order they were dropped.
-    struct ScanRequest {
-        std::vector<Url> inputs;
-        int              atRow = -1;
-
-        /// A reload rather than an addition: the results are merged onto the
-        /// entries that are already there instead of being inserted. Both go
-        /// through the same queue because they contend for the same PluginCache,
-        /// and a reload starting mid-scan is the race that queue exists to stop.
-        bool reload = false;
-
-        /// Applied to the scan's results just before they are inserted.
-        ///
-        /// Exists for the Cog import, which has to put back what the store knew
-        /// and the files do not -- ReplayGain, the queue, where the last session
-        /// had got to -- and then match play counts, all of which can only
-        /// happen once the scanner has read the tags. Empty for every other
-        /// scan, which wants the results exactly as they came.
-        std::function<void(std::vector<PlaylistEntry>&)> decorate;
-
-        /// Set when the scan was started over the API, so its progress can be
-        /// reported back through GET /jobs/{id}. Empty for a scan the window
-        /// started, which has the progress bar instead.
-        std::string jobId;
-    };
-    std::unique_ptr<ScanTask> scan_;
-
-    /// The seek bar's waveforms. Owned like the scan and for the same reason:
-    /// it borrows the registry, so the destructor lets it go first.
-    std::unique_ptr<WaveformProvider> waveforms_;
-    /// The job id of the scan now running, if it came from the API.
-    std::string               scanJobId_;
-    std::vector<ScanRequest>  pendingScans_;
-
-    /// What the last Cog import matched, filled by the scan's decorator and read
-    /// by addScannedEntries so the summary can say it. Held here rather than
-    /// captured, because the two run at different times on the same thread.
-    std::optional<CogPlayCountReport> cogImportSummary_;
-    std::size_t                       cogImportFileReferences_ = 0;
-
     /// The duration of the audible track, remembered so the clock can show the
     /// scrubbed time against it without asking the controller mid-drag.
     double duration_ = 0.0;
-
-    /// Which entry is audible, so a mid-stream tag change can tell whether it
-    /// affects the now-playing display or only a row.
-    TrackId currentTrack_ = kInvalidTrackId;
-
-    // --- the REST remote control ----------------------------------------
-    //
-    // Declared after playback_, commands_ and library_, and that is a contract
-    // rather than tidiness: members are destroyed in reverse, so the server --
-    // whose stop() joins its listener and releases every request waiting on this
-    // thread -- goes first, and nothing it holds a reference to is gone while a
-    // worker might still be inside handle().
-    RemoteJobs                                   remoteJobs_;
-    std::unique_ptr<AppPlayerControl>            remoteControl_;
-    std::unique_ptr<remote::RemoteServer>        remoteServer_;
-
-    /// Starts or stops the server to match the settings. Called at startup and
-    /// whenever one of the `remote*` keys changes, so a port change takes effect
-    /// without a relaunch.
-    void applyRemoteSettings();
-
-    /// Begins a scan on behalf of the API and answers the job id to follow.
-    [[nodiscard]] std::string startRemoteScan(std::vector<std::string> urls,
-                                              std::optional<std::size_t> at);
 
     /// Declared last; see the class comment. Members are destroyed in reverse
     /// order, so this goes first.

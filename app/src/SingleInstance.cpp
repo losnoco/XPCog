@@ -81,17 +81,9 @@ public:
     wxConnectionBase* OnMakeConnection() override { return new HandoverConnection; }
 };
 
-/// Where the two ends meet.
-///
-/// On Windows this is a DDE service name -- a plain string, no port and no
-/// socket. Everywhere else wx makes a Unix domain socket out of a path.
-[[nodiscard]] wxString endpointFor(const std::string& name) {
-#ifdef __WXMSW__
-    return toWx(name);
-#else
-    return toWx("/tmp/" + name + ".sock");
-#endif
-}
+/// Where the two ends meet: a DDE service name -- a plain string, no port and
+/// no socket.
+[[nodiscard]] wxString endpointFor(const std::string& name) { return toWx(name); }
 
 }  // namespace
 

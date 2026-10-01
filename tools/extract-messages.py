@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerates app/locale/xpcog.pot from the marked strings in app/src.
+"""Regenerates uicore/locale/xpcog.pot from the marked strings in uicore/src and app/src.
 
 What xgettext would do, and it is here for the reason cmake/CompileCatalog.cmake
 exists rather than a call to msgfmt: gettext is not a tool this project needs
@@ -12,6 +12,8 @@ much smaller imposition than asking for a gettext they do not.
     python tools/extract-messages.py
 
 It reads `_()`, `wxPLURAL()`, `wxTRANSLATE()` and this project's own `trUtf8()`,
+along with the toolkit-free markers that go with them -- `tr()`, `trn()`,
+`trf()` and `XPCOG_TRANSLATE()` from app/src/Translations.hpp,
 and nothing else. Adjacent string literals are joined, so a message wrapped
 across four lines comes out as one.
 
@@ -27,7 +29,7 @@ Escapes are decoded and the .pot carries raw UTF-8, which is what every other .p
 in the world does and what the catalogue compiler wants: it copies the msgid into
 a C++ string literal verbatim, and app/src is compiled with /utf-8.
 
-**It does not merge.** The output is a fresh template; app/locale/*.po are
+**It does not merge.** The output is a fresh template; uicore/locale/*.po are
 updated against it by hand or with msgmerge if you have one.
 
 It does, however, *report* what each catalogue is missing and what it still
@@ -44,14 +46,41 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, 'app', 'src')
-OUT = os.path.join(ROOT, 'app', 'locale', 'xpcog.pot')
+# Two roots now, and both are needed. uicore/src holds the command tables, the
+# playback controller's messages and the undo labels -- about a fifth of the
+# catalogue -- and app/src holds the windows. A run that forgot one would read as
+# a mass deletion in the template and look like a legitimate diff.
+SRC = [os.path.join(ROOT, 'uicore', 'src'), os.path.join(ROOT, 'app', 'src'),
+       os.path.join(ROOT, 'app-gtk', 'src'), os.path.join(ROOT, 'app-gtk', 'ui')]
+
+# The GTK frontend's interface files. Blueprint spells a translatable string
+# `_("...")` exactly as C does, with the same escapes, so the same scanner reads
+# them -- and GtkBuilder looks them up through gettext under the same domain
+# the compiled-in catalogue is written out as, so they belong in one template.
+# No wxString is anywhere near a .blp, so the ASCII-only rule does not apply.
+UI_EXTENSIONS = ('.blp',)
+OUT = os.path.join(ROOT, 'uicore', 'locale', 'xpcog.pot')
 
 STRING = re.compile(r'\s*"((?:[^"\\]|\\.)*)"')
-KEYWORD = re.compile(r'(?<![A-Za-z0-9_])(_|wxTRANSLATE|wxPLURAL|trUtf8)\(')
+# The lookbehind excludes `.` and `:` as well as word characters, which the wx
+# names did not need and `tr` does: without them this would also match `foo.tr(`
+# and `ns::tr(`. Nothing in the tree spells either today, and a marker that
+# silently harvests a method call is the kind of thing found much later, by a
+# translator asking what a string is.
+KEYWORD = re.compile(
+    r'(?<![A-Za-z0-9_.:])(_|wxTRANSLATE|wxPLURAL|trUtf8|tr|trn|trf|XPCOG_TRANSLATE)\(')
 
 # The two that convert their literal implicitly, and so may only carry ASCII.
+#
+# The toolkit-free markers are deliberately absent. That rule exists because
+# `wxString(const char*)` decodes through the current 8-bit locale on Windows,
+# and nothing in app/src/Translations.hpp goes near a wxString: a msgid is UTF-8
+# bytes in and UTF-8 bytes out. So `tr()` is what `_()` and `trUtf8()` both are,
+# there is no second spelling to get wrong, and requiring one would be cargo.
 ASCII_ONLY = ('_', 'wxPLURAL')
+
+# Markers whose second literal is a plural form rather than another argument.
+PLURAL_KEYWORDS = ('wxPLURAL', 'trUtf8', 'trn')
 
 SIMPLE = {'n': '\n', 't': '\t', 'r': '\r', '\\': '\\', '"': '"', "'": "'"}
 
@@ -91,7 +120,7 @@ HEADER = '''# XPCog, the wxWidgets port of Cog.
 # Copyright (C) 2026 the XPCog authors.
 # This file is distributed under the same licence as XPCog.
 #
-# Regenerated with tools/extract-messages.py; see app/locale/README.md.
+# Regenerated with tools/extract-messages.py; see uicore/locale/README.md.
 #
 msgid ""
 msgstr ""
@@ -179,12 +208,13 @@ def scan(path, complaints):
         plural = None
         # trUtf8's plural overload takes the same three arguments wxPLURAL does,
         # so a second literal after a comma is what distinguishes them.
-        if keyword in ('wxPLURAL', 'trUtf8') and i < len(text) and text[i] == ',':
+        if keyword in PLURAL_KEYWORDS and i < len(text) and text[i] == ',':
             plural, i = read_literal(text, i + 1)
-        if keyword == 'wxPLURAL' and plural is None:
-            raise SystemExit('%s:%d: wxPLURAL needs two literals' % (path, line))
+        if keyword in ('wxPLURAL', 'trn') and plural is None:
+            raise SystemExit('%s:%d: %s needs two literals' % (path, line, keyword))
 
-        if keyword in ASCII_ONLY and not (value + (plural or '')).isascii():
+        if (keyword in ASCII_ONLY and not path.endswith(UI_EXTENSIONS)
+                and not (value + (plural or '')).isascii()):
             complaints.append(
                 '%s:%d: %s() carries a non-ASCII message; use trUtf8()'
                 % (os.path.relpath(path, ROOT), line, keyword))
@@ -262,15 +292,21 @@ def main():
     entries = {}
     order = []
     complaints = []
-    for name in sorted(os.listdir(SRC)):
-        if not name.endswith(('.cpp', '.hpp')):
-            continue
-        for line, msgid, plural in scan(os.path.join(SRC, name), complaints):
-            key = (msgid, plural)
-            if key not in entries:
-                entries[key] = []
-                order.append(key)
-            entries[key].append('app/src/%s:%d' % (name, line))
+    for root in SRC:
+        for name in sorted(os.listdir(root)):
+            if not name.endswith(('.cpp', '.hpp') + UI_EXTENSIONS):
+                continue
+            path = os.path.join(root, name)
+            for line, msgid, plural in scan(path, complaints):
+                key = (msgid, plural)
+                if key not in entries:
+                    entries[key] = []
+                    order.append(key)
+                # The real relative path, not a hard-coded 'app/src'. A
+                # reference claiming a uicore file lives under app/ sends a
+                # translator to a file that is not there.
+                entries[key].append(
+                    '%s:%d' % (os.path.relpath(path, ROOT).replace(os.sep, '/'), line))
 
     # Before writing anything: a template regenerated from sources carrying this
     # fault would bake the mangling into every .po that was updated against it.

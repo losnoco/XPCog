@@ -3,6 +3,7 @@
 #include "AboutDialog.hpp"
 #include "AppIcon.hpp"
 #include "Commands.hpp"
+#include "WxMenus.hpp"
 #include "EqualizerPanel.hpp"
 #include "FileTree.hpp"
 #include "InfoPanel.hpp"
@@ -87,44 +88,6 @@ enum : int {
     kFilterId,
     kScanCancelId,
 };
-
-/// The wall clock, in the units the library stores dates in.
-[[nodiscard]] std::int64_t unixNow() {
-    return std::chrono::duration_cast<std::chrono::seconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
-
-/// What the status line says while a scan is running.
-///
-/// The two passes have two different things worth saying. While the scan is
-/// still finding files there is no total to count against, and the names go past
-/// far faster than the eye follows, so the folder they are in is what says how
-/// far through a library the walk has got. Once it is reading tags the file
-/// itself is the slow thing -- a decoder stuck on one track is the case this is
-/// most worth having -- and the count is real.
-[[nodiscard]] wxString scanActivityText(const ScanTask::Activity& activity) {
-    const std::string name = activity.url.fileName();
-
-    if (activity.phase == Scanner::Phase::Finding) {
-        std::string where = name;
-        if (const auto path = activity.url.localPath();
-            path && path->has_parent_path()) {
-            where = pathToUtf8(path->parent_path().filename());
-        }
-        if (where.empty()) {
-            return trUtf8("Looking for files\xE2\x80\xA6");
-        }
-        return wxString::Format(trUtf8("Looking for files in %s\xE2\x80\xA6"),
-                                toWx(where));
-    }
-
-    if (activity.total > 0) {
-        return wxString::Format(trUtf8("Reading %s \xE2\x80\x94 %d of %d"), toWx(name),
-                                activity.done, activity.total);
-    }
-    return wxString::Format(_("Reading %s"), toWx(name));
-}
 
 /// Files dropped from the file manager onto the window.
 class PlaylistDropTarget : public wxFileDropTarget {
@@ -212,70 +175,47 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
       registry_(registry),
       settings_(settings),
       dispatch_(std::move(dispatch)),
-      view_(playlist_),
-      commands_(playlist_, undo_, nullptr) {
+      session_(registry_, settings_, dispatch_),
+      playlist_(session_.playlist()),
+      view_(session_.view()),
+      undo_(session_.undo()),
+      commands_(session_.commands()),
+      playback_(&session_.playback()) {
     SetIcons(applicationIcons());
 
-    playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
-    playlist_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
-    playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
-
-    library_ = std::make_unique<Library>();
-    if (!library_->open(platform::libraryDatabasePath())) {
-        // A library that will not open is not fatal: the player still plays, it
-        // just will not remember the playlist. Saying so once beats failing to
-        // launch.
-        setStatusText(wxString::Format(_("Library unavailable: %s"),
-                                       toWx(library_->lastError())));
-        // And reported, when there is consent to report it. This is the shape
-        // Cog's captureMessage calls have -- a thing that should have worked and
-        // did not, on a path that then carries on regardless, which is exactly
-        // the kind nobody files a bug about because nothing appears to be wrong.
-        platform::reportProblem("Library would not open: " + library_->lastError());
-        library_.reset();
-    }
-    commands_.setLibrary(library_.get());
-
-    playback_ =
-        std::make_unique<PlaybackController>(registry_, playlist_, settings_, dispatch_);
-
-    wireScrobbling();
-    wireLyrics();
+    // See MainFrame.hpp: the cadence and the guards live in tick(), so this is
+    // only a clock. Bound to this frame, which is the event handler a wxTimer
+    // needs and the reason the controller had to own a bare wxEvtHandler before.
+    positionTicker_.SetOwner(this);
+    Bind(wxEVT_TIMER, [this](wxTimerEvent&) { session_.tick(); }, positionTicker_.GetId());
+    positionTicker_.Start(PlaybackController::kTickIntervalMs);
 
     SetMenuBar(buildMenuBar());
     buildUi();
 
-    // Both of these want the native window handle, and neither can be built
-    // before there is one. Under wx the frame's handle exists as soon as it does,
-    // which is why the media integration no longer has to go looking for a window
-    // and retry until it finds one.
-    void* const handle = GetHandle();
-    media_             = platform::MediaIntegration::create(dispatch_, handle);
-    taskbar_           = platform::TaskbarIntegration::create(handle);
+    // The desktop wants the native window handle, and there is none before
+    // buildUi(). Under wx the frame's handle exists as soon as it does, which is
+    // why the media integration no longer has to go looking for a window and
+    // retry until it finds one.
+    session_.attachDesktop(GetHandle());
 
     presence_ = std::make_unique<StatusPresence>(this, dispatch_);
 
-    waveforms_ = std::make_unique<WaveformProvider>(
-        registry_, WaveformCache{pathFromUtf8(platform::cacheDirectory()) / "waveforms"},
-        dispatch_);
     seekBar_->setWaveformStyle(waveformStyle());
     seekBar_->setWaveformMode(settings_.WaveformSeekBar());
 
     wireUp();
     restoreState();
 
-    if (library_ && library_->loadPlaylist(playlist_)) {
-        setStatusText(statusSummary());
-        restorePlayback();
+    // Anything the session said before there was a status bar to say it on --
+    // a library that would not open.
+    if (!session_.lastStatus().empty()) {
+        setStatusText(toWx(session_.lastStatus()));
     }
-    // Restoring the saved playlist is not an edit the user made, so it must not
-    // be the first thing Undo offers to take back.
-    undo_.clear();
 
-    // Last, and after the playlist is loaded: a client that connects the instant
-    // the port opens should find the player it is about to be told about, not an
-    // empty one.
-    applyRemoteSettings();
+    // The playlist, the resumed track and the remote server, in that order,
+    // now that everything above is listening.
+    session_.start();
 
     // The mini player, if that is where the listener left off. Cog restores it at
     // launch from the same key (AppController.m:314).
@@ -301,14 +241,6 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
 }
 
 MainFrame::~MainFrame() {
-    // The scan borrows the registry and the PluginCache, and the cache is a
-    // member of this window, so the task has to go first -- otherwise its thread
-    // outlives what it is reading from. ~ScanTask cancels and joins, so nothing
-    // is still posting to the interface after this returns.
-    scan_.reset();
-    // The same for the waveform worker, which borrows the registry too.
-    waveforms_.reset();
-
     // The tray icon is not a child window and so is not covered by the sweep
     // below. Removing it here rather than only on the quit path means it cannot
     // outlive the window it raises.
@@ -337,7 +269,7 @@ MainFrame::~MainFrame() {
     // object during teardown.
     //
     // DestroyChildren() moves the whole sweep to a point where playback_, view_
-    // and library_ are all still valid. The pointers left behind are cleared
+    // and the session are all still valid. The pointers left behind are cleared
     // because nothing should be tempted to follow them afterwards.
     DestroyChildren();
 
@@ -444,7 +376,7 @@ void MainFrame::buildUi() {
     // The optional panes, in the places the Qt build docked them: the wide, short
     // ones along the bottom and the tall column of fields at the right.
     equalizer_ = new EqualizerPanel(dockHost_, settings_);
-    info_      = new InfoPanel(dockHost_, library_.get());
+    info_      = new InfoPanel(dockHost_, session_.library());
     lyrics_    = new LyricsPanel(dockHost_, [this] { return playback_->position(); });
     applyLyricsLookup();
     // Both visualisers read their settings themselves, and write the few
@@ -630,7 +562,7 @@ void MainFrame::buildToolBar() {
         // The label is passed even though nothing draws it -- these are icon-only
         // tools -- because it is what a screen reader announces, and on macOS it
         // is also the name the native toolbar's overflow menu shows.
-        toolBar_->AddTool(item.id, commandLabel(item.id), lucideIcon(glyph),
+        toolBar_->AddTool(item.id, toWx(commandLabel(item.id)), lucideIcon(glyph),
                           lucideIconDisabled(glyph), toWxItemKind(item.kind),
                           commandTooltip(item.id));
     }
@@ -697,78 +629,73 @@ void MainFrame::wireUp() {
         subscriptions_.push_back(signal.connect(std::move(handler)));
     };
 
-    // --- playback -------------------------------------------------------
-    observe(playback_->positionChanged,
-            [this](double seconds, double duration) { onPositionChanged(seconds, duration); });
-    observe(playback_->currentTrackChanged, [this](TrackId id) { onCurrentTrackChanged(id); });
-    observe(playback_->playbackStateChanged,
-            [this](bool playing, bool paused) { onPlaybackStateChanged(playing, paused); });
-    observe(playback_->startPending, [this](TrackId id) {
-        const PlaylistEntry* entry = playlist_.find(id);
-        setStatusText(entry != nullptr
-                          ? wxString::Format(_("Connecting to %s..."),
-                                             toWx(entry->title()))
-                          : wxString(_("Connecting...")));
-    });
-    observe(playback_->playbackFailed,
-            [this](TrackId, const std::string& reason) {
-                // Already translated: PlaybackController is app-layer and
-                // publishes the sentence it wants shown, not a code.
-                setStatusText(toWx(reason));
-            });
-    // Same treatment, and for the same reason. What differs is what it is about:
-    // the search for a playable track rather than any one row of the playlist.
-    observe(playback_->statusNote,
-            [this](const std::string& note) { setStatusText(toWx(note)); });
-    observe(playback_->trackMetadataChanged, [this](TrackId id) {
-        // A stream renamed itself. The row redraws from the view's own
-        // notification; what has to happen here is the title bar, the status
-        // line and the OS's card, all of which read the entry rather than the
-        // change.
-        if (id == currentTrack_) {
-            onCurrentTrackChanged(id, ListenChange::NewSong);
-        }
-    });
-
-    // --- the media keys and the OS's now-playing widget ------------------
+    // --- the session -------------------------------------------------------
     //
-    // They drive the same commands the buttons do, rather than reaching into the
-    // engine separately.
-    observe(media_->playPauseRequested, [this] { playback_->playPause(); });
-    observe(media_->playRequested, [this] {
-        if (!playback_->playing() || playback_->paused()) {
-            playback_->playPause();
+    // Everything below the window reports through here. Each is published once
+    // the session has done its own part, so the handlers may read its state.
+    observe(session_.status, [this](const std::string& text) { setStatusText(toWx(text)); });
+    observe(session_.positionChanged,
+            [this](double seconds, double duration) { onPositionChanged(seconds, duration); });
+    observe(session_.trackChanged,
+            [this](TrackId id, const PlaylistEntry* entry, bool looping) {
+                onTrackChanged(id, entry, looping);
+            });
+    observe(session_.playbackStateChanged,
+            [this](bool playing, bool paused) { onPlaybackStateChanged(playing, paused); });
+    observe(session_.effectApplied,
+            [this](Effect effect, const std::string& key) { onEffectApplied(effect, key); });
+    observe(session_.revealRequested, [this](TrackId id) { revealTrack(id); });
+    observe(session_.announceTrack,
+            [this](const std::string& title, const std::string& body,
+                   const std::shared_ptr<const std::vector<std::byte>>& cover) {
+                showNotification(title, body, cover);
+            });
+    observe(session_.tracksUpdated, [this] {
+        refreshInfo();
+        refreshLyrics();
+    });
+    observe(session_.waveformUpdated,
+            [this](const std::shared_ptr<const WaveformSummary>& summary) {
+                seekBar_->setWaveform(summary);
+                if (mini_ != nullptr) {
+                    mini_->setWaveform(summary);
+                }
+            });
+
+    // The scan's progress bar and its cancel button. A range of zero is a busy
+    // indicator, which is the truthful display while the expansion pass is
+    // still counting.
+    observe(session_.scanStarted, [this] {
+        scanBar_->SetRange(0);
+        scanBar_->Show();
+        scanCancel_->Show();
+    });
+    observe(session_.scanProgress, [this](int done, int total) {
+        if (total > 0) {
+            scanBar_->SetRange(total);
+            scanBar_->SetValue(done);
+        } else {
+            scanBar_->Pulse();
         }
     });
-    observe(media_->pauseRequested, [this] {
-        if (playback_->playing() && !playback_->paused()) {
-            playback_->playPause();
-        }
+    observe(session_.scanFinished, [this] {
+        scanBar_->Hide();
+        scanCancel_->Hide();
     });
-    observe(media_->stopRequested, [this] { playback_->stop(); });
-    observe(media_->nextRequested, [this] { playback_->next(); });
-    observe(media_->previousRequested, [this] { playback_->previous(); });
-    observe(media_->seekRequested, [this](double seconds) { playback_->seek(seconds); });
 
     // MPRIS only, on Linux. The other two platforms never publish these, so there
     // is nothing to guard: a signal that is never sent costs a connection.
-    observe(media_->raiseRequested, [this] {
+    observe(session_.raiseRequested, [this] {
         Iconize(false);
         Show();
         Raise();
     });
-    observe(media_->quitRequested, [this] { Close(true); });
-    observe(media_->volumeRequested, [this](float gain) {
-        // Through the slider rather than straight to the engine, so the panel and
-        // the window cannot end up showing different volumes.
-        volume_->SetValue(static_cast<int>(std::lround(gain * 100.0F)));
-        // Widened explicitly. MPRIS carries a float and setVolume() takes a
-        // double, so the conversion happens either way; saying so is what keeps
-        // -Wdouble-promotion quiet, and the tree warning-free is a property that
-        // is only worth anything while it is actually true.
-        playback_->setVolume(static_cast<double>(gain));
+    observe(session_.quitRequested, [this] { Close(true); });
+    // The desktop's volume control, or the raw row in Advanced: the slider
+    // follows, so the panel and the window cannot show different volumes.
+    observe(session_.volumeChanged, [this](double gain) {
+        volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
     });
-    observe(media_->openUrlRequested, [this](const Url& url) { openUrls({url}); });
 
     // --- the file browser ------------------------------------------------
     observe(tree_->activated, [this](const std::vector<Url>& urls) { addUrls(urls); });
@@ -779,10 +706,6 @@ void MainFrame::wireUp() {
     observe(seekBar_->scrubbed, [this](double seconds) {
         clock_->SetLabelText(toWx(formatClock(seconds) + " / " + formatClock(duration_)));
     });
-    observe(waveforms_->updated(),
-            [this](const Url& url, const std::shared_ptr<const WaveformSummary>& summary) {
-                onWaveformUpdated(url, summary);
-            });
 
     // --- the spectrum ----------------------------------------------------
     //
@@ -804,14 +727,15 @@ void MainFrame::wireUp() {
     // The visualisers' context menus write settings; the change takes the
     // same road a Preferences change does, and ends back in the panel.
     observe(spectrum_->settingChanged,
-            [this](const std::string& key) { onSettingChanged(key); });
-    observe(scope_->settingChanged, [this](const std::string& key) { onSettingChanged(key); });
+            [this](const std::string& key) { session_.settingChanged(key); });
+    observe(scope_->settingChanged,
+            [this](const std::string& key) { session_.settingChanged(key); });
     observe(speedPanel_->settingChanged,
-            [this](const std::string& key) { onSettingChanged(key); });
+            [this](const std::string& key) { session_.settingChanged(key); });
     observe(speedPanel_->settingsRequested,
             [this] { showPreferences(PreferencesPane::PitchTempo); });
     observe(equalizer_->settingChanged,
-            [this](const std::string& key) { onSettingChanged(key); });
+            [this](const std::string& key) { session_.settingChanged(key); });
 
     // --- the playlist selection ------------------------------------------
     //
@@ -825,11 +749,9 @@ void MainFrame::wireUp() {
         refreshLyrics();
     });
 
-    // --- the undo stack --------------------------------------------------
-    //
-    // Only the status line: the menu labels come from EVT_UPDATE_UI, which asks
-    // the stack directly every idle and therefore cannot fall behind it.
-    observe(undo_.changed, [this] { setStatusText(statusSummary()); });
+    // The undo stack needs no observer here: the menu labels come from
+    // EVT_UPDATE_UI, which asks the stack directly every idle, and the status
+    // line's summary is the session's.
 
     list_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED, [this](wxDataViewEvent& event) {
         activateRow(model_->GetRow(event.GetItem()));
@@ -908,23 +830,10 @@ void MainFrame::wireUp() {
     });
 
     volume_->Bind(wxEVT_SLIDER, [this](wxCommandEvent& event) {
-        const double gain = event.GetInt() / 100.0;
-        playback_->setVolume(gain);
-        // MPRIS publishes the volume as a property a desktop environment both
-        // reads and writes, so the value has to be pushed or the panel's slider
-        // sits wherever it last put it while the audio does something else.
-        media_->setVolume(static_cast<float>(gain));
+        session_.setVolume(event.GetInt() / 100.0);
     });
 
-    Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-        // Everything not yet started goes too: cancelling one folder of a dropped
-        // batch and then watching the next one start is not what the button looks
-        // like it does.
-        pendingScans_.clear();
-        if (scan_) {
-            scan_->cancel();
-        }
-    }, kScanCancelId);
+    Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { session_.cancelScans(); }, kScanCancelId);
 
     // The system appearance changed. Every Lucide glyph is stroked in a colour
     // read at the moment it was built, so without this a switch to dark mode
@@ -1014,31 +923,23 @@ void MainFrame::wireUp() {
     bindUpdateUi();
 }
 
-void MainFrame::onSettingChanged(const std::string& key) {
+void MainFrame::onEffectApplied(Effect effect, const std::string& key) {
     // What to do about a key is decided in SettingEffect.cpp rather than here,
-    // because this is no longer the only writer: the REST remote control writes
-    // settings too, and a chain of ifs inside a window is not reachable from a
-    // socket. It is also the only way to test the question -- xpcog-app-tests
-    // walks Settings::all() and insists every key has a deliberate answer, which
-    // is what stops the next setting from being added inert.
-    switch (effectOf(key).effect) {
-        case Effect::ReloadDsp:
-            playback_->reloadDsp();
-            break;
-
+    // and the session has already done the half that reaches the engine, the
+    // playlist and the services. What is left is what only a window can do.
+    (void)key;
+    switch (effect) {
         case Effect::EqualizerCurve:
             // A curve that arrived from somewhere other than these sliders --
-            // the remote control picking a preset. The engine has to re-read it
-            // and the sliders have to show it, or the window disagrees with what
-            // is coming out of the speakers.
-            playback_->reloadDsp();
+            // the remote control picking a preset, or genre tracking. The
+            // sliders have to show it, or the window disagrees with what is
+            // coming out of the speakers.
             if (equalizer_ != nullptr) {
                 equalizer_->refresh();
             }
             break;
 
         case Effect::RefreshSpeed:
-            playback_->reloadDsp();
             // Either control may have moved these -- the popup on the strip or
             // the preferences pane -- and the other one is showing a stale
             // number until it is told. The engine choice matters too: it is what
@@ -1049,34 +950,7 @@ void MainFrame::onSettingChanged(const std::string& key) {
             }
             break;
 
-        case Effect::GenreEqualizer:
-            // Turning genre tracking on applies the playing track's genre at
-            // once. Cog's -toggleTracking: does the same, and the reason is that
-            // the alternative -- waiting for the next track -- makes the checkbox
-            // look like it did nothing. Turning it *off* deliberately leaves the
-            // curve where it is: the last preset it chose is as good a starting
-            // point as any, and silently flipping back to some remembered curve
-            // would be a second surprise.
-            if (settings_.GraphicEqTrackGenre()) {
-                // Past the memo deliberately: the playing track has almost
-                // certainly been matched already, and the whole point of the
-                // toggle is to act on it now.
-                lastGenreTrack_ = kInvalidTrackId;
-                lastGenre_.clear();
-                applyGenreEqualizer(playlist_.find(currentTrack_));
-            }
-            break;
-
-        case Effect::ReopenOutput:
-            // The device is read when the engine opens it, which is when a track
-            // starts. Moving what is already playing is what reopenOutput() is
-            // for.
-            playback_->reopenOutput();
-            break;
-
         case Effect::WaveformSeekBar:
-            // The View menu's path calls this itself; this is the Advanced row
-            // and a remote write, which have to reach the bars as well.
             applyWaveformSetting();
             break;
 
@@ -1104,78 +978,26 @@ void MainFrame::onSettingChanged(const std::string& key) {
             refreshLyrics();
             break;
 
-        case Effect::PlaylistMode:
-            // The playlist's own three, which it holds as state rather than
-            // reading when it needs them. The constructor seeds all three and,
-            // until this branch existed, nothing ever seeded them again -- so
-            // "Stop after every track" in Preferences did nothing at all until
-            // the next launch, and silently: the box stays ticked, the setting is
-            // stored, and playback simply carries on to the next track.
-            //
-            // Repeat and Shuffle escaped notice because the Order menu sets them
-            // on the playlist directly as well as storing them. Their rows in
-            // Advanced had exactly the same defect.
-            playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
-            playlist_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
-            playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
-            break;
-
-        case Effect::Volume: {
-            // The same shape once more, with a slider instead of a menu in front
-            // of it. Volume is seeded into the engine by PlaybackController's
-            // constructor and into the slider by buildUi(), and both keep it from
-            // then on -- so the row in Advanced moved a number nothing read
-            // again. The slider has to be moved too, or the interface disagrees
-            // with what is coming out of the speakers.
-            const double gain = settings_.Volume();
-            volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
-            playback_->setVolume(gain);
-            media_->setVolume(static_cast<float>(gain));
-            break;
-        }
-
-        case Effect::Scrobbler:
-            if (scrobbler_) {
-                scrobbler_->setEnabled(settings_.EnableScrobbling());
-            }
-            if (listenBrainzScrobbler_) {
-                listenBrainz_->setApiRoot(settings_.ListenBrainzUrl());
-                listenBrainzScrobbler_->setEnabled(settings_.EnableListenBrainz());
-            }
-            break;
-
         case Effect::OnlineLyrics:
-            // The root first, so a redraw that asks asks the server now named;
-            // then the switch; then the redraw, which is what turns a pane
-            // saying "no lyrics" into one that goes and looks.
-            if (lyricsLookup_) {
-                lyricsLookup_->setApiRoot(settings_.LrclibUrl());
-            }
+            // The session re-pointed the lookup; the switch and the redraw are
+            // this pane's, which is what turns a pane saying "no lyrics" into
+            // one that goes and looks.
             applyLyricsLookup();
             refreshLyrics();
             break;
 
+        case Effect::ReloadDsp:
+        case Effect::GenreEqualizer:
+        case Effect::ReopenOutput:
+        case Effect::PlaylistMode:
+        case Effect::Volume:
+        case Effect::Scrobbler:
         case Effect::CrashReporter:
-            // Immediately, in both directions, which is the half of Cog's
-            // arrangement that is easy to leave out: its observer on
-            // `sentryConsented` calls `[SentrySDK close]` the moment the box is
-            // unticked (AppController.m:417-420), rather than waiting for a
-            // relaunch. Anything else means unticking the box and still being
-            // reported on for the rest of the session.
-            if (settings_.SentryConsented()) {
-                platform::startCrashReporting();
-            } else {
-                platform::stopCrashReporting();
-            }
-            settings_.sync();
-            break;
-
         case Effect::RestartRemote:
-            applyRemoteSettings();
-            break;
-
         case Effect::None:
         case Effect::Internal:
+            // Nothing a window shows changes. Volume's slider follows
+            // Session::volumeChanged rather than this.
             break;
     }
 }
@@ -1264,14 +1086,14 @@ TrackId MainFrame::panelTrackId() const {
     // and that is the honest answer rather than quietly reverting to the other
     // mode the moment it would have something to show.
     if (settings_.PanelFollowMode() == 1) {
-        return currentTrack_;
+        return session_.currentTrack();
     }
 
     // Cog's rule, from both of its controllers (InfoWindowController and
     // LyricsWindowController.m:33-43, which observe the selection and the
     // current entry and prefer the selection exactly like this).
     const std::vector<TrackId> selection = selectedTracks();
-    return selection.empty() ? currentTrack_ : selection.front();
+    return selection.empty() ? session_.currentTrack() : selection.front();
 }
 
 void MainFrame::refreshInfo() {
@@ -1292,156 +1114,29 @@ void MainFrame::refreshLyrics() {
     // other the position is some other song's.
     const TrackId id = panelTrackId();
     lyrics_->setTimed(settings_.LyricsSynced());
-    lyrics_->showEntry(playlist_.find(id), id != kInvalidTrackId && id == currentTrack_);
+    lyrics_->showEntry(playlist_.find(id), id != kInvalidTrackId && id == session_.currentTrack());
 }
 
-void MainFrame::restorePlayback() {
-    // Cog's shape (AppController.m:266-292): if the last session was not stopped,
-    // find the entry the library marked current and *select* it -- always -- and
-    // start it only if the listener asked for that. Selecting either way is the
-    // part worth copying: coming back to a playlist with the last thing you were
-    // listening to highlighted is useful even to someone who does not want it
-    // playing the moment the window opens.
-    const int last = settings_.LastPlaybackStatus();
-    if (last == 0) {
-        return;
-    }
-
-    const auto current = playlist_.current();
-    if (!current) {
-        return;
-    }
-
-    revealTrack(*current);
-
-    if (!settings_.ResumePlaybackOnStartup()) {
-        return;
-    }
-
-    double position = 0.0;
-    try {
-        const std::string stored = settings_.rawValue("xpcog.playback.position");
-        position = stored.empty() ? 0.0 : std::stod(stored);
-    } catch (const std::exception&) {
-        // A value that will not parse is a position we do not have, not a reason
-        // to refuse to play. The top of the track is the honest fallback.
-        position = 0.0;
-    }
-
-    // Queued, for the reason the mini player's restore is: this runs from the
-    // constructor, and starting playback before the window exists means the first
-    // track change redraws widgets that are still being built.
-    const TrackId id = *current;
-    CallAfter([this, id, position, last] {
-        playback_->resumeTrack(id, position, last == 2);
-    });
-}
-
-void MainFrame::applyGenreEqualizer(const PlaylistEntry* entry) {
-    if (!settings_.GraphicEqTrackGenre()) {
-        return;
-    }
-
-    if (entry == nullptr) {
-        // Stopped, or the track failed. Forgetting what was matched is what lets
-        // the same track be matched again when it is played again.
-        lastGenreTrack_ = kInvalidTrackId;
-        lastGenre_.clear();
-        return;
-    }
-
-    // Once per track and genre, not once per call -- see the members for why
-    // this handler runs more than once for one track, and what an unguarded
-    // second run would cost.
-    if (entry->id == lastGenreTrack_ && entry->genre == lastGenre_) {
-        return;
-    }
-    lastGenreTrack_ = entry->id;
-    lastGenre_      = entry->genre;
-
-    const EqualizerPresetLibrary& library = shippedEqualizerPresets();
-    const int                     index   = library.matchGenre(entry->genre);
-    const EqualizerPreset*        preset  = library.at(index);
-    if (preset == nullptr) {
-        // No library shipped, so there is no preset to choose. Leaving the curve
-        // alone is the only sensible answer: the setting asked for a genre's
-        // preset, not for the equaliser to be reset.
-        return;
-    }
-
-    settings_.setGraphicEqPreset(index);
-    applyEqualizerPreset(settings_, *preset);
-    if (equalizer_ != nullptr) {
-        equalizer_->refresh();
-    }
-    playback_->reloadDsp();
-}
-
-void MainFrame::notifyTrack(const PlaylistEntry* entry) {
-    if (entry == nullptr) {
-        // Stopped, or the track failed. Forgetting what was announced is what
-        // lets the same track announce itself again when it is played again.
-        lastNotified_ = kInvalidTrackId;
-        return;
-    }
-    if (entry->error || !settings_.NotificationsEnable()) {
-        return;
-    }
-
-    // Once per track, not once per call, and the difference is not defensive.
-    // onCurrentTrackChanged is a redraw-everything handler and is *meant* to run
-    // more than once for one track: PlaybackController publishes when the decoder
-    // opens the track (PlaybackController.cpp:213) and again when the gapless
-    // seam reaches the speaker (:392), and trackMetadataChanged calls it a third
-    // time whenever a stream renames itself. Redrawing a title bar twice costs
-    // nothing. Announcing a track twice is two notifications.
-    if (entry->id == lastNotified_) {
-        return;
-    }
-    lastNotified_ = entry->id;
-
-    // Cog's text, from PlaybackEventController.m:172-186. "Now Playing" is the
-    // title; the body is the track title, then artist and album on the line
-    // below, joined only where both exist so that a file with neither does not
-    // announce itself with a dangling dash.
-    std::string subtitle;
-    if (!entry->artist.empty() && !entry->album.empty()) {
-        subtitle = entry->artist.str() + " - " + entry->album.str();
-    } else if (!entry->artist.empty()) {
-        subtitle = entry->artist;
-    } else {
-        subtitle = entry->album;
-    }
-
-    std::string body = entry->title();
-    if (!subtitle.empty()) {
-        body += "\n" + subtitle;
-    }
-
-    // The cover, decoded from the library the same way the info panel decodes it.
-    // Cog writes the art to a temp file because UNNotificationAttachment takes a
-    // URL (PlaybackEventController.m:190-200); wx takes a wxIcon, so nothing
+void MainFrame::showNotification(const std::string& title, const std::string& body,
+                                 const std::shared_ptr<const std::vector<std::byte>>& cover) {
+    // The cover, decoded the same way the info panel decodes it. Cog writes the
+    // art to a temp file because UNNotificationAttachment takes a URL
+    // (PlaybackEventController.m:190-200); wx takes a wxIcon, so nothing
     // touches the disk here.
-    wxIcon cover;
-    if (settings_.NotificationsShowAlbumArt() && library_ && !entry->artHash.empty()) {
-        // Shared rather than copied: the same cover is wanted by the info
-        // panel and the now-playing display, and it is only being read from.
-        const auto bytes = library_->sharedArtwork(entry->artHash);
-        if (bytes && !bytes->empty()) {
-            wxMemoryInputStream stream(bytes->data(), bytes->size());
-            wxImage             image;
-            if (image.LoadFile(stream, wxBITMAP_TYPE_ANY) && image.IsOk()) {
-                // Scaled down first. A balloon draws this at icon size, and
-                // handing it a 1500-pixel scan means the platform rescales a
-                // megabyte of cover art on the interface thread once a track.
-                const int side = FromDIP(48);
-                image.Rescale(side, side, wxIMAGE_QUALITY_HIGH);
-                cover.CopyFromBitmap(wxBitmap(image));
-            }
+    wxIcon icon;
+    if (cover && !cover->empty()) {
+        wxMemoryInputStream stream(cover->data(), cover->size());
+        wxImage             image;
+        if (image.LoadFile(stream, wxBITMAP_TYPE_ANY) && image.IsOk()) {
+            // Scaled down first. A balloon draws this at icon size, and handing
+            // it a 1500-pixel scan means the platform rescales a megabyte of
+            // cover art on the interface thread once a track.
+            const int side = FromDIP(48);
+            image.Rescale(side, side, wxIMAGE_QUALITY_HIGH);
+            icon.CopyFromBitmap(wxBitmap(image));
         }
     }
-
-    presence_->notify(toUtf8(_("Now Playing")), body, cover);
+    presence_->notify(title, body, icon);
 }
 
 void MainFrame::setMiniMode(bool mini) {
@@ -1468,9 +1163,9 @@ void MainFrame::setMiniMode(bool mini) {
         mini_->setWaveformMode(settings_.WaveformSeekBar());
         mini_->setWaveform(seekBar_->waveform());
         mini_->setNowPlaying(
-            playlist_.find(currentTrack_) != nullptr ? playlist_.find(currentTrack_)->title()
+            playlist_.find(session_.currentTrack()) != nullptr ? playlist_.find(session_.currentTrack())->title()
                                                      : std::string{},
-            playlist_.find(currentTrack_) != nullptr ? playlist_.find(currentTrack_)->artist
+            playlist_.find(session_.currentTrack()) != nullptr ? playlist_.find(session_.currentTrack())->artist
                                                      : std::string{});
         mini_->Show();
         mini_->Raise();
@@ -1501,61 +1196,8 @@ void MainFrame::applyWaveformSetting() {
         mini_->setWaveformStyle(waveformStyle());
         mini_->setWaveformMode(on);
     }
-
-    if (on) {
-        requestWaveform(currentTrack_);
-    } else {
-        waveforms_->cancel();
-        seekBar_->setWaveform(nullptr);
-        if (mini_ != nullptr) {
-            mini_->setWaveform(nullptr);
-        }
-    }
-}
-
-void MainFrame::requestWaveform(TrackId id) {
-    seekBar_->setWaveform(nullptr);
-    if (mini_ != nullptr) {
-        mini_->setWaveform(nullptr);
-    }
-
-    const PlaylistEntry* entry = playlist_.find(id);
-    if (!settings_.WaveformSeekBar() || entry == nullptr) {
-        waveforms_->cancel();
-        return;
-    }
-    waveforms_->request(entry->url);
-}
-
-std::optional<Url> MainFrame::currentTrackUrl() const {
-    const PlaylistEntry* entry = playlist_.find(currentTrack_);
-    return entry != nullptr ? std::optional{entry->url} : std::nullopt;
-}
-
-void MainFrame::onWaveformUpdated(const Url& url,
-                                  const std::shared_ptr<const WaveformSummary>& summary) {
-    const std::optional<Url> current = currentTrackUrl();
-    if (!current || current->toString() != url.toString()) {
-        return;
-    }
-
-    seekBar_->setWaveform(summary);
-    if (mini_ != nullptr) {
-        mini_->setWaveform(summary);
-    }
-
-    // The bar being looked at is done; now the guess at the next one, so it is
-    // whole when it starts. The guess is the playlist's and can be wrong --
-    // the queue may change, a shuffle may draw differently -- and a wrong one
-    // costs a spare analysis that ends up in the cache anyway.
-    if (summary && summary->complete()) {
-        if (const std::optional<TrackId> next = playlist_.peekNextForPlayback()) {
-            if (const PlaylistEntry* entry = playlist_.find(*next);
-                entry != nullptr && entry->url.toString() != url.toString()) {
-                waveforms_->prefetch(entry->url);
-            }
-        }
-    }
+    // Asking for the shape, or dropping it, is the session's, from the same
+    // setting: see Session::settingChanged.
 }
 
 void MainFrame::openUrl() {
@@ -1571,10 +1213,10 @@ void MainFrame::openUrl() {
 void MainFrame::showPreferences() { showPreferences(std::nullopt); }
 
 void MainFrame::showPreferences(std::optional<PreferencesPane> pane) {
-    PreferencesDialog dialog(this, settings_, lastFm_.get(), scrobbler_.get(),
-                             listenBrainz_.get(), listenBrainzScrobbler_.get());
+    PreferencesDialog dialog(this, settings_, session_.lastFm(), session_.scrobbler(),
+                             session_.listenBrainz(), session_.listenBrainzScrobbler());
     const Subscription subscription = dialog.settingChanged.connect(
-        [this](const std::string& key) { onSettingChanged(key); });
+        [this](const std::string& key) { session_.settingChanged(key); });
     if (pane) {
         dialog.showPane(*pane);
     }
@@ -1679,7 +1321,6 @@ void MainFrame::bindCommands() {
     on(FileOpen, [this] { openFiles(); });
     on(FileOpenFolder, [this] { openFolder(); });
     on(FileOpenUrl, [this] { openUrl(); });
-    on(FileImportCog, [this] { importFromCog(); });
     on(FileSavePlaylist, [this] { savePlaylistAs(/*selectionOnly=*/false); });
     on(FilePreferences, [this] { showPreferences(); });
     on(HelpAbout, [this] { showAbout(); });
@@ -1699,7 +1340,7 @@ void MainFrame::bindCommands() {
         // track, and then this has nothing to scroll to. Saying so is better
         // than a menu item that appears to do nothing -- the track has not
         // stopped, it is only out of view.
-        if (!revealTrack(currentTrack_)) {
+        if (!revealTrack(session_.currentTrack())) {
             setStatusText(_("The playing track is hidden by the filter"));
         }
     });
@@ -1759,7 +1400,9 @@ void MainFrame::bindCommands() {
     on(ViewMiniPlayer, [this] { setMiniMode(mini_ == nullptr || !mini_->IsShown()); });
     on(ViewWaveform, [this] {
         settings_.setWaveformSeekBar(!settings_.WaveformSeekBar());
-        applyWaveformSetting();
+        // Through the session, so the bars redraw *and* the analysis is asked
+        // for, the same way the Appearance pane's row does it.
+        session_.settingChanged("waveformSeekBar");
     });
     on(ViewSpectrum, [this] {
         const bool showing = !paneShown(spectrum_);
@@ -1860,7 +1503,7 @@ void MainFrame::bindUpdateUi() {
     // row question costs a scan of the visible order -- which this would pay on
     // every idle, for a menu nobody has opened.
     update(EditScrollToCurrent, [this](wxUpdateUIEvent& event) {
-        event.Enable(currentTrack_ != kInvalidTrackId);
+        event.Enable(session_.currentTrack() != kInvalidTrackId);
     });
     update(FileSavePlaylist,
            [this](wxUpdateUIEvent& event) { event.Enable(!playlist_.empty()); });
@@ -2045,29 +1688,13 @@ void MainFrame::openFolder() {
 }
 
 void MainFrame::savePlaylistAs(bool selectionOnly) {
-    // What is written, decided before the dialog opens: there is no point asking
-    // for a filename for an empty selection.
-    //
-    // Either way the order is the view's rather than the playlist's -- the sort
-    // the listener applied, and only the rows the filter leaves. Sorting here is
-    // display-only and never reaches Playlist, so playlist_.entries() is still in
-    // the order the tracks were added. A listener who sorts by album and saves
-    // wants the file in album order; before this, they got the file in the order
-    // they had happened to drop folders onto the window.
-    std::vector<PlaylistEntry> entries;
+    // There is no point asking for a filename for an empty selection.
+    std::vector<TrackId> selection;
     if (selectionOnly) {
-        const std::vector<TrackId> ids = selectedTracksInOrder();
-        entries.reserve(ids.size());
-        for (const TrackId id : ids) {
-            if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
-                entries.push_back(*entry);
-            }
-        }
-        if (entries.empty()) {
+        selection = selectedTracksInOrder();
+        if (selection.empty()) {
             return;
         }
-    } else {
-        entries = view_.visibleEntries();
     }
 
     // The extensions stay inside the descriptions rather than being formatted
@@ -2087,390 +1714,13 @@ void MainFrame::savePlaylistAs(bool selectionOnly) {
     }
 
     const std::filesystem::path path{dialog.GetPath().ToStdWstring()};
-    const std::string           extension = pathToUtf8Generic(path.extension());
-
-    PlaylistFormat format = PlaylistFormat::M3u;
-    if (extension == ".pls") {
-        format = PlaylistFormat::Pls;
-    } else if (extension == ".xspf") {
-        format = PlaylistFormat::Xspf;
-    }
-
-    // The queue is translated from ids to positions, and that is a real
-    // conversion rather than a cast to satisfy a signature. Playlist::queue()
-    // holds TrackIds, which are opaque and permanent; writePlaylist wants
-    // indices into the entries it is being handed, because that is what Cog's
-    // XML stores and what readPlaylist gives back. Writing ids where positions
-    // belong produced a saved playlist whose queue pointed at whatever rows
-    // those numbers happened to name.
-    //
-    // It compiled on Windows for two years for a silly reason: TrackId is
-    // uint64_t, and MSVC's size_t is unsigned long long, so the two vectors were
-    // the same type. On macOS and Linux size_t is unsigned long -- same width,
-    // different type -- and the first compiler that was not MSVC rejected it
-    // immediately. An overload that took either would have hidden this for good.
-    //
-    // Positions in the list being written, not rows of the playlist: the file's
-    // queue points into the list the file itself holds. A queued track the filter
-    // hid, or that the selection left out, is not in that list, so it is dropped
-    // rather than left naming some other row.
-    std::unordered_map<TrackId, std::size_t> written;
-    written.reserve(entries.size());
-    for (std::size_t i = 0; i < entries.size(); ++i) {
-        written.emplace(entries[i].id, i);
-    }
-
-    std::vector<std::size_t> queuePositions;
-    queuePositions.reserve(playlist_.queue().size());
-    for (const TrackId id : playlist_.queue()) {
-        if (const auto found = written.find(id); found != written.end()) {
-            queuePositions.push_back(found->second);
-        }
-    }
-
-    // PlaylistFile writes text and the caller does the file I/O, which is what
-    // keeps it testable without a filesystem. The destination goes in because
-    // relative paths are written against it -- which is what makes a playlist
-    // survive moving a music folder wholesale.
-    const std::string text =
-        writePlaylist(format, entries, queuePositions, Url::fromLocalPath(path));
-
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out || !out.write(text.data(), static_cast<std::streamsize>(text.size()))) {
-        wxMessageBox(_("Could not write the playlist."), "XPCog",
-                     wxOK | wxICON_WARNING, this);
-        return;
-    }
-    // A selection save says how many it wrote, because that is the number the
-    // listener is checking. A whole-playlist save says so only when the filter
-    // left tracks out -- writing what is shown is the point of the ordering
-    // above, but it is also the one way this command can quietly write fewer
-    // tracks than the listener thinks it has, and a status line is cheaper than
-    // a dialog they would learn to dismiss.
-    const std::size_t total = playlist_.size();
-    if (selectionOnly) {
-        setStatusText(wxString::Format(
-            wxPLURAL("Playlist saved: %zu selected track.",
-                     "Playlist saved: %zu selected tracks.",
-                     static_cast<unsigned>(entries.size())),
-            entries.size()));
-    } else if (entries.size() < total) {
-        setStatusText(wxString::Format(
-            _("Playlist saved: %zu of %zu tracks, the rest hidden by the filter."),
-            entries.size(), total));
-    } else {
-        setStatusText(_("Playlist saved."));
+    if (!session_.savePlaylist(path, selectionOnly ? &selection : nullptr)) {
+        wxMessageBox(_("Could not write the playlist."), "XPCog", wxOK | wxICON_WARNING, this);
     }
 }
 
 void MainFrame::addUrls(const std::vector<Url>& urls, int atRow) {
-    if (urls.empty()) {
-        return;
-    }
-    pendingScans_.push_back(ScanRequest{urls, atRow, /*reload=*/false, {}});
-    pumpScanQueue();
-}
-
-// --- importing a Cog library ----------------------------------------------
-
-void MainFrame::importFromCog() {
-    // A picker rather than looking in ~/Library/Application Support/Cog, and that
-    // is the primary path rather than a fallback. An import is only worth having
-    // on the machine somebody is moving *to*, which is a PC as often as not, and
-    // there the store arrived by being copied across. Finding it automatically is
-    // a convenience for the one platform Cog runs on, and belongs on top of this
-    // rather than in place of it.
-    wxFileDialog picker(this, _("Open a Cog library"), wxEmptyString,
-                        "DataModel.sqlite",
-                        _("Cog library (DataModel.sqlite)") + "|DataModel.sqlite|" +
-                            _("SQLite databases (*.sqlite)") + "|*.sqlite|" +
-                            _("All Files") + "|*.*",
-                        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
-    if (picker.ShowModal() != wxID_OK) {
-        return;
-    }
-
-    const std::filesystem::path store = pathFromUtf8(picker.GetPath().utf8_string());
-
-    const std::optional<CogLibrary> library = readCogLibrary(store);
-    if (!library) {
-        wxMessageBox(_("That file could not be read as a Cog library.\n\n"
-                       "Cog's is DataModel.sqlite, under Application Support/Cog. "
-                       "If Cog is running, copy it along with its -wal and -shm "
-                       "files, or the most recent tracks will be missing."),
-                     _("Import from Cog"), wxOK | wxICON_WARNING, this);
-        return;
-    }
-
-    if (library->entries.empty()) {
-        // A valid answer, and a different one from the file not opening.
-        wxMessageBox(_("That Cog library has no playlist entries in it."),
-                     _("Import from Cog"), wxOK | wxICON_INFORMATION, this);
-        return;
-    }
-
-    CogPlaylistImport imported = cogLibraryToPlaylist(*library);
-
-    std::vector<Url> urls;
-    urls.reserve(imported.entries.size());
-    for (const PlaylistEntry& entry : imported.entries) {
-        urls.push_back(entry.url);
-    }
-
-    // Kept alive for the decorator, which runs when the scan finishes. Both are
-    // shared rather than captured by reference: this function has returned long
-    // before the lambda is called.
-    auto fromStore = std::make_shared<std::vector<PlaylistEntry>>(
-        std::move(imported.entries));
-    auto counts = std::make_shared<CogPlayCounts>(library->playCounts);
-
-    ScanRequest request;
-    request.inputs = std::move(urls);
-    request.atRow  = -1;
-    request.decorate = [this, fromStore, counts](std::vector<PlaylistEntry>& entries) {
-        // The merge rule itself is core's, with tests on it. It is the part of
-        // this most likely to be subtly wrong -- the failure mode of merging in
-        // the wrong direction is a plausible ReplayGain on the wrong track,
-        // which nothing complains about.
-        static_cast<void>(mergeCogStoreData(*fromStore, entries));
-
-        // After the scan, which is not a preference: the title and artist a play
-        // count is matched on are the ones the scanner read from the file, since
-        // this import deliberately never opened Cog's metadata blob.
-        const CogPlayCountReport matched = applyCogPlayCounts(*counts, entries);
-
-        // Written into the library's own play-count rows, not just onto the
-        // entries: the tally, the two dates and the rating all live there, and
-        // an entry has nowhere to carry the last three. Without this the first
-        // play of an imported track would find a row that had never heard of
-        // it and count from one, which is the import undone by listening to it.
-        //
-        // saveEntry() is what this used to do, and it was writing playlist rows
-        // for entries that have no id yet -- the scan is finished but the
-        // insert has not happened, so every one of them was id 0. The playlist
-        // is saved with its real ids once the entries land.
-        if (library_) {
-            for (const CogPlayCountMatch& match : matched.matches) {
-                Library::PlayCountImport imported;
-                imported.count      = match.count;
-                imported.firstSeen  = match.firstSeen;
-                imported.lastPlayed = match.lastPlayed;
-                imported.rating     = match.rating;
-                static_cast<void>(
-                    library_->importPlayCount(entries[match.entry], imported));
-            }
-        }
-
-        cogImportSummary_ = matched;
-    };
-
-    // Said before the scan starts, because the scan is the slow part and a
-    // window that does nothing for a minute has not told anybody it is working.
-    wxString opening = wxString::Format(
-        wxPLURAL("Importing %zu track from Cog...",
-                 "Importing %zu tracks from Cog...",
-                 static_cast<unsigned>(imported.entries.size())),
-        imported.entries.size());
-    if (library->prunedDeleted > 0 || library->prunedEmptyUrl > 0 ||
-        library->prunedUnparseable > 0) {
-        // Cog's own prunes, reported rather than hidden: "900 tracks and this
-        // imported 847" is a question somebody will ask.
-        const std::size_t dropped = library->prunedDeleted + library->prunedEmptyUrl +
-                                    library->prunedUnparseable;
-        opening += " ";
-        opening += wxString::Format(
-            wxPLURAL("(%zu row Cog would not have shown either)",
-                     "(%zu rows Cog would not have shown either)",
-                     static_cast<unsigned>(dropped)),
-            dropped);
-    }
-    setStatusText(opening);
-
-    cogImportSummary_.reset();
-    cogImportFileReferences_ = imported.fileReferences;
-
-    pendingScans_.push_back(std::move(request));
-    pumpScanQueue();
-}
-
-void MainFrame::pumpScanQueue() {
-    if (scan_ || pendingScans_.empty()) {
-        return;
-    }
-
-    ScanRequest request = std::move(pendingScans_.front());
-    pendingScans_.erase(pendingScans_.begin());
-
-    // Remembered for the duration of this scan, so the progress and finish
-    // handlers below can report to whoever started it over the API. Empty for a
-    // scan the window started, and every use of it is guarded on that.
-    scanJobId_ = request.jobId;
-
-    // Read per scan rather than once, so unticking the box in Preferences applies
-    // to the next folder added instead of the next launch.
-    //
-    // Cog skips .cue files while walking a folder when this is off
-    // (PlaylistLoader.m:264-282), which is what stops a folder holding album.cue
-    // beside album.flac from adding every track twice -- once through the cue
-    // sheet and once as the whole file. The Scanner has always honoured the
-    // option; nothing ever set it from the setting.
-    Scanner::Options scanOptions;
-    scanOptions.readCueSheets = settings_.ReadCueSheetsInFolders();
-    scanOptions.readPlaylists = settings_.ReadPlaylistsInFolders();
-    scanOptions.skipAppleDoubleFiles = settings_.SkipAppleDoubleFiles();
-
-    scan_ = std::make_unique<ScanTask>(registry_, &cache_, std::move(request.inputs),
-                                       dispatch_, scanOptions);
-
-    subscriptions_.push_back(scan_->progress.connect([this](int done, int total) {
-        // A range of zero is a busy indicator, which is the truthful display
-        // while the expansion pass is still counting.
-        if (!scanJobId_.empty()) {
-            remoteJobs_.setRunning(scanJobId_, done, total);
-        }
-        if (total > 0) {
-            scanBar_->SetRange(total);
-            scanBar_->SetValue(done);
-            // And the same number on the taskbar button, which is what Cog puts
-            // on its Dock tile -- its progress bar tracks PlaylistLoader, not the
-            // seek position. Left alone while the total is still zero: a bar
-            // sitting at zero reads as stalled, where no bar reads as "not
-            // started", which is the truth.
-            taskbar_->setProgress(static_cast<double>(done) / total);
-        } else {
-            scanBar_->Pulse();
-        }
-    }));
-
-    subscriptions_.push_back(scan_->activity.connect(
-        [this](const ScanTask::Activity& activity) {
-            // The summary field rather than the second one: the scan widgets sit
-            // over the second, and the summary this replaces is a number that
-            // cannot change while a scan is running anyway. addScannedEntries
-            // puts it back at the end.
-            setStatusText(scanActivityText(activity));
-        }));
-
-    const int  atRow    = request.atRow;
-    const bool reload   = request.reload;
-    auto       decorate = std::move(request.decorate);
-    subscriptions_.push_back(scan_->finished.connect(
-        [this, atRow, reload, decorate](const std::vector<PlaylistEntry>& entries,
-                                        bool cancelled) {
-            // The task owns the thread it is still returning from, so it cannot
-            // be destroyed from inside its own callback. Handing it to the event
-            // loop to drop is what deleteLater() was doing.
-            auto* finished = scan_.release();
-            dispatch_([finished] { delete finished; });
-
-            scanBar_->Hide();
-            scanCancel_->Hide();
-            taskbar_->clearProgress();
-
-            // Copied so the decorator can write to it. The signal hands out
-            // a const reference because every other subscriber only reads.
-            if (!scanJobId_.empty()) {
-                // Reported before the entries are inserted, because
-                // addScannedEntries can start another scan through the queue and
-                // that overwrites scanJobId_.
-                if (cancelled) {
-                    remoteJobs_.fail(scanJobId_, "cancelled");
-                } else {
-                    remoteJobs_.finish(scanJobId_, entries.size());
-                }
-                scanJobId_.clear();
-            }
-
-            std::vector<PlaylistEntry> decorated = entries;
-            if (decorate) {
-                decorate(decorated);
-            }
-            if (reload) {
-                applyReloadedEntries(std::move(decorated));
-            } else {
-                addScannedEntries(std::move(decorated), atRow, cancelled);
-            }
-            pumpScanQueue();
-        }));
-
-    scanBar_->SetRange(0);
-    scanBar_->Show();
-    scanCancel_->Show();
-    scan_->start();
-}
-
-void MainFrame::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow,
-                                  bool cancelled) {
-    if (entries.empty()) {
-        setStatusText(cancelled ? _("Nothing was added.")
-                                : _("Nothing playable was found."));
-        return;
-    }
-
-    // Embedded covers go to the artwork table, which is content-addressed, and
-    // leave a hash behind on the entry. Here because this is the first point at
-    // which a scanned entry and the library are both in reach.
-    //
-    // The table exists precisely so an album's twelve tracks hold one copy of
-    // their cover between them rather than twelve. Nothing called this, so every
-    // cover was persisted the other way instead -- as a blob on the entry's tag
-    // rows, once per track. A library with high-resolution art embedded in it
-    // reached gigabytes that way, which is most of what made saving and loading
-    // the playlist slow.
-    if (library_) {
-        const std::int64_t now = unixNow();
-        for (PlaylistEntry& entry : entries) {
-            static_cast<void>(library_->adoptArtwork(entry));
-
-            // And the track's play count row, which is created here rather than
-            // by the first play. "First seen" is the date the track entered the
-            // library -- if nothing writes it until sixty seconds into a listen
-            // then it names the wrong event, and a track added and never played
-            // has no date at all.
-            //
-            // The count comes back the other way. A track re-added to the
-            // playlist carries whatever has been counted against it, so its
-            // history survives being removed and added again; the max is for the
-            // Cog import, whose entries arrive already holding a tally that the
-            // row may not have seen.
-            if (const auto record = library_->noteFirstSeen(entry, now)) {
-                entry.playCount = std::max(entry.playCount, record->count);
-            }
-        }
-    }
-
-    // The row a drop targeted may no longer exist: the scan took time and the
-    // user could have edited the playlist meanwhile. insert() clamps, so this
-    // lands at the end rather than nowhere.
-    const std::size_t where =
-        (atRow >= 0) ? static_cast<std::size_t>(atRow) : playlist_.size();
-    const std::size_t count = entries.size();
-
-    commands_.insert(std::move(entries), where);
-
-    if (cogImportSummary_) {
-        // Said instead of the ordinary summary, because after an import the
-        // interesting number is not how long the playlist is now.
-        wxString text = wxString::Format(
-            wxPLURAL("Imported %zu track from Cog", "Imported %zu tracks from Cog",
-                     static_cast<unsigned>(count)),
-            count);
-        if (cogImportSummary_->matched > 0) {
-            text += wxString::Format(_(", %zu with play counts"),
-                                     cogImportSummary_->matched);
-        }
-        if (cogImportFileReferences_ > 0) {
-            text += wxString::Format(_("; %zu could not be resolved off a Mac"),
-                                     cogImportFileReferences_);
-        }
-        text += ".";
-        setStatusText(text);
-        cogImportSummary_.reset();
-        cogImportFileReferences_ = 0;
-        return;
-    }
-
-    setStatusText(statusSummary());
+    session_.addUrls(urls, atRow);
 }
 
 // --- playback -----------------------------------------------------------
@@ -2663,139 +1913,22 @@ void MainFrame::searchForSelected(bool byAlbum) {
     view_.setFilter(text);
 }
 
-void MainFrame::reloadSelectedInfo() {
-    std::vector<Url> urls;
-    for (const TrackId id : selectedTracksInOrder()) {
-        if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
-            urls.push_back(entry->url);
-        }
-    }
-    if (urls.empty()) {
-        return;
-    }
+void MainFrame::reloadSelectedInfo() { session_.reloadTracks(selectedTracksInOrder()); }
 
-    // Through the same queue an added folder goes through, and that is not
-    // incidental: the scans share one PluginCache, which is not synchronised, so
-    // a reload starting while a folder scan runs is the race the queue exists to
-    // prevent.
-    pendingScans_.push_back(ScanRequest{std::move(urls), -1, /*reload=*/true, {}});
-    pumpScanQueue();
-}
+void MainFrame::resetPlayCountSelected() { session_.resetPlayCount(selectedTracks()); }
 
-void MainFrame::applyReloadedEntries(std::vector<PlaylistEntry> entries) {
-    if (entries.empty()) {
-        setStatusText(_("Nothing could be read."));
-        return;
-    }
+void MainFrame::removeRatingSelected() { session_.removeRating(selectedTracks()); }
 
-    std::unordered_map<std::string, TrackId> byUrl;
-    byUrl.reserve(playlist_.size());
-    for (const PlaylistEntry& entry : playlist_.entries()) {
-        byUrl.emplace(entry.url.toString(), entry.id);
-    }
-
-    std::size_t updated = 0;
-    for (PlaylistEntry& fresh : entries) {
-        const auto found = byUrl.find(fresh.url.toString());
-        if (found == byUrl.end()) {
-            // A cue sheet that has grown a track since it was added, or a file
-            // whose container now expands differently. Adding it here would be a
-            // reload that quietly lengthens the playlist, so it is dropped.
-            continue;
-        }
-
-        if (library_) {
-            static_cast<void>(library_->adoptArtwork(fresh));
-        }
-
-        playlist_.update(found->second, [&fresh](PlaylistEntry& entry) {
-            // Everything a file can answer for is replaced; everything the
-            // playlist knows and the file does not is kept. Getting this
-            // backwards is not visible -- a reload that reset the play count and
-            // dropped the track out of the queue would look like it had worked.
-            const std::int64_t playCount      = entry.playCount;
-            const double       position       = entry.currentPosition;
-            const bool         stopAfter      = entry.stopAfter;
-            const std::int64_t shuffleIndex   = entry.shuffleIndex;
-            const std::int32_t queuePosition  = entry.queuePosition;
-            const Url          url            = entry.url;
-
-            entry = fresh;
-
-            entry.url           = url;
-            entry.playCount     = playCount;
-            entry.currentPosition = position;
-            entry.stopAfter     = stopAfter;
-            entry.shuffleIndex  = shuffleIndex;
-            entry.queuePosition = queuePosition;
-        });
-
-        if (library_) {
-            if (const PlaylistEntry* entry = playlist_.find(found->second);
-                entry != nullptr) {
-                static_cast<void>(library_->saveEntry(*entry));
-            }
-        }
-        ++updated;
-    }
-
-    refreshInfo();
-    refreshLyrics();
-    setStatusText(wxString::Format(
-        wxPLURAL("Re-read %zu track.", "Re-read %zu tracks.",
-                 static_cast<unsigned>(updated)),
-        updated));
-}
-
-void MainFrame::resetPlayCountSelected() {
-    const std::size_t count = commands_.resetPlayCount(selectedTracks());
-    refreshInfo();
-    setStatusText(wxString::Format(
-        wxPLURAL("Play count reset for %zu track.", "Play count reset for %zu tracks.",
-                 static_cast<unsigned>(count)),
-        count));
-}
-
-void MainFrame::removeRatingSelected() {
-    if (!library_) {
-        return;
-    }
-    const std::size_t count = commands_.removeRating(selectedTracks());
-    // Said in the status line because there is nowhere else it could show: XPCog
-    // has no rating column and no star control, so a rating is something a Cog
-    // library brought with it and this is the command that clears it. Silence
-    // here would be indistinguishable from the command doing nothing.
-    setStatusText(wxString::Format(
-        wxPLURAL("Rating removed from %zu track.", "Rating removed from %zu tracks.",
-                 static_cast<unsigned>(count)),
-        count));
-}
-
-void MainFrame::revealSelected() {
-    const std::vector<std::filesystem::path> paths = selectedPaths();
-    if (paths.empty()) {
-        return;
-    }
-    // The first one, as Cog does (PlaylistController.m:1849). Revealing a
-    // multiple selection means a file manager window per folder, which is not
-    // what anybody means by "show me where this is".
-    if (!platform::revealInFileManager(paths.front())) {
-        setStatusText(_("Could not show the file."));
-    }
-}
+void MainFrame::revealSelected() { session_.revealInFileManager(selectedTracksInOrder()); }
 
 void MainFrame::trashSelected() {
-    std::vector<TrackId>               ids;
-    std::vector<std::filesystem::path> paths;
+    std::vector<TrackId> ids;
+    std::size_t          files = 0;
     for (const TrackId id : selectedTracksInOrder()) {
         const PlaylistEntry* entry = playlist_.find(id);
-        if (entry == nullptr) {
-            continue;
-        }
-        if (const std::optional<std::filesystem::path> path = entry->url.localPath();
-            path.has_value()) {
+        if (entry != nullptr && entry->url.localPath().has_value()) {
             ids.push_back(id);
-            paths.push_back(*path);
+            ++files;
         }
     }
     if (ids.empty()) {
@@ -2803,7 +1936,7 @@ void MainFrame::trashSelected() {
     }
 
     if (!settings_.TrashAskedConsent()) {
-        const auto count = static_cast<unsigned>(paths.size());
+        const auto count = static_cast<unsigned>(files);
         wxRichMessageDialog dialog(
             this,
             _("Undo puts the rows back in the playlist. It does not bring the "
@@ -2823,40 +1956,10 @@ void MainFrame::trashSelected() {
         }
     }
 
-    std::vector<TrackId> trashed;
-    trashed.reserve(ids.size());
-    std::size_t failed = 0;
-    for (std::size_t i = 0; i < ids.size(); ++i) {
-        if (platform::moveToTrash(paths[i])) {
-            trashed.push_back(ids[i]);
-        } else {
-            // A read-only volume, a network share with no trash, or a file
-            // already gone. The row stays, because the file did.
-            ++failed;
-        }
-    }
-
-    commands_.removeTrashed(std::move(trashed));
-
-    if (failed > 0) {
-        setStatusText(wxString::Format(
-            wxPLURAL("%zu file could not be moved to the trash.",
-                     "%zu files could not be moved to the trash.",
-                     static_cast<unsigned>(failed)),
-            failed));
-    } else {
-        setStatusText(statusSummary());
-    }
+    session_.trashTracks(ids);
 }
 
 void MainFrame::onPositionChanged(double seconds, double duration) {
-    // The engine's own clock, not `seconds`. This tick is what advances the
-    // played-time accumulator, and the two numbers are deliberately different:
-    // `seconds` is the playhead, which a seek moves, while playedSeconds() is
-    // audio actually delivered to the device, which a seek does not. Feeding the
-    // playhead in here would let seeking to the end of a track scrobble it.
-    monitor_.advance(playback_->playedSeconds());
-
     duration_ = duration;
     seekBar_->setDuration(duration);
     seekBar_->setPosition(seconds);
@@ -2867,216 +1970,23 @@ void MainFrame::onPositionChanged(double seconds, double duration) {
     if (mini_ != nullptr && mini_->IsShown()) {
         mini_->setPosition(seconds, duration);
     }
-
-    // The OS extrapolates from the rate it was given, so pushing every tick would
-    // be four rewrites a second for a display that is already counting correctly
-    // on its own. A second's drift is the threshold worth correcting.
-    if (std::abs(seconds - mediaPosition_) >= 1.0) {
-        mediaPosition_ = seconds;
-        media_->setPlaybackState(playback_->playing(), playback_->paused(), seconds);
-    }
 }
 
 // --- scrobbling -----------------------------------------------------------
 
-void MainFrame::wireScrobbling() {
-    lastFm_ = std::make_unique<LastFmAccount>();
-
-    // Beside the library rather than beside the settings: it is a queue of
-    // pending work, not a preference, and it can be deleted without losing
-    // anything the listener chose.
-    // pathFromUtf8, not the std::filesystem::path constructor: that one reads a
-    // std::string through the active code page on Windows, so a listener whose
-    // profile is under a name CP-1252 cannot spell would get a queue beside a
-    // directory that does not exist. See core/include/xpcog/core/FilePath.hpp,
-    // which exists because this went wrong once already.
-    const std::filesystem::path queue =
-        pathFromUtf8(platform::libraryDatabasePath()).parent_path() /
-        "scrobble-queue.json";
-
-    scrobbler_ = std::make_unique<Scrobbler>(lastFm_->client(), queue);
-    scrobbler_->setSession(lastFm_->load());
-    scrobbler_->setEnabled(settings_.EnableScrobbling());
-
-    // Last.fm rejected the stored key. Forget it here as well as in the
-    // scrobbler, or the next launch would load the same dead key and fail again
-    // -- and say so, because the listener has to re-authorise and nothing else
-    // in the interface would ever mention it.
-    scrobbler_->onSessionInvalidated([this] {
-        dispatch_([this] {
-            lastFm_->forget();
-            setStatusText(
-                _("Last.fm access was withdrawn. Reconnect in Preferences."));
-        });
-    });
-
-    // ListenBrainz beside it, with a queue of its own: the two services take
-    // and refuse plays independently, and one queue would have to remember
-    // which of them each entry was still owed to.
-    listenBrainz_ = std::make_unique<ListenBrainzAccount>(settings_.ListenBrainzUrl());
-    listenBrainzScrobbler_ = std::make_unique<Scrobbler>(
-        listenBrainz_->client(), queue.parent_path() / "listenbrainz-queue.json");
-    listenBrainzScrobbler_->setSession(listenBrainz_->load());
-    listenBrainzScrobbler_->setEnabled(settings_.EnableListenBrainz());
-    listenBrainzScrobbler_->onSessionInvalidated([this] {
-        dispatch_([this] {
-            listenBrainz_->forget();
-            setStatusText(_("ListenBrainz rejected the token. Reconnect in Preferences."));
-        });
-    });
-
-    // Sixty seconds, which is Cog's interval for this
-    // (OutputNode.m:135-138). Counted for every listener, whether or not they
-    // scrobble: this is XPCog's own library, and Library::recordPlay has been
-    // written and tested since the library landed with nothing calling it.
-    monitor_.onPlayCountReached([this] {
-        if (!library_ || currentTrack_ == kInvalidTrackId) {
-            return;
-        }
-        const PlaylistEntry* entry = playlist_.find(currentTrack_);
-        if (entry == nullptr) {
-            return;
-        }
-        if (!library_->recordPlay(*entry, unixNow())) {
-            return;
-        }
-
-        // Mirrored back onto the entry, which is the pairing
-        // resetPlayCountSelected() already makes and for the same reason: the
-        // entry is the copy the Info pane reads and the copy the playlist
-        // persists. Writing only the table left the count on screen frozen at
-        // whatever it was when the playlist was last loaded, and let the next
-        // whole-playlist save write that stale number back over the row.
-        const TrackId id    = currentTrack_;
-        std::int64_t  count = entry->playCount + 1;
-        if (const auto record =
-                library_->playCount(entry->artist, entry->album, entry->title())) {
-            count = record->count;
-        }
-
-        playlist_.update(id, [count](PlaylistEntry& target) { target.playCount = count; });
-        if (const PlaylistEntry* updated = playlist_.find(id)) {
-            static_cast<void>(library_->saveEntry(*updated));
-        }
-        refreshInfo();
-    });
-
-    // Half the track or four minutes, whichever came first. The captured
-    // pendingScrobble_ is submitted rather than the current entry, for the reason
-    // given where it is declared.
-    monitor_.onScrobbleReached([this] {
-        if (pendingScrobble_.artist.empty()) {
-            return;
-        }
-        if (scrobbler_) {
-            scrobbler_->submit(pendingScrobble_);
-        }
-        if (listenBrainzScrobbler_) {
-            listenBrainzScrobbler_->submit(pendingScrobble_);
-        }
-    });
-}
-
 // --- lyrics ---------------------------------------------------------------
-
-void MainFrame::wireLyrics() {
-    // A build without libcurl has no way to ask, and the pane is then the
-    // file's lyrics and nothing else -- which is what it was before there was
-    // a lookup, and what the General pane's greyed row says.
-    if (!httpClientAvailable()) {
-        return;
-    }
-    lyricsHttp_ = makeCurlHttpClient();
-    if (!lyricsHttp_) {
-        return;
-    }
-    // The library remembers the answers, when there is one. Without it --
-    // the database would not open -- the lookup still works, for the session.
-    if (library_) {
-        lyricsStore_ = std::make_unique<LibraryLyricsStore>(*library_);
-    }
-    lyricsLookup_ = std::make_unique<LyricsLookup>(*lyricsHttp_, dispatch_,
-                                                   lyricsStore_.get(), settings_.LrclibUrl());
-}
 
 void MainFrame::applyLyricsLookup() {
     if (lyrics_ == nullptr) {
         return;
     }
-    lyrics_->setLookup(settings_.EnableLrclib() ? lyricsLookup_.get() : nullptr);
+    lyrics_->setLookup(session_.lyricsLookup());
 }
 
-void MainFrame::beginScrobbleTrack(TrackId id, bool looping) {
-    const PlaylistEntry* entry = (id == kInvalidTrackId) ? nullptr : playlist_.find(id);
-    if (entry == nullptr) {
-        monitor_.clear();
-        pendingScrobble_ = ScrobbleTrack{};
-        return;
-    }
-
-    pendingScrobble_             = ScrobbleTrack{};
-    pendingScrobble_.title       = entry->title();
-    pendingScrobble_.artist      = entry->artist.str();
-    pendingScrobble_.albumArtist = entry->albumArtist.str();
-    pendingScrobble_.album       = entry->album.str();
-    pendingScrobble_.trackNumber = entry->track;
-    pendingScrobble_.duration    = entry->duration();
-    // When it *started*, not when the threshold is reached: Last.fm builds the
-    // listening history from this, so a scrobble queued through an outage and
-    // sent an hour later still lands in the right place.
-    pendingScrobble_.startedAt =
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count();
-
-    if (looping) {
-        monitor_.repeatTrack(playback_->playedSeconds(), entry->duration());
-    } else {
-        monitor_.beginTrack(playback_->playedSeconds(), entry->duration());
-    }
-
-    if (scrobbler_) {
-        scrobbler_->nowPlaying(pendingScrobble_);
-    }
-    if (listenBrainzScrobbler_) {
-        listenBrainzScrobbler_->nowPlaying(pendingScrobble_);
-    }
-}
-
-void MainFrame::onCurrentTrackChanged(TrackId id, ListenChange change) {
-    // Repeat-one asks the playlist what follows a track and is told the same
-    // track, so the seam announces an entry that never stopped playing. That is
-    // one listen, not one a minute: without this a track left looping overnight
-    // would report several hundred plays of itself. Cog counts each lap
-    // (OutputNode.m resets its accumulator per stream); this deliberately does
-    // not -- see docs/PORTING.md.
-    const bool looping = change == ListenChange::Announced &&
-                         id != kInvalidTrackId && id == currentTrack_;
-
-    currentTrack_ = id;
-    view_.setCurrentTrack(id);
-
-    // Before anything that can fail below it: this is the point the seam reached
-    // the speaker, and it is the only moment at which "a new track started" is
-    // true exactly once.
-    beginScrobbleTrack(id, looping);
-
-    // Cog moves the selection as each next entry is *chosen*, inside
-    // -getNextEntry: (PlaylistController.m:1448-1522, six call sites). Done here
-    // instead, as the track actually becomes current, which lands on the same
-    // rows in the same order and needs one call site rather than six -- the
-    // playlist here has no equivalent hook, because choosing the next entry is
-    // core's job and selecting a row is the interface's.
-    //
-    // What "move the selection" means -- replace it, and scroll it into view --
-    // is revealTrack()'s, shared with the Select Currently Playing command and
-    // with the selection a resumed session starts with.
-    if (settings_.SelectionFollowsPlayback()) {
-        revealTrack(id);
-    }
-
-    const PlaylistEntry* entry = playlist_.find(id);
-    const std::string    text  = entry != nullptr ? entry->display() : std::string{};
+void MainFrame::onTrackChanged(TrackId id, const PlaylistEntry* entry, bool looping) {
+    (void)id;
+    (void)looping;
+    const std::string text = entry != nullptr ? entry->display() : std::string{};
 
     // Both arms have to be the same type, so the literal is wrapped rather
     // than left for the conditional operator to guess at.
@@ -3090,14 +2000,6 @@ void MainFrame::onCurrentTrackChanged(TrackId id, ListenChange change) {
     SetTitle(text.empty() ? wxString("XPCog") : toWx(text + " \xE2\x80\x94 XPCog"));
     SetStatusText(toWx(text), 1);
 
-    // And the summary back in the first field. "Connecting to X..." goes there
-    // when the start is requested, and this is the moment it stopped being true:
-    // nothing wrote over it before, so a note that means "still trying" sat
-    // there for the whole of the track, and for every track after it. The
-    // failure paths write their own sentence there instead and are not on this
-    // one -- a start that did not open publishes no current track.
-    setStatusText(statusSummary());
-
     const std::string title  = entry != nullptr ? entry->title() : std::string{};
     const std::string artist = entry != nullptr ? entry->artist : std::string{};
     presence_->setNowPlaying(title, artist);
@@ -3105,25 +2007,12 @@ void MainFrame::onCurrentTrackChanged(TrackId id, ListenChange change) {
         mini_->setNowPlaying(title, artist);
     }
 
-    publishNowPlaying(id);
     refreshInfo();
     refreshLyrics();
-    notifyTrack(entry);
-    applyGenreEqualizer(entry);
-    if (!looping) {
-        requestWaveform(id);
-    }
 }
 
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {
-    // Recorded as it changes rather than at exit, which is Cog's vocabulary and
-    // the safer moment: a player that crashed while stopped must not come back
-    // playing, and a status written only on a tidy exit says nothing about the
-    // session that did not have one.
-    settings_.setLastPlaybackStatus(!playing ? 0 : (paused ? 2 : 1));
-
     refreshTransportIcons();
-    taskbar_->setPlaybackState(playing, paused);
     presence_->setPlaybackState(playing, paused);
     if (mini_ != nullptr) {
         mini_->setPlaybackState(playing, paused);
@@ -3132,58 +2021,16 @@ void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {
     if (!playing) {
         seekBar_->setDuration(0.0);
         clock_->SetLabelText("0:00 / 0:00");
-        media_->clear();
-        mediaPosition_ = -1.0;
         // The waveform is not cleared here. A stop announces kInvalidTrackId
-        // through currentTrackChanged, which is where the bars are cleared;
-        // and this signal also says "not playing" once, briefly, right after a
-        // start -- publishState() runs before the engine reports itself
-        // playing -- which would cancel the analysis just requested.
-        return;
+        // through the session's trackChanged, which is where the bars are
+        // cleared; and this signal also says "not playing" once, briefly, right
+        // after a start.
     }
-    media_->setPlaybackState(playing, paused, playback_->position());
-    mediaPosition_ = playback_->position();
-}
-
-void MainFrame::publishNowPlaying(TrackId id) {
-    mediaPosition_ = -1.0;
-
-    const PlaylistEntry* entry = playlist_.find(id);
-    if (entry == nullptr) {
-        media_->clear();
-        return;
-    }
-
-    platform::NowPlayingInfo info;
-    info.title    = entry->title();
-    info.artist   = entry->artist;
-    info.album    = entry->album;
-    info.duration = entry->duration();
-    info.position = playback_->position();
-
-    // Artwork is content-addressed in the library rather than carried on the
-    // entry, so this is the one place that can resolve it. Handed over as the
-    // encoded bytes the file carried, not as a decoded image.
-    if (library_ && !entry->artHash.empty()) {
-        info.artwork = library_->artwork(entry->artHash);
-    }
-
-    media_->setNowPlaying(info);
 }
 
 // --- state --------------------------------------------------------------
 
-wxString MainFrame::statusSummary() const {
-    double total = 0.0;
-    for (const PlaylistEntry& entry : playlist_.entries()) {
-        total += entry.duration();
-    }
-    const std::size_t count = playlist_.size();
-    return wxString::Format(trUtf8("%zu track \xE2\x80\x94 %s",
-                                     "%zu tracks \xE2\x80\x94 %s",
-                                     static_cast<unsigned>(count)),
-                            count, toWx(formatClock(total)));
-}
+wxString MainFrame::statusSummary() const { return toWx(session_.statusSummary()); }
 
 void MainFrame::setStatusText(const wxString& text) { SetStatusText(text, 0); }
 
@@ -3293,16 +2140,6 @@ void MainFrame::restoreState() {
 void MainFrame::persistState() {
     settings_.setRawValue("xpcog.fileTree.root", tree_->rootPath());
 
-    // Where the current track had got to. A raw key rather than a settings.def
-    // entry because it is this application's own state, like the window geometry
-    // below it -- Cog keeps the equivalent as a Core Data attribute on the entry
-    // (`currentPosition`), which is not a preference either.
-    //
-    // Which entry it belongs to needs no recording: the library already marks the
-    // current one, and loadPlaylist restores it.
-    settings_.setRawValue("xpcog.playback.position",
-                          std::to_string(playback_->position()));
-
     if (!normalRect_.IsEmpty()) {
         settings_.setRawValue(
             "xpcog.window.geometry",
@@ -3335,113 +2172,12 @@ void MainFrame::persistState() {
                               toUtf8(auiManager_.SavePerspective()));
     }
 
-    if (library_ && !library_->savePlaylist(playlist_)) {
-        // Worth saying, but not worth refusing to close over.
-        setStatusText(wxString::Format(_("Could not save the playlist: %s"),
-                                       toWx(library_->lastError())));
-    }
-    settings_.sync();
+    // The playlist, the playback position and the sync itself, after the keys
+    // above so one sync covers both.
+    session_.save();
 }
 
 
 // --- the REST remote control ---------------------------------------------
-
-void MainFrame::applyRemoteSettings() {
-    // Stopped first whatever happens next. A port or address change is a restart,
-    // and stop() releases every request waiting on this thread before it joins,
-    // so this does not block for the gate's full timeout.
-    if (remoteServer_) {
-        remoteServer_->stop();
-        remoteServer_.reset();
-    }
-
-    if (!settings_.RemoteEnable()) {
-        return;
-    }
-    if (!remote::remoteServerAvailable()) {
-        // A build without XPCOG_WITH_REST. The pane greys itself and says so;
-        // this is the path where the setting was carried over from a build that
-        // had one.
-        return;
-    }
-
-    const std::string token = RemoteToken::ensure();
-    if (token.empty()) {
-        wxString why;
-        RemoteToken::storeAvailable(&why);
-        setStatusText(why.empty()
-                          ? _("The remote control could not create an access token.")
-                          : why);
-        return;
-    }
-
-    if (!remoteControl_) {
-        remoteControl_ = std::make_unique<AppPlayerControl>(
-            *playback_, playlist_, view_, commands_, settings_, remoteJobs_,
-            library_.get(),
-            [this](std::vector<std::string> urls, std::optional<std::size_t> at) {
-                return startRemoteScan(std::move(urls), at);
-            });
-
-        // The fourth publisher of settingChanged, beside the preferences dialog
-        // and the two panels, wired to the same handler. Without it a remote
-        // write would be stored and inert until the next launch.
-        subscriptions_.push_back(remoteControl_->settingChanged.connect(
-            [this](const std::string& key) { onSettingChanged(key); }));
-    }
-
-    remote::ServerConfig config;
-    config.address    = settings_.RemoteAddress();
-    config.port       = settings_.RemotePort();
-    config.token      = token;
-    config.allowWrite = settings_.RemoteAllowWrite();
-    config.allowLoopbackWithoutToken = settings_.RemoteLoopbackNoToken();
-
-    remoteServer_ = std::make_unique<remote::RemoteServer>(
-        *remoteControl_, dispatch_, std::move(config));
-
-    std::string error;
-    if (!remoteServer_->start(&error)) {
-        // The ordinary failure is a port already taken, and it has to be visible:
-        // a switch that silently did nothing is worse than one that says why.
-        setStatusText(wxString::Format(_("Remote control unavailable: %s"),
-                                       toWx(error)));
-        remoteServer_.reset();
-        return;
-    }
-
-    setStatusText(wxString::Format(_("Remote control listening on http://%s:%d"),
-                                   toWx(settings_.RemoteAddress()),
-                                   remoteServer_->boundPort()));
-}
-
-std::string MainFrame::startRemoteScan(std::vector<std::string>   urls,
-                                       std::optional<std::size_t> at) {
-    std::vector<Url> inputs;
-    inputs.reserve(urls.size());
-    for (const std::string& text : urls) {
-        // A URL or a plain path, which is what the CLI accepts too -- a client
-        // that has a filename should not have to know how to spell it as a URL.
-        if (std::optional<Url> url = Url::parse(text); url && !url->scheme().empty()) {
-            inputs.push_back(*std::move(url));
-        } else {
-            inputs.push_back(Url::fromLocalPath(std::filesystem::path{text}));
-        }
-    }
-    if (inputs.empty()) {
-        return {};
-    }
-
-    const std::string jobId = remoteJobs_.start();
-
-    ScanRequest request;
-    request.inputs = std::move(inputs);
-    request.atRow  = at ? static_cast<int>(*at) : -1;
-    request.jobId  = jobId;
-    pendingScans_.push_back(std::move(request));
-    pumpScanQueue();
-
-    return jobId;
-}
 
 }  // namespace xpcog::app

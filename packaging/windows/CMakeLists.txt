@@ -1,7 +1,7 @@
 # The Windows installer.
 #
 # Not part of ALL, and not a dependency of anything: `installer` is asked for by
-# name, after a build, the same way `sign` is on macOS.
+# name, after a build.
 #
 #     cmake --build build/windows-release --target installer
 #

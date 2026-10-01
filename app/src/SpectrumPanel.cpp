@@ -10,7 +10,6 @@
 #include <wx/translation.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <memory>
 
@@ -50,39 +49,7 @@ constexpr unsigned char kSplitAlpha = 48;
     return {scale(colour.Red()), scale(colour.Green()), scale(colour.Blue())};
 }
 
-struct ChannelsName {
-    SpectrumPanel::Channels channels;
-    const char*             key;
-};
-
-constexpr std::array<ChannelsName, 6> kChannelsNames = {{
-    {SpectrumPanel::Channels::Mono, "mono"},
-    {SpectrumPanel::Channels::Left, "left"},
-    {SpectrumPanel::Channels::Right, "right"},
-    {SpectrumPanel::Channels::Mirrored, "mirrored"},
-    {SpectrumPanel::Channels::Stacked, "stacked"},
-    {SpectrumPanel::Channels::Overlaid, "overlaid"},
-}};
-
 }  // namespace
-
-const char* SpectrumPanel::channelsKey(Channels channels) noexcept {
-    for (const ChannelsName& name : kChannelsNames) {
-        if (name.channels == channels) {
-            return name.key;
-        }
-    }
-    return "mono";
-}
-
-SpectrumPanel::Channels SpectrumPanel::channelsFromKey(std::string_view key) noexcept {
-    for (const ChannelsName& name : kChannelsNames) {
-        if (key == name.key) {
-            return name.channels;
-        }
-    }
-    return Channels::Mono;
-}
 
 SpectrumPanel::SpectrumPanel(wxWindow* parent, AudioTap& tap, Settings& settings)
     : wxWindow(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE),
@@ -181,10 +148,7 @@ void SpectrumPanel::updateFrequencyBandCount() {
     }
 }
 
-bool SpectrumPanel::stereo() const noexcept {
-    return channels_ == Channels::Mirrored || channels_ == Channels::Stacked ||
-           channels_ == Channels::Overlaid;
-}
+bool SpectrumPanel::stereo() const noexcept { return app::stereo(channels_); }
 
 void SpectrumPanel::onContextMenu(wxContextMenuEvent& event) {
     // The two choices that get flipped while looking at the bars -- which

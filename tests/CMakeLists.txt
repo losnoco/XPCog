@@ -4,7 +4,6 @@ add_executable(xpcog-tests
     core/test_assetpath.cpp
     core/test_audio.cpp
     core/test_dsd.cpp
-    core/test_cogimport.cpp
     core/test_dsp.cpp
     core/test_eqpresets.cpp
     core/test_fft.cpp
@@ -422,11 +421,6 @@ target_link_libraries(xpcog-tests PRIVATE
 target_compile_definitions(xpcog-tests
     PRIVATE "XPCOG_GOLDEN_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/golden\"")
 
-# The Cog fixtures, likewise by path. Synthetic and small, built by
-# tools/cogimport-fixture/make-fixture.py -- see docs/COGIMPORT.md.
-target_compile_definitions(xpcog-tests
-    PRIVATE "XPCOG_COG_FIXTURE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cog\"")
-
 set_target_properties(xpcog-tests PROPERTIES FOLDER tests)
 
 # The shipped bank is found relative to the test binary, so it has to be there
@@ -437,27 +431,54 @@ include(Catch)
 catch_discover_tests(xpcog-tests)
 
 # ---------------------------------------------------------------------------
-# The application's own suite.
+# The toolkit-free half of the application layer, tested without one.
+#
+# A separate binary rather than more cases in xpcog-app-tests, and the point is
+# what it links: xpcog-uicore and nothing else. If something under uicore/ grows
+# a dependency on a widget this fails to link, which makes the extraction a fact
+# about the build rather than a claim in a comment -- the same trade
+# cmake/CheckNoToolkit.cmake makes, arrived at from the other side.
+#
+# Gated on the player, like uicore/ itself, and built under either frontend:
+# on Linux, where there is no wx, it is the proof that this layer stands up on
+# its own.
+# ---------------------------------------------------------------------------
+if(XPCOG_BUILD_APP)
+    add_executable(xpcog-uicore-tests
+        uicore/test_appcommands.cpp
+        uicore/test_commands.cpp
+        uicore/test_lyricstext.cpp
+        uicore/test_remotejobs.cpp
+        uicore/test_session.cpp
+        uicore/test_settingeffect.cpp
+    )
+    # codecs as well as uicore, and that keeps the rule rather than bending it:
+    # the point is that no *toolkit* is linked, and codecs link none. Without
+    # them the session test could scan nothing and play nothing.
+    target_link_libraries(xpcog-uicore-tests
+        PRIVATE xpcog-uicore xpcog-codecs Catch2::Catch2WithMain XPCog::warnings)
+    add_dependencies(xpcog-uicore-tests xpcog-assets)
+    set_target_properties(xpcog-uicore-tests PROPERTIES FOLDER tests)
+    catch_discover_tests(xpcog-uicore-tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# The wx application's own suite, on Windows, where the wx application is.
 #
 # Separate from the core one because the headless preset builds no application at
 # all, and these link the toolkit. It uses Catch2's own main: nothing here wants
 # an application object, and that is deliberate rather than lucky -- everything
-# that needed one is either in core now or is a free function, which is why this
-# suite is four files rather than nine.
+# that needed one is either in core now or is a free function.
 # ---------------------------------------------------------------------------
-if(XPCOG_BUILD_APP)
+if(XPCOG_BUILD_WX_APP)
     add_executable(xpcog-app-tests
-        app/test_appcommands.cpp
-        app/test_cogplist.cpp
+        app/test_commands.cpp
         app/test_crashreporter.cpp
         app/test_embedded_icons.cpp
         app/test_helpers.cpp
         app/test_infopanel.cpp
         app/test_localization.cpp
-        app/test_lyricspanel.cpp
         app/test_playlistmodel.cpp
-        app/test_remotejobs.cpp
-        app/test_settingeffect.cpp
     )
 
     # So the availability case can assert rather than accept either answer. The
@@ -479,11 +500,6 @@ if(XPCOG_BUILD_APP)
         Catch2::Catch2WithMain
         XPCog::warnings)
 
-    # The Cog fixtures, as the core suite has them: the binary defaults file is
-    # the one thing in the import that needs an OS framework to read.
-    target_compile_definitions(xpcog-app-tests
-        PRIVATE "XPCOG_COG_FIXTURE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cog\"")
-
     set_target_properties(xpcog-app-tests PROPERTIES FOLDER tests)
 
     # No DL_PATHS, which the Qt suite needed: test discovery *runs* this binary
@@ -495,63 +511,60 @@ if(XPCOG_BUILD_APP)
 endif()
 
 # ---------------------------------------------------------------------------
-# The one suite that wants a screen.
+# The one suite that wants a screen: the GTK frontend's.
 #
 # Everything above is deliberately free of an application object, and this is
-# what could not be: a note in the preferences form re-wraps from its own size
-# event, and the loop that had it recursing until the stack ran out only exists
-# once a toolkit is handing real windows real sizes. Nothing short of opening
-# the dialog reproduces it.
+# what could not be: a layout that recurses, a control squeezed below its own
+# minimum, a painted pane that draws nothing -- none of them exists until a
+# toolkit is handing real widgets real sizes. So the preferences dialog is
+# walked page by page, the equaliser's scales measured, the painted panes run
+# for a few frames, and GTK's own warnings are part of the verdict.
 #
-# Linux only, and not because the fault was. It is where a display can be
-# conjured: Xvfb is a package away on any distribution and there is no
-# equivalent on the other two -- a Windows or macOS runner either has a session
-# or it does not, and gating a test on that is how a suite grows a case nobody
-# ever sees run. The code under test is the same everywhere, so once is enough.
-if(XPCOG_BUILD_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_executable(xpcog-gui-tests app/test_guipanes.cpp)
+# Registered by hand rather than with catch_discover_tests(): discovery
+# generates its own add_test() calls and has nowhere to put a launcher, so a
+# discovered test would run bare -- passing on a developer's desktop and
+# skipping in every headless CI job. One entry, run under Xvfb where there is
+# one. Linux only because that is where the GTK frontend is, and where a
+# display can be conjured.
+# ---------------------------------------------------------------------------
+if(XPCOG_BUILD_GTK_APP)
+    add_executable(xpcog-gtk-tests gtk/test_gtkwidgets.cpp)
 
-    target_link_libraries(xpcog-gui-tests PRIVATE
-        xpcog-appcore
+    target_link_libraries(xpcog-gtk-tests PRIVATE
+        xpcog-gtkcore
         Catch2::Catch2WithMain
         XPCog::warnings)
 
-    set_target_properties(xpcog-gui-tests PROPERTIES FOLDER tests)
+    set_target_properties(xpcog-gtk-tests PROPERTIES FOLDER tests)
 
-    # Registered by hand rather than with catch_discover_tests(), which is the
-    # one place this suite departs from the other two. Discovery generates its
-    # own add_test() calls and has nowhere to put a launcher, so a discovered
-    # test would run bare -- passing on a developer's desktop and skipping in
-    # every headless CI job, which is the shape of a test that quietly stops
-    # covering anything. One entry, run under Xvfb where there is one.
     find_program(XPCOG_XVFB_RUN NAMES xvfb-run)
-
     if(XPCOG_XVFB_RUN)
         # -a picks a free server number, so parallel ctest jobs do not collide
         # over :99.
-        add_test(NAME "the panes that need a screen"
-                 COMMAND "${XPCOG_XVFB_RUN}" -a "$<TARGET_FILE:xpcog-gui-tests>")
-        message(STATUS "GUI tests: under ${XPCOG_XVFB_RUN}")
+        add_test(NAME "the GTK widgets that need a screen"
+                 COMMAND "${XPCOG_XVFB_RUN}" -a "$<TARGET_FILE:xpcog-gtk-tests>")
     elseif(DEFINED ENV{CI})
         # A developer without Xvfb has a desktop; a runner without it has
-        # nothing, and the case would skip in a job that stayed green -- which
-        # is the shape of coverage quietly going away, and the reason the
-        # encoder downloads above fail the job rather than degrade. So this is
-        # the one configuration where a missing tool is an error: install the
-        # `xvfb` package, as .github/workflows/ci.yml does.
+        # nothing, and the case would skip in a job that stayed green -- the
+        # shape of coverage quietly going away. So this is the one
+        # configuration where a missing tool is an error.
         message(FATAL_ERROR
-            "xvfb-run not found, and CI is set: the GUI tests would skip rather "
+            "xvfb-run not found, and CI is set: the GTK tests would skip rather "
             "than run. Install xvfb.")
     else()
-        # Whatever display the session has, and the test skips if there is none.
-        add_test(NAME "the panes that need a screen"
-                 COMMAND "$<TARGET_FILE:xpcog-gui-tests>")
-        message(STATUS "GUI tests: no xvfb-run, using the session's display")
+        add_test(NAME "the GTK widgets that need a screen"
+                 COMMAND "$<TARGET_FILE:xpcog-gtk-tests>")
     endif()
-
-    # What Catch.cmake registers for the discovered tests, for the same reason:
-    # a binary whose every case skipped exits 4, and without this ctest reads
-    # that as a failure.
-    set_tests_properties("the panes that need a screen"
+    set_tests_properties("the GTK widgets that need a screen"
                          PROPERTIES SKIP_RETURN_CODE 4)
+    if(XPCOG_XVFB_RUN)
+        # Under Xvfb the display is X, and GTK has to be told so: with
+        # GDK_BACKEND unset it tries Wayland first, and on a Wayland desktop
+        # the test windows open on the real screen. The suite pins this itself
+        # when it is unset; said here too. The lock is for running beside
+        # anything else that starts an Xvfb.
+        set_tests_properties("the GTK widgets that need a screen"
+                             PROPERTIES ENVIRONMENT_MODIFICATION "GDK_BACKEND=set:x11"
+                                        RESOURCE_LOCK xvfb)
+    endif()
 endif()

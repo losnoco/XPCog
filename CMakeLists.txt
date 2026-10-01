@@ -9,22 +9,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(XPCogSystemDeps)
 xpcog_probe_system_deps()
 
-# Before project() as well, and for the same kind of reason: project() is what
-# reads CMAKE_OSX_DEPLOYMENT_TARGET, so a value set after it is a value that did
-# nothing. Not in CMakePresets.json, where it used to be, because the number has
-# a second reader -- the overlay triplets in triplets/, which govern the entirely
-# separate CMake build vcpkg runs for every dependency. See the file for what
-# the two of them disagreeing shipped.
-#
-# CACHE without FORCE, so -D and a preset still win, and so `cmake -LH` shows it.
-include(XPCogOsxDeploymentTarget)
-set(CMAKE_OSX_DEPLOYMENT_TARGET "${XPCOG_OSX_DEPLOYMENT_TARGET}" CACHE STRING
-    "Oldest macOS this build runs on")
-
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 1.20.0
-    DESCRIPTION "Cross-platform wxWidgets port of the Cog audio player"
+    VERSION 2.0.0
+    DESCRIPTION "An audio player for Windows and Linux, ported from Cog"
     LANGUAGES C CXX)
 
 # After project(), and only after: vcpkg's toolchain sets these same variables as
@@ -53,11 +41,6 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # offers projects with no domain of their own. The namespace is not new either;
 # the MPRIS track paths in platform/src/linux/GDbusMediaIntegration.cpp have
 # been /co/losno/xpcog/track/N since MPRIS was written.
-#
-# The macOS bundle identifier next to it in app/CMakeLists.txt is the lowercase
-# co.losno.xpcog, and deliberately stays that way: it is a different platform's
-# namespace, and on macOS it is also where a user's preferences are keyed, so
-# changing its spelling would orphan them.
 # ---------------------------------------------------------------------------
 set(XPCOG_DESKTOP_ID "co.losno.XPCog")
 
@@ -84,10 +67,13 @@ include(XPCogResources)
 include(XPCogCatalogs)
 # The rpath and the one bundled shared library an installed Linux build needs.
 include(XPCogInstallRuntime)
-# The UI toolkit. An ordinary vcpkg dependency: no environment variable to set,
-# no separate installer, and no deploy step. See docs/WXPORT.md for what that
-# replaced.
+# The toolkits, one per platform. wxWidgets on Windows: an ordinary vcpkg
+# dependency, with no environment variable to set and no deploy step -- see
+# docs/WXPORT.md for what that replaced. GTK4 and libadwaita on Linux, from the
+# distribution, for the frontend in app-gtk/ -- see docs/GTKPORT.md.
 include(XPCogWx)
+include(XPCogGtk)
+include(XPCogBlueprint)
 
 # ---------------------------------------------------------------------------
 # Layers, innermost first. core and codecs link no toolkit; platform links no
@@ -104,29 +90,27 @@ if(XPCOG_BUILD_CLI)
     add_subdirectory(tools/cli)
 endif()
 
+# Everything the player needs and the CLI does not. platform/ is per-OS
+# integration with no toolkit in its headers, and uicore/ the application layer
+# with none at all, which is exactly what lets the two frontends share them.
 if(XPCOG_BUILD_APP)
     add_subdirectory(platform)
-    if(APPLE)
-        # Before app, which runs it while assembling the bundle: it writes the
-        # document types Info.plist declares. tools/doctypes/main.cpp says why
-        # that is a program and not a list.
-        add_subdirectory(tools/doctypes)
-    endif()
-    add_subdirectory(app)
+    add_subdirectory(uicore)
+endif()
 
-    # Packaging, after the thing being packaged. None of what these add is ever
-    # built by ALL: `installer` on Windows, and `sign`, `dmg` and `notarize` on
-    # macOS. See packaging/windows/CMakeLists.txt and packaging/macos/CMakeLists.txt.
-    if(WIN32)
-        add_subdirectory(packaging/windows)
-    elseif(APPLE)
-        add_subdirectory(packaging/macos)
-    else()
-        # Unlike the other two this one *is* built by ALL, because it builds
-        # nothing: it is install() rules and two configured text files, and they
-        # are what `cmake --install` needs to produce a working player.
-        add_subdirectory(packaging/linux)
-    endif()
+if(XPCOG_BUILD_WX_APP)
+    add_subdirectory(app)
+    # Packaging, after the thing being packaged. `installer` is never built by
+    # ALL; see packaging/windows/CMakeLists.txt.
+    add_subdirectory(packaging/windows)
+endif()
+
+if(XPCOG_BUILD_GTK_APP)
+    add_subdirectory(app-gtk)
+    # This one *is* built by ALL, because it builds nothing: install() rules and
+    # two configured text files, which are what `cmake --install` needs to
+    # produce a working player.
+    add_subdirectory(packaging/linux)
 endif()
 
 if(XPCOG_BUILD_TESTS)
@@ -138,7 +122,11 @@ message(STATUS "")
 message(STATUS "XPCog ${PROJECT_VERSION}")
 message(STATUS "  build type ......... ${CMAKE_BUILD_TYPE}")
 message(STATUS "  app ................ ${XPCOG_BUILD_APP}")
-message(STATUS "  toolkit ............ wxWidgets (${XPCOG_WX_DISCOVERY})")
+if(XPCOG_BUILD_WX_APP)
+    message(STATUS "  toolkit ............ wxWidgets (${XPCOG_WX_DISCOVERY})")
+elseif(XPCOG_BUILD_GTK_APP)
+    message(STATUS "  toolkit ............ GTK ${XPCOG_GTK4_gtk4_VERSION}, libadwaita ${XPCOG_GTK4_libadwaita-1_VERSION}")
+endif()
 message(STATUS "  cli ................ ${XPCOG_BUILD_CLI}")
 message(STATUS "  tests .............. ${XPCOG_BUILD_TESTS}")
 get_property(_codecs GLOBAL PROPERTY XPCOG_CODEC_TARGETS)

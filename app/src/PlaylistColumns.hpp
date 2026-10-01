@@ -76,11 +76,6 @@ private:
     [[nodiscard]] int availableWidth() const;
     [[nodiscard]] bool pointerButtonDown() const;
 
-#ifdef __WXGTK__
-    /// The tree view's "size-allocate". Untyped so that this header need not
-    /// name GTK; the .cpp casts.
-    static void onGtkSizeAllocate(void* widget, void* allocation, void* self);
-#endif
 
     wxDataViewCtrl& list_;
     Settings&       settings_;

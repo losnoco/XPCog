@@ -44,8 +44,9 @@ Every `finish-arg` is there because something in the source asks for it, and
 the manifest says which. The four D-Bus names are the interesting ones:
 `org.kde.StatusNotifierWatcher` for the tray icon, `org.mpris.MediaPlayer2.*`
 for the media keys and panel widget, `org.freedesktop.FileManager1` for
-revealing a track, and `org.freedesktop.secrets` for the Last.fm session key,
-which lives in `wxSecretStore` rather than in settings.
+revealing a track, and `org.freedesktop.secrets` for the Last.fm and
+ListenBrainz credentials and the remote-control token, which live in the
+password store through libsecret rather than in settings.
 
 `--filesystem=home` is the broad one. A music library is wherever the listener
 keeps it, and XPCog is pointed at directories rather than handed files one at a

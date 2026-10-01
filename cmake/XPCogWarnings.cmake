@@ -9,9 +9,13 @@ if(MSVC)
     target_compile_definitions(xpcog-warnings INTERFACE
         _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 else()
+    # The two class-related warnings are C++-only, and gcc says so on the
+    # command line of every C file that gets them -- which, since a generated
+    # GResource is a C file, would be once per build.
     target_compile_options(xpcog-warnings INTERFACE
         -Wall -Wextra -Wpedantic
-        -Wcast-qual -Wshadow -Wnon-virtual-dtor -Woverloaded-virtual
+        -Wcast-qual -Wshadow
+        "$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor;-Woverloaded-virtual>"
         -Wdouble-promotion -Wformat=2)
 endif()
 

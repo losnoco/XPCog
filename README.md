@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/losnoco/XPCog/actions/workflows/ci.yml/badge.svg)](https://github.com/losnoco/XPCog/actions/workflows/ci.yml)
 
-XPCog is an audio player for **Windows, macOS and Linux**, built on wxWidgets from a
-single codebase. It plays **842 extensions across 23 decoders**, and that list runs a
+XPCog is an audio player for **Windows and Linux**, one engine under two native
+interfaces: wxWidgets on Windows, GTK 4 and libadwaita on Linux. It plays **842 extensions across 23 decoders**, and that list runs a
 long way past the usual lossless and lossy files.
 
 **The engine.** Gapless across formats *and* sample rates, ReplayGain, cue sheets and
@@ -15,9 +15,9 @@ drag-and-drop, over a persistent SQLite library. A spectrum analyser, an oscillo
 and a mini player.
 English and Spanish.
 
-**The desktop.** Media keys and Now Playing on all three platforms — MediaPlayer.framework,
-SMTC and MPRIS — with a tray icon on Windows and Linux, the Dock menu on macOS, a taskbar
-badge and progress bar, and one instance per user.
+**The desktop.** Media keys and Now Playing on both platforms — SMTC and MPRIS — a tray
+icon and track notifications, a taskbar badge and progress bar on Windows, and one
+instance per user.
 
 **The awkward formats.** Archives played without unpacking first, tracker modules, game
 rips through vgmstream, the whole PSF family on all eight of its emulator cores,
@@ -31,39 +31,40 @@ stream survives its own track changes. Last.fm scrobbling, with a queue that sur
 evening offline. A [remote control](docs/FEATURES.md#remote-control) over HTTP — off until you switch it
 on — with a generated OpenAPI document and a browser page for trying it.
 
-**Building it.** Every dependency comes from vcpkg, so there is nothing to install
-separately, no environment variable pointing at a toolkit, and no deploy step.
+**Building it.** On Windows every dependency comes from vcpkg, so there is nothing to
+install separately and no deploy step; on Linux the toolkit is the distribution's and
+vcpkg fills in the rest.
 
 XPCog grew out of a port of [Cog](https://cog.losno.co/), the macOS player by Vincent
 Spader and Christopher Snowhill, and owes it a great deal: the plugin contract the
 design hangs off, the settings keys, and a lot of carefully chosen behaviour. It runs
-on three platforms now, and has since gained things Cog does not have. Where following
+where Cog does not — Cog remains the player on the Mac — and has since gained things
+Cog does not have. Where following
 Cog is still the right answer it follows Cog; where it is not, the difference is
 written down — see [Relationship to Cog](#relationship-to-cog).
 
 ## Installing
 
 The [latest release](https://github.com/losnoco/XPCog/releases/latest) carries
-the first three; the rest build on your machine.
+the first two; the rest build on your machine. There is no macOS build: on a Mac,
+use [Cog](https://cog.losno.co/).
 
 - **Windows** — `XPCog-<version>-x64-setup.exe`, for **Windows 10 or newer,
   64-bit**. Unsigned, so SmartScreen will say so. Silent switches and what it
   registers: [Windows: the installer](docs/BUILDING.md#windows-the-installer).
-- **macOS** — `XPCog-<version>-arm64.dmg`, for **macOS 13 Ventura or newer** on
-  **Apple silicon only**; an Intel Mac cannot run it. Signed and notarised.
-- **Linux** — `XPCog-<version>-x86_64.tar.gz`, for **glibc 2.39 or newer**
-  (Ubuntu 24.04, Debian 13, current Fedora, Arch, openSUSE):
+- **Linux** — `XPCog-<version>-x86_64.tar.gz`, for **GTK 4.22 and libadwaita 1.9
+  or newer** (Ubuntu 26.04, Fedora 44, Arch, anything on GNOME 50 or later):
 
   ```sh
   sudo tar xzf XPCog-<version>-x86_64.tar.gz --strip-components=1 -C /usr/local
   ```
 
-  wxWidgets and GTK come from your distribution; the codecs are linked in. Unpack
+  GTK, libadwaita and libsecret come from your distribution; the codecs are linked in. Unpack
   at the prefix it was built for, or edit the desktop file's `Exec` line.
 - **Arch** — [`xpcog`](https://aur.archlinux.org/packages/xpcog) on the AUR:
   `yay -S xpcog`. It reaches the network during `build()`, because vcpkg fetches
   what has no system path.
-- **Flatpak** — runs on any distribution whatever its glibc. Not on Flathub, for
+- **Flatpak** — runs on any distribution, whatever GTK it ships. Not on Flathub, for
   the same vcpkg reason (`packaging/flatpak/README.md`):
 
   ```sh
@@ -75,11 +76,12 @@ the first three; the rest build on your machine.
 
 | You are on | Take |
 | --- | --- |
-| Windows or macOS | the installer or the disk image |
+| Windows | the installer |
+| macOS | [Cog](https://cog.losno.co/) |
 | Arch | `yay -S xpcog` |
-| A current mainstream distribution | the tarball |
+| Ubuntu 26.04, Fedora 44, or newer | the tarball |
 | Something older, or you want the sandbox | the Flatpak |
-| Ubuntu 22.04, Debian 12, RHEL 9 | Flatpak or source — the tarball's glibc floor rules you out |
+| Ubuntu 24.04, Debian 13 | the Flatpak — the tarball's GTK floor rules you out |
 
 Anything you build yourself has **scrobbling off unless you supply your own
 Last.fm credentials**; the prebuilt downloads carry one. See
@@ -88,27 +90,28 @@ Last.fm credentials**; the prebuilt downloads carry one. See
 ## Building
 
 **CMake 3.24+**, **Ninja**, a **C++20** compiler, and
-[**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set. Every
-dependency comes from vcpkg and there is no deploy step. On Linux the toolkit is
-the distribution's — install `libwxgtk3.2-dev` and `libgtk-3-dev`, or `wxGTK-devel`,
-or `wxgtk3` — and the `linux-repo-*` presets take as much of the rest from it as
+[**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set. On Windows
+every dependency comes from vcpkg and there is no deploy step. On Linux GTK 4.22,
+libadwaita 1.9 and blueprint-compiler are the distribution's — `libgtk-4-dev
+libadwaita-1-dev blueprint-compiler`, or `gtk4-devel libadwaita-devel`, or `gtk4
+libadwaita` — and the `linux-repo-*` presets take as much of the rest from it as
 the machine has.
 
 ```sh
-cmake --preset macos-debug                   # or linux-repo-debug / windows-debug
-cmake --build --preset macos-debug
-ctest --preset macos-debug
+cmake --preset linux-repo-debug              # or linux-debug / windows-debug
+cmake --build --preset linux-repo-debug
+ctest --preset linux-repo-debug
 ```
 
 Presets come in `-debug` and `-release`; `*-app-*` builds the application alone,
-`*-headless` builds no toolkit at all. Signing and packaging are targets of their
-own: `dmg` and `notarize` on macOS, `installer` on Windows, `package` on Linux.
+`linux-headless` builds no toolkit at all. Packaging is a target of its own:
+`installer` on Windows, `package` on Linux.
 
 Read the **skip count** of a test run, not just the pass rate: many tests build
 their fixtures with `flac`, `oggenc`, `opusenc`, `lame`, `wavpack` and `ffmpeg`,
 and skip silently without them.
 
-Everything else — the disk image and its signing, the installer, the Linux
+Everything else — the installer, the Linux
 install tree, how a release is made, building against a distribution's
 libraries, the encoders and corpora the tests want — is in
 [`docs/BUILDING.md`](docs/BUILDING.md).
@@ -135,12 +138,6 @@ where both exist.
 writes into the same ring, across formats and across sample rates. HDCD is
 decoded when present and is bit-transparent when it is not; both are asserted by
 tests against a capturing output, not assumed.
-
-**Surround.** A multichannel track plays at full width on a device that has the
-channels. On one that does not — AirPods, a laptop's speakers — the system's
-spatializer gets the whole thing instead of a fold-down to stereo: macOS Spatial
-Audio, Windows Sonic or Dolby Atmos for Headphones, a PipeWire virtual-surround
-sink. On by default.
 
 **Internet radio.** SHOUTcast stream titles, HLS, and chained Ogg. The audio
 callback takes no lock and allocates nothing, and `xpcog-cli play` reports
@@ -187,16 +184,18 @@ source and a decoder when the bytes are not what the decoder wants. Adding a
 format is one of those plus one `xpcog_add_codec()` call, never a refactor.
 
 ```
-xpcog-app ──┬── xpcog-platform (per-OS integration; NO toolkit)
-            └── xpcog-codecs ──┐
-                               ├── xpcog-core   (NO toolkit)
-xpcog-cli ── core + codecs ────┘
+xpcog-app (wx, Windows) ──┐
+                          ├── xpcog-uicore ──┬── xpcog-platform (per-OS; NO toolkit)
+xpcog-gtk (GTK4, Linux) ──┘                  └── xpcog-codecs ──┬── xpcog-core (NO toolkit)
+xpcog-cli ── core + codecs ─────────────────────────────────────┘
 ```
 
-Two rules do the structural work. **Only `xpcog-app` links a UI toolkit**, which
-`xpcog-cli` proves by linking none and `cmake/CheckNoToolkit.cmake` reports
-earlier — the interface moved from Qt 6 to wxWidgets without `core/` or `codecs/`
-changing ([`docs/WXPORT.md`](docs/WXPORT.md)). **Codecs register at compile time**,
+Two rules do the structural work. **Only the two frontends link a UI toolkit**,
+each its own, which `xpcog-cli` proves by linking none and
+`cmake/CheckNoToolkit.cmake` reports earlier — the interface moved from Qt 6 to
+wxWidgets, and then gained a second written for GTK, without `core/` or
+`codecs/` changing ([`docs/WXPORT.md`](docs/WXPORT.md),
+[`docs/GTKPORT.md`](docs/GTKPORT.md)). **Codecs register at compile time**,
 through a generated `RegisterAll.cpp`, because a self-registering static inside
 a static library is silently dropped by the linker.
 
@@ -205,14 +204,13 @@ a static library is silently dropped by the linker.
 What is outstanding is short, and each item is here for a reason rather than for want
 of time:
 
-- **Adopting an existing Cog installation** is most of the way there. File →
-  Import from Cog reads its library, playlist order, ReplayGain and play counts;
-  what is left is finding that installation without being pointed at it, which only
-  matters on a Mac.
+- **Importing a Cog library** was removed in 2.0.0, with the macOS port: it
+  existed for moving from a Mac, which XPCog no longer runs on. Playlists Cog
+  saved as XML still open.
 - **DoP output** waits on a DAC to verify it against, and **HRTF** is deferred.
 - **Global hotkeys** are not coming: the media keys they would bind are already
-  delivered by SMTC, MPRIS and MediaPlayer.framework.
-- **NSDockTile** was dropped by decision.
+  delivered by SMTC and MPRIS.
+- **macOS** was dropped in 2.0.0; Cog is the player there.
 
 ### Deliberately out of scope
 
@@ -235,12 +233,11 @@ SpessaSynth, Nuked OPL3 and Nuked SC-55. See [`docs/MIDI.md`](docs/MIDI.md).
 XPCog is a derivative work of [Cog](https://github.com/losnoco/Cog), and the
 [License](#license) below is not a formality about that. The debt is specific and
 large: the six-protocol plugin contract the whole design hangs off, the
-`NSUserDefaults` keys — kept identical, so an existing Cog plist imports verbatim —
+`NSUserDefaults` keys — kept identical —
 and years of decisions about how a player of this kind should behave, down to quirks
 worth preserving.
 
-It is not only a port any more. It runs on Windows and Linux as well as macOS from one
-codebase, it has a REST remote control and a translated interface, and its build
+It is not only a port any more. It runs on Windows and Linux, where Cog does not, it has a REST remote control and a translated interface, and its build
 fetches its own dependencies. Cog recognises around 900 extensions across ~35 decoders,
 against 842 across 23 here.
 

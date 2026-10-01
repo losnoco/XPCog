@@ -6,9 +6,6 @@
 #include <wx/translation.h>
 #include <wx/utils.h>
 
-#ifdef __WXGTK__
-#include <gtk/gtk.h>
-#endif
 
 #include <algorithm>
 #include <charconv>
@@ -26,11 +23,7 @@ constexpr std::string_view kWidthsKey = "xpcog.playlist.columns";
 /// Whether the toolkit distributes the control's width over the columns by
 /// itself. True on macOS, where AppKit does and cannot be told not to; see
 /// the header. Where it is false, fit() is the distribution.
-#ifdef __WXOSX__
-constexpr bool kToolkitFills = true;
-#else
 constexpr bool kToolkitFills = false;
-#endif
 
 /// Widths in dialog units rather than pixels, so they mean the same thing at
 /// every DPI. The status column is exactly wide enough for a glyph or a
@@ -141,16 +134,7 @@ PlaylistColumns::PlaylistColumns(wxDataViewCtrl& list, Settings& settings)
         }
     }
 
-#if defined(__WXGTK__)
-    // The tree view's own allocation, not the wxDataViewCtrl's size event.
-    // The control is a GtkScrolledWindow and wx reports its size, which is
-    // not the tree view's whenever a non-overlay vertical scrollbar has
-    // appeared -- and that happens as rows are added, with no size event at
-    // all. The tree view is re-allocated on every column drag too, which is
-    // how a drag's aftermath is caught; see onGtkSizeAllocate().
-    g_signal_connect(list_.GtkGetTreeView(), "size-allocate",
-                     G_CALLBACK(&PlaylistColumns::onGtkSizeAllocate), this);
-#elif defined(wxHAS_GENERIC_DATAVIEWCTRL)
+#if defined(wxHAS_GENERIC_DATAVIEWCTRL)
     // Bound rather than in a subclass so this handler runs *before* the
     // control's own wxDataViewCtrl::OnSize, whose UpdateColumnSizes() widens
     // the last column into whatever is left. With Title already fitted there
@@ -181,52 +165,8 @@ PlaylistColumns::PlaylistColumns(wxDataViewCtrl& list, Settings& settings)
 
 PlaylistColumns::~PlaylistColumns() {
     retry_.Stop();
-#ifdef __WXGTK__
-    g_signal_handlers_disconnect_by_data(list_.GtkGetTreeView(), this);
-#endif
 }
 
-#ifdef __WXGTK__
-void PlaylistColumns::onGtkSizeAllocate(void* widget, void* allocation, void* self) {
-    auto* columns = static_cast<PlaylistColumns*>(self);
-    auto* tree    = static_cast<GtkWidget*>(widget);
-    auto* rect    = static_cast<GtkAllocation*>(allocation);
-
-    // A change of width is the window or the scrollbar and is fitted at once;
-    // that the mouse button is down during a window resize on X11 is of no
-    // account. The same width again is a column drag in progress -- GTK
-    // re-allocates the tree on every motion of one -- and that waits for the
-    // button to come up, since moving Title under the drag moves the divider
-    // being dragged.
-    bool fitted = false;
-    if (rect->width != columns->lastWidth_) {
-        columns->lastWidth_ = rect->width;
-        fitted              = columns->fit();
-    } else if (columns->pointerButtonDown()) {
-        if (!columns->retry_.IsRunning()) {
-            columns->retry_.Start(50);
-        }
-    } else {
-        fitted = columns->fit();
-    }
-    if (!fitted) {
-        return;
-    }
-
-    // The columns have already been laid out by the time this handler runs --
-    // the class handler goes first -- and with the old Title width. Setting
-    // the new one queued a resize, but GTK discards a resize queued from
-    // inside an allocation ("Size allocation is god... no further requests or
-    // allocations are needed", gtk_widget_size_allocate_with_baseline), so
-    // nothing would lay the columns out again until the window next changed
-    // size; the tree would sit there with Length wide. Running the class
-    // handler a second time lays them out now, into the same allocation. It
-    // is written to be run repeatedly: it stores the allocation, sizes the
-    // columns, syncs the adjustments and moves its windows, and does not emit
-    // this signal again.
-    GTK_WIDGET_GET_CLASS(tree)->size_allocate(tree, rect);
-}
-#endif
 
 bool PlaylistColumns::pointerButtonDown() const {
     return wxGetMouseState().LeftIsDown();
@@ -246,17 +186,7 @@ wxDataViewColumn* PlaylistColumns::column(Column column) const {
 }
 
 int PlaylistColumns::specifiedWidth(wxDataViewColumn& column) const {
-#if defined(__WXGTK__)
-    // GetWidth() is gtk_tree_view_column_get_width(), the *allocated* width,
-    // and for the last column that is its fixed width plus the slack. Reading
-    // that back as the width to fit around would hand the slack to Length
-    // again on every pass. The fixed width is what SetWidth() and a drag set.
-    auto* native = GTK_TREE_VIEW_COLUMN(column.GetGtkHandle());
-    if (const int fixed = gtk_tree_view_column_get_fixed_width(native); fixed >= 0) {
-        return fixed;
-    }
-    return column.GetWidth();
-#elif defined(wxHAS_GENERIC_DATAVIEWCTRL)
+#if defined(wxHAS_GENERIC_DATAVIEWCTRL)
     // The width last set explicitly, by SetWidth() or a drag, as opposed to
     // m_width, which UpdateColumnSizes() bumps on the last column.
     return column.WXGetSpecifiedWidth();
@@ -266,15 +196,7 @@ int PlaylistColumns::specifiedWidth(wxDataViewColumn& column) const {
 }
 
 int PlaylistColumns::availableWidth() const {
-#if defined(__WXGTK__)
-    // The same number gtk_tree_view_size_allocate_columns() lays the columns
-    // out into.
-    GtkAllocation allocation{};
-    gtk_widget_get_allocation(list_.GtkGetTreeView(), &allocation);
-    return allocation.width;
-#else
     return list_.GetClientSize().x;
-#endif
 }
 
 bool PlaylistColumns::fit() {

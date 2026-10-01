@@ -123,7 +123,6 @@ bool XPCogApp::OnInit() {
     // failure a dead-code check would have caught and a test suite did not: the
     // class was complete, compiled, and unreachable, so every double-click opened
     // a second player.
-#ifndef __WXOSX__
     instance_ = std::make_unique<SingleInstance>();
     {
         std::vector<std::string> arguments;
@@ -136,7 +135,6 @@ bool XPCogApp::OnInit() {
             return finishEarly();
         }
     }
-#endif
 
     store_    = platform::makeNativeSettingsStore();
     settings_ = std::make_unique<Settings>(*store_);
@@ -179,7 +177,6 @@ bool XPCogApp::OnInit() {
     // brought none is the point -- someone who runs the application again while
     // it is minimised is asking for the window, and a launch that appears to do
     // nothing reads as the program having failed to start.
-#ifndef __WXOSX__
     launchSubscription_ =
         instance_->launched.connect([this](const std::vector<std::string>& received) {
             std::vector<Url> urls;
@@ -193,7 +190,6 @@ bool XPCogApp::OnInit() {
             }
             raiseWindow(frame_);
         });
-#endif
 
     if (!pending_.IsEmpty()) {
         std::vector<Url> urls;
@@ -348,30 +344,5 @@ bool XPCogApp::performRegistration(bool unregister) {
     return true;
 }
 
-#ifdef __WXOSX__
-
-void XPCogApp::MacReopenApp() {
-    if (frame_ != nullptr) {
-        frame_->Show();
-        frame_->Raise();
-    }
-}
-
-void XPCogApp::MacOpenFiles(const wxArrayString& fileNames) {
-    if (frame_ == nullptr) {
-        for (const wxString& name : fileNames) {
-            pending_.Add(name);
-        }
-        return;
-    }
-    std::vector<Url> urls;
-    urls.reserve(fileNames.GetCount());
-    for (const wxString& name : fileNames) {
-        urls.push_back(Url::fromLocalPath(std::filesystem::path{name.ToStdWstring()}));
-    }
-    frame_->openUrls(urls);
-}
-
-#endif
 
 }  // namespace xpcog::app

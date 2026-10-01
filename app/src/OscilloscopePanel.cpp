@@ -10,7 +10,6 @@
 #include <wx/translation.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <memory>
 #include <span>
@@ -45,38 +44,7 @@ constexpr unsigned char kCentreAlpha = 70;
     return {colour.Red(), colour.Green(), colour.Blue(), alpha};
 }
 
-struct ChannelsName {
-    OscilloscopePanel::Channels channels;
-    const char*                 key;
-};
-
-constexpr std::array<ChannelsName, 5> kChannelsNames = {{
-    {OscilloscopePanel::Channels::Mono, "mono"},
-    {OscilloscopePanel::Channels::Left, "left"},
-    {OscilloscopePanel::Channels::Right, "right"},
-    {OscilloscopePanel::Channels::Stacked, "stacked"},
-    {OscilloscopePanel::Channels::Overlaid, "overlaid"},
-}};
-
 }  // namespace
-
-const char* OscilloscopePanel::channelsKey(Channels channels) noexcept {
-    for (const ChannelsName& name : kChannelsNames) {
-        if (name.channels == channels) {
-            return name.key;
-        }
-    }
-    return "mono";
-}
-
-OscilloscopePanel::Channels OscilloscopePanel::channelsFromKey(std::string_view key) noexcept {
-    for (const ChannelsName& name : kChannelsNames) {
-        if (key == name.key) {
-            return name.channels;
-        }
-    }
-    return Channels::Mono;
-}
 
 OscilloscopePanel::OscilloscopePanel(wxWindow* parent, AudioTap& tap, Settings& settings)
     : wxWindow(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE),

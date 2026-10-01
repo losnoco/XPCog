@@ -58,21 +58,6 @@ public:
     void OnInitCmdLine(wxCmdLineParser& parser) override;
     bool OnCmdLineParsed(wxCmdLineParser& parser) override;
 
-#ifdef __WXOSX__
-    /// The Dock's "reopen" gesture -- clicking the icon when every window is
-    /// closed. The real callback, where the Qt build watched for an application
-    /// state change and had to filter out a Cmd-Tab false positive.
-    ///
-    /// void, not bool: wx/osx/app.h declares it `virtual void MacReopenApp()`.
-    /// Written from memory as returning a handled flag, which is what the
-    /// equivalent hook does in several other toolkits, and which no compiler on
-    /// this machine could contradict.
-    void MacReopenApp() override;
-
-    /// Files opened from the Finder. XPCog never handled these under Qt; wx
-    /// surfaces the event, so it costs five lines to gain.
-    void MacOpenFiles(const wxArrayString& fileNames) override;
-#endif
 
     /// Runs `action` on the interface's thread. Safe from any thread.
     [[nodiscard]] std::function<void(std::function<void()>)> dispatcher();

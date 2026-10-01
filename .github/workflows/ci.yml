@@ -93,8 +93,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     # A hung job is not a slow job, and GitHub's default lets it run for six
     # hours before saying so. A green run here is five to eight minutes on a warm
-    # binary cache; a cold one is about thirty on Linux, forty on macOS and
-    # seventy on Windows, where vcpkg's configure alone took fifty-eight for
+    # binary cache; a cold one is about thirty on Linux and seventy on Windows, where vcpkg's configure alone took fifty-eight for
     # 1.9.0. Ninety minutes is enough never to cut off real work -- sixty was
     # not, and cut that Windows job off in its Build step twice, after the
     # dependencies had been built -- and short enough that a wedged runner
@@ -116,17 +115,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macos-26 rather than an older image because the bundle icon is
-          # compiled from app/icons/xpcog.icon, and an Icon Composer package
-          # needs actool from Xcode 26. This is not about staying green --
-          # app/CMakeLists.txt checks actool's version and falls back to the
-          # committed .icns, so older runners build fine. It is about CI
-          # exercising the icon that ships instead of the one that does not.
-          - name: macOS
-            os: macos-26
-            preset: macos-debug
+          # ubuntu-26.04 because the GTK frontend's floor is GTK 4.22 and
+          # libadwaita 1.9 (cmake/XPCogGtk.cmake), and 26.04 is the first
+          # Ubuntu that ships them: 24.04 has 4.14 and 1.5.
           - name: Linux
-            os: ubuntu-24.04
+            os: ubuntu-26.04
             preset: linux-debug
           - name: Windows
             os: windows-2022
@@ -146,20 +139,18 @@ jobs:
       # expects the package manager to supply it everywhere else, so without it
       # the ffmpeg port fails during configure rather than during the build.
       #
-      # libwxgtk3.2-dev is the toolkit, and it is an apt package rather than a
-      # vcpkg feature on purpose. vcpkg's wxwidgets port depends on its gtk3
-      # port, so asking vcpkg for wx here meant building GTK from source and,
-      # under it, glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus,
-      # libsystemd and seven X11 libraries -- 98 packages for the Linux job
-      # against 41 without. Every one of them is already on the runner.
+      # The toolkit is GTK 4 and libadwaita, from apt rather than vcpkg on
+      # purpose: vcpkg's gtk ports would build the whole GNOME stack from
+      # source on a runner that already has it. blueprint-compiler turns the
+      # interface files into GtkBuilder XML and checks them against the Adw-1
+      # and Gtk-4.0 typelibs, which is why those are named too.
+      # glib-compile-resources comes with libglib2.0-dev-bin, under
+      # libglib2.0-dev. libsecret-1-dev is the password store behind the
+      # Last.fm, ListenBrainz and remote-control credentials.
       #
-      # libgtk-3-dev beside it because libwxgtk3.2-dev does not depend on it:
-      # wx's headers forward-declare the GTK types, so linking wx needs no GTK
-      # headers -- but app/src/PlaylistColumns.cpp reaches under wx to GTK
-      # itself, and app/CMakeLists.txt asks pkg-config for gtk+-3.0.
-      #
-      # That is also where two entries this list used to carry came from, one CI
-      # round apart, both for ports nothing in this project asks for: fontconfig
+      # Two entries this list used to carry came from the wx-on-Linux days, one
+      # CI round apart, both for ports nothing in this project asks for any
+      # more: fontconfig
       # built gperf, which wanted autoconf-archive, and further down libxcrypt
       # wanted ltdl development files. ltdl is gone with the tree that needed it,
       # as are libgl1-mesa-dev and libglu1-mesa-dev, which were there for
@@ -177,33 +168,22 @@ jobs:
       # libglib2.0-dev stays, and not for the toolkit: platform/ talks to MPRIS
       # over GDBus, so gio-2.0 is a direct dependency of this project on Linux.
       #
-      # What this costs is a wxWidgets version that follows Ubuntu rather than
-      # vcpkg -- 3.2 here, 3.3 on macOS and Windows. Nothing in the source uses an
-      # API newer than 3.1.6, so the gap is theoretical today, and this job is what
-      # keeps it that way.
-      #
-      # xvfb is the fourth group, and it is one package for one test:
-      # xpcog-gui-tests opens the preferences dialog and walks its panes, which
-      # is the only way to catch a layout handler recursing until the stack runs
-      # out, and a dialog needs a display. tests/CMakeLists.txt looks for
-      # xvfb-run at *configure* time, so this has to be installed before the
-      # configure step rather than before the test one -- and it refuses to
-      # configure without it here, so the wiring cannot silently come undone and
-      # leave the case skipping in a green job.
+      # xvfb is the fourth group, and it is one package for one suite:
+      # xpcog-gtk-tests walks the preferences dialog, measures the equaliser's
+      # scales and runs the painted panes, and all of that needs a display.
+      # tests/CMakeLists.txt looks for xvfb-run at *configure* time, so this
+      # has to be installed before the configure step -- and it refuses to
+      # configure without it here, so the wiring cannot silently come undone
+      # and leave the suite skipping in a green job.
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
-            libwxgtk3.2-dev libgtk-3-dev libglib2.0-dev xvfb \
+            libgtk-4-dev libadwaita-1-dev gir1.2-gtk-4.0 gir1.2-adw-1 \
+            blueprint-compiler libglib2.0-dev libsecret-1-dev xvfb \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
-
-      - name: Install macOS build dependencies
-        if: runner.os == 'macOS'
-        run: |
-          brew install ninja pkg-config autoconf automake libtool nasm
-          brew install flac vorbis-tools opus-tools lame wavpack ffmpeg
 
       # The same encoders on Windows, from their upstream releases at pinned
       # versions. No package manager on the runners carries the set dependably:
@@ -395,15 +375,12 @@ jobs:
       # is offered. libtag1-dev is in that list deliberately even though it is
       # too old to be used -- being installed and rejected is the case under test.
       #
-      # xvfb for the same reason as the matrix job: this one builds the
-      # application too, so it registers xpcog-gui-tests and needs a display to
-      # run it under.
+      # No toolkit: this job builds without the player, see Configure.
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
-            libwxgtk3.2-dev libgtk-3-dev libglib2.0-dev xvfb \
             flac vorbis-tools opus-tools lame wavpack ffmpeg musepack-tools \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
             libcurl4-openssl-dev libarchive-dev libsqlite3-dev libsoxr-dev \
@@ -426,9 +403,16 @@ jobs:
           secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           endpoint: ${{ secrets.R2_ENDPOINT }}
 
+      # Without the player. Its GTK floor is newer than this runner -- 24.04
+      # has GTK 4.14 and libadwaita 1.5 -- and the runner is chosen for the
+      # versions of everything else, which is what this job is about. The
+      # substitutions checked below are all codec and engine libraries, and the
+      # feature list is untouched, so `sentry` is still requested and the curl
+      # veto still has to hold. The player on the distribution's GTK is the
+      # matrix job's, on ubuntu-26.04.
       - name: Configure
         id: configure
-        run: cmake --preset linux-repo-debug
+        run: cmake --preset linux-repo-debug -D XPCOG_BUILD_APP=OFF
 
       # The assertion this job exists for, and it reads vcpkg's own installed
       # tree rather than the summary XPCogSystemDeps.cmake prints. The summary is
@@ -492,11 +476,9 @@ jobs:
     # genuine link-time dependency, and it is the job that proved the rule held
     # when the toolkit was swapped.
     #
-    # It also stays cheap, which is why `gui` is a vcpkg feature rather than a
-    # plain dependency: this job builds no toolkit at all. On Linux that is no
-    # longer what keeps GTK out of the build -- the Linux presets leave the
-    # feature off too, and take wx from apt -- but it is still what keeps wx
-    # itself out of a configuration that links no toolkit.
+    # It also stays cheap: `gui`, the wx feature, is a vcpkg feature rather
+    # than a plain dependency, and GTK comes from apt only in the jobs that
+    # build the player, so this job builds no toolkit at all.
     name: Headless (no toolkit)
     runs-on: ubuntu-24.04
     # See the matrix job above for why.
@@ -536,9 +518,8 @@ jobs:
       # nothing links sentry, but the feature list is what vcpkg installs from,
       # so the job built crashpad -- and libunwind under it -- for a target that
       # could not use either. A feature cannot be subtracted by overriding, so
-      # `linux-headless` restates the list without it, exactly as macos-headless
-      # restates without `gui`. The list stays in CMakePresets.json: one list, in
-      # one file.
+      # `linux-headless` restates the list without it. The list stays in
+      # CMakePresets.json: one list, in one file.
       #
       # Worth keeping the reason the old override's quotes were load-bearing,
       # because the next person to add a -D of a CMake list will meet it: a CMake
@@ -731,298 +712,6 @@ jobs:
           name: XPCog-windows-x64-installer
           path: build/windows-app-release/XPCog-*-x64-setup.exe
           if-no-files-found: error
-  macos-package:
-    # The macOS disk image, built the way it would ship.
-    #
-    # A job of its own for the same reason the Windows installer is one, and the
-    # reason reads the same with the nouns changed: the matrix job builds a Debug
-    # tree because that is what runs the test suite, and a Debug tree is not what
-    # a person downloads. This one is RelWithDebInfo and app-only -- the CLI and
-    # the three test binaries never go into a bundle, so building them here would
-    # be link time spent on files nothing packages.
-    #
-    # It runs on pull requests too. Packaging breaks in ways compiling does not:
-    # a helper that stopped being staged into Contents/MacOS, a dylib whose
-    # install name went back to an absolute path, an asset directory that no
-    # longer lands in Resources. None of that is visible to any other job here.
-    #
-    # What a pull request does *not* get is a notarised image, and on a fork not
-    # a signed one either -- see the two steps at the end for where that line is
-    # drawn and why.
-    name: macOS disk image
-    runs-on: macos-26
-    # See the matrix job above for why ninety minutes.
-    timeout-minutes: 90
-
-    # Read by the release job, which puts what happened to this image into the
-    # release notes rather than describing what usually happens. Notarisation is
-    # conditional -- secrets, and main or a tag -- so "signed and notarised" is a
-    # claim that has to be sourced from the run that either did it or did not.
-    outputs:
-      signed: ${{ steps.signing.outputs.identity != '' }}
-      notarised: ${{ steps.notarise.outcome == 'success' }}
-
-    # At the job level rather than on each step, because `if: env.FOO != ''` is
-    # the only way a step can ask whether a secret exists: the secrets context is
-    # not available to a step-level `if`, and a fork's pull request gets every
-    # one of these as an empty string.
-    env:
-      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-      MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
-      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-      MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-
-    # `bash` rather than the default shell, and it is load-bearing rather than a
-    # preference: GitHub runs the default with `-e` alone, and two steps below
-    # pipe cmake into `tee` so that a later step can assert on what it printed.
-    # Without pipefail the exit status of such a step is tee's, which is always
-    # zero -- so a configure or a packaging run that failed outright would carry
-    # on to the checks, which would then report the interesting thing rather
-    # than the actual one. The Windows installer job gets this from its
-    # per-step `shell: bash`; this says it once.
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - uses: actions/checkout@v4
-
-      # The build tools only. The matrix job's second brew line installs the
-      # command-line encoders, which exist for test fixtures, and this job runs
-      # no tests.
-      - name: Install build dependencies
-        run: brew install ninja pkg-config autoconf automake libtool nasm
-
-      - name: Set up vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          runVcpkgInstall: false
-          # See the matrix job: an overlay port's manifest is also a vcpkg.json.
-          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
-
-      - name: Connect vcpkg to the binary cache
-        uses: ./.github/actions/vcpkg-cache
-        with:
-          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          endpoint: ${{ secrets.R2_ENDPOINT }}
-
-      # The certificate, into a keychain that exists for this job and no longer.
-      #
-      # Not the login keychain, which on a GitHub runner is unlocked with a known
-      # password and would leave the private key sitting in an image somebody
-      # else's job runs in next. A keychain created here, unlocked with a random
-      # password, added to the front of the search list and deleted at the end
-      # holds the key for the length of one build.
-      #
-      # Four details, each of which is a silent failure when it is missing.
-      # `-T /usr/bin/codesign` marks codesign as allowed to use the imported key.
-      # `set-key-partition-list` is what stops macOS prompting for permission the
-      # first time it does. `list-keychains -s` puts this keychain where codesign
-      # will look; without it the identity is present and not found. And
-      # `set-keychain-settings -lut` raises the auto-lock timeout past the length
-      # of a cold build, which otherwise locks the keychain somewhere in the
-      # middle of vcpkg and fails at the last step.
-      #
-      # The identity is then read out of the keychain rather than being a sixth
-      # secret. One less thing to keep in step with the certificate, and it makes
-      # "the certificate in the secret is not a Developer ID Application one" a
-      # message here instead of a codesign error twenty minutes later. It is not
-      # secret in any case: the team name and id are in every signature XPCog
-      # ships, which is what a Developer ID is for.
-      - name: Import the signing certificate
-        id: signing
-        if: env.MACOS_CERTIFICATE_P12 != ''
-        run: |
-          KEYCHAIN="$RUNNER_TEMP/xpcog-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
-          P12="$RUNNER_TEMP/certificate.p12"
-          trap 'rm -f "$P12"' EXIT
-
-          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$P12"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$P12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" \
-              -T /usr/bin/codesign -T /usr/bin/security -f pkcs12
-          security list-keychains -d user -s "$KEYCHAIN" \
-              $(security list-keychains -d user | tr -d '"')
-
-          # Counted before the partition list is set, and that order is the
-          # whole point of this block.
-          #
-          # `security import` of a .p12 holding a certificate and no private key
-          # succeeds, silently, and puts the certificate in. The next thing to
-          # touch it is `set-key-partition-list -s`, which looks for signing
-          # keys, finds none and says "SecItemCopyMatching: The specified item
-          # could not be found in the keychain" -- which names neither the file
-          # that was wrong nor what was wrong with it, and is what this job
-          # failed with the first time it ran.
-          #
-          # An identity is a certificate *and* its private key, so counting them
-          # here answers that question directly and can say so in English.
-          IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN" \
-              | grep "Developer ID Application" || true)
-          COUNT=$(printf '%s' "$IDENTITIES" | grep -c . || true)
-          if [ "$COUNT" -eq 0 ]; then
-              echo "::error::MACOS_CERTIFICATE_P12 holds no Developer ID Application identity. An identity is the certificate *and* its private key; exporting from Keychain Access's Certificates category gives the certificate alone, which imports without complaint and cannot sign anything. Export from the My Certificates category instead, or with: security export -k login.keychain-db -t identities -f pkcs12 -o cert.p12"
-              security find-identity -v -p codesigning "$KEYCHAIN" || true
-              exit 1
-          fi
-          if [ "$COUNT" -ne 1 ]; then
-              echo "::error::expected exactly one Developer ID Application identity in MACOS_CERTIFICATE_P12, found $COUNT. Export only the one this project signs with."
-              printf '%s\n' "$IDENTITIES"
-              exit 1
-          fi
-          IDENTITY=$(printf '%s' "$IDENTITIES" | sed -E 's/.*"(.*)".*/\1/')
-
-          # Now, and only now: the identity is known to be there, so a failure
-          # here is a real one rather than the missing-key case above. Without
-          # it macOS asks for permission the first time codesign uses the key --
-          # a dialog with nobody there to answer it, which reads in the log as
-          # codesign hanging until the job times out.
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-              -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
-
-          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
-          echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
-          echo "Signing as $IDENTITY"
-
-      # Signing without a certificate is not an error here. A fork's pull request
-      # gets no secrets by design, and what it is testing is that the bundle
-      # still packages -- so it packages an unsigned image and says so.
-      - name: Note that this run will not be signed
-        if: env.MACOS_CERTIFICATE_P12 == ''
-        run: |
-          echo "::warning::no MACOS_CERTIFICATE_P12 secret -- packaging an unsigned disk image. Gatekeeper will refuse it."
-
-      # The Last.fm credentials, through the environment for the reason the
-      # Windows installer job sets out at length: a -D lands in CMakeCache.txt
-      # and outlives the run that supplied it. The identity rides along the same
-      # way -- packaging/macos/SignBundle.cmake reads it from the environment, so
-      # nothing here writes a certificate name into the build tree either.
-      - name: Configure
-        id: configure
-        env:
-          XPCOG_LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-          XPCOG_LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
-        run: cmake --preset macos-app-release 2>&1 | tee configure.log
-
-      # See the Windows installer job for why this is asserted from the configure
-      # output rather than from the secret being non-empty, and why forks skip it.
-      - name: Check the Last.fm credentials were baked in
-        if: github.event.pull_request.head.repo.fork != true
-        run: |
-          if ! grep -q "Last.fm: API key configured" configure.log; then
-              echo "::error::configure reports no Last.fm API key. Set the LASTFM_API_KEY and LASTFM_API_SECRET repository secrets; see the Configure step for what they are."
-              exit 1
-          fi
-          echo "Last.fm credentials reached the build."
-
-      - name: Build
-        run: cmake --build --preset macos-app-release
-
-      # Named explicitly because `dmg` is deliberately not part of ALL. It signs
-      # the bundle on the way in -- nested code first, then the bundle, then the
-      # image -- which is why the identity is in this step's environment.
-      - name: Build the disk image
-        env:
-          XPCOG_CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
-        run: cmake --build --preset macos-app-release --target dmg 2>&1 | tee package.log
-
-      # Asserted, not assumed, and for the reason that runs through this whole
-      # file: an unsigned bundle packages perfectly well. Without this check a
-      # missing `-T /usr/bin/codesign`, a keychain that fell off the search list
-      # or an identity string that lost its team id all produce a green job and a
-      # disk image nobody can open.
-      #
-      # Skipped when there is no certificate, which is the fork case above.
-      - name: Check the bundle was signed
-        if: steps.signing.outputs.identity != ''
-        run: |
-          if ! grep -q "XPCog: signed XPCog.app as Developer ID Application" package.log; then
-              echo "::error::the bundle was not signed with a Developer ID. $(grep 'XPCog: signed' package.log || echo 'no signing line in the packaging log at all')"
-              exit 1
-          fi
-          grep "XPCog: signed" package.log
-
-      # Notarisation, on main and on tags only.
-      #
-      # The line is drawn here rather than at packaging because the two costs are
-      # different in kind. Packaging is a minute of the runner's own time and
-      # catches regressions, so every pull request gets it. Notarisation uploads
-      # to Apple and waits several minutes for a service this project does not
-      # control, and it answers a question -- will Gatekeeper open this -- that
-      # only matters for an image somebody is going to download. A pull request
-      # producing a signed but unnotarised image is the correct amount of proof
-      # that the signing works.
-      #
-      # The .p8 is written to a file because that is the only form notarytool
-      # accepts, into RUNNER_TEMP, and removed by a trap on the way out whether
-      # the submission succeeded or not.
-      #
-      # The secret is taken either as the .p8's own text or as base64 of it, and
-      # that is not politeness. A .p8 *is* text, so pasting the file into the
-      # secret box is the obvious thing to do -- and `base64 --decode` on macOS
-      # accepts it, because a PEM body is base64 and the dashes and newlines
-      # around it are quietly ignored. It exits zero having written 174 bytes of
-      # rubbish, which is what took this job's first notarisation attempt down
-      # with `Error: invalidPrivateKeyContents` and nothing to point at. The two
-      # forms are told apart with certainty by the PEM header, so both are
-      # accepted and anything else is refused here by name.
-      - name: Notarise and staple
-        id: notarise
-        if: >-
-          steps.signing.outputs.identity != ''
-          && env.MACOS_NOTARY_KEY_P8 != ''
-          && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
-        env:
-          XPCOG_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          XPCOG_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: |
-          export XPCOG_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
-          trap 'rm -f "$XPCOG_NOTARY_KEY"' EXIT
-
-          case "$MACOS_NOTARY_KEY_P8" in
-              *"-----BEGIN"*)
-                  printf '%s' "$MACOS_NOTARY_KEY_P8" > "$XPCOG_NOTARY_KEY"
-                  echo "MACOS_NOTARY_KEY_P8 holds the key itself."
-                  ;;
-              *)
-                  printf '%s' "$MACOS_NOTARY_KEY_P8" | base64 --decode > "$XPCOG_NOTARY_KEY"
-                  echo "MACOS_NOTARY_KEY_P8 holds base64; decoded it."
-                  ;;
-          esac
-
-          if ! grep -q -- "-----BEGIN PRIVATE KEY-----" "$XPCOG_NOTARY_KEY"; then
-              echo "::error::MACOS_NOTARY_KEY_P8 is not an App Store Connect private key. Expected either the .p8 file's text, which begins -----BEGIN PRIVATE KEY-----, or the base64 of it from: base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy"
-              exit 1
-          fi
-
-          cmake --build --preset macos-app-release --target notarize
-
-      # if-no-files-found: error, for the reason the Windows one gives -- a green
-      # job with no disk image in it is the one way this fails quietly.
-      #
-      # The name says arm64 because that is what the runner builds and what the
-      # bundle contains. An Intel Mac cannot run it; a universal image is a
-      # second vcpkg tree, a second build and a lipo pass, and it is not what
-      # this job does today.
-      - name: Upload the disk image
-        uses: actions/upload-artifact@v4
-        with:
-          name: XPCog-macos-arm64-dmg
-          path: build/macos-app-release/XPCog-*.dmg
-          if-no-files-found: error
-
-      # always(), because a keychain holding a Developer ID private key is not
-      # something to leave behind on a failure. The runner is thrown away either
-      # way; this is for the case where it is not, and it costs a line.
-      - name: Remove the signing keychain
-        if: always() && steps.signing.outputs.keychain != ''
-        run: security delete-keychain "${{ steps.signing.outputs.keychain }}" || true
   linux-package:
     # The Linux tarball, built the way it would ship.
     #
@@ -1038,9 +727,8 @@ jobs:
     #
     # --- Why linux-release and not linux-app-release ---------------------------
     #
-    # The macOS job packages app-only, because a bundle holds no CLI and building
-    # one would be link time spent on a file nothing packages. The Linux install
-    # tree *does* ship xpcog-cli -- it is the headless way to ask an installed
+    # The Windows installer packages app-only, because it holds no CLI. The
+    # Linux install tree *does* ship xpcog-cli -- it is the headless way to ask an installed
     # XPCog what it can decode -- so app-only would produce a tarball missing a
     # documented part of itself.
     #
@@ -1056,23 +744,23 @@ jobs:
     # libavcodec.so.63, libopenmpt.so.0 and the rest -- on the list of things that
     # have to already be right on someone else's system. linux-release takes them
     # from vcpkg and links them in, so what the tarball needs from its host is
-    # GTK, wxWidgets and the C library.
+    # GTK, libadwaita, libsecret and the C library.
     #
-    # The C library is the floor, and it is worth stating because nothing in the
-    # artifact says it: this runs on ubuntu-24.04, so the tarball wants glibc 2.39
-    # or newer. Ubuntu 24.04, Debian 13 and current Fedora, Arch and openSUSE are
-    # above that line; Ubuntu 22.04, Debian 12 and RHEL 9 are below it and cannot
-    # run this download. Moving the floor means moving this runner, and the
-    # release notes say the version so nobody has to guess.
+    # The floor is GTK 4.22 and libadwaita 1.9, and it is worth stating because
+    # nothing in the artifact says it: Ubuntu 26.04, Fedora 44, Arch and other
+    # distributions on GNOME 50 or newer meet it; Ubuntu 24.04 and Debian 13 do
+    # not and cannot run this download. The C library is a floor too -- this
+    # runs on ubuntu-26.04, so the tarball wants that release's glibc or newer
+    # -- but GTK is the higher of the two in practice. The release notes say so,
+    # so nobody has to guess.
     name: Linux tarball
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # See the matrix job for why ninety minutes.
     timeout-minutes: 90
 
-    # `bash` with pipefail, for the reason the macOS job says it once: the
-    # configure step pipes into `tee` so a later step can assert on what it
-    # printed, and without pipefail the status of that step is tee's, which is
-    # always zero.
+    # `bash` with pipefail: the configure step pipes into `tee` so a later step
+    # can assert on what it printed, and without pipefail the status of that
+    # step is tee's, which is always zero.
     defaults:
       run:
         shell: bash
@@ -1086,7 +774,7 @@ jobs:
       # no tests. xvfb is here anyway, and not optionally -- linux-release
       # configures the test targets even though nothing here runs them, and
       # tests/CMakeLists.txt raises a fatal error when xvfb-run is missing and CI
-      # is set, precisely so the GUI test cannot quietly go back to skipping.
+      # is set, precisely so the GTK suite cannot quietly go back to skipping.
       # GitHub sets CI, so without this package the *configure* fails.
       #
       # See the matrix job for what each of the rest is for; this is that list
@@ -1096,7 +784,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
-            libwxgtk3.2-dev libgtk-3-dev libglib2.0-dev xvfb
+            libgtk-4-dev libadwaita-1-dev gir1.2-gtk-4.0 gir1.2-adw-1 \
+            blueprint-compiler libglib2.0-dev libsecret-1-dev xvfb
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -1137,7 +826,7 @@ jobs:
         run: cmake --build --preset linux-release
 
       # `package` is CPack over the install rules. Named explicitly because it is
-      # not part of ALL, the same as `installer` and `dmg`.
+      # not part of ALL, the same as `installer`.
       - name: Build the tarball
         run: cmake --build --preset linux-release --target package 2>&1 | tee package.log
 
@@ -1234,7 +923,7 @@ jobs:
     # thing somebody can see and yank, rather than a packaged build nobody can
     # have because an unrelated job broke.
     name: Release
-    needs: [version, installer, macos-package, linux-package]
+    needs: [version, installer, linux-package]
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
@@ -1287,13 +976,6 @@ jobs:
           name: XPCog-windows-x64-installer
           path: dist
 
-      - name: Download the macOS disk image
-        if: steps.check.outputs.needed == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: XPCog-macos-arm64-dmg
-          path: dist
-
       - name: Download the Linux tarball
         if: steps.check.outputs.needed == 'true'
         uses: actions/download-artifact@v4
@@ -1312,11 +994,10 @@ jobs:
           ls -l dist
 
           exe="dist/XPCog-$VERSION-x64-setup.exe"
-          dmg="dist/XPCog-$VERSION-arm64.dmg"
           tgz="dist/XPCog-$VERSION-x86_64.tar.gz"
 
           missing=0
-          for f in "$exe" "$dmg" "$tgz"; do
+          for f in "$exe" "$tgz"; do
               if [ ! -f "$f" ]; then
                   echo "::error::expected $f in the artifacts and it is not there."
                   missing=1
@@ -1330,36 +1011,22 @@ jobs:
 
       - name: Publish the release
         if: steps.check.outputs.needed == 'true'
-        env:
-          SIGNED: ${{ needs['macos-package'].outputs.signed }}
-          NOTARISED: ${{ needs['macos-package'].outputs.notarised }}
         run: |
-          # What the disk image actually had done to it in this run, rather than
-          # what usually happens to one. Both are conditional in the macOS job.
-          if [ "$NOTARISED" = "true" ]; then
-              mac_state="Signed with a Developer ID and notarised."
-          elif [ "$SIGNED" = "true" ]; then
-              mac_state="Signed with a Developer ID, not notarised -- Gatekeeper will ask."
-              echo "::warning::publishing a disk image that was not notarised."
-          else
-              mac_state="Unsigned. Gatekeeper will refuse it."
-              echo "::warning::publishing an unsigned disk image."
-          fi
-
           cat > notes.md <<EOF
           ### Downloads
 
           - **\`XPCog-$VERSION-x64-setup.exe\`** — Windows x64. Unsigned, as a locally
             built one is; SmartScreen will say so.
-          - **\`XPCog-$VERSION-arm64.dmg\`** — macOS on Apple silicon. $mac_state
-            **Not a universal binary:** arm64 only, so an Intel Mac cannot run it.
           - **\`XPCog-$VERSION-x86_64.tar.gz\`** — Linux x86_64. Unpack it at the
             prefix you mean to run it from; the desktop file's \`Exec\` is an absolute
             path, and everything else in the archive is relocatable.
-            **Needs glibc 2.39 or newer** — Ubuntu 24.04, Debian 13, current Fedora,
-            Arch and openSUSE. Ubuntu 22.04, Debian 12 and RHEL 9 are below that
-            line. wxWidgets and GTK come from your distribution; the codecs are
-            linked in.
+            **Needs GTK 4.22 and libadwaita 1.9 or newer** — Ubuntu 26.04, Fedora
+            44, Arch, or any distribution on GNOME 50 or later. Ubuntu 24.04 and
+            Debian 13 are below that line. GTK, libadwaita and libsecret come
+            from your distribution; the codecs are linked in.
+
+          There is no macOS build: XPCog is for Windows and Linux, and Cog itself
+          is the player on the Mac.
 
           Built from \`${GITHUB_SHA:0:12}\` by [run $GITHUB_RUN_NUMBER]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
           EOF
@@ -1378,7 +1045,7 @@ jobs:
 
           # The changelog, ahead of the downloads: what changed is what somebody
           # opening a release page came to find out, and the file list is the
-          # same three lines every time.
+          # same two lines every time.
           if [ -n "$previous" ]; then
               echo "Listing changes since $previous."
               {
@@ -1401,7 +1068,6 @@ jobs:
               --title "XPCog $VERSION" \
               --notes-file notes.md \
               "dist/XPCog-$VERSION-x64-setup.exe" \
-              "dist/XPCog-$VERSION-arm64.dmg" \
               "dist/XPCog-$VERSION-x86_64.tar.gz"
 
           echo "Released v$VERSION." >> "$GITHUB_STEP_SUMMARY"
