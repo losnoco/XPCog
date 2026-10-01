@@ -129,6 +129,19 @@ add_executable(xpcog-app src/main.cpp)
 
 target_link_libraries(xpcog-app PRIVATE xpcog-appcore XPCog::warnings)
 
+# The WinUI island prototype; see cmake/XPCogWinAppSdk.cmake.
+if(XPCOG_WITH_WINUI_ISLAND)
+    include(XPCogWinAppSdk)
+    target_sources(xpcog-appcore PRIVATE src/WinUIIsland.cpp src/WinUIIsland.hpp)
+    target_link_libraries(xpcog-appcore PUBLIC XPCog::winappsdk)
+    target_compile_definitions(xpcog-appcore PUBLIC XPCOG_WITH_WINUI_ISLAND=1)
+    # Beside the executable, where the loader looks for it. It is the only part
+    # of the Windows App SDK that ships with the program.
+    add_custom_command(TARGET xpcog-app POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${XPCOG_WINAPPSDK_BOOTSTRAP_DLL}" "$<TARGET_FILE_DIR:xpcog-app>")
+endif()
+
 # ---------------------------------------------------------------------------
 # The crash handler.
 #

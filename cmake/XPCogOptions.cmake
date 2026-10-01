@@ -84,5 +84,10 @@ option(XPCOG_WITH_REST "REST remote-control server (cpp-httplib)" OFF)
 # presets turn it on. See platform/include/xpcog/platform/CrashReporter.hpp.
 option(XPCOG_WITH_SENTRY "Opt-in crash reporting (sentry-native)" OFF)
 
+# A prototype: one WinUI 3 XAML island inside the wx main window, to find out
+# whether the Windows App SDK can be built from CMake and Ninja at all. Windows
+# only, OFF everywhere, and see cmake/XPCogWinAppSdk.cmake for what it fetches.
+option(XPCOG_WITH_WINUI_ISLAND "Prototype WinUI 3 island in the wx player (Windows)" OFF)
+
 # Sanitizers are opt-in; the RT-safety work in M1a wants them available early.
 set(XPCOG_SANITIZE "" CACHE STRING "Sanitizers, e.g. address;undefined")

@@ -24,6 +24,9 @@
 #include "SettingEffect.hpp"
 #include "SpeedPanel.hpp"
 #include "Text.hpp"
+#ifdef XPCOG_WITH_WINUI_ISLAND
+#include "WinUIIsland.hpp"
+#endif
 
 #include "xpcog/core/FilePath.hpp"
 #include "xpcog/core/audio/EqualizerPresets.hpp"
@@ -212,6 +215,11 @@ MainFrame::MainFrame(const PluginRegistry& registry, Settings& settings,
     if (!session_.lastStatus().empty()) {
         setStatusText(toWx(session_.lastStatus()));
     }
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    if (const wxString failure = winUIFailure(); !failure.empty()) {
+        setStatusText(failure);
+    }
+#endif
 
     // The playlist, the resumed track and the remote server, in that order,
     // now that everything above is listening.
@@ -280,6 +288,9 @@ MainFrame::~MainFrame() {
     model_     = nullptr;
     seekBar_   = nullptr;
     volume_    = nullptr;
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    island_    = nullptr;
+#endif
     filter_    = nullptr;
     clock_     = nullptr;
     scanBar_   = nullptr;
@@ -332,6 +343,18 @@ void MainFrame::buildUi() {
     auto* controls = new wxPanel(this, wxID_ANY);
     buildControls(controls);
     root->Add(controls, 0, wxEXPAND);
+
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    if (winUIRunning()) {
+        island_ = new WinUIIsland(this, settings_.Volume());
+        if (island_->ok()) {
+            root->Add(island_, 0, wxEXPAND);
+        } else {
+            island_->Destroy();
+            island_ = nullptr;
+        }
+    }
+#endif
 
     dockHost_ = new wxPanel(this, wxID_ANY);
     root->Add(dockHost_, 1, wxEXPAND);
@@ -695,6 +718,11 @@ void MainFrame::wireUp() {
     // follows, so the panel and the window cannot show different volumes.
     observe(session_.volumeChanged, [this](double gain) {
         volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
+#ifdef XPCOG_WITH_WINUI_ISLAND
+        if (island_ != nullptr) {
+            island_->setVolume(gain);
+        }
+#endif
     });
 
     // --- the file browser ------------------------------------------------
@@ -831,7 +859,22 @@ void MainFrame::wireUp() {
 
     volume_->Bind(wxEVT_SLIDER, [this](wxCommandEvent& event) {
         session_.setVolume(event.GetInt() / 100.0);
+#ifdef XPCOG_WITH_WINUI_ISLAND
+        if (island_ != nullptr) {
+            island_->setVolume(event.GetInt() / 100.0);
+        }
+#endif
     });
+
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    if (island_ != nullptr) {
+        island_->playPauseClicked = [this] { playback_->playPause(); };
+        island_->volumeChanged    = [this](double gain) {
+            session_.setVolume(gain);
+            volume_->SetValue(static_cast<int>(std::lround(gain * 100.0)));
+        };
+    }
+#endif
 
     Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { session_.cancelScans(); }, kScanCancelId);
 
@@ -2014,6 +2057,11 @@ void MainFrame::onTrackChanged(TrackId id, const PlaylistEntry* entry, bool loop
 void MainFrame::onPlaybackStateChanged(bool playing, bool paused) {
     refreshTransportIcons();
     presence_->setPlaybackState(playing, paused);
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    if (island_ != nullptr) {
+        island_->setPlaying(playing && !paused);
+    }
+#endif
     if (mini_ != nullptr) {
         mini_->setPlaybackState(playing, paused);
     }

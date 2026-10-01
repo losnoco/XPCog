@@ -5,6 +5,9 @@
 #include "MainFrame.hpp"
 #include "StatusPresence.hpp"
 #include "Text.hpp"
+#ifdef XPCOG_WITH_WINUI_ISLAND
+#include "WinUIIsland.hpp"
+#endif
 
 #include "xpcog/platform/CrashReporter.hpp"
 #include "xpcog/platform/DesktopIdentity.hpp"
@@ -170,6 +173,11 @@ bool XPCogApp::OnInit() {
     registry_->setSettings(settings_.get());
     registerAllCodecs(*registry_);
 
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    // Before the frame, which asks whether it started.
+    startWinUI();
+#endif
+
     frame_ = new MainFrame(*registry_, *settings_, dispatcher());
     frame_->Show();
 
@@ -204,6 +212,12 @@ bool XPCogApp::OnInit() {
     return true;
 }
 
+#ifdef XPCOG_WITH_WINUI_ISLAND
+wxAppTraits* XPCogApp::CreateTraits() {
+    return makeWinUIAppTraits();
+}
+#endif
+
 int XPCogApp::OnExit() {
     // The handover channel goes first, and explicitly rather than by member
     // order. An IPC server is registered with the OS -- a DDE service on Windows,
@@ -220,6 +234,12 @@ int XPCogApp::OnExit() {
     // captured in the last moments is still queued, and a process that exits
     // without this loses it. Safe when it was never started.
     platform::stopCrashReporting();
+
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    // The frame, and the island in it, are gone by now: the loop only ends
+    // once the last top-level window has been destroyed.
+    stopWinUI();
+#endif
 
     // Then, in this order: the registry holds a pointer to the settings, and the
     // settings hold a reference to the store.

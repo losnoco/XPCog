@@ -52,6 +52,11 @@ public:
     int  OnRun() override;
     int  OnExit() override;
 
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    /// Event loops that hand WinUI each message first; see WinUIIsland.hpp.
+    wxAppTraits* CreateTraits() override;
+#endif
+
     /// Command-line handling. `--register` and `--unregister` are about this
     /// installation rather than about playback, so they run and exit without ever
     /// opening a window.

@@ -73,6 +73,7 @@ class PlaylistColumns;
 class PlaylistDataModel;
 class Sc55Panel;
 class SeekBar;
+class WinUIIsland;
 class SpectrumPanel;
 class OscilloscopePanel;
 class SpeedPanel;
@@ -432,6 +433,10 @@ private:
 
     SeekBar*      seekBar_    = nullptr;
     wxSlider*     volume_     = nullptr;
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    /// The prototype WinUI strip, when the runtime started. See WinUIIsland.hpp.
+    WinUIIsland*  island_     = nullptr;
+#endif
     SpeedPanel*   speedPanel_ = nullptr;
     wxSearchCtrl* filter_     = nullptr;
     wxStaticText* clock_      = nullptr;
