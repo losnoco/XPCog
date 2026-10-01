@@ -78,6 +78,14 @@ const bool kEnvironment = [] {
     if (std::getenv("GDK_BACKEND") == nullptr) {
         setenv("GDK_BACKEND", "x11", 1);
     }
+    // No accessibility bus either, unless asked for. A bare CI runner has no
+    // org.a11y.Bus, and GTK says so with a warning the complaint check below
+    // counts as a failure -- whichever case happens to look next takes the
+    // blame. Nothing here tests the bus; the widgets' accessible names are set
+    // either way.
+    if (std::getenv("GTK_A11Y") == nullptr) {
+        setenv("GTK_A11Y", "none", 1);
+    }
     return true;
 }();
 

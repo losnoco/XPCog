@@ -175,15 +175,22 @@ jobs:
       # has to be installed before the configure step -- and it refuses to
       # configure without it here, so the wiring cannot silently come undone
       # and leave the suite skipping in a green job.
+      #
+      # `locales` and the locale-gen at the end are for one test: the GTK
+      # suite builds window.ui in Spanish. gettext ignores LANGUAGE under the
+      # C locale the runner starts in, and the frontend answers that by moving
+      # LC_MESSAGES to an installed UTF-8 locale (app-gtk/src/Localization.cpp)
+      # -- which needs one to be installed rather than assumed.
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get install -y --no-install-recommends locales \
             ninja-build pkg-config autoconf autoconf-archive automake libtool nasm \
             libgtk-4-dev libadwaita-1-dev gir1.2-gtk-4.0 gir1.2-adw-1 \
             blueprint-compiler libglib2.0-dev libsecret-1-dev xvfb \
             flac vorbis-tools opus-tools lame wavpack ffmpeg
+          sudo locale-gen en_US.UTF-8
 
       # The same encoders on Windows, from their upstream releases at pinned
       # versions. No package manager on the runners carries the set dependably:
