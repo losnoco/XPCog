@@ -111,8 +111,13 @@ void MainWindow::build() {
 
     // The title bar is ours, so Mica runs up under it: the TitleBar control
     // draws the icon and title, keeps the caption buttons' space and drag
-    // region, and lets interactive content -- the filter -- sit in it.
+    // region, and lets interactive content sit in it -- here the menu button
+    // and the whole transport, which makes the title bar the player's
+    // control strip rather than a band above one. Tall, so the caption
+    // buttons are as tall as the strip they end.
     window_.ExtendsContentIntoTitleBar(true);
+    window_.AppWindow().TitleBar().PreferredHeightOption(
+        winrt::Microsoft::UI::Windowing::TitleBarHeightOption::Tall);
 
     const std::filesystem::path icon = besideExecutable(L"xpcog.ico");
     window_.AppWindow().SetIcon(icon.wstring());
@@ -126,23 +131,16 @@ void MainWindow::build() {
         titleBar_.IconSource(source);
     }
 
-    filter_ = mux::Controls::AutoSuggestBox();
-    auto& filter = filter_;
-    filter.PlaceholderText(toH(app::tr("Filter")));
-    filter.QueryIcon(mux::Controls::SymbolIcon(mux::Controls::Symbol::Find));
-    filter.MinWidth(240);
-    filter.MaxWidth(420);
-    filter.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
-    filter.VerticalAlignment(mux::VerticalAlignment::Center);
-    filter.TextChanged([this](mux::Controls::AutoSuggestBox const& box, auto&&) {
-        session_.view().setFilter(toUtf8(box.Text()));
-    });
-    titleBar_.Content(filter);
-
-    // --- the transport row ---------------------------------------------------
+    // --- the transport, in the title bar ------------------------------------
+    //
+    // The playing track is the title bar's title and subtitle (onTrackChanged),
+    // and the controls are its content. The filter, which used to be here, is
+    // in the playlist's own header now, beside what it filters.
     auto transport = mux::Controls::Grid();
     transport.ColumnSpacing(8);
-    transport.Padding(mux::ThicknessHelper::FromLengths(12, 4, 16, 8));
+    transport.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
+    transport.VerticalAlignment(mux::VerticalAlignment::Center);
+    transport.Margin(mux::ThicknessHelper::FromLengths(8, 0, 8, 0));
     for (const auto& width : {mux::GridLengthHelper::Auto(),
                               mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
                               mux::GridLengthHelper::Auto(), mux::GridLengthHelper::Auto(),
@@ -201,6 +199,7 @@ void MainWindow::build() {
     mux::Controls::ToolTipService::SetToolTip(volume_, winrt::box_value(toH(app::tr("Volume"))));
     mux::Controls::Grid::SetColumn(volume_, 4);
     transport.Children().Append(volume_);
+    titleBar_.Content(transport);
 
     // --- the playlist, on the content layer -------------------------------------
     //
@@ -352,8 +351,27 @@ void MainWindow::build() {
         [this](app::CommandId id) { return checked(id); },
         &MainWindow::offered,
     });
-    auto menuBar = commands_->menuBar();
-    menuBar.Margin(mux::ThicknessHelper::FromLengths(4, 0, 0, 0));
+    // The menu, folded into a button at the title bar's left edge: every menu
+    // of the table a submenu of one flyout. The shortcuts do not live in it --
+    // see CommandMenus -- so they work with it closed.
+    {
+        auto glyph = mux::Controls::FontIcon();
+        glyph.Glyph(L"\xE700");  // Segoe Fluent "GlobalNavigationButton"
+        glyph.FontSize(16);
+        auto menuButton = mux::Controls::Button();
+        menuButton.Content(glyph);
+        menuButton.Width(40);
+        menuButton.Height(36);
+        menuButton.Padding(mux::ThicknessHelper::FromUniformLength(0));
+        menuButton.Margin(mux::ThicknessHelper::FromLengths(4, 0, 0, 0));
+        menuButton.Background(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
+        menuButton.BorderBrush(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
+        menuButton.Flyout(commands_->mainMenu());
+        const winrt::hstring name = toH(app::tr("Menu"));
+        mux::Controls::ToolTipService::SetToolTip(menuButton, winrt::box_value(name));
+        mux::Automation::AutomationProperties::SetName(menuButton, name);
+        titleBar_.LeftHeader(menuButton);
+    }
 
     status_ = load<mux::Controls::TextBlock>(
         std::wstring(L"<TextBlock ") + kXmlns +
@@ -365,23 +383,23 @@ void MainWindow::build() {
     //
     // No Background anywhere on this tree: an opaque one would cover the Mica.
     auto root = mux::Controls::Grid();
-    for (const auto& height : {mux::GridLengthHelper::Auto(), mux::GridLengthHelper::Auto(),
-                               mux::GridLengthHelper::Auto(),
+    for (const auto& height : {mux::GridLengthHelper::Auto(),
                                mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
                                mux::GridLengthHelper::Auto()}) {
         auto row = mux::Controls::RowDefinition();
         row.Height(height);
         root.RowDefinitions().Append(row);
     }
-    mux::Controls::Grid::SetRow(menuBar, 1);
-    mux::Controls::Grid::SetRow(transport, 2);
-    mux::Controls::Grid::SetRow(middle, 3);
-    mux::Controls::Grid::SetRow(status_, 4);
+    // A little air between the title bar's strip and the cards below it,
+    // which the transport row used to give.
+    middle.Margin(mux::ThicknessHelper::FromLengths(12, 4, 12, 0));
+    mux::Controls::Grid::SetRow(middle, 1);
+    mux::Controls::Grid::SetRow(status_, 2);
     root.Children().Append(titleBar_);
-    root.Children().Append(menuBar);
-    root.Children().Append(transport);
     root.Children().Append(middle);
     root.Children().Append(status_);
+    // On the root, so the keys reach them from anywhere in the window.
+    commands_->attachAccelerators(root);
     window_.Content(root);
     window_.SetTitleBar(titleBar_);
 
@@ -589,7 +607,10 @@ void MainWindow::onTrackChanged(const PlaylistEntry* entry) {
     // shows; the same convention, and the same untranslated dash, as the wx
     // frame's (see MainFrame::onTrackChanged).
     window_.Title(text.empty() ? winrt::hstring(L"XPCog") : toH(text + " \xE2\x80\x94 XPCog"));
-    titleBar_.Subtitle(toH(text));
+    // In the title bar, the track's title over its artist, as GTK's header has
+    // them; the player's name when nothing is playing.
+    titleBar_.Title(entry != nullptr ? toH(entry->title()) : winrt::hstring(L"XPCog"));
+    titleBar_.Subtitle(entry != nullptr ? toH(entry->artist.str()) : winrt::hstring());
     refreshCommands();
     refreshPanels();
 }
@@ -852,8 +873,8 @@ void MainWindow::onCommand(app::CommandId id) {
             const PlaylistEntry*       entry =
                 selected.empty() ? nullptr : session_.playlist().find(selected.front());
             if (entry != nullptr) {
-                filter_.Text(toH(id == CommandId::PlaylistSearchAlbum ? entry->album.str()
-                                                                       : entry->artist.str()));
+                playlist_->setFilter(id == CommandId::PlaylistSearchAlbum ? entry->album.str()
+                                                                           : entry->artist.str());
             }
             break;
         }

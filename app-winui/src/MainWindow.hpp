@@ -124,7 +124,6 @@ private:
 
     mux::Window                          window_{nullptr};
     mux::Controls::TitleBar              titleBar_{nullptr};
-    mux::Controls::AutoSuggestBox        filter_{nullptr};
     mux::Controls::FontIcon              playGlyph_{nullptr};
     mux::Controls::Button                playButton_{nullptr};
     std::unique_ptr<SeekBar>             seekBar_;

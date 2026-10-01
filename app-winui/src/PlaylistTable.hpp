@@ -55,6 +55,10 @@ public:
     /// Brings a row into view.
     void reveal(std::size_t row);
 
+    /// Opens the header's filter field with `text` in it: Search for Artist
+    /// and Search for Album, which filter by what they found.
+    void setFilter(const std::string& text);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

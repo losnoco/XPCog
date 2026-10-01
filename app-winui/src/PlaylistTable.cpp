@@ -161,6 +161,8 @@ constexpr std::array kColumns{
 constexpr std::string_view kWidthsKey = "xpcog.playlist.columns";
 constexpr double           kMinWidth  = 24;
 constexpr double           kSpacing   = 12;
+/// The header's filter button, and the empty column under it in the rows.
+constexpr double kToolWidth = 32;
 /// Pointer travel before a press on a heading is a drag rather than a click.
 constexpr double kDragThreshold = 6;
 
@@ -223,6 +225,9 @@ struct PlaylistTable::Impl {
     mux::Controls::ListView list{nullptr};
     mux::Controls::Grid     header{nullptr};
     mux::Controls::Border   headerFrame{nullptr};
+    mux::Controls::Button   filterButton{nullptr};
+    mux::Controls::Grid     filterBar{nullptr};
+    mux::Controls::TextBox  filterBox{nullptr};
     mux::Controls::Grid     root{nullptr};
     winrt::com_ptr<RowSource> rows;
 
@@ -353,6 +358,92 @@ struct PlaylistTable::Impl {
                            ? mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star)
                            : mux::GridLengthHelper::FromPixels(shownWidth(c)));
         }
+        // And one more, the width of the header's filter button, in the rows
+        // as well as the header: an empty column under it keeps every column
+        // of the rows under its heading.
+        if (definitions.Size() < kColumns.size() + 1) {
+            definitions.Append(mux::Controls::ColumnDefinition());
+        }
+        definitions.GetAt(static_cast<uint32_t>(kColumns.size()))
+            .Width(mux::GridLengthHelper::FromPixels(kToolWidth));
+    }
+
+    // --- the filter -------------------------------------------------------------
+    //
+    // A button at the header's end, beside what it filters, and a field it
+    // opens across the top of the table. Closing the field clears the filter:
+    // a filter that is on but out of sight is a playlist that looks as though
+    // tracks have gone missing.
+
+    void buildFilter() {
+        filterBox = mux::Controls::TextBox();
+        filterBox.PlaceholderText(toH(app::tr("Filter")));
+        filterBox.TextChanged([this](auto&&, auto&&) {
+            view.setFilter(toUtf8(filterBox.Text()));
+            showFilterActive();
+        });
+        filterBox.KeyDown([this](auto&&, mux::Input::KeyRoutedEventArgs const& args) {
+            if (args.Key() == winrt::Windows::System::VirtualKey::Escape) {
+                closeFilter();
+                args.Handled(true);
+            }
+        });
+        mux::Automation::AutomationProperties::SetName(filterBox, toH(app::tr("Filter the playlist")));
+
+        auto close = toolButton(L"\xE711", app::tr("Close"));  // Segoe Fluent "Cancel"
+        close.Click([this](auto&&, auto&&) { closeFilter(); });
+
+        filterBar = mux::Controls::Grid();
+        filterBar.ColumnSpacing(4);
+        filterBar.Padding(mux::ThicknessHelper::FromLengths(12, 8, 8, 4));
+        for (const auto& width : {mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
+                                  mux::GridLengthHelper::Auto()}) {
+            auto column = mux::Controls::ColumnDefinition();
+            column.Width(width);
+            filterBar.ColumnDefinitions().Append(column);
+        }
+        mux::Controls::Grid::SetColumn(close, 1);
+        filterBar.Children().Append(filterBox);
+        filterBar.Children().Append(close);
+        filterBar.Visibility(mux::Visibility::Collapsed);
+    }
+
+    [[nodiscard]] static mux::Controls::Button toolButton(const wchar_t* glyph, const std::string& name) {
+        auto icon = mux::Controls::FontIcon();
+        icon.Glyph(glyph);
+        icon.FontSize(14);
+        auto button = mux::Controls::Button();
+        button.Content(icon);
+        button.Width(kToolWidth);
+        button.Height(28);
+        button.Padding(mux::ThicknessHelper::FromUniformLength(0));
+        button.Background(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
+        button.BorderBrush(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
+        mux::Controls::ToolTipService::SetToolTip(button, winrt::box_value(toH(name)));
+        mux::Automation::AutomationProperties::SetName(button, toH(name));
+        return button;
+    }
+
+    void openFilter() {
+        filterBar.Visibility(mux::Visibility::Visible);
+        filterBox.Focus(mux::FocusState::Programmatic);
+    }
+
+    void closeFilter() {
+        filterBox.Text({});  // clears the view's filter through TextChanged
+        filterBar.Visibility(mux::Visibility::Collapsed);
+        list.Focus(mux::FocusState::Programmatic);
+    }
+
+    /// The button in the accent while a filter is applied, so a filtered
+    /// playlist says so even with the field scrolled or closed.
+    void showFilterActive() const {
+        auto glyph = filterButton.Content().as<mux::Controls::FontIcon>();
+        if (filterBox.Text().empty()) {
+            glyph.ClearValue(mux::Controls::IconElement::ForegroundProperty());
+        } else {
+            glyph.Foreground(themeBrush(L"AccentTextFillColorPrimaryBrush"));
+        }
     }
 
     /// How wide column `c` is drawn. Its saved width, unless the table is too
@@ -382,7 +473,9 @@ struct PlaylistTable::Impl {
             (yields(c) ? give : firm) += widths[c];
         }
         // The header's padding, the gaps between columns and the scroll bar.
-        const double chrome = 32 + kSpacing * static_cast<double>(kColumns.size() - 1) + 16;
+        // ... and the filter button's column and the gap before it.
+        const double chrome =
+            32 + kSpacing * static_cast<double>(kColumns.size()) + 16 + kToolWidth;
         const double room   = total - chrome - firm - kMinFillWidth;
         const double next   = (total <= 0 || give <= 0 || room >= give) ? 1.0 : std::max(0.25, room / give);
         if (std::abs(next - fit) < 0.005) {
@@ -505,6 +598,21 @@ struct PlaylistTable::Impl {
 
             header.Children().Append(cell);
         }
+
+        // The filter's button, in the column applyColumns() adds after the
+        // last heading.
+        filterButton = toolButton(L"\xE71C", app::tr("Filter the playlist"));  // Segoe Fluent "Filter"
+        filterButton.Click([this](auto&&, auto&&) {
+            if (filterBar.Visibility() == mux::Visibility::Visible) {
+                closeFilter();
+            } else {
+                openFilter();
+            }
+        });
+        filterButton.VerticalAlignment(mux::VerticalAlignment::Center);
+        mux::Controls::Grid::SetColumn(filterButton, static_cast<int32_t>(kColumns.size()));
+        header.Children().Append(filterButton);
+
         applyColumns(header);
     }
 
@@ -770,13 +878,16 @@ PlaylistTable::PlaylistTable(PlaylistView& view, Settings& settings)
         // No background of its own: the table sits on whatever its host gives
         // it, which in the main window is the content layer over Mica.
         auto root = mux::Controls::Grid();
-        auto top = mux::Controls::RowDefinition();
-        top.Height(mux::GridLengthHelper::Auto());
-        auto rest = mux::Controls::RowDefinition();
-        rest.Height(mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star));
-        root.RowDefinitions().Append(top);
-        root.RowDefinitions().Append(rest);
-        mux::Controls::Grid::SetRow(impl.list, 1);
+        for (const auto& height : {mux::GridLengthHelper::Auto(), mux::GridLengthHelper::Auto(),
+                                   mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star)}) {
+            auto row = mux::Controls::RowDefinition();
+            row.Height(height);
+            root.RowDefinitions().Append(row);
+        }
+        impl.buildFilter();
+        mux::Controls::Grid::SetRow(impl.headerFrame, 1);
+        mux::Controls::Grid::SetRow(impl.list, 2);
+        root.Children().Append(impl.filterBar);
         root.Children().Append(impl.headerFrame);
         root.Children().Append(impl.list);
 
@@ -852,6 +963,11 @@ void PlaylistTable::selectOnly(std::size_t row) {
 
 mux::UIElement PlaylistTable::element() const {
     return impl_->root;
+}
+
+void PlaylistTable::setFilter(const std::string& text) {
+    impl_->filterBar.Visibility(mux::Visibility::Visible);
+    impl_->filterBox.Text(toH(text));
 }
 
 void PlaylistTable::reveal(std::size_t row) {

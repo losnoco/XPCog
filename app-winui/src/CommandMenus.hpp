@@ -11,18 +11,19 @@
 
 namespace xpcog::winui {
 
-/// The menu bar and the playlist's context menu, built from uicore's command
-/// table the way the wx and GTK frontends build theirs, so the three cannot
-/// disagree about what a menu holds, what it is called or what its shortcut is.
+/// The window's menu and the playlist's context menu, built from uicore's
+/// command table the way the wx and GTK frontends build theirs, so the three
+/// cannot disagree about what a menu holds, what it is called or what its
+/// shortcut is.
 ///
-/// Shortcuts are KeyboardAccelerators on the menu bar's items, which WinUI
-/// treats as global: they fire with the menu closed and focus anywhere in the
-/// window. The context menu shows the same shortcut text without registering
-/// a second accelerator for it.
+/// The menu is one flyout, opened from the title bar's menu button, with each
+/// of the table's menus a submenu. Its shortcuts are KeyboardAccelerators on
+/// the window's root rather than on the items -- a closed flyout's items are
+/// not in the tree -- and each one checks its command is enabled when
+/// invoked; the items show the key as text.
 ///
-/// A disabled item's accelerator does not fire, so the enabled states are kept
-/// current all the time rather than when a menu opens -- refresh() after
-/// anything that changes them, which is what GTK's refreshActionState() is
+/// The enabled and checked states are refreshed as the menu opens and on the
+/// events that change them, which is what GTK's refreshActionState() is
 /// called for as well.
 class CommandMenus {
 public:
@@ -38,7 +39,13 @@ public:
 
     explicit CommandMenus(Hooks hooks);
 
-    [[nodiscard]] mux::Controls::MenuBar menuBar() const { return menuBar_; }
+    /// The window's one menu, every menu of the table a submenu of it: what
+    /// the title bar's menu button opens.
+    [[nodiscard]] mux::Controls::MenuFlyout mainMenu() const { return mainMenu_; }
+
+    /// The shortcuts, attached to `target` -- the window's root, so that a
+    /// key pressed with focus anywhere in it reaches them.
+    void attachAccelerators(const mux::UIElement& target);
 
     /// A fresh context menu, its states already current. Built each time, as
     /// the wx frame builds its popup, so nothing has to keep it up to date.
@@ -62,8 +69,10 @@ private:
     void apply(const mux::Controls::MenuFlyoutItemBase& item, app::CommandId id) const;
 
     Hooks                  hooks_;
-    mux::Controls::MenuBar menuBar_{nullptr};
-    /// The menu bar's items by command, for refresh().
+    mux::Controls::MenuFlyout mainMenu_{nullptr};
+    /// Every shortcut, for attachAccelerators().
+    std::vector<mux::Input::KeyboardAccelerator> accelerators_;
+    /// The main menu's items by command, for refresh().
     std::multimap<app::CommandId, mux::Controls::MenuFlyoutItemBase> items_;
     /// The accelerators a text box also answers to.
     std::vector<mux::Input::KeyboardAccelerator> textKeys_;
