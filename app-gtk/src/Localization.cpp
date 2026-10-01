@@ -9,6 +9,9 @@
 
 #include <libintl.h>
 
+#include <cctype>
+#include <clocale>
+
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -56,6 +59,37 @@ bool writeIfChanged(const std::filesystem::path& path, const std::string& image)
     }
     out.write(image.data(), static_cast<std::streamsize>(image.size()));
     return static_cast<bool>(out);
+}
+
+/// Makes gettext honour LANGUAGE, which it does under any locale but C.
+///
+/// glibc ignores LANGUAGE while LC_MESSAGES is "C", and "C.UTF-8" counts: a
+/// listener whose system has no locale configured -- a minimal install, a
+/// container, a CI runner -- who picks Spanish in Preferences got the C++
+/// strings in Spanish and every string in the .ui files in English. Any other
+/// locale will do, because the language itself comes from LANGUAGE; the
+/// locale only has to not be C. So LC_MESSAGES alone is moved to the first
+/// installed UTF-8 locale of a short list -- the language's own, then
+/// English -- and the rest of the locale is left exactly as it was.
+void letGettextReadLanguage(const std::string& code) {
+    const char* current = std::setlocale(LC_MESSAGES, nullptr);
+    const std::string_view name = current != nullptr ? current : "C";
+    if (name != "C" && name != "POSIX" && !name.starts_with("C.")) {
+        return;
+    }
+    std::string region = code;
+    for (char& c : region) {
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    const std::string candidates[] = {code + "_" + region + ".UTF-8", "en_US.UTF-8", "en_GB.UTF-8"};
+    for (const std::string& candidate : candidates) {
+        if (std::setlocale(LC_MESSAGES, candidate.c_str()) != nullptr) {
+            return;
+        }
+    }
+    g_message("XPCog: no UTF-8 locale is installed beside \"%s\", so gettext ignores the "
+              "chosen language and the interface files stay in English",
+              std::string(name).c_str());
 }
 
 }  // namespace
@@ -112,6 +146,7 @@ std::string installTranslations(const std::string& setting) {
     // reads LANGUAGE for the language and the bound directory for the file,
     // and the codeset is what turns a lookup into UTF-8 whatever the locale.
     g_setenv("LANGUAGE", code.c_str(), TRUE);
+    letGettextReadLanguage(code);
     bindtextdomain(kDomain, root.string().c_str());
     bind_textdomain_codeset(kDomain, "UTF-8");
     return code;
