@@ -271,15 +271,16 @@ void MainWindow::build() {
     speed_     = std::make_unique<SpeedPane>(session_.settings());
     tools_     = std::make_unique<ToolsStrip>();
     tools_->addSection("spectrum", app::commandLabel(app::CommandId::ViewSpectrum),
-                       spectrum_->element());
+                       spectrum_->element(), ToolsStrip::Scroll::None, ToolsStrip::Chrome::Dark);
     tools_->addSection("scope", app::commandLabel(app::CommandId::ViewOscilloscope),
-                       scope_->element());
+                       scope_->element(), ToolsStrip::Scroll::None, ToolsStrip::Chrome::Dark);
     tools_->addSection("equalizer", app::commandLabel(app::CommandId::ViewEqualizer),
                        equalizer_->element(), ToolsStrip::Scroll::Both);
     tools_->addSection("speed", app::commandLabel(app::CommandId::ViewSpeed), speed_->element(),
                        ToolsStrip::Scroll::Vertical);
 #ifdef XPCOG_HAVE_SC55_PANEL
-    tools_->addSection("sc55", app::commandLabel(app::CommandId::ViewSc55Panel), sc55_->element());
+    tools_->addSection("sc55", app::commandLabel(app::CommandId::ViewSc55Panel), sc55_->element(),
+                       ToolsStrip::Scroll::None, ToolsStrip::Chrome::Orange);
 #endif
     tools_->closeRequested = [this](const std::string& name) { showTool(name, false); };
 

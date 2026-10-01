@@ -172,8 +172,16 @@ public:
         Both,      ///< it has a natural width of its own: the equaliser's bands
     };
 
+    /// What a section's card is drawn in.
+    enum class Chrome {
+        Card,    ///< the content-layer card every pane sits on
+        Dark,    ///< the analysers' own dark ground, edge to edge
+        Orange,  ///< the SC-55's: a coloured surface the photo of it sits on
+    };
+
     void addSection(const std::string& name, const std::string& title,
-                    const mux::UIElement& content, Scroll scroll = Scroll::None);
+                    const mux::UIElement& content, Scroll scroll = Scroll::None,
+                    Chrome chrome = Chrome::Card);
     void setShown(const std::string& name, bool shown);
     [[nodiscard]] bool shown(const std::string& name) const;
     [[nodiscard]] bool anyShown() const;

@@ -782,8 +782,31 @@ ToolsStrip::ToolsStrip() {
 }
 
 void ToolsStrip::addSection(const std::string& name, const std::string& title,
-                            const mux::UIElement& content, Scroll scroll) {
+                            const mux::UIElement& content, Scroll scroll, Chrome chrome) {
     auto section = card();
+    // A chrome of its own, the same in a light window and a dark one: these
+    // panes are instruments with a look of their own, as the analysers' dark
+    // grounds always were. RequestedTheme is what makes the rest follow --
+    // the heading, the close button's hover and press fills, the card's edge
+    // all come from theme resources, and the section asks for the theme its
+    // colour wants rather than the window's.
+    switch (chrome) {
+        case Chrome::Card:
+            break;
+        case Chrome::Dark:
+            // The analysers' own ground, #121214 -- the spectrum's and the
+            // oscilloscope's default -- so the canvas meets the card with no
+            // seam and the pane reads as one dark instrument.
+            section.Background(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{255, 18, 18, 20}));
+            section.RequestedTheme(mux::ElementTheme::Dark);
+            break;
+        case Chrome::Orange:
+            // Warm enough to read as the SC-55's backlight; dark text on it,
+            // which white would not be legible against.
+            section.Background(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{255, 240, 122, 30}));
+            section.RequestedTheme(mux::ElementTheme::Light);
+            break;
+    }
     auto body    = mux::Controls::Grid();
     {
         auto top = mux::Controls::RowDefinition();
