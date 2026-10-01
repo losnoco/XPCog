@@ -28,7 +28,11 @@ static_assert(static_cast<int>(EditSelectAll) == static_cast<int>(wxID_SELECTALL
 static_assert(static_cast<int>(HelpAbout) == static_cast<int>(wxID_ABOUT));
 
 // And that the rest still start above everything wx dispatches on its own, so
-// nothing this application invents can collide with a stock id.
-static_assert(FileOpenFolder == wxID_HIGHEST + 1);
+// nothing this application invents can collide with a stock id. Greater than,
+// not equal to wxID_HIGHEST + 1: 3.3 moved wxID_HIGHEST from 5999 to 6000 and
+// changed what it means, and an exact match broke the build on the first wx
+// that did -- which is precisely what this line is for, but the rule it
+// guards is "clear of wx's range", not "one past it".
+static_assert(static_cast<int>(FileOpenFolder) > static_cast<int>(wxID_HIGHEST));
 
 }  // namespace xpcog::app

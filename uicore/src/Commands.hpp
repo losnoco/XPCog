@@ -65,7 +65,11 @@ enum CommandId : int {
     EditSelectAll    = 5037,  // wxID_SELECTALL
     HelpAbout        = 5014,  // wxID_ABOUT
 
-    FileOpenFolder = 6000,  // wxID_HIGHEST + 1
+    // Above every id wx reserves, in both of the versions it has meant: wx 3.2
+    // defines wxID_HIGHEST as 5999, the highest reserved id, and 3.3 redefined
+    // it as 6000, the lowest unreserved one. 6001 clears both, which is what
+    // CommandIds.cpp asserts against whichever wx the Windows build has.
+    FileOpenFolder = 6001,
     FileOpenUrl,
 
     EditRemove,
