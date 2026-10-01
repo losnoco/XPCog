@@ -15,6 +15,8 @@
 set(XPCOG_WINUI_SOURCES
     src/App.cpp
     src/App.hpp
+    src/CommandMenus.cpp
+    src/CommandMenus.hpp
     src/MainWindow.cpp
     src/MainWindow.hpp
     src/PlaylistTable.cpp

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace xpcog {
@@ -35,9 +36,13 @@ public:
 
     std::function<void(std::size_t row)> rowActivated;
     std::function<void()>                selectionChanged;
-    /// A right-click, after the selection has been moved under it when it was
-    /// outside -- the wx list's rule, and Cog's.
-    std::function<void()> contextMenuRequested;
+    /// A right-click, Shift+F10 or the Menu key, after the selection has been
+    /// moved under the pointer when it was outside -- the wx list's rule, and
+    /// Cog's. Where to show the menu, relative to `target`; nullopt from the
+    /// keyboard, where the menu goes at the focused row.
+    std::function<void(const mux::UIElement& target,
+                       std::optional<winrt::Windows::Foundation::Point> at)>
+        contextMenuRequested;
     std::function<void(std::vector<std::filesystem::path>)> filesDropped;
 
     /// Selected rows, top to bottom.

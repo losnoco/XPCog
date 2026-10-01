@@ -708,14 +708,21 @@ PlaylistTable::PlaylistTable(PlaylistView& view, Settings& settings)
             }
         });
 
-        // Right-click inside the selection acts on all of it; outside, it
-        // moves the selection to the row first.
-        impl.list.RightTapped([this](auto&&, mux::Input::RightTappedRoutedEventArgs const& args) {
+        // ContextRequested rather than RightTapped: it is the right-click, and
+        // also Shift+F10 and the Menu key, which a right-tap handler never
+        // hears. Inside the selection the menu acts on all of it; outside, the
+        // selection moves to the row first.
+        impl.list.ContextRequested([this](auto&&, mux::Input::ContextRequestedEventArgs const& args) {
             if (const auto row = Impl::rowOf(args.OriginalSource()); row && !impl_->selected(*row)) {
                 selectOnly(*row);
             }
             if (contextMenuRequested) {
-                contextMenuRequested();
+                std::optional<winrt::Windows::Foundation::Point> at;
+                winrt::Windows::Foundation::Point point{};
+                if (args.TryGetPosition(impl_->list, point)) {
+                    at = point;
+                }
+                contextMenuRequested(impl_->list, at);
             }
             args.Handled(true);
         });
