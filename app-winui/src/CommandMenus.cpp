@@ -164,9 +164,12 @@ void CommandMenus::fill(
         }
         pendingSeparator = false;
 
-        // Consecutive radio rows are one group; anything else ends it.
+        // Consecutive radio rows are one group; anything else ends it, and so
+        // does a separator -- Repeat and Shuffle are adjacent, divided only by
+        // one, and as one group checking the one would clear the other.
         if (row.kind == ItemKind::Radio) {
-            if (radioGroup.empty() || (i > first && rows[i - 1].kind != ItemKind::Radio)) {
+            if (radioGroup.empty() || row.separatorBefore ||
+                (i > first && rows[i - 1].kind != ItemKind::Radio)) {
                 radioGroup = L"group" + std::to_wstring(static_cast<int>(row.id));
             }
         } else {
