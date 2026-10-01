@@ -11,7 +11,7 @@ xpcog_probe_system_deps()
 
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 2.0.1
+    VERSION 2.0.2
     DESCRIPTION "An audio player for Windows and Linux, ported from Cog"
     LANGUAGES C CXX)
 

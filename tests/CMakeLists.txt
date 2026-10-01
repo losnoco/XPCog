@@ -447,6 +447,7 @@ if(XPCOG_BUILD_APP)
     add_executable(xpcog-uicore-tests
         uicore/test_appcommands.cpp
         uicore/test_commands.cpp
+        uicore/test_credits.cpp
         uicore/test_lyricstext.cpp
         uicore/test_remotejobs.cpp
         uicore/test_session.cpp

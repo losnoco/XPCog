@@ -2,19 +2,26 @@
 
 #include "Accelerators.hpp"
 #include "Commands.hpp"
+#include "Credits.hpp"
 
 #include "Glib.hpp"
 #include "Translations.hpp"
 #include "UrlHistory.hpp"
 
+#include "xpcog/core/Version.hpp"
+
 #include <adwaita.h>
 
 #include <filesystem>
+#include <map>
 #include <memory>
 
 namespace xpcog::gtk {
 
+using app::fmt;
 using app::tr;
+using app::trf;
+using app::trn;
 
 void showWarning(GtkWidget* parent, const std::string& heading, const std::string& body) {
     AdwDialog* dialog = adw_alert_dialog_new(heading.c_str(), body.c_str());
@@ -232,6 +239,113 @@ void showShortcutsDialog(GtkWidget* parent) {
     adw_shortcuts_dialog_add(ADW_SHORTCUTS_DIALOG(dialog), general);
 
     adw_dialog_present(dialog, parent);
+}
+
+// --- About ----------------------------------------------------------------------------
+
+namespace {
+
+/// The toolkit's own licence for an SPDX identifier it knows, so the Legal page
+/// links the real text; anything else is shown as written.
+[[nodiscard]] GtkLicense licenceType(std::string_view spdx) {
+    static const std::map<std::string_view, GtkLicense> known = {
+        {"MIT", GTK_LICENSE_MIT_X11},
+        {"Apache-2.0", GTK_LICENSE_APACHE_2_0},
+        {"BSD-3-Clause", GTK_LICENSE_BSD_3},
+        {"BSD-2-Clause", GTK_LICENSE_BSD},
+        {"GPL-2.0-or-later", GTK_LICENSE_GPL_2_0},
+        {"GPL-3.0-or-later", GTK_LICENSE_GPL_3_0},
+        {"GPL-3.0-only", GTK_LICENSE_GPL_3_0_ONLY},
+        {"LGPL-2.1-or-later", GTK_LICENSE_LGPL_2_1},
+        {"MPL-2.0", GTK_LICENSE_MPL_2_0},
+    };
+    const auto found = known.find(spdx);
+    return found == known.end() ? GTK_LICENSE_CUSTOM : found->second;
+}
+
+/// One Legal-page entry per component, labelled line by line. The toolkit
+/// adds its own link to the licence text below for the licences it knows;
+/// for the rest the "Licence:" line is the whole statement, so nothing more
+/// is passed. Data rows are labelled as data: "Library: YRW801 sample ROM,
+/// Licence: Yamaha" would be wrong twice.
+void addLegal(AdwAboutDialog* dialog, std::span<const app::Component> components, bool data) {
+    for (const app::Component& component : components) {
+        const std::string details =
+            data ? trf("Data: %s", component.name) + "\n" +
+                       trf("Used for: %s", tr(component.purpose).c_str()) + "\n" +
+                       trf("Credit: %s", component.licence)
+                 : trf("Library: %s", component.name) + "\n" +
+                       trf("Feature: %s", tr(component.purpose).c_str()) + "\n" +
+                       trf("Licence: %s", component.licence);
+        const GtkLicense type = licenceType(component.licence);
+        adw_about_dialog_add_legal_section(dialog, component.name, details.c_str(),
+                                           type == GTK_LICENSE_CUSTOM ? GTK_LICENSE_UNKNOWN
+                                                                      : type,
+                                           nullptr);
+    }
+}
+
+/// What this build plays, by decoder, in the order a file is offered to them:
+/// the wx dialog's Formats tab, as the Troubleshooting page's text.
+[[nodiscard]] std::string formatsText(const PluginRegistry& registry) {
+    std::string text = "XPCog " + std::string(kVersionString) + "\n\n";
+    text += fmt(trn("%zu decoder is compiled in. A file goes to the first row "
+                              "below that claims its extension:",
+                              "%zu decoders are compiled in. A file goes to the first row "
+                              "below that claims its extension:",
+                              registry.decoderCount()),
+                     registry.decoderCount());
+    text += "\n\n";
+    for (const DecoderDescriptor& decoder : registry.decoders()) {
+        text += decoder.name;
+        text += ": ";
+        std::string extensions;
+        for (const std::string_view extension : decoder.extensions) {
+            if (!extensions.empty()) {
+                extensions += ' ';
+            }
+            extensions += extension;
+        }
+        text += extensions.empty() ? tr("chosen by scheme or MIME type") : extensions;
+        text += '\n';
+    }
+    return text;
+}
+
+}  // namespace
+
+void showAboutDialog(GtkWidget* parent, const PluginRegistry& registry) {
+    AdwDialog* about  = adw_about_dialog_new();
+    auto*      dialog = ADW_ABOUT_DIALOG(about);
+    adw_about_dialog_set_application_name(dialog, "XPCog");
+    adw_about_dialog_set_application_icon(dialog, "co.losno.XPCog");
+    adw_about_dialog_set_version(dialog, std::string(kVersionString).c_str());
+    adw_about_dialog_set_comments(dialog, tr("An audio player for Windows and Linux.").c_str());
+    adw_about_dialog_set_website(dialog, std::string(kProjectUrl).c_str());
+    adw_about_dialog_set_issue_url(dialog, (std::string(kProjectUrl) + "/issues").c_str());
+    const char* developers[] = {"Kevin L\xC3\xB3pez Brante", nullptr};
+    adw_about_dialog_set_developers(dialog, developers);
+    adw_about_dialog_set_copyright(
+        dialog, tr("Copyright \xC2\xA9 2026 the XPCog authors.").c_str());
+    adw_about_dialog_set_license_type(dialog, GTK_LICENSE_GPL_3_0);
+
+    // Cog first among the thanks, because most of what is under the
+    // interface is still theirs -- the reason the wx About names them in its
+    // copyright lines too.
+    const char* cog[] = {"Vincent Spader", "Christopher Snowhill",
+                         "The Cog authors https://cog.losno.co", nullptr};
+    adw_about_dialog_add_acknowledgement_section(dialog, tr("Ported from Cog").c_str(), cog);
+
+    // Every component, on the Legal page, from the table both frontends share.
+    addLegal(dialog, app::playerComponents(), false);
+    addLegal(dialog, app::gtkComponents(), false);
+    addLegal(dialog, app::codecComponents(), false);
+    addLegal(dialog, app::dataComponents(), true);
+
+    adw_about_dialog_set_debug_info(dialog, formatsText(registry).c_str());
+    adw_about_dialog_set_debug_info_filename(dialog, "xpcog-formats.txt");
+
+    adw_dialog_present(about, parent);
 }
 
 }  // namespace xpcog::gtk

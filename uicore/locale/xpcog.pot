@@ -324,6 +324,234 @@ msgstr ""
 msgid "Remove Ra&ting"
 msgstr ""
 
+#: uicore/src/Credits.cpp:11
+msgid "library database"
+msgstr ""
+
+#: uicore/src/Credits.cpp:12
+msgid "audio output"
+msgstr ""
+
+#: uicore/src/Credits.cpp:13
+msgid "decompression, throughout"
+msgstr ""
+
+#: uicore/src/Credits.cpp:14
+msgid "HTTP and internet radio"
+msgstr ""
+
+#: uicore/src/Credits.cpp:15
+msgid "HTTPS, under libcurl"
+msgstr ""
+
+#: uicore/src/Credits.cpp:16
+msgid "reading the web services' replies"
+msgstr ""
+
+#: uicore/src/Credits.cpp:17
+msgid "the remote control's HTTP server"
+msgstr ""
+
+#: uicore/src/Credits.cpp:18
+msgid "the remote control's documentation page"
+msgstr ""
+
+#: uicore/src/Credits.cpp:19
+msgid "sample-rate conversion"
+msgstr ""
+
+#: uicore/src/Credits.cpp:20 uicore/src/Credits.cpp:21
+msgid "pitch and tempo"
+msgstr ""
+
+#: uicore/src/Credits.cpp:22
+msgid "upmixing stereo to surround"
+msgstr ""
+
+#: uicore/src/Credits.cpp:23
+msgid "DSD to PCM conversion"
+msgstr ""
+
+#: uicore/src/Credits.cpp:24
+msgid "HDCD decoding"
+msgstr ""
+
+#: uicore/src/Credits.cpp:25
+msgid "gapless edges"
+msgstr ""
+
+#: uicore/src/Credits.cpp:26
+msgid "opt-in crash reporting"
+msgstr ""
+
+#: uicore/src/Credits.cpp:30 uicore/src/Credits.cpp:36 uicore/src/Credits.cpp:37
+msgid "user interface"
+msgstr ""
+
+#: uicore/src/Credits.cpp:31
+msgid "drawing the interface icons"
+msgstr ""
+
+#: uicore/src/Credits.cpp:32
+msgid "the interface icons themselves"
+msgstr ""
+
+#: uicore/src/Credits.cpp:38
+msgid "D-Bus, media keys and notifications"
+msgstr ""
+
+#: uicore/src/Credits.cpp:39
+msgid "the password store"
+msgstr ""
+
+#: uicore/src/Credits.cpp:43
+msgid "FLAC"
+msgstr ""
+
+#: uicore/src/Credits.cpp:44
+msgid "Ogg Vorbis"
+msgstr ""
+
+#: uicore/src/Credits.cpp:45
+msgid "Opus"
+msgstr ""
+
+#: uicore/src/Credits.cpp:46
+msgid "MP3"
+msgstr ""
+
+#: uicore/src/Credits.cpp:47
+msgid "WavPack"
+msgstr ""
+
+#: uicore/src/Credits.cpp:48
+msgid "Musepack"
+msgstr ""
+
+#: uicore/src/Credits.cpp:49
+msgid "AAC, ALAC, WMA and more"
+msgstr ""
+
+#: uicore/src/Credits.cpp:50
+msgid "tag reading"
+msgstr ""
+
+#: uicore/src/Credits.cpp:51
+msgid "tracker modules"
+msgstr ""
+
+#: uicore/src/Credits.cpp:52
+msgid "console chiptunes"
+msgstr ""
+
+#: uicore/src/Credits.cpp:53
+msgid "archives, and the SC-55 ROMs"
+msgstr ""
+
+#: uicore/src/Credits.cpp:54
+msgid "game streaming formats"
+msgstr ""
+
+#: uicore/src/Credits.cpp:55
+msgid "Commodore 64 SID"
+msgstr ""
+
+#: uicore/src/Credits.cpp:56
+msgid "AdLib and OPL2 formats"
+msgstr ""
+
+#: uicore/src/Credits.cpp:57
+msgid "AdPlug's file reading"
+msgstr ""
+
+#: uicore/src/Credits.cpp:58
+msgid "VGM, S98, DRO and GYM"
+msgstr ""
+
+#: uicore/src/Credits.cpp:59
+msgid "AHX and Hively modules"
+msgstr ""
+
+#: uicore/src/Credits.cpp:60
+msgid "Syntrax modules"
+msgstr ""
+
+#: uicore/src/Credits.cpp:61
+msgid "SoundFont synthesis"
+msgstr ""
+
+#: uicore/src/Credits.cpp:62
+msgid "OPL3 synthesis"
+msgstr ""
+
+#: uicore/src/Credits.cpp:63
+msgid "Roland SC-55 emulation"
+msgstr ""
+
+#: uicore/src/Credits.cpp:64
+msgid "the PSF container"
+msgstr ""
+
+#: uicore/src/Credits.cpp:65
+msgid "PSF and PSF2 (PlayStation)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:66
+msgid "QSF (Capcom QSound)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:67
+msgid "DSF and SSF (Sega)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:68
+msgid "USF (Nintendo 64)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:69
+msgid "GSF (Game Boy Advance)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:70
+msgid "SNSF (Super Nintendo)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:71
+msgid "2SF (Nintendo DS)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:72
+msgid "NCSF (Nintendo DS)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:81
+msgid "the bundled SoundFont bank, free to use in software"
+msgstr ""
+
+#: uicore/src/Credits.cpp:82
+msgid "the equaliser's preset list"
+msgstr ""
+
+#: uicore/src/Credits.cpp:83
+msgid "OPL4 wavetable, under libvgm"
+msgstr ""
+
+#: uicore/src/Credits.cpp:84
+msgid "KERNAL, BASIC and character ROMs for SID"
+msgstr ""
+
+#: uicore/src/Credits.cpp:85
+msgid "under HighlyExperimental"
+msgstr ""
+
+#: uicore/src/Credits.cpp:86
+msgid "Organya and PixTone sounds"
+msgstr ""
+
+#: uicore/src/Credits.cpp:87
+msgid "AdPlug's per-song fixes"
+msgstr ""
+
 #: uicore/src/LastFmAccount.cpp:139
 msgid ""
 "This build was configured without HTTP support, so it cannot reach Last.fm."
@@ -887,187 +1115,7 @@ msgstr ""
 msgid "Quit"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:41
-msgid "user interface"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:42
-msgid "library database"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:43
-msgid "audio output"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:44
-msgid "decompression, throughout"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:45
-msgid "HTTP and internet radio"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:46
-msgid "reading Last.fm's replies"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:47
-msgid "sample-rate conversion"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:48 app/src/AboutDialog.cpp:49
-msgid "pitch and tempo"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:50
-msgid "upmixing stereo to surround"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:51
-msgid "DSD to PCM conversion"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:52
-msgid "HDCD decoding"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:53
-msgid "gapless edges"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:54
-msgid "drawing the interface icons"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:55
-msgid "the interface icons themselves"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:56
-msgid "opt-in crash reporting"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:60
-msgid "FLAC"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:61
-msgid "Ogg Vorbis"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:62
-msgid "Opus"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:63
-msgid "MP3"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:64
-msgid "WavPack"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:65
-msgid "Musepack"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:66
-msgid "AAC, ALAC, WMA and more"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:67
-msgid "tag reading"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:68
-msgid "tracker modules"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:69
-msgid "console chiptunes"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:70
-msgid "archives, and the SC-55 ROMs"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:71
-msgid "game streaming formats"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:72
-msgid "Commodore 64 SID"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:73
-msgid "AdLib and OPL2 formats"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:74
-msgid "AdPlug's file reading"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:75
-msgid "VGM, S98, DRO and GYM"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:76
-msgid "AHX and Hively modules"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:77
-msgid "Syntrax modules"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:78
-msgid "SoundFont synthesis"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:79
-msgid "OPL3 synthesis"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:80
-msgid "Roland SC-55 emulation"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:81
-msgid "the PSF container"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:82
-msgid "PSF and PSF2 (PlayStation)"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:83
-msgid "QSF (Capcom QSound)"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:84
-msgid "DSF and SSF (Sega)"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:85
-msgid "USF (Nintendo 64)"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:86
-msgid "GSF (Game Boy Advance)"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:87
-msgid "SNSF (Super Nintendo)"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:88
-msgid "2SF (Nintendo DS)"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:89
-msgid "NCSF (Nintendo DS)"
-msgstr ""
-
-#: app/src/AboutDialog.cpp:150
+#: app/src/AboutDialog.cpp:81 app-gtk/src/Dialogs.cpp:292
 msgid ""
 "%zu decoder is compiled in. A file goes to the first row below that claims its extension:"
 msgid_plural ""
@@ -1075,71 +1123,79 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/AboutDialog.cpp:175
+#: app/src/AboutDialog.cpp:106 app-gtk/src/Dialogs.cpp:309
 msgid "chosen by scheme or MIME type"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:188
+#: app/src/AboutDialog.cpp:119
 msgid ""
 "An extension marked * is claimed by more than one decoder. The first row that claims it wins — which is what keeps FFmpeg, deliberately registered below the rest, from taking files a dedicated decoder handles better."
 msgstr ""
 
-#: app/src/AboutDialog.cpp:214
+#: app/src/AboutDialog.cpp:145
 msgid "About XPCog"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:228
+#: app/src/AboutDialog.cpp:159
 msgid "Version %s · %s"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:237
+#: app/src/AboutDialog.cpp:168 app-gtk/src/Dialogs.cpp:323
 msgid "An audio player for Windows and Linux."
 msgstr ""
 
-#: app/src/AboutDialog.cpp:239
+#: app/src/AboutDialog.cpp:170 app-gtk/src/Dialogs.cpp:329
 msgid "Copyright © 2026 the XPCog authors."
 msgstr ""
 
-#: app/src/AboutDialog.cpp:240
+#: app/src/AboutDialog.cpp:171
 msgid ""
 "Copyright © 2005–2026 Vincent Spader, Christopher Snowhill and the Cog authors."
 msgstr ""
 
-#: app/src/AboutDialog.cpp:243
+#: app/src/AboutDialog.cpp:174
 msgid ""
 "XPCog is free software, licensed under the <b>GNU General Public License, version 3 or later</b>. It comes with absolutely no warranty."
 msgstr ""
 
-#: app/src/AboutDialog.cpp:246
+#: app/src/AboutDialog.cpp:177
 msgid "Cog:"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:246
+#: app/src/AboutDialog.cpp:177
 msgid "Source:"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:248
+#: app/src/AboutDialog.cpp:179
 msgid "About"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:250
+#: app/src/AboutDialog.cpp:181
 msgid "Formats"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:254
+#: app/src/AboutDialog.cpp:185
 msgid ""
 "XPCog is built from the following third-party components. Which decoder libraries a given build actually contains depends on how it was configured — the Formats tab lists what <i>this</i> build can play. Each library's own licence text ships with its sources."
 msgstr ""
 
-#: app/src/AboutDialog.cpp:259
+#: app/src/AboutDialog.cpp:192
 msgid "The player"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:260
+#: app/src/AboutDialog.cpp:193
+msgid "The interface"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:194
 msgid "Decoding and tags"
 msgstr ""
 
-#: app/src/AboutDialog.cpp:261
+#: app/src/AboutDialog.cpp:195
+msgid "Data"
+msgstr ""
+
+#: app/src/AboutDialog.cpp:196
 msgid "Licences"
 msgstr ""
 
@@ -1288,7 +1344,7 @@ msgstr ""
 msgid "Open Folder"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1706 app-gtk/src/Dialogs.cpp:154
+#: app/src/MainFrame.cpp:1706 app-gtk/src/Dialogs.cpp:161
 msgid "Save Playlist"
 msgstr ""
 
@@ -1304,7 +1360,7 @@ msgstr ""
 msgid "XSPF Playlist (*.xspf)"
 msgstr ""
 
-#: app/src/MainFrame.cpp:1718 app-gtk/src/Dialogs.cpp:190
+#: app/src/MainFrame.cpp:1718 app-gtk/src/Dialogs.cpp:197
 msgid "Could not write the playlist."
 msgstr ""
 
@@ -1351,15 +1407,15 @@ msgstr ""
 msgid "SC-55 Panel"
 msgstr ""
 
-#: app/src/OpenUrlDialog.cpp:22 app-gtk/src/Dialogs.cpp:69
+#: app/src/OpenUrlDialog.cpp:22 app-gtk/src/Dialogs.cpp:76
 msgid "Open URL"
 msgstr ""
 
-#: app/src/OpenUrlDialog.cpp:24 app-gtk/src/Dialogs.cpp:85
+#: app/src/OpenUrlDialog.cpp:24 app-gtk/src/Dialogs.cpp:92
 msgid "Address of a stream or file:"
 msgstr ""
 
-#: app/src/OpenUrlDialog.cpp:46 app-gtk/src/Dialogs.cpp:113
+#: app/src/OpenUrlDialog.cpp:46 app-gtk/src/Dialogs.cpp:120
 msgid "Open"
 msgstr ""
 
@@ -1368,7 +1424,7 @@ msgid ""
 "“%s” is not an address XPCog can open. It needs a scheme, such as https:// or file://."
 msgstr ""
 
-#: app/src/OpenUrlDialog.cpp:78 app-gtk/src/Dialogs.cpp:47
+#: app/src/OpenUrlDialog.cpp:78 app-gtk/src/Dialogs.cpp:54
 msgid "Invalid URL"
 msgstr ""
 
@@ -1997,7 +2053,7 @@ msgstr ""
 msgid "Connect..."
 msgstr ""
 
-#: app/src/PreferencesDialog.cpp:1751 app-gtk/src/Dialogs.cpp:112 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/ui/window.blp:200
+#: app/src/PreferencesDialog.cpp:1751 app-gtk/src/Dialogs.cpp:119 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/ui/window.blp:200
 msgid "Cancel"
 msgstr ""
 
@@ -2188,12 +2244,40 @@ msgid ""
 "Windows does not let an application make itself the default. To open these files by double-clicking, choose Open with → Choose another app → XPCog, and tick \"Always use this app\"."
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:21
+#: app-gtk/src/Dialogs.cpp:28
 msgid "OK"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:93
+#: app-gtk/src/Dialogs.cpp:100
 msgid "Recent"
+msgstr ""
+
+#: app-gtk/src/Dialogs.cpp:274
+msgid "Data: %s"
+msgstr ""
+
+#: app-gtk/src/Dialogs.cpp:275
+msgid "Used for: %s"
+msgstr ""
+
+#: app-gtk/src/Dialogs.cpp:276
+msgid "Credit: %s"
+msgstr ""
+
+#: app-gtk/src/Dialogs.cpp:277
+msgid "Library: %s"
+msgstr ""
+
+#: app-gtk/src/Dialogs.cpp:278
+msgid "Feature: %s"
+msgstr ""
+
+#: app-gtk/src/Dialogs.cpp:279
+msgid "Licence: %s"
+msgstr ""
+
+#: app-gtk/src/Dialogs.cpp:337
+msgid "Ported from Cog"
 msgstr ""
 
 #: app-gtk/src/Menus.cpp:129

@@ -868,21 +868,7 @@ void MainWindow::setMiniMode(bool mini) {
     actions_->setChecked(CommandId::ViewMiniPlayer, false);
 }
 
-void MainWindow::showAbout() {
-    // The codec list and the credits the wx About dialog shows come later;
-    // this is the identity, the version and the licence.
-    const char* developers[] = {"Kevin L\xC3\xB3pez Brante", nullptr};
-    adw_show_about_dialog(GTK_WIDGET(window_),
-                          "application-name", "XPCog",
-                          "application-icon", "co.losno.XPCog",
-                          "version", std::string(kVersionString).c_str(),
-                          "developers", developers,
-                          "website", std::string(kProjectUrl).c_str(),
-                          "issue-url", (std::string(kProjectUrl) + "/issues").c_str(),
-                          "license-type", GTK_LICENSE_GPL_3_0,
-                          "copyright", "\xC2\xA9 2026 the XPCog authors",
-                          nullptr);
-}
+void MainWindow::showAbout() { showAboutDialog(GTK_WIDGET(window_), session_.registry()); }
 
 void MainWindow::showFileTree(bool show) {
     adw_overlay_split_view_set_show_sidebar(splitView_, show ? TRUE : FALSE);

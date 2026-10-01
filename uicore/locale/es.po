@@ -93,8 +93,8 @@ msgid "HTTP and internet radio"
 msgstr "HTTP y radio por internet"
 
 #: app/src/AboutDialog.cpp:46
-msgid "reading Last.fm's replies"
-msgstr "lectura de las respuestas de Last.fm"
+msgid "reading the web services' replies"
+msgstr "lectura de las respuestas de los servicios web"
 
 #: app/src/AboutDialog.cpp:47
 msgid "sample-rate conversion"
@@ -2320,3 +2320,87 @@ msgstr "Ver la carátula"
 #: app-gtk/src/Panes.cpp
 msgid "Timed"
 msgstr "Sincronizadas"
+
+#: uicore/src/Credits.cpp
+msgid "AdPlug's per-song fixes"
+msgstr "las correcciones por canción de AdPlug"
+
+#: uicore/src/Credits.cpp
+msgid "D-Bus, media keys and notifications"
+msgstr "D-Bus, teclas multimedia y notificaciones"
+
+#: uicore/src/Credits.cpp
+msgid "Data"
+msgstr "Datos"
+
+#: uicore/src/Credits.cpp
+msgid "HTTPS, under libcurl"
+msgstr "HTTPS, bajo libcurl"
+
+#: uicore/src/Credits.cpp
+msgid "KERNAL, BASIC and character ROMs for SID"
+msgstr "las ROM KERNAL, BASIC y de caracteres para SID"
+
+#: uicore/src/Credits.cpp
+msgid "OPL4 wavetable, under libvgm"
+msgstr "tabla de ondas OPL4, bajo libvgm"
+
+#: uicore/src/Credits.cpp
+msgid "Organya and PixTone sounds"
+msgstr "sonidos de Organya y PixTone"
+
+#: uicore/src/Credits.cpp
+msgid "The interface"
+msgstr "La interfaz"
+
+#: uicore/src/Credits.cpp
+msgid "the bundled SoundFont bank, free to use in software"
+msgstr "el banco SoundFont incluido, de uso libre en software"
+
+#: uicore/src/Credits.cpp
+msgid "the equaliser's preset list"
+msgstr "la lista de preajustes del ecualizador"
+
+#: uicore/src/Credits.cpp
+msgid "the password store"
+msgstr "el almacén de contraseñas"
+
+#: uicore/src/Credits.cpp
+msgid "the remote control's HTTP server"
+msgstr "el servidor HTTP del control remoto"
+
+#: uicore/src/Credits.cpp
+msgid "the remote control's documentation page"
+msgstr "la página de documentación del control remoto"
+
+#: uicore/src/Credits.cpp
+msgid "under HighlyExperimental"
+msgstr "bajo HighlyExperimental"
+
+#: app-gtk/src/Dialogs.cpp
+msgid "Ported from Cog"
+msgstr "Adaptado de Cog"
+
+#: app-gtk/src/Dialogs.cpp
+msgid "Library: %s"
+msgstr "Biblioteca: %s"
+
+#: app-gtk/src/Dialogs.cpp
+msgid "Feature: %s"
+msgstr "Función: %s"
+
+#: app-gtk/src/Dialogs.cpp
+msgid "Licence: %s"
+msgstr "Licencia: %s"
+
+#: app-gtk/src/Dialogs.cpp
+msgid "Data: %s"
+msgstr "Datos: %s"
+
+#: app-gtk/src/Dialogs.cpp
+msgid "Used for: %s"
+msgstr "Se usa para: %s"
+
+#: app-gtk/src/Dialogs.cpp
+msgid "Credit: %s"
+msgstr "Crédito: %s"

@@ -75,6 +75,7 @@ add_library(xpcog-uicore STATIC
     src/AppPlayerControl.cpp
     src/AppPlayerControl.hpp
     src/Commands.cpp
+    src/Credits.cpp
     src/Commands.hpp
     src/LastFmAccount.cpp
     src/LastFmAccount.hpp

@@ -1,5 +1,6 @@
 #include "AboutDialog.hpp"
 
+#include "Credits.hpp"
 #include "Text.hpp"
 
 #include "xpcog/core/Version.hpp"
@@ -11,7 +12,6 @@
 #include <wx/stattext.h>
 #include <wx/translation.h>
 
-#include <array>
 #include <map>
 #include <span>
 #include <string>
@@ -19,75 +19,6 @@
 
 namespace xpcog::app {
 namespace {
-
-struct Component {
-    const char* name;
-    const char* licence;
-    /// Translated: this is the one column that is prose. The other two are a
-    /// proper noun and an SPDX identifier, and translating either would make the
-    /// row harder to check against the library it names, not easier.
-    const char* purpose;
-};
-
-/// What is actually linked in. Kept here rather than generated, because a licence
-/// list has to be right rather than convenient -- a library dropped from the
-/// build should be removed deliberately, not vanish silently.
-///
-/// Split in two because the two halves answer different questions. The first is
-/// what the player is built out of and is in every build; the second is what
-/// decodes something, and which of those rows a given build actually contains
-/// depends on how it was configured -- which is what the Formats tab reports.
-constexpr std::array kApplicationComponents = {
-    Component{"wxWidgets", "wxWindows Licence", wxTRANSLATE("user interface")},
-    Component{"SQLite", "public domain", wxTRANSLATE("library database")},
-    Component{"miniaudio", "public domain / MIT-0", wxTRANSLATE("audio output")},
-    Component{"zlib", "zlib licence", wxTRANSLATE("decompression, throughout")},
-    Component{"libcurl", "curl licence", wxTRANSLATE("HTTP and internet radio")},
-    Component{"nlohmann/json", "MIT", wxTRANSLATE("reading Last.fm's replies")},
-    Component{"libsoxr", "LGPL-2.1", wxTRANSLATE("sample-rate conversion")},
-    Component{"Rubber Band", "GPL-2.0", wxTRANSLATE("pitch and tempo")},
-    Component{"Signalsmith Stretch", "MIT", wxTRANSLATE("pitch and tempo")},
-    Component{"FreeSurround", "GPL-2.0", wxTRANSLATE("upmixing stereo to surround")},
-    Component{"dsd2pcm", "BSD", wxTRANSLATE("DSD to PCM conversion")},
-    Component{"hdcd_decode2", "BSD-2-Clause", wxTRANSLATE("HDCD decoding")},
-    Component{"LPC extrapolation", "ISC-style", wxTRANSLATE("gapless edges")},
-    Component{"NanoSVG", "zlib", wxTRANSLATE("drawing the interface icons")},
-    Component{"Lucide", "ISC", wxTRANSLATE("the interface icons themselves")},
-    Component{"sentry-native", "MIT", wxTRANSLATE("opt-in crash reporting")},
-};
-
-constexpr std::array kCodecComponents = {
-    Component{"FLAC", "BSD-3-Clause", wxTRANSLATE("FLAC")},
-    Component{"libogg / libvorbis", "BSD-3-Clause", wxTRANSLATE("Ogg Vorbis")},
-    Component{"Opus / opusfile", "BSD-3-Clause", wxTRANSLATE("Opus")},
-    Component{"minimp3", "CC0-1.0", wxTRANSLATE("MP3")},
-    Component{"WavPack", "BSD-3-Clause", wxTRANSLATE("WavPack")},
-    Component{"libmpcdec", "BSD-3-Clause", wxTRANSLATE("Musepack")},
-    Component{"FFmpeg", "LGPL-2.1", wxTRANSLATE("AAC, ALAC, WMA and more")},
-    Component{"TagLib", "LGPL-2.1 / MPL-1.1", wxTRANSLATE("tag reading")},
-    Component{"libopenmpt", "BSD-3-Clause", wxTRANSLATE("tracker modules")},
-    Component{"Game Music Emu", "LGPL-2.1", wxTRANSLATE("console chiptunes")},
-    Component{"libarchive", "BSD-2-Clause", wxTRANSLATE("archives, and the SC-55 ROMs")},
-    Component{"vgmstream", "ISC", wxTRANSLATE("game streaming formats")},
-    Component{"libsidplayfp", "GPL-2.0", wxTRANSLATE("Commodore 64 SID")},
-    Component{"AdPlug", "LGPL-2.1", wxTRANSLATE("AdLib and OPL2 formats")},
-    Component{"libbinio", "LGPL-2.1", wxTRANSLATE("AdPlug's file reading")},
-    Component{"libvgm", "GPL-2.0", wxTRANSLATE("VGM, S98, DRO and GYM")},
-    Component{"Hively replayer", "BSD-3-Clause", wxTRANSLATE("AHX and Hively modules")},
-    Component{"libjaytrax", "GPL-3.0", wxTRANSLATE("Syntrax modules")},
-    Component{"SpessaSynth Core", "Apache-2.0", wxTRANSLATE("SoundFont synthesis")},
-    Component{"Nuked OPL3", "GPL-2.0", wxTRANSLATE("OPL3 synthesis")},
-    Component{"Nuked SC-55", "MAME licence", wxTRANSLATE("Roland SC-55 emulation")},
-    Component{"psflib", "GPL-2.0", wxTRANSLATE("the PSF container")},
-    Component{"HighlyExperimental", "GPL-2.0", wxTRANSLATE("PSF and PSF2 (PlayStation)")},
-    Component{"HighlyQuixotic", "GPL-2.0", wxTRANSLATE("QSF (Capcom QSound)")},
-    Component{"HighlyTheoretical", "GPL-3.0", wxTRANSLATE("DSF and SSF (Sega)")},
-    Component{"lazyusf2", "GPL-2.0", wxTRANSLATE("USF (Nintendo 64)")},
-    Component{"mGBA", "MPL-2.0", wxTRANSLATE("GSF (Game Boy Advance)")},
-    Component{"snes9x", "Snes9x licence", wxTRANSLATE("SNSF (Super Nintendo)")},
-    Component{"melonDS", "GPL-3.0", wxTRANSLATE("2SF (Nintendo DS)")},
-    Component{"SSEQPlayer", "GPL-2.0", wxTRANSLATE("NCSF (Nintendo DS)")},
-};
 
 [[nodiscard]] std::string buildInfo() {
 #if defined(__clang__)
@@ -256,8 +187,12 @@ AboutDialog::AboutDialog(wxWindow* parent, const PluginRegistry& registry)
                "configured \xE2\x80\x94 the Formats tab lists what <i>this</i> build "
           "can play. Each library's own licence text ships with its sources.") +
         "</p>";
-    licences += componentRows(_("The player"), kApplicationComponents);
-    licences += componentRows(_("Decoding and tags"), kCodecComponents);
+    // The shared table in uicore/src/Credits.cpp, with this frontend's own
+    // toolkit rows; the GTK About credits the same list.
+    licences += componentRows(_("The player"), playerComponents());
+    licences += componentRows(_("The interface"), wxComponents());
+    licences += componentRows(_("Decoding and tags"), codecComponents());
+    licences += componentRows(_("Data"), dataComponents());
     tabs->AddPage(page(tabs, licences), _("Licences"));
 
     auto* layout = new wxBoxSizer(wxVERTICAL);

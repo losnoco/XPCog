@@ -36,4 +36,9 @@ void showWarning(GtkWidget* parent, const std::string& heading, const std::strin
 /// dialog cannot list a key that does not work.
 void showShortcutsDialog(GtkWidget* parent);
 
+/// About XPCog: identity and licence, Cog's acknowledgement, every component
+/// on the Legal page (uicore/src/Credits.hpp, the table the wx dialog shows
+/// too), and what this build plays as the Troubleshooting page's text.
+void showAboutDialog(GtkWidget* parent, const PluginRegistry& registry);
+
 }  // namespace xpcog::gtk

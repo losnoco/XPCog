@@ -675,6 +675,35 @@ TEST_CASE("the shortcuts dialog is built from the command table", "[gtk][shortcu
     CHECK(toolkitComplaints().empty());
 }
 
+TEST_CASE("the About dialog credits what XPCog is built from", "[gtk][about]") {
+    // It shipped 2.0.0 with no credits at all.
+    if (!toolkit()) {
+        SKIP("no display: GTK could not initialise");
+    }
+    SessionHarness h;
+    GtkWidget*     content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    TestWindow     window(content, 900, 700);
+    settle();
+    xpcog::gtk::showAboutDialog(GTK_WIDGET(window.window()), h.session.registry());
+    settle(3);
+
+    std::vector<GtkWidget*> dialogs;
+    collect(GTK_WIDGET(window.window()), ADW_TYPE_ABOUT_DIALOG, dialogs);
+    REQUIRE(dialogs.size() == 1);
+    auto* about = ADW_ABOUT_DIALOG(dialogs.front());
+    CHECK(g_strcmp0(adw_about_dialog_get_application_name(about), "XPCog") == 0);
+    // The Troubleshooting text is this build's decoders, one per line.
+    const std::string debug = adw_about_dialog_get_debug_info(about);
+    CHECK(debug.find("XPCog ") == 0);
+    for (const xpcog::DecoderDescriptor& decoder : h.session.registry().decoders()) {
+        INFO(decoder.name);
+        CHECK(debug.find(std::string(decoder.name) + ": ") != std::string::npos);
+    }
+    adw_dialog_force_close(ADW_DIALOG(about));
+    settle();
+    CHECK(toolkitComplaints().empty());
+}
+
 TEST_CASE("the equaliser's scales are not narrower than they need", "[gtk][equalizer]") {
     // The WXPORT.md lesson: a control forced narrower than its own minimum is
     // one the toolkit refuses to draw, and only a laid-out window says so.
