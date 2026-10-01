@@ -2500,3 +2500,7 @@ msgstr "el gestor de fallos, bajo sentry-native"
 #: uicore/src/Credits.cpp
 msgid "vector maths, under Rubber Band"
 msgstr "matemática vectorial, bajo Rubber Band"
+
+#: uicore/src/Credits.cpp
+msgid "JIT helpers, under melonDS"
+msgstr "funciones auxiliares del JIT, bajo melonDS"

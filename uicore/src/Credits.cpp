@@ -21,7 +21,7 @@ constexpr std::array kPlayer = {
     Component{"Signalsmith Stretch", "MIT", XPCOG_TRANSLATE("pitch and tempo")},
     Component{"FreeSurround", "GPL-2.0", XPCOG_TRANSLATE("upmixing stereo to surround")},
     Component{"dsd2pcm", "BSD", XPCOG_TRANSLATE("DSD to PCM conversion")},
-    Component{"hdcd_decode2", "BSD-2-Clause", XPCOG_TRANSLATE("HDCD decoding")},
+    Component{"hdcd_decode2", "BSD-3-Clause", XPCOG_TRANSLATE("HDCD decoding")},
     Component{"LPC extrapolation", "ISC-style", XPCOG_TRANSLATE("gapless edges")},
     Component{"sentry-native", "MIT", XPCOG_TRANSLATE("opt-in crash reporting")},
     Component{"Crashpad", "Apache-2.0", XPCOG_TRANSLATE("the crash handler, under sentry-native")},
@@ -74,29 +74,34 @@ constexpr std::array kCodecs = {
     Component{"AdPlug", "LGPL-2.1", XPCOG_TRANSLATE("AdLib and OPL2 formats")},
     Component{"libbinio", "LGPL-2.1", XPCOG_TRANSLATE("AdPlug's file reading")},
     Component{"libvgm", "GPL-2.0", XPCOG_TRANSLATE("VGM, S98, DRO and GYM")},
-    Component{"Hively replayer", "BSD-3-Clause", XPCOG_TRANSLATE("AHX and Hively modules")},
+    Component{"Hively replayer", "not stated in its sources", XPCOG_TRANSLATE("AHX and Hively modules")},
     Component{"blip_buf", "LGPL-2.1", XPCOG_TRANSLATE("band-limited synthesis, under Hively and melonDS")},
     Component{"libjaytrax", "GPL-3.0-only", XPCOG_TRANSLATE("Syntrax modules")},
     Component{"SpessaSynth Core", "Apache-2.0", XPCOG_TRANSLATE("SoundFont synthesis")},
     Component{"Nuked OPL3", "GPL-2.0", XPCOG_TRANSLATE("OPL3 synthesis")},
     Component{"Chocolate Doom OPL music", "GPL-2.0-or-later", XPCOG_TRANSLATE("OPL MIDI playback, under Nuked OPL3")},
     Component{"Nuked SC-55", "MAME licence", XPCOG_TRANSLATE("Roland SC-55 emulation")},
-    Component{"psflib", "GPL-2.0", XPCOG_TRANSLATE("the PSF container")},
-    Component{"HighlyExperimental", "GPL-2.0", XPCOG_TRANSLATE("PSF and PSF2 (PlayStation)")},
-    Component{"HighlyQuixotic", "GPL-2.0", XPCOG_TRANSLATE("QSF (Capcom QSound)")},
+    Component{"psflib", "not stated in its sources", XPCOG_TRANSLATE("the PSF container")},
+    Component{"HighlyExperimental", "not stated in its sources", XPCOG_TRANSLATE("PSF and PSF2 (PlayStation)")},
+    Component{"HighlyQuixotic", "not stated in its sources", XPCOG_TRANSLATE("QSF (Capcom QSound)")},
     Component{"HighlyTheoretical", "GPL-3.0", XPCOG_TRANSLATE("DSF and SSF (Sega)")},
     Component{"lazyusf2", "GPL-2.0", XPCOG_TRANSLATE("USF (Nintendo 64)")},
     Component{"mGBA", "MPL-2.0", XPCOG_TRANSLATE("GSF (Game Boy Advance)")},
     Component{"snes9x", "Snes9x licence", XPCOG_TRANSLATE("SNSF (Super Nintendo)")},
-    Component{"melonDS", "GPL-3.0-only", XPCOG_TRANSLATE("2SF (Nintendo DS)")},
+    Component{"melonDS", "GPL-3.0-or-later", XPCOG_TRANSLATE("2SF (Nintendo DS)")},
     Component{"FatFs", "FatFs licence (BSD-style)", XPCOG_TRANSLATE("a FAT file system, under melonDS")},
+    Component{"Dolphin", "GPL-2.0-or-later", XPCOG_TRANSLATE("JIT helpers, under melonDS")},
     Component{"xxHash", "BSD-2-Clause", XPCOG_TRANSLATE("hashing, under melonDS")},
     Component{"tiny-AES-c", "Unlicense", XPCOG_TRANSLATE("AES, under melonDS")},
     Component{"SHA-1 (Steve Reid)", "public domain", XPCOG_TRANSLATE("SHA-1, under melonDS")},
-    Component{"SSEQPlayer", "GPL-2.0", XPCOG_TRANSLATE("NCSF (Nintendo DS)")},
+    Component{"SSEQPlayer", "not stated in its sources", XPCOG_TRANSLATE("NCSF (Nintendo DS)")},
 };
 
-// Credited to whoever made them. For five of these nobody has stated a licence
+// "not stated in its sources" above means exactly that: the vendored copy
+// carries no licence text or header, and neither does Cog's. It is said
+// rather than filled in from memory.
+//
+// Credited to whoever made them. For four of these nobody has stated a licence
 // the player could rely on -- docs/PORTING.md's "Known gaps" says so, and Cog
 // ships the same data under the same silence -- so the column names the rights
 // holder rather than inventing terms.
@@ -108,7 +113,7 @@ constexpr std::array kData = {
     Component{"Commodore 64 ROMs", "Commodore", XPCOG_TRANSLATE("KERNAL, BASIC and character ROMs for SID")},
     Component{"PlayStation BIOS", "Sony", XPCOG_TRANSLATE("under HighlyExperimental")},
     Component{"Organya wavetable", "Pixel", XPCOG_TRANSLATE("Organya and PixTone sounds")},
-    Component{"AdPlug song database", "the AdPlug authors", XPCOG_TRANSLATE("AdPlug's per-song fixes")},
+    Component{"AdPlug song database", "public domain", XPCOG_TRANSLATE("AdPlug's per-song fixes")},
 };
 
 }  // namespace

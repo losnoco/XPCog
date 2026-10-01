@@ -605,46 +605,50 @@ msgid "a FAT file system, under melonDS"
 msgstr ""
 
 #: uicore/src/Credits.cpp:93
-msgid "hashing, under melonDS"
+msgid "JIT helpers, under melonDS"
 msgstr ""
 
 #: uicore/src/Credits.cpp:94
-msgid "AES, under melonDS"
+msgid "hashing, under melonDS"
 msgstr ""
 
 #: uicore/src/Credits.cpp:95
-msgid "SHA-1, under melonDS"
+msgid "AES, under melonDS"
 msgstr ""
 
 #: uicore/src/Credits.cpp:96
+msgid "SHA-1, under melonDS"
+msgstr ""
+
+#: uicore/src/Credits.cpp:97
 msgid "NCSF (Nintendo DS)"
 msgstr ""
 
-#: uicore/src/Credits.cpp:105
+#: uicore/src/Credits.cpp:110
 msgid "the bundled SoundFont bank, free to use in software"
 msgstr ""
 
-#: uicore/src/Credits.cpp:106
+#: uicore/src/Credits.cpp:111
 msgid "the equaliser's preset list"
 msgstr ""
 
-#: uicore/src/Credits.cpp:107
+#: uicore/src/Credits.cpp:112
 msgid "OPL4 wavetable, under libvgm"
 msgstr ""
 
-#: uicore/src/Credits.cpp:108
+#: uicore/src/Credits.cpp:113
 msgid "KERNAL, BASIC and character ROMs for SID"
 msgstr ""
 
-#: uicore/src/Credits.cpp:109
+#: uicore/src/Credits.cpp:114
 msgid "under HighlyExperimental"
 msgstr ""
 
-#: uicore/src/Credits.cpp:110
+#: uicore/src/Credits.cpp:115
 msgid "Organya and PixTone sounds"
 msgstr ""
 
-#: uicore/src/Credits.cpp:111
+#: uicore/src/Credits.cpp:116
 msgid "AdPlug's per-song fixes"
 msgstr ""
 

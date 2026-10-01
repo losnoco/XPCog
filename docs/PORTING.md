@@ -3358,7 +3358,7 @@ Six things left behind, none of them blocking:
   file is more than it can deliver. That is the file describing itself and is the
   right answer, but it means a damaged `.shn` ends early rather than at its
   stated end.
-- **libjaytrax is GPL-3.0-only**, and so is melonDS behind 2SF, and SpessaSynth
+- **libjaytrax is GPL-3.0-only**, melonDS behind 2SF is GPL-3.0-or-later, and SpessaSynth
   and the bundled swagger-ui are Apache-2.0, which GPL-2 cannot take. The
   project was GPL-2.0-or-later until 1.13.0 and the "or later" is what made
   every one of those combinations legal -- but it meant a shipped build was
