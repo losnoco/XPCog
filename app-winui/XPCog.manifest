@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The WinUI player's application manifest. What the wx player gets from
-  wx/msw/wx.rc, written out, because nothing here includes wx:
+  wx/msw/wx.rc, written out, because nothing here includes wx. No double
+  hyphen anywhere in this comment: XML forbids one inside a comment, and the
+  manifest then fails to parse and the program does not start.
 
+  * Common Controls version 6. Without it the loader binds comctl32 5.82,
+    which lacks functions the program imports by ordinal (LoadIconMetric is
+    ordinal 380, and only version 6 has it), and Windows refuses to start the
+    program with an "Ordinal Not Found" box before anything else runs.
   * Per-Monitor V2 DPI awareness. WinUI renders at the monitor's scale itself,
     and a process Windows thinks is DPI-unaware is bitmap-stretched on top of
     that, and text blurs on every display above 100%.
@@ -11,6 +17,12 @@
 -->
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
   <assemblyIdentity version="1.0.0.0" name="co.losno.XPCog.WinUI" type="win32"/>
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
+                        processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>

@@ -2,7 +2,6 @@
 
 #include "Translations.hpp"
 
-#include <commctrl.h>
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <wincodec.h>
@@ -114,9 +113,14 @@ Tray::Tray() {
     }
     taskbarCreated_ = ::RegisterWindowMessageW(L"TaskbarCreated");
 
-    // At the notification area's own size, per monitor scale, rather than a
-    // 32-pixel icon squeezed down.
-    ::LoadIconMetric(instance, kIconResource, LIM_SMALL, &icon_);
+    // At the notification area's own size, at the system's scale, rather than
+    // a 32-pixel icon squeezed down. LoadImage rather than LoadIconMetric,
+    // which comctl32 exports only by ordinal and only in version 6 -- and this
+    // executable's manifest does not ask for version 6, so the loader binds
+    // 5.82 and refuses to start the program at all.
+    const UINT dpi  = ::GetDpiForSystem();
+    const int  side = ::GetSystemMetricsForDpi(SM_CXSMICON, dpi);
+    icon_ = static_cast<HICON>(::LoadImageW(instance, kIconResource, IMAGE_ICON, side, side, 0));
     shown_ = add();
 }
 

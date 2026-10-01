@@ -69,8 +69,8 @@ target_link_libraries(xpcog-winuicore PUBLIC
     # The cover art's memory stream (SHCreateMemStream, and the WinRT
     # stream over it) and the Music folder's path.
     Shlwapi.lib ShCore.lib Shell32.lib Ole32.lib
-    # The tray: its icon at the notification area's size, the mini player's
-    # window subclass, and the cover decoded for a notification.
+    # The mini player's window subclass, and the cover decoded for a
+    # notification.
     Comctl32.lib WindowsCodecs.lib)
 
 set_target_properties(xpcog-winuicore PROPERTIES FOLDER app-winui)
