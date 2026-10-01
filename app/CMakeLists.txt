@@ -131,7 +131,6 @@ target_link_libraries(xpcog-app PRIVATE xpcog-appcore XPCog::warnings)
 
 # The WinUI island prototype; see cmake/XPCogWinAppSdk.cmake.
 if(XPCOG_WITH_WINUI_ISLAND)
-    include(XPCogWinAppSdk)
     target_sources(xpcog-appcore PRIVATE
         src/WinUIHost.hpp src/WinUIIsland.cpp src/WinUIIsland.hpp src/WinUIPlaylist.cpp)
     target_link_libraries(xpcog-appcore PUBLIC XPCog::winappsdk)
@@ -159,26 +158,13 @@ endif()
 # vcpkg_copy_tools() puts it under tools/<port>/, which is the same place
 # tests/CMakeLists.txt finds mpcenc. Named rather than found on PATH: what has to
 # run is the handler from the same sentry-native this linked against.
-if(XPCOG_WITH_SENTRY)
-    set(_handler
-        "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/sentry-native/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX}")
-
-    if(EXISTS "${_handler}")
-        add_custom_command(TARGET xpcog-app POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                    "${_handler}" "$<TARGET_FILE_DIR:xpcog-app>"
-            COMMENT "Staging crashpad_handler"
-            VERBATIM)
-    else()
-        # A message rather than a fatal error: a build with no handler is a
-        # player that still plays and still reports the problems it notices
-        # itself. Said out loud because the alternative is finding out from an
-        # empty Sentry project months later.
-        message(STATUS
-            "XPCog: crashpad_handler not found at ${_handler} -- this build will "
-            "report messages but not crashes.")
-    endif()
-endif()
+#
+# A missing handler is a status message rather than a fatal error: a build
+# with no handler is a player that still plays and still reports the problems
+# it notices itself. Said out loud because the alternative is finding out from
+# an empty Sentry project months later. See xpcog_stage_crashpad() in
+# cmake/XPCogInstallRuntime.cmake, which also stages the DLLs it needs.
+xpcog_stage_crashpad(xpcog-app)
 
 # ---------------------------------------------------------------------------
 # The icon.

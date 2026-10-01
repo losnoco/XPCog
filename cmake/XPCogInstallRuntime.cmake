@@ -58,3 +58,32 @@ function(xpcog_install_linux_runtime target)
         endif()
     endif()
 endfunction()
+
+# crashpad's handler, staged beside a player's executable -- see the comment on
+# XPCOG_WITH_SENTRY in app/CMakeLists.txt for why it has to be there.
+#
+# With the DLLs vcpkg keeps beside it, not only the .exe. vcpkg builds its tools
+# in release whatever the tree is, so the handler links the release zlib, z.dll;
+# a debug tree's bin/ holds only zd.dll, which applocal copied for the player.
+# Staged alone, the handler then fails to start at the first launch with crash
+# reporting consented, as a loader error box from a process nobody started. In a
+# release tree z.dll is already there and the copy changes nothing.
+function(xpcog_stage_crashpad target)
+    if(NOT XPCOG_WITH_SENTRY OR NOT WIN32)
+        return()
+    endif()
+    set(_tools "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/sentry-native")
+    set(_handler "${_tools}/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX}")
+    if(NOT EXISTS "${_handler}")
+        message(STATUS
+            "XPCog: crashpad_handler not found at ${_handler} -- this build will "
+            "report messages but not crashes.")
+        return()
+    endif()
+    file(GLOB _dlls "${_tools}/*.dll")
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${_handler}" ${_dlls} "$<TARGET_FILE_DIR:${target}>"
+        COMMENT "Staging crashpad_handler"
+        VERBATIM)
+endfunction()

@@ -98,11 +98,22 @@ if(XPCOG_BUILD_APP)
     add_subdirectory(uicore)
 endif()
 
+# The Windows App SDK, for either WinUI consumer. Included here rather than by
+# each so the fetch, the projection and the imported target happen once, and
+# before app/, which reads what it defines.
+if(XPCOG_BUILD_WX_APP AND (XPCOG_WITH_WINUI_ISLAND OR XPCOG_BUILD_WINUI_APP))
+    include(XPCogWinAppSdk)
+endif()
+
 if(XPCOG_BUILD_WX_APP)
     add_subdirectory(app)
     # Packaging, after the thing being packaged. `installer` is never built by
     # ALL; see packaging/windows/CMakeLists.txt.
     add_subdirectory(packaging/windows)
+endif()
+
+if(XPCOG_BUILD_WX_APP AND XPCOG_BUILD_WINUI_APP)
+    add_subdirectory(app-winui)
 endif()
 
 if(XPCOG_BUILD_GTK_APP)

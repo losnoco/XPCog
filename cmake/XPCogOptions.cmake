@@ -89,5 +89,10 @@ option(XPCOG_WITH_SENTRY "Opt-in crash reporting (sentry-native)" OFF)
 # only, OFF everywhere, and see cmake/XPCogWinAppSdk.cmake for what it fetches.
 option(XPCOG_WITH_WINUI_ISLAND "Prototype WinUI 3 island in the wx player (Windows)" OFF)
 
+# The WinUI 3 player, app-winui/, built beside the wx one while it catches up
+# with it. Windows only and OFF: it is on its way to replacing app/, and until
+# it has, the wx player is the one that ships.
+option(XPCOG_BUILD_WINUI_APP "WinUI 3 player, alongside the wx one (Windows)" OFF)
+
 # Sanitizers are opt-in; the RT-safety work in M1a wants them available early.
 set(XPCOG_SANITIZE "" CACHE STRING "Sanitizers, e.g. address;undefined")

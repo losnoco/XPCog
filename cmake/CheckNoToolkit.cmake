@@ -81,7 +81,7 @@ function(xpcog_scan label regex advice)
 endfunction()
 
 # --- 1. No Qt, anywhere ----------------------------------------------------
-xpcog_gather(_everything core codecs platform uicore app app-gtk tools tests)
+xpcog_gather(_everything core codecs platform uicore app app-gtk app-winui tools tests)
 xpcog_scan(
     "Qt was removed from this project, but Qt includes were found:"
     # Q followed by a capital, which is what every Qt header is: QString,
@@ -132,6 +132,18 @@ xpcog_scan(
     ${_platform_headers})
 
 # --- 3. Each frontend on its own toolkit -----------------------------------
+xpcog_gather(_winui_app app-winui)
+xpcog_scan(
+    "app-winui/ is the WinUI frontend, but wx includes were found:"
+    "^[ \t]*#[ \t]*include[ \t]*[<\"]wx/"
+    "It replaces app/ rather than borrowing from it: shared code belongs in uicore/ or platform/."
+    ${_winui_app})
+xpcog_scan(
+    "app-winui/ is the WinUI frontend, but GTK or GLib includes were found:"
+    "${_gtk_regex}"
+    "Code the frontends share belongs in uicore/ or platform/."
+    ${_winui_app})
+
 xpcog_gather(_wx_app app)
 xpcog_scan(
     "app/ is the wxWidgets frontend, but GTK or GLib includes were found:"

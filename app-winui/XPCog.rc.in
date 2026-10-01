@@ -1,0 +1,45 @@
+// The WinUI player's resources: the wx player's app/XPCog.rc.in, minus
+// wx/msw/wx.rc and with the manifest named directly, since nothing here has wx
+// to bring one. See that file for the version block's history.
+
+#include <winver.h>
+#include <winuser.h>
+
+// First in sort order, so it is the icon Explorer and the taskbar pick.
+AAAA_XPCOG ICON "@XPCOG_RC_ICON@"
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "@XPCOG_RC_MANIFEST@"
+
+#pragma code_page(65001)
+
+VS_VERSION_INFO VERSIONINFO
+    FILEVERSION    @XPCOG_RC_VERSION@
+    PRODUCTVERSION @XPCOG_RC_VERSION@
+    FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+    FILEFLAGS VS_FF_DEBUG
+#else
+    FILEFLAGS 0x0L
+#endif
+    FILEOS      VOS_NT_WINDOWS32
+    FILETYPE    VFT_APP
+    FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription",  "XPCog"
+            VALUE "FileVersion",      "@PROJECT_VERSION@"
+            VALUE "InternalName",     "XPCog-WinUI"
+            VALUE "LegalCopyright",   "@XPCOG_COPYRIGHT@"
+            VALUE "OriginalFilename", "XPCog-WinUI.exe"
+            VALUE "ProductName",      "XPCog"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 0x04B0
+    END
+END

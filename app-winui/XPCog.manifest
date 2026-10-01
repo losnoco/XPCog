@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The WinUI player's application manifest. What the wx player gets from
+  wx/msw/wx.rc, written out, because nothing here includes wx:
+
+  * Per-Monitor V2 DPI awareness. WinUI renders at the monitor's scale itself,
+    and a process Windows thinks is DPI-unaware is bitmap-stretched on top of
+    that, and text blurs on every display above 100%.
+  * Windows 10 and 11 as supported operating systems, without which Windows
+    answers version queries as though this were Windows 8.
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="co.losno.XPCog.WinUI" type="win32"/>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+  </compatibility>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+    </windowsSettings>
+  </application>
+</assembly>
