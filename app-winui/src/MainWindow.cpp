@@ -532,6 +532,14 @@ void MainWindow::wireUp() {
                 lyrics_->setTimed(session_.settings().LyricsSynced());
                 refreshPanels();
                 break;
+            case app::Effect::OnlineLyrics:
+                // LRCLIB switched on or off, or pointed elsewhere: the session
+                // hands out a lookup only while it is on, so the pane is given
+                // the one it now has -- the one it was built with stays null
+                // after a launch with LRCLIB off, and nothing would be asked.
+                lyrics_->setLookup(session_.lyricsLookup());
+                refreshPanels();
+                break;
             default:
                 break;
         }
