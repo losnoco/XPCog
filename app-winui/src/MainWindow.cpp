@@ -36,23 +36,6 @@ T load(const std::wstring& xaml) {
     return mux::Markup::XamlReader::Load(xaml).as<T>();
 }
 
-/// The seek bar's thumb tooltip: the position as a clock rather than as the
-/// slider's bare number of seconds.
-struct ClockConverter : winrt::implements<ClockConverter, mux::Data::IValueConverter> {
-    winrt::Windows::Foundation::IInspectable Convert(
-        winrt::Windows::Foundation::IInspectable const& value,
-        winrt::Windows::UI::Xaml::Interop::TypeName const&,
-        winrt::Windows::Foundation::IInspectable const&, winrt::hstring const&) const {
-        return winrt::box_value(toH(app::formatClock(winrt::unbox_value_or<double>(value, 0.0))));
-    }
-    winrt::Windows::Foundation::IInspectable ConvertBack(
-        winrt::Windows::Foundation::IInspectable const&,
-        winrt::Windows::UI::Xaml::Interop::TypeName const&,
-        winrt::Windows::Foundation::IInspectable const&, winrt::hstring const&) const {
-        throw winrt::hresult_not_implemented();
-    }
-};
-
 std::filesystem::path besideExecutable(const wchar_t* name) {
     wchar_t path[MAX_PATH]{};
     ::GetModuleFileNameW(nullptr, path, MAX_PATH);
@@ -159,16 +142,15 @@ void MainWindow::build() {
                                               [this] { session_.playback().next(); }));
     transport.Children().Append(buttons);
 
-    seek_ = mux::Controls::Slider();
-    seek_.Minimum(0);
-    seek_.Maximum(1);
-    seek_.StepFrequency(0.1);
-    seek_.IsEnabled(false);
-    seek_.VerticalAlignment(mux::VerticalAlignment::Center);
-    seek_.Margin(mux::ThicknessHelper::FromLengths(8, 0, 4, 0));
-    seek_.ThumbToolTipValueConverter(winrt::make<ClockConverter>());
-    mux::Controls::Grid::SetColumn(seek_, 1);
-    transport.Children().Append(seek_);
+    // A slider, or the waveform drawn with Win2D -- see SeekBar.hpp.
+    seekBar_ = std::make_unique<SeekBar>();
+    {
+        auto bar = seekBar_->element().as<mux::FrameworkElement>();
+        bar.VerticalAlignment(mux::VerticalAlignment::Center);
+        bar.Margin(mux::ThicknessHelper::FromLengths(8, 0, 4, 0));
+        mux::Controls::Grid::SetColumn(bar, 1);
+        transport.Children().Append(bar);
+    }
 
     clock_ = load<mux::Controls::TextBlock>(
         std::wstring(L"<TextBlock ") + kXmlns +
@@ -256,14 +238,23 @@ void MainWindow::build() {
     showPanelPage("info");
 
     spectrum_  = std::make_unique<SpectrumView>(session_.playback().tap(), session_.settings());
+    scope_     = std::make_unique<OscilloscopeView>(session_.playback().tap(), session_.settings());
+#ifdef XPCOG_HAVE_SC55_PANEL
+    sc55_ = std::make_unique<Sc55View>([this] { return session_.playback().position(); });
+#endif
     equalizer_ = std::make_unique<EqualizerPane>(session_.settings());
     speed_     = std::make_unique<SpeedPane>(session_.settings());
     tools_     = std::make_unique<ToolsStrip>();
     tools_->addSection("spectrum", app::commandLabel(app::CommandId::ViewSpectrum),
                        spectrum_->element());
+    tools_->addSection("scope", app::commandLabel(app::CommandId::ViewOscilloscope),
+                       scope_->element());
     tools_->addSection("equalizer", app::commandLabel(app::CommandId::ViewEqualizer),
                        equalizer_->element());
     tools_->addSection("speed", app::commandLabel(app::CommandId::ViewSpeed), speed_->element());
+#ifdef XPCOG_HAVE_SC55_PANEL
+    tools_->addSection("sc55", app::commandLabel(app::CommandId::ViewSc55Panel), sc55_->element());
+#endif
     tools_->closeRequested = [this](const std::string& name) { showTool(name, false); };
 
     auto middle = mux::Controls::Grid();
@@ -406,37 +397,17 @@ void MainWindow::wireUp() {
         }
     });
 
-    // The seek bar seeks on release, not on every step of a drag: a seek is a
-    // decoder reopen for some formats, and dragging would queue dozens. The
-    // Slider handles its own pointer events, so these listen with
-    // handledEventsToo to hear about them at all.
-    seek_.AddHandler(mux::UIElement::PointerPressedEvent(),
-                     winrt::box_value(mux::Input::PointerEventHandler(
-                         [this](auto&&, auto&&) { scrubbing_ = true; })),
-                     true);
-    const auto release = [this](auto&&, auto&&) {
-        if (scrubbing_) {
-            scrubbing_ = false;
-            session_.playback().seek(seek_.Value());
-        }
-    };
-    seek_.AddHandler(mux::UIElement::PointerReleasedEvent(),
-                     winrt::box_value(mux::Input::PointerEventHandler(release)), true);
-    seek_.AddHandler(mux::UIElement::PointerCaptureLostEvent(),
-                     winrt::box_value(mux::Input::PointerEventHandler(release)), true);
-    seek_.ValueChanged([this](auto&&, mux::Controls::Primitives::RangeBaseValueChangedEventArgs const& args) {
-        if (settingSeek_) {
-            return;
-        }
-        if (scrubbing_) {
-            // Where the release would land, while the pointer is down.
-            setClock(args.NewValue(), duration_);
-        } else {
-            // The keyboard: arrows and Page Up/Down move the thumb with no
-            // pointer involved, and seek as they go.
-            session_.playback().seek(args.NewValue());
-        }
+    // The seek bar seeks on release, not on every step of a drag -- a seek is a
+    // decoder reopen for some formats -- and while held, the clock shows where
+    // the release would land.
+    subscriptions_.push_back(seekBar_->seekRequested.connect(
+        [this](double seconds) { session_.playback().seek(seconds); }));
+    subscriptions_.push_back(
+        seekBar_->scrubbed.connect([this](double seconds) { setClock(seconds, duration_); }));
+    observe(session_.waveformUpdated, [this](const std::shared_ptr<const WaveformSummary>& summary) {
+        seekBar_->setWaveform(summary);
     });
+    applyWaveformSetting();
 
     window_.Closed([this](auto&&, auto&&) {
         persistState();
@@ -462,6 +433,10 @@ void MainWindow::wireUp() {
         [this](const std::string& key) { session_.settingChanged(key); }));
     subscriptions_.push_back(speed_->settingChanged.connect(
         [this](const std::string& key) { session_.settingChanged(key); }));
+    for (auto* signal : {&spectrum_->settingChanged, &scope_->settingChanged}) {
+        subscriptions_.push_back(
+            signal->connect([this](const std::string& key) { session_.settingChanged(key); }));
+    }
     // What the session changes on its own -- a genre's preset at a track
     // boundary, a setting from the remote control -- reaches the panes here.
     observe(session_.effectApplied, [this](app::Effect effect, const std::string&) {
@@ -474,6 +449,12 @@ void MainWindow::wireUp() {
                 break;
             case app::Effect::RefreshSpectrum:
                 spectrum_->applySettings(session_.settings());
+                break;
+            case app::Effect::RefreshScope:
+                scope_->applySettings(session_.settings());
+                break;
+            case app::Effect::WaveformSeekBar:
+                applyWaveformSetting();
                 break;
             case app::Effect::RefreshPanels:
                 lyrics_->setTimed(session_.settings().LyricsSynced());
@@ -536,6 +517,7 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
     // The band table is built against the device's rate, which is known
     // only once a track has opened one.
     spectrum_->setSampleRate(session_.playback().sampleRate());
+    scope_->setSampleRate(session_.playback().sampleRate());
     refreshVisualizers();
     const bool showsPause = playing && !paused;
     playGlyph_.Glyph(showsPause ? kGlyphPause : kGlyphPlay);
@@ -551,15 +533,17 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
 
 void MainWindow::onPositionChanged(double seconds, double duration) {
     duration_ = duration;
-    seek_.IsEnabled(duration > 0);
-    if (scrubbing_) {
-        return;
+    seekBar_->setDuration(duration);
+    seekBar_->setPosition(seconds);
+    if (!seekBar_->scrubbing()) {
+        setClock(seconds, duration);
     }
-    settingSeek_ = true;
-    seek_.Maximum(std::max(duration, 1.0));
-    seek_.Value(std::clamp(seconds, 0.0, std::max(duration, 1.0)));
-    settingSeek_ = false;
-    setClock(seconds, duration);
+}
+
+void MainWindow::applyWaveformSetting() {
+    const Settings& settings = session_.settings();
+    seekBar_->setWaveformStyle(SeekBar::styleFrom(settings));
+    seekBar_->setWaveformMode(settings.WaveformSeekBar());
 }
 
 void MainWindow::setClock(double seconds, double duration) {
@@ -601,9 +585,9 @@ bool MainWindow::offered(app::CommandId id) {
         // The rest have nowhere to go yet: the painted panes, the preferences
         // and the mini player are later steps of the port, and a menu item
         // that does nothing is worse than one that is not there.
-        case CommandId::ViewOscilloscope:
-        case CommandId::ViewWaveform:
+#ifndef XPCOG_HAVE_SC55_PANEL
         case CommandId::ViewSc55Panel:
+#endif
         case CommandId::ViewMiniPlayer:
         case CommandId::FilePreferences:
             return false;
@@ -679,6 +663,12 @@ std::optional<bool> MainWindow::checked(app::CommandId id) const {
             return settings.PanelFollowMode() == 1;
         case CommandId::ViewSpectrum:
             return tools_ && tools_->shown("spectrum");
+        case CommandId::ViewOscilloscope:
+            return tools_ && tools_->shown("scope");
+        case CommandId::ViewWaveform:
+            return settings.WaveformSeekBar();
+        case CommandId::ViewSc55Panel:
+            return tools_ && tools_->shown("sc55");
         case CommandId::ViewEqualizer:
             return tools_ && tools_->shown("equalizer");
         case CommandId::ViewSpeed:
@@ -843,6 +833,17 @@ void MainWindow::onCommand(app::CommandId id) {
         case CommandId::ViewSpectrum:
             showTool("spectrum", !tools_->shown("spectrum"));
             break;
+        case CommandId::ViewOscilloscope:
+            showTool("scope", !tools_->shown("scope"));
+            break;
+        case CommandId::ViewWaveform:
+            settings.setWaveformSeekBar(!settings.WaveformSeekBar());
+            session_.settingChanged("waveformSeekBar");
+            applyWaveformSetting();
+            break;
+        case CommandId::ViewSc55Panel:
+            showTool("sc55", !tools_->shown("sc55"));
+            break;
         case CommandId::ViewEqualizer:
             showTool("equalizer", !tools_->shown("equalizer"));
             break;
@@ -911,6 +912,12 @@ void MainWindow::refreshVisualizers() {
     // Running only while shown and something is audible, as GTK's do.
     const bool playing = session_.playback().playing() && !session_.playback().paused();
     spectrum_->setActive(tools_->shown("spectrum") && playing);
+    scope_->setActive(tools_->shown("scope") && playing);
+#ifdef XPCOG_HAVE_SC55_PANEL
+    // Whether or not anything plays: the panel shows the synth's idle state
+    // too, as GTK's does.
+    sc55_->setActive(tools_->shown("sc55"));
+#endif
 }
 
 void MainWindow::showTool(const std::string& name, bool show) {
@@ -989,7 +996,7 @@ void MainWindow::persistState() {
     settings.setRawValue("xpcog.window.fileTree", fileTreeShown() ? "1" : "0");
 
     std::string panes;
-    for (const char* name : {"spectrum", "equalizer", "speed"}) {
+    for (const char* name : {"spectrum", "scope", "equalizer", "speed", "sc55"}) {
         panes += std::string(name) + "=" + (tools_->shown(name) ? "1" : "0") + ";";
     }
     panes += std::string("panels=") + (panelShown() ? "1" : "0") + ";";
@@ -1046,7 +1053,8 @@ void MainWindow::restoreState() {
             panels = value == "1";
         } else if (key == "page" && (value == "info" || value == "lyrics")) {
             showPanelPage(value);
-        } else if (key == "spectrum" || key == "equalizer" || key == "speed") {
+        } else if (key == "spectrum" || key == "scope" || key == "equalizer" || key == "speed" ||
+                   key == "sc55") {
             showTool(key, value == "1");
         }
     }

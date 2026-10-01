@@ -3,8 +3,13 @@
 #include "CommandMenus.hpp"
 #include "FileTreePane.hpp"
 #include "Panes.hpp"
+#include "Oscilloscope.hpp"
 #include "Visualizers.hpp"
+#ifdef XPCOG_HAVE_SC55_PANEL
+#include "Sc55View.hpp"
+#endif
 #include "PlaylistTable.hpp"
+#include "SeekBar.hpp"
 #include "WinRT.hpp"
 
 #include "xpcog/core/Signal.hpp"
@@ -104,6 +109,7 @@ private:
     void onPlaybackStateChanged(bool playing, bool paused);
     void onPositionChanged(double seconds, double duration);
     void setClock(double seconds, double duration);
+    void applyWaveformSetting();
 
     app::Session& session_;
 
@@ -112,7 +118,7 @@ private:
     mux::Controls::AutoSuggestBox        filter_{nullptr};
     mux::Controls::FontIcon              playGlyph_{nullptr};
     mux::Controls::Button                playButton_{nullptr};
-    mux::Controls::Slider                seek_{nullptr};
+    std::unique_ptr<SeekBar>             seekBar_;
     mux::Controls::TextBlock             clock_{nullptr};
     mux::Controls::Slider                volume_{nullptr};
     mux::Controls::TextBlock             status_{nullptr};
@@ -130,6 +136,10 @@ private:
     /// the panel itself is shown.
     std::string                          panelPage_;
     std::unique_ptr<SpectrumView>        spectrum_;
+    std::unique_ptr<OscilloscopeView>    scope_;
+#ifdef XPCOG_HAVE_SC55_PANEL
+    std::unique_ptr<Sc55View>            sc55_;
+#endif
     std::unique_ptr<EqualizerPane>       equalizer_;
     std::unique_ptr<SpeedPane>           speed_;
     std::unique_ptr<ToolsStrip>          tools_;
@@ -140,13 +150,9 @@ private:
     bool                                 maximizeOnShow_ = false;
 
     double duration_ = 0.0;
-    /// Set while the code moves a slider, so its ValueChanged is not taken for
-    /// the listener's.
-    bool settingSeek_   = false;
+    /// Set while the code moves the volume slider, so its ValueChanged is not
+    /// taken for the listener's.
     bool settingVolume_ = false;
-    /// The seek bar's pointer is down: the position stops following playback,
-    /// and the seek happens on release.
-    bool scrubbing_ = false;
     /// A dialog is open. ContentDialog allows one at a time per window, and a
     /// second ShowAsync throws.
     bool dialogOpen_ = false;

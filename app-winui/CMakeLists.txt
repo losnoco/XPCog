@@ -21,6 +21,8 @@ set(XPCOG_WINUI_SOURCES
     src/FileTreePane.hpp
     src/MainWindow.cpp
     src/MainWindow.hpp
+    src/Oscilloscope.cpp
+    src/Oscilloscope.hpp
     src/Panes.cpp
     src/Painting.hpp
     src/Panes.hpp
@@ -28,6 +30,8 @@ set(XPCOG_WINUI_SOURCES
     src/PlaylistTable.hpp
     src/Runtime.cpp
     src/Runtime.hpp
+    src/SeekBar.cpp
+    src/SeekBar.hpp
     src/Visualizers.cpp
     src/Visualizers.hpp
     src/Win2D.cpp
@@ -49,6 +53,19 @@ target_link_libraries(xpcog-winuicore PUBLIC
     Shlwapi.lib ShCore.lib Shell32.lib Ole32.lib)
 
 set_target_properties(xpcog-winuicore PROPERTIES FOLDER app-winui)
+
+# The SC-55's front panel, as app/ has it: only with the MIDI build, which is
+# what produces a panel state to draw, and with the photograph of the hardware
+# embedded for it to be drawn onto.
+if(XPCOG_WITH_MIDI)
+    target_compile_definitions(xpcog-winuicore PUBLIC XPCOG_HAVE_SC55_PANEL=1)
+    target_sources(xpcog-winuicore PRIVATE src/Sc55View.cpp src/Sc55View.hpp)
+    xpcog_embed_resources(
+        TARGET xpcog-winuicore
+        NAME   sc55
+        BASE   "${CMAKE_SOURCE_DIR}/vendor/nuked-sc55/data"
+        FILES  "${CMAKE_SOURCE_DIR}/vendor/nuked-sc55/data/back.data")
+endif()
 
 add_executable(xpcog-winui src/main.cpp)
 
