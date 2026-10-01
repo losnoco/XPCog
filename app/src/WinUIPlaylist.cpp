@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <optional>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -239,7 +240,51 @@ struct WinUIPlaylist::Impl {
         std::size_t position = 0;
         double   startX   = 0;
         double   startWidth = 0;
+        /// For a resize: the column whose width the divider changes, and
+        /// whether it grows (+1) or shrinks (-1) as the pointer moves right.
+        std::size_t target = 0;
+        double      sense  = 1;
+        /// How far the target may grow before the filling column is at its
+        /// floor.
+        double room = 0;
     } drag;
+
+    /// What dragging the divider on a heading's right edge resizes, if
+    /// anything. The filling column is pinned to neither side, so the columns
+    /// to its right are pinned to the table's right edge: widening one of
+    /// those from its right edge would move its *left* edge, and the divider
+    /// under the pointer would stay put while the one beside it moved. So the
+    /// divider moves the column on whichever side of it is away from the
+    /// filling column, and the filling column takes up the difference either
+    /// way -- the edge goes where the pointer goes.
+    struct ResizeTarget {
+        std::size_t column;  ///< index into kColumns
+        double      sense;
+    };
+    [[nodiscard]] std::optional<ResizeTarget> resizeTarget(std::size_t position) const {
+        std::size_t fill = kColumns.size();
+        for (std::size_t p = 0; p < kColumns.size(); ++p) {
+            if (kColumns[order[p]].fills) {
+                fill = p;
+            }
+        }
+        ResizeTarget target{};
+        if (position < fill) {
+            target = {order[position], 1};
+        } else if (position + 1 < kColumns.size()) {
+            target = {order[position + 1], -1};
+        } else {
+            return std::nullopt;
+        }
+        const ColumnSpec& spec = kColumns[target.column];
+        if (spec.fixed || spec.fills) {
+            return std::nullopt;
+        }
+        return target;
+    }
+
+    /// The filling column's floor, PlaylistColumns' kMinFillWidth.
+    static constexpr double kMinFillWidth = 80;
 
     Subscription rebuilt;
     Subscription rowChanged;
@@ -440,10 +485,9 @@ struct WinUIPlaylist::Impl {
             auto text = cell.Children().GetAt(0).as<mux::Controls::TextBlock>();
             text.Text(winrt::hstring(heading.ToStdWstring()));
             text.TextAlignment(spec.right ? mux::TextAlignment::Right : mux::TextAlignment::Left);
-            // A gripper only where the wx list would let the divider move.
-            cell.Children().GetAt(1).Visibility(spec.fixed || spec.fills
-                                                    ? mux::Visibility::Collapsed
-                                                    : mux::Visibility::Visible);
+            // A gripper only on a divider that has a column to resize.
+            cell.Children().GetAt(1).Visibility(resizeTarget(p) ? mux::Visibility::Visible
+                                                                 : mux::Visibility::Collapsed);
         }
     }
 
@@ -458,6 +502,21 @@ struct WinUIPlaylist::Impl {
         drag.position   = position;
         drag.startX     = args.GetCurrentPoint(header).Position().X;
         drag.startWidth = widths[order[position]];
+        if (resizing) {
+            const auto resize = resizeTarget(position);
+            if (!resize) {
+                drag = {};
+                return;
+            }
+            drag.target     = resize->column;
+            drag.sense      = resize->sense;
+            drag.startWidth = widths[resize->column];
+            for (std::size_t p = 0; p < kColumns.size(); ++p) {
+                if (kColumns[order[p]].fills) {
+                    drag.room = std::max(0.0, headerCell(p).ActualWidth() - kMinFillWidth);
+                }
+            }
+        }
         target.CapturePointer(args.Pointer());
         args.Handled(true);
     }
@@ -468,7 +527,8 @@ struct WinUIPlaylist::Impl {
         }
         const double dx = args.GetCurrentPoint(header).Position().X - drag.startX;
         if (drag.resizing) {
-            widths[order[drag.position]] = std::clamp(drag.startWidth + dx, kMinWidth, 4000.0);
+            widths[drag.target] = std::clamp(drag.startWidth + (drag.sense * dx), kMinWidth,
+                                             std::max(kMinWidth, drag.startWidth + drag.room));
             relayout();
         } else {
             if (!drag.dragging && std::abs(dx) < kDragThreshold) {
