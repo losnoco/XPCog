@@ -384,171 +384,267 @@ msgstr ""
 msgid "opt-in crash reporting"
 msgstr ""
 
-#: uicore/src/Credits.cpp:30 uicore/src/Credits.cpp:36 uicore/src/Credits.cpp:37
-msgid "user interface"
+#: uicore/src/Credits.cpp:27
+msgid "the crash handler, under sentry-native"
+msgstr ""
+
+#: uicore/src/Credits.cpp:28
+msgid "stack traces in crash reports on Linux"
+msgstr ""
+
+#: uicore/src/Credits.cpp:29
+msgid "compression in the remote control's HTTP server"
+msgstr ""
+
+#: uicore/src/Credits.cpp:30
+msgid "resampling, under Rubber Band"
 msgstr ""
 
 #: uicore/src/Credits.cpp:31
+msgid "vector maths, under Rubber Band"
+msgstr ""
+
+#: uicore/src/Credits.cpp:35 uicore/src/Credits.cpp:48 uicore/src/Credits.cpp:49
+msgid "user interface"
+msgstr ""
+
+#: uicore/src/Credits.cpp:36
 msgid "drawing the interface icons"
 msgstr ""
 
-#: uicore/src/Credits.cpp:32
+#: uicore/src/Credits.cpp:37
 msgid "the interface icons themselves"
 msgstr ""
 
 #: uicore/src/Credits.cpp:38
-msgid "D-Bus, media keys and notifications"
+msgid "XML, under wxWidgets"
 msgstr ""
 
 #: uicore/src/Credits.cpp:39
-msgid "the password store"
+msgid "regular expressions, under wxWidgets"
+msgstr ""
+
+#: uicore/src/Credits.cpp:40
+msgid "PNG images, under wxWidgets"
+msgstr ""
+
+#: uicore/src/Credits.cpp:41
+msgid "JPEG images, under wxWidgets"
+msgstr ""
+
+#: uicore/src/Credits.cpp:42
+msgid "WebP images, under wxWidgets"
 msgstr ""
 
 #: uicore/src/Credits.cpp:43
-msgid "FLAC"
+msgid "TIFF images, under wxWidgets"
 msgstr ""
 
 #: uicore/src/Credits.cpp:44
-msgid "Ogg Vorbis"
-msgstr ""
-
-#: uicore/src/Credits.cpp:45
-msgid "Opus"
-msgstr ""
-
-#: uicore/src/Credits.cpp:46
-msgid "MP3"
-msgstr ""
-
-#: uicore/src/Credits.cpp:47
-msgid "WavPack"
-msgstr ""
-
-#: uicore/src/Credits.cpp:48
-msgid "Musepack"
-msgstr ""
-
-#: uicore/src/Credits.cpp:49
-msgid "AAC, ALAC, WMA and more"
+msgid "folder listing for the PSF cores"
 msgstr ""
 
 #: uicore/src/Credits.cpp:50
-msgid "tag reading"
+msgid "D-Bus, media keys and notifications"
 msgstr ""
 
 #: uicore/src/Credits.cpp:51
-msgid "tracker modules"
-msgstr ""
-
-#: uicore/src/Credits.cpp:52
-msgid "console chiptunes"
-msgstr ""
-
-#: uicore/src/Credits.cpp:53
-msgid "archives, and the SC-55 ROMs"
-msgstr ""
-
-#: uicore/src/Credits.cpp:54
-msgid "game streaming formats"
+msgid "the password store"
 msgstr ""
 
 #: uicore/src/Credits.cpp:55
-msgid "Commodore 64 SID"
+msgid "FLAC"
 msgstr ""
 
 #: uicore/src/Credits.cpp:56
-msgid "AdLib and OPL2 formats"
+msgid "Ogg Vorbis"
 msgstr ""
 
 #: uicore/src/Credits.cpp:57
-msgid "AdPlug's file reading"
+msgid "Opus"
 msgstr ""
 
 #: uicore/src/Credits.cpp:58
-msgid "VGM, S98, DRO and GYM"
+msgid "MP3"
 msgstr ""
 
 #: uicore/src/Credits.cpp:59
-msgid "AHX and Hively modules"
+msgid "WavPack"
 msgstr ""
 
 #: uicore/src/Credits.cpp:60
-msgid "Syntrax modules"
+msgid "Musepack"
 msgstr ""
 
 #: uicore/src/Credits.cpp:61
-msgid "SoundFont synthesis"
+msgid "AAC, ALAC, WMA and more"
 msgstr ""
 
 #: uicore/src/Credits.cpp:62
-msgid "OPL3 synthesis"
+msgid "tag reading"
 msgstr ""
 
 #: uicore/src/Credits.cpp:63
-msgid "Roland SC-55 emulation"
+msgid "text conversion, under TagLib"
 msgstr ""
 
 #: uicore/src/Credits.cpp:64
-msgid "the PSF container"
+msgid "tracker modules"
 msgstr ""
 
 #: uicore/src/Credits.cpp:65
-msgid "PSF and PSF2 (PlayStation)"
+msgid "MP3 samples, under libopenmpt"
 msgstr ""
 
 #: uicore/src/Credits.cpp:66
-msgid "QSF (Capcom QSound)"
+msgid "console chiptunes"
 msgstr ""
 
 #: uicore/src/Credits.cpp:67
-msgid "DSF and SSF (Sega)"
+msgid "archives, and the SC-55 ROMs"
 msgstr ""
 
 #: uicore/src/Credits.cpp:68
-msgid "USF (Nintendo 64)"
+msgid "bzip2 archives, under libarchive"
 msgstr ""
 
 #: uicore/src/Credits.cpp:69
-msgid "GSF (Game Boy Advance)"
+msgid "XZ and LZMA archives, under libarchive"
 msgstr ""
 
 #: uicore/src/Credits.cpp:70
-msgid "SNSF (Super Nintendo)"
+msgid "LZ4 archives, under libarchive"
 msgstr ""
 
 #: uicore/src/Credits.cpp:71
-msgid "2SF (Nintendo DS)"
+msgid "Zstandard archives, under libarchive"
 msgstr ""
 
 #: uicore/src/Credits.cpp:72
-msgid "NCSF (Nintendo DS)"
+msgid "game streaming formats"
+msgstr ""
+
+#: uicore/src/Credits.cpp:73
+msgid "Commodore 64 SID"
+msgstr ""
+
+#: uicore/src/Credits.cpp:74
+msgid "AdLib and OPL2 formats"
+msgstr ""
+
+#: uicore/src/Credits.cpp:75
+msgid "AdPlug's file reading"
+msgstr ""
+
+#: uicore/src/Credits.cpp:76
+msgid "VGM, S98, DRO and GYM"
+msgstr ""
+
+#: uicore/src/Credits.cpp:77
+msgid "AHX and Hively modules"
+msgstr ""
+
+#: uicore/src/Credits.cpp:78
+msgid "band-limited synthesis, under Hively and melonDS"
+msgstr ""
+
+#: uicore/src/Credits.cpp:79
+msgid "Syntrax modules"
+msgstr ""
+
+#: uicore/src/Credits.cpp:80
+msgid "SoundFont synthesis"
 msgstr ""
 
 #: uicore/src/Credits.cpp:81
-msgid "the bundled SoundFont bank, free to use in software"
+msgid "OPL3 synthesis"
 msgstr ""
 
 #: uicore/src/Credits.cpp:82
-msgid "the equaliser's preset list"
+msgid "OPL MIDI playback, under Nuked OPL3"
 msgstr ""
 
 #: uicore/src/Credits.cpp:83
-msgid "OPL4 wavetable, under libvgm"
+msgid "Roland SC-55 emulation"
 msgstr ""
 
 #: uicore/src/Credits.cpp:84
-msgid "KERNAL, BASIC and character ROMs for SID"
+msgid "the PSF container"
 msgstr ""
 
 #: uicore/src/Credits.cpp:85
-msgid "under HighlyExperimental"
+msgid "PSF and PSF2 (PlayStation)"
 msgstr ""
 
 #: uicore/src/Credits.cpp:86
-msgid "Organya and PixTone sounds"
+msgid "QSF (Capcom QSound)"
 msgstr ""
 
 #: uicore/src/Credits.cpp:87
+msgid "DSF and SSF (Sega)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:88
+msgid "USF (Nintendo 64)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:89
+msgid "GSF (Game Boy Advance)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:90
+msgid "SNSF (Super Nintendo)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:91
+msgid "2SF (Nintendo DS)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:92
+msgid "a FAT file system, under melonDS"
+msgstr ""
+
+#: uicore/src/Credits.cpp:93
+msgid "hashing, under melonDS"
+msgstr ""
+
+#: uicore/src/Credits.cpp:94
+msgid "AES, under melonDS"
+msgstr ""
+
+#: uicore/src/Credits.cpp:95
+msgid "SHA-1, under melonDS"
+msgstr ""
+
+#: uicore/src/Credits.cpp:96
+msgid "NCSF (Nintendo DS)"
+msgstr ""
+
+#: uicore/src/Credits.cpp:105
+msgid "the bundled SoundFont bank, free to use in software"
+msgstr ""
+
+#: uicore/src/Credits.cpp:106
+msgid "the equaliser's preset list"
+msgstr ""
+
+#: uicore/src/Credits.cpp:107
+msgid "OPL4 wavetable, under libvgm"
+msgstr ""
+
+#: uicore/src/Credits.cpp:108
+msgid "KERNAL, BASIC and character ROMs for SID"
+msgstr ""
+
+#: uicore/src/Credits.cpp:109
+msgid "under HighlyExperimental"
+msgstr ""
+
+#: uicore/src/Credits.cpp:110
+msgid "Organya and PixTone sounds"
+msgstr ""
+
+#: uicore/src/Credits.cpp:111
 msgid "AdPlug's per-song fixes"
 msgstr ""
 

@@ -2404,3 +2404,99 @@ msgstr "Se usa para: %s"
 #: app-gtk/src/Dialogs.cpp
 msgid "Credit: %s"
 msgstr "Crédito: %s"
+
+#: uicore/src/Credits.cpp
+msgid "AES, under melonDS"
+msgstr "AES, bajo melonDS"
+
+#: uicore/src/Credits.cpp
+msgid "JPEG images, under wxWidgets"
+msgstr "imágenes JPEG, bajo wxWidgets"
+
+#: uicore/src/Credits.cpp
+msgid "LZ4 archives, under libarchive"
+msgstr "archivos LZ4, bajo libarchive"
+
+#: uicore/src/Credits.cpp
+msgid "MP3 samples, under libopenmpt"
+msgstr "muestras MP3, bajo libopenmpt"
+
+#: uicore/src/Credits.cpp
+msgid "OPL MIDI playback, under Nuked OPL3"
+msgstr "reproducción MIDI por OPL, bajo Nuked OPL3"
+
+#: uicore/src/Credits.cpp
+msgid "PNG images, under wxWidgets"
+msgstr "imágenes PNG, bajo wxWidgets"
+
+#: uicore/src/Credits.cpp
+msgid "SHA-1, under melonDS"
+msgstr "SHA-1, bajo melonDS"
+
+#: uicore/src/Credits.cpp
+msgid "TIFF images, under wxWidgets"
+msgstr "imágenes TIFF, bajo wxWidgets"
+
+#: uicore/src/Credits.cpp
+msgid "WebP images, under wxWidgets"
+msgstr "imágenes WebP, bajo wxWidgets"
+
+#: uicore/src/Credits.cpp
+msgid "XML, under wxWidgets"
+msgstr "XML, bajo wxWidgets"
+
+#: uicore/src/Credits.cpp
+msgid "XZ and LZMA archives, under libarchive"
+msgstr "archivos XZ y LZMA, bajo libarchive"
+
+#: uicore/src/Credits.cpp
+msgid "Zstandard archives, under libarchive"
+msgstr "archivos Zstandard, bajo libarchive"
+
+#: uicore/src/Credits.cpp
+msgid "a FAT file system, under melonDS"
+msgstr "un sistema de archivos FAT, bajo melonDS"
+
+#: uicore/src/Credits.cpp
+msgid "band-limited synthesis, under Hively and melonDS"
+msgstr "síntesis de banda limitada, bajo Hively y melonDS"
+
+#: uicore/src/Credits.cpp
+msgid "bzip2 archives, under libarchive"
+msgstr "archivos bzip2, bajo libarchive"
+
+#: uicore/src/Credits.cpp
+msgid "compression in the remote control's HTTP server"
+msgstr "compresión en el servidor HTTP del control remoto"
+
+#: uicore/src/Credits.cpp
+msgid "folder listing for the PSF cores"
+msgstr "listado de carpetas para los núcleos PSF"
+
+#: uicore/src/Credits.cpp
+msgid "hashing, under melonDS"
+msgstr "hashing, bajo melonDS"
+
+#: uicore/src/Credits.cpp
+msgid "regular expressions, under wxWidgets"
+msgstr "expresiones regulares, bajo wxWidgets"
+
+#: uicore/src/Credits.cpp
+msgid "resampling, under Rubber Band"
+msgstr "remuestreo, bajo Rubber Band"
+
+#: uicore/src/Credits.cpp
+msgid "stack traces in crash reports on Linux"
+msgstr "trazas de pila en los informes de fallos en Linux"
+
+#: uicore/src/Credits.cpp
+msgid "text conversion, under TagLib"
+msgstr "conversión de texto, bajo TagLib"
+
+#: uicore/src/Credits.cpp
+msgid "the crash handler, under sentry-native"
+msgstr "el gestor de fallos, bajo sentry-native"
+
+#: uicore/src/Credits.cpp
+msgid "vector maths, under Rubber Band"
+msgstr "matemática vectorial, bajo Rubber Band"
