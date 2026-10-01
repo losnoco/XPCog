@@ -1094,7 +1094,7 @@ void MainFrame::showWinUIPlaylist(bool show) {
         return;
     }
     if (show && winuiPlaylist_ == nullptr) {
-        winuiPlaylist_ = new WinUIPlaylist(splitter_, view_);
+        winuiPlaylist_ = new WinUIPlaylist(splitter_, view_, settings_);
         if (!winuiPlaylist_->ok()) {
             winuiPlaylist_->Destroy();
             winuiPlaylist_ = nullptr;
@@ -1103,6 +1103,23 @@ void MainFrame::showWinUIPlaylist(bool show) {
         }
         winuiPlaylist_->rowActivated = [this](std::size_t row) {
             activateRow(static_cast<unsigned int>(row));
+        };
+        winuiPlaylist_->selectionChanged = [this] {
+            refreshInfo();
+            refreshLyrics();
+        };
+        // After the event, not in it: PopupMenu runs a modal loop, and WinUI is
+        // still inside its pointer handling when this is called.
+        winuiPlaylist_->contextMenuRequested = [this] {
+            CallAfter([this] { popupPlaylistMenu(); });
+        };
+        winuiPlaylist_->filesDropped = [this](std::vector<std::filesystem::path> paths) {
+            std::vector<Url> urls;
+            urls.reserve(paths.size());
+            for (const std::filesystem::path& path : paths) {
+                urls.push_back(Url::fromLocalPath(path));
+            }
+            addUrls(urls, -1);
         };
         winuiPlaylist_->Hide();
     }
@@ -1419,7 +1436,15 @@ void MainFrame::bindCommands() {
     on(EditUndo, [this] { commands_.undo(); });
     on(EditRedo, [this] { commands_.redo(); });
     on(EditRemove, [this] { removeSelected(); });
-    on(EditSelectAll, [this] { list_->SelectAll(); });
+    on(EditSelectAll, [this] {
+#ifdef XPCOG_WITH_WINUI_ISLAND
+        if (playlistPane() != list_) {
+            winuiPlaylist_->selectAll();
+            return;
+        }
+#endif
+        list_->SelectAll();
+    });
     on(EditRandomize, [this] { commands_.randomize(); });
     on(EditScrollToCurrent, [this] {
         // Enabled whenever something is playing, which is not the same as
@@ -1576,10 +1601,10 @@ void MainFrame::bindUpdateUi() {
     });
 
     update(EditRemove, [this](wxUpdateUIEvent& event) {
-        event.Enable(list_->GetSelectedItemsCount() > 0);
+        event.Enable(hasPlaylistSelection());
     });
     update(PlaybackEnqueue, [this](wxUpdateUIEvent& event) {
-        event.Enable(list_->GetSelectedItemsCount() > 0);
+        event.Enable(hasPlaylistSelection());
     });
     update(EditRandomize,
            [this](wxUpdateUIEvent& event) { event.Enable(playlist_.size() > 1); });
@@ -1677,7 +1702,7 @@ void MainFrame::bindUpdateUi() {
     // from the id -- and it survives the menu being rebuilt, which Cog's does
     // not.
     const auto needsSelection = [this](wxUpdateUIEvent& event) {
-        event.Enable(list_->GetSelectedItemsCount() > 0);
+        event.Enable(hasPlaylistSelection());
     };
     update(PlaylistStopAfter, needsSelection);
     update(PlaylistSaveSelection, needsSelection);
@@ -1840,13 +1865,19 @@ bool MainFrame::revealTrack(TrackId id) {
     list_->EnsureVisible(item);
 #ifdef XPCOG_WITH_WINUI_ISLAND
     if (winuiPlaylist_ != nullptr) {
-        winuiPlaylist_->reveal(*row);
+        winuiPlaylist_->selectOnly(*row);
     }
 #endif
     return true;
 }
 
 std::vector<TrackId> MainFrame::selectedTracks() const {
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    // Already in screen order, which every caller accepts.
+    if (playlistPane() != list_) {
+        return selectedTracksInOrder();
+    }
+#endif
     wxDataViewItemArray items;
     list_->GetSelections(items);
 
@@ -1907,17 +1938,25 @@ void MainFrame::enqueueSelected() { commands_.setQueued(selectedTracks(), true);
 // --- the playlist's context menu -----------------------------------------
 
 std::vector<TrackId> MainFrame::selectedTracksInOrder() const {
-    wxDataViewItemArray items;
-    list_->GetSelections(items);
-
     // Through the row numbers rather than through the items, because the order
     // the control reports a selection in is the order it was *made* -- shift-
     // clicking upwards answers bottom to top. Everything on this menu that cares
     // about order wants the order on screen: a playlist saved from a selection,
     // and "the first selected track" for the two searches.
     std::set<unsigned int> rows;
-    for (const wxDataViewItem& item : items) {
-        rows.insert(model_->GetRow(item));
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    if (playlistPane() != list_) {
+        for (const std::size_t row : winuiPlaylist_->selectedRows()) {
+            rows.insert(static_cast<unsigned int>(row));
+        }
+    } else
+#endif
+    {
+        wxDataViewItemArray items;
+        list_->GetSelections(items);
+        for (const wxDataViewItem& item : items) {
+            rows.insert(model_->GetRow(item));
+        }
     }
 
     std::vector<TrackId> ids;
@@ -1947,6 +1986,24 @@ std::vector<std::filesystem::path> MainFrame::selectedPaths() const {
     return paths;
 }
 
+bool MainFrame::hasPlaylistSelection() const {
+#ifdef XPCOG_WITH_WINUI_ISLAND
+    if (playlistPane() != list_) {
+        return winuiPlaylist_->hasSelection();
+    }
+#endif
+    return list_->GetSelectedItemsCount() > 0;
+}
+
+void MainFrame::popupPlaylistMenu() {
+    // Built fresh each time rather than kept, so the labels and the ticks come
+    // from the EVT_UPDATE_UI pass PopupMenu() runs before it opens. Held in a
+    // unique_ptr because a popup menu belongs to whoever made it -- wx deletes a
+    // menu bar's menus and not this one.
+    const std::unique_ptr<wxMenu> menu{buildMenu(playlistMenuLayout())};
+    PopupMenu(menu.get());
+}
+
 void MainFrame::showPlaylistMenu(const wxDataViewItem& item) {
     if (item.IsOk() && !list_->IsSelected(item)) {
         // Cog's rule (PlaylistView.m:274): right-clicking inside a multiple
@@ -1961,13 +2018,7 @@ void MainFrame::showPlaylistMenu(const wxDataViewItem& item) {
         refreshInfo();
         refreshLyrics();
     }
-
-    // Built fresh each time rather than kept, so the labels and the ticks come
-    // from the EVT_UPDATE_UI pass PopupMenu() runs before it opens. Held in a
-    // unique_ptr because a popup menu belongs to whoever made it -- wx deletes a
-    // menu bar's menus and not this one.
-    const std::unique_ptr<wxMenu> menu{buildMenu(playlistMenuLayout())};
-    PopupMenu(menu.get());
+    popupPlaylistMenu();
 }
 
 void MainFrame::toggleQueuedSelected() {

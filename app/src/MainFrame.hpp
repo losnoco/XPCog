@@ -268,6 +268,8 @@ private:
     /// right-clicking one of five selected rows acts on the five, and
     /// right-clicking a sixth acts on the sixth.
     void showPlaylistMenu(const wxDataViewItem& item);
+    void popupPlaylistMenu();
+    [[nodiscard]] bool hasPlaylistSelection() const;
 
     /// Queues the selection, or takes it out of the queue.
     ///

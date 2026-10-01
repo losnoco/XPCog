@@ -2,6 +2,7 @@
 
 #include <wx/apptrait.h>
 #include <wx/evtloop.h>
+#include <wx/msw/private.h>
 #include <wx/utils.h>
 
 #include <MddBootstrap.h>
@@ -53,6 +54,26 @@ public:
         // Messages for the island's own windows never reach wx's handling at
         // all -- there is no wxWindow for their HWND -- so this is the only
         // place WinUI hears about keyboard input before it is dispatched.
+        //
+        // Except that the menu's shortcuts go first. wx would offer a key to
+        // the frame's accelerators before anything else, and an island's
+        // window is not one wx knows to do that for, so with focus in the
+        // playlist Delete, Ctrl+A and the rest would otherwise go to WinUI and
+        // do nothing. The cost is that an accelerator key can never reach a
+        // WinUI text box; there are none in these islands.
+        if ((msg->message == WM_KEYDOWN || msg->message == WM_SYSKEYDOWN) &&
+            wxGetWindowFromHWND(reinterpret_cast<WXHWND>(msg->hwnd)) == nullptr) {
+            for (HWND parent = ::GetParent(msg->hwnd); parent != nullptr;
+                 parent      = ::GetParent(parent)) {
+                if (wxWindow* host = wxGetWindowFromHWND(reinterpret_cast<WXHWND>(parent))) {
+                    if (wxWindow* top = wxGetTopLevelParent(host);
+                        top != nullptr && top->MSWTranslateMessage(msg)) {
+                        return true;
+                    }
+                    break;
+                }
+            }
+        }
         if (const PreTranslate hook = runtime().preTranslate; hook != nullptr && hook(msg)) {
             return true;
         }
