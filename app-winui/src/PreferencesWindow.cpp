@@ -416,8 +416,9 @@ Row PreferencesWindow::RowBuilder::buttons(std::initializer_list<mux::Controls::
 
 // --- the window ----------------------------------------------------------------------
 
-PreferencesWindow::PreferencesWindow(app::Session& session, HWND owner)
-    : session_(session), settings_(session.settings()), alive_(std::make_shared<int>(0)) {
+PreferencesWindow::PreferencesWindow(app::Session& session, HWND owner, bool hasTray)
+    : session_(session), settings_(session.settings()), hasTray_(hasTray),
+      alive_(std::make_shared<int>(0)) {
     window_ = mux::Window();
     window_.Title(toH(app::commandLabel(app::CommandId::FilePreferences)));
     window_.SystemBackdrop(mux::Media::MicaBackdrop());

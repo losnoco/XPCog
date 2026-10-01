@@ -1,10 +1,13 @@
 #include "MainWindow.hpp"
 
+#include "AboutDialog.hpp"
+
 #include "Session.hpp"
 #include "TrackText.hpp"
 #include "Translations.hpp"
 
 #include "xpcog/core/Version.hpp"
+#include "xpcog/platform/CrashReporter.hpp"
 
 #include <winrt/Microsoft.Windows.Storage.Pickers.h>
 
@@ -20,15 +23,6 @@
 namespace xpcog::winui {
 
 namespace {
-
-// Segoe Fluent Icons code points: the system's own glyphs for these, the same
-// ones Media Player draws.
-constexpr const wchar_t* kGlyphPlay     = L"\xE768";
-constexpr const wchar_t* kGlyphPause    = L"\xE769";
-constexpr const wchar_t* kGlyphStop     = L"\xE71A";
-constexpr const wchar_t* kGlyphPrevious = L"\xE892";
-constexpr const wchar_t* kGlyphNext     = L"\xE893";
-constexpr const wchar_t* kGlyphVolume   = L"\xE767";
 
 // How far the sizers let the panes go, in DIPs. Narrower than the minimums
 // and a pane stops being able to show what it is for; wider than the maximums
@@ -51,12 +45,6 @@ T load(const std::wstring& xaml) {
     return mux::Markup::XamlReader::Load(xaml).as<T>();
 }
 
-std::filesystem::path besideExecutable(const wchar_t* name) {
-    wchar_t path[MAX_PATH]{};
-    ::GetModuleFileNameW(nullptr, path, MAX_PATH);
-    return std::filesystem::path(path).parent_path() / name;
-}
-
 }  // namespace
 
 MainWindow::MainWindow(app::Session& session) : session_(session) {
@@ -76,6 +64,17 @@ HWND MainWindow::hwnd() const {
 }
 
 void MainWindow::raise() {
+    // The mini player when that is the mode: bringing back the full window
+    // would end it behind the listener's back.
+    if (miniShown()) {
+        mini_->show();
+        ::SetForegroundWindow(mini_->hwnd());
+        return;
+    }
+    // Hidden, when it was closed to the tray.
+    if (!window_.AppWindow().IsVisible()) {
+        window_.AppWindow().Show();
+    }
     if (const auto presenter = window_.AppWindow().Presenter().try_as<
             winrt::Microsoft::UI::Windowing::OverlappedPresenter>();
         presenter && presenter.State() == winrt::Microsoft::UI::Windowing::OverlappedPresenterState::Minimized) {
@@ -159,16 +158,15 @@ void MainWindow::build() {
     auto buttons = mux::Controls::StackPanel();
     buttons.Orientation(mux::Controls::Orientation::Horizontal);
     buttons.Spacing(2);
-    buttons.Children().Append(transportButton(kGlyphPrevious, app::tr("Previous"),
-                                              [this] { session_.playback().previous(); }));
-    playButton_ = transportButton(kGlyphPlay, app::tr("Play"),
-                                  [this] { session_.playback().playPause(); });
-    playGlyph_ = playButton_.Content().as<mux::Controls::FontIcon>();
+    buttons.Children().Append(glyphButton(kGlyphPrevious, app::tr("Previous"),
+                                          [this] { session_.playback().previous(); }));
+    playButton_ = glyphButton(kGlyphPlay, app::tr("Play"),
+                              [this] { session_.playback().playPause(); });
     buttons.Children().Append(playButton_);
-    buttons.Children().Append(transportButton(kGlyphStop, app::tr("Stop"),
-                                              [this] { session_.playback().stop(); }));
-    buttons.Children().Append(transportButton(kGlyphNext, app::tr("Next"),
-                                              [this] { session_.playback().next(); }));
+    buttons.Children().Append(glyphButton(kGlyphStop, app::tr("Stop"),
+                                          [this] { session_.playback().stop(); }));
+    buttons.Children().Append(glyphButton(kGlyphNext, app::tr("Next"),
+                                          [this] { session_.playback().next(); }));
     transport.Children().Append(buttons);
 
     // A slider, or the waveform drawn with Win2D -- see SeekBar.hpp.
@@ -358,17 +356,17 @@ void MainWindow::build() {
     });
     // The menu bar, in the title bar after the icon and the player's name.
     // The shortcuts do not live in it -- see CommandMenus -- so they work with
-    // every menu closed. It sits left in a host that fitTitleBar() sizes to
-    // the content column, which the template would otherwise centre it in.
+    // every menu closed. It sits left in a host sized to the content column,
+    // which the template would otherwise centre it in.
     {
         auto menuBar = commands_->menuBar();
         menuBar.HorizontalAlignment(mux::HorizontalAlignment::Left);
         menuBar.VerticalAlignment(mux::VerticalAlignment::Center);
-        titleContent_ = mux::Controls::Grid();
-        titleContent_.HorizontalAlignment(mux::HorizontalAlignment::Left);
-        titleContent_.Children().Append(menuBar);
-        titleBar_.Content(titleContent_);
-        titleBar_.SizeChanged([this](auto&&, auto&&) { fitTitleBar(); });
+        auto host = mux::Controls::Grid();
+        host.HorizontalAlignment(mux::HorizontalAlignment::Left);
+        host.Children().Append(menuBar);
+        titleBar_.Content(host);
+        fitTitleBarContent(titleBar_, host);
     }
 
     status_ = load<mux::Controls::TextBlock>(
@@ -400,80 +398,16 @@ void MainWindow::build() {
     window_.Content(root);
     window_.SetTitleBar(titleBar_);
 
+    // What follows the first appearance, once the tree is loaded: a
+    // ContentDialog needs a XamlRoot, which a window not yet shown lacks.
+    root.Loaded([this](auto&&, auto&&) {
+        if (!started_) {
+            started_ = true;
+            startUp();
+        }
+    });
+
     restoreState();
-}
-
-namespace {
-
-/// The descendant of `root` called `name`, depth first, or null. For parts of
-/// a control's template, which are not reachable through the control's own
-/// namescope from out here.
-mux::FrameworkElement findNamed(const mux::DependencyObject& root, std::wstring_view name) {
-    const int count = mux::Media::VisualTreeHelper::GetChildrenCount(root);
-    for (int i = 0; i < count; ++i) {
-        const auto child = mux::Media::VisualTreeHelper::GetChild(root, i);
-        if (const auto element = child.try_as<mux::FrameworkElement>();
-            element && element.Name() == name)
-            return element;
-        if (auto found = findNamed(child, name))
-            return found;
-    }
-    return nullptr;
-}
-
-}  // namespace
-
-void MainWindow::fitTitleBar() {
-    // The TitleBar template puts its content in a presenter aligned by a theme
-    // resource -- centred, for a search box -- and its compact state pins it
-    // Left whatever the resource says (microsoft-ui-xaml #11181). The menu
-    // bar belongs at the left in both, so its host is given the width of the
-    // template's content column outright, which is what is left once the
-    // icon, title, track and caption buttons have theirs.
-    //
-    // The column is deferred-load, realised when the content is first set,
-    // so this looks it up until it has it.
-    if (!titleContent_)
-        return;
-    const auto column = contentColumn_ ? contentColumn_
-                                       : findNamed(titleBar_, L"PART_ContentPresenterGrid");
-    if (!column)
-        return;
-    if (!contentColumn_) {
-        contentColumn_ = column;
-        column.SizeChanged([this](auto&&, auto&&) { fitTitleBar(); });
-    }
-    double inset = 0;
-    if (auto presenter = findNamed(column, L"PART_ContentPresenter")) {
-        const auto margin = presenter.Margin();
-        inset += margin.Left + margin.Right;
-    }
-    const double width = column.ActualWidth() - inset;
-    if (width > 0 && width != titleContent_.Width())
-        titleContent_.Width(width);
-}
-
-mux::Controls::Button MainWindow::transportButton(const wchar_t* glyph, const std::string& tooltip,
-                                                  std::function<void()> action) {
-    auto icon = mux::Controls::FontIcon();
-    icon.Glyph(glyph);
-    icon.FontSize(16);
-
-    // A subtle button: no fill and no border at rest, the theme's hover and
-    // pressed fills when touched. Transparent rather than null, because the
-    // template only swaps its own resources in for the pointer states.
-    auto button = mux::Controls::Button();
-    button.Content(icon);
-    button.Width(40);
-    button.Height(36);
-    button.Padding(mux::ThicknessHelper::FromUniformLength(0));
-    button.Background(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
-    button.BorderBrush(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
-    mux::Controls::ToolTipService::SetToolTip(button, winrt::box_value(toH(tooltip)));
-    // The tooltip is not an accessible name; a glyph button needs one.
-    mux::Automation::AutomationProperties::SetName(button, toH(tooltip));
-    button.Click([action = std::move(action)](auto&&, auto&&) { action(); });
-    return button;
 }
 
 // --- wiring ---------------------------------------------------------------------
@@ -494,7 +428,14 @@ void MainWindow::wireUp() {
         settingVolume_ = true;
         volume_.Value(gain * 100.0);
         settingVolume_ = false;
+        if (mini_) {
+            mini_->setVolume(gain);
+        }
     });
+    // From the remote control and the media session: the same as the tray's
+    // Show and Quit.
+    observe(session_.raiseRequested, [this] { raise(); });
+    observe(session_.quitRequested, [this] { quit(); });
     observe(session_.revealRequested, [this](TrackId id) {
         if (const auto row = session_.view().rowForTrack(id)) {
             playlist_->selectOnly(*row);
@@ -519,6 +460,9 @@ void MainWindow::wireUp() {
     volume_.ValueChanged([this](auto&&, mux::Controls::Primitives::RangeBaseValueChangedEventArgs const& args) {
         if (!settingVolume_) {
             session_.setVolume(args.NewValue() / 100.0);
+            if (mini_) {
+                mini_->setVolume(args.NewValue() / 100.0);
+            }
         }
     });
 
@@ -531,11 +475,71 @@ void MainWindow::wireUp() {
         seekBar_->scrubbed.connect([this](double seconds) { setClock(seconds, duration_); }));
     observe(session_.waveformUpdated, [this](const std::shared_ptr<const WaveformSummary>& summary) {
         seekBar_->setWaveform(summary);
+        if (mini_) {
+            mini_->setWaveform(summary);
+        }
     });
     applyWaveformSetting();
 
-    window_.Closed([this](auto&&, auto&&) {
+    // --- the tray -----------------------------------------------------------
+    //
+    // A click brings back whichever window is the current mode; the menu's
+    // rows are commands, run through the same switch as the menu bar's, except
+    // Show XPCog, which is not one.
+    tray_ = std::make_unique<Tray>();
+    tray_->activated = [this] { showCurrentWindow(); };
+    tray_->commandChosen = [this](int id) {
+        if (id == app::kTrayShowWindowId) {
+            showCurrentWindow();
+        } else {
+            onCommand(static_cast<app::CommandId>(id));
+        }
+    };
+    // The track announcement, from the icon: on Windows a notification hangs
+    // off one, as the wx player's balloon did.
+    observe(session_.announceTrack,
+            [this](const std::string& title, const std::string& body,
+                   const std::shared_ptr<const std::vector<std::byte>>& cover) {
+                tray_->notify(title, body,
+                              cover ? std::span<const std::byte>(*cover) : std::span<const std::byte>());
+            });
+
+    // Closing: to the tray, where there is one and the listener asked for it,
+    // and otherwise for real. The layout is saved either way, before the
+    // decision -- a session that ends in the tray would otherwise lose it.
+    window_.AppWindow().Closing([this](auto&&, winrt::Microsoft::UI::Windowing::AppWindowClosingEventArgs const& args) {
         persistState();
+        Settings& settings = session_.settings();
+        if (!quitting_ && settings.CloseToTray() && tray_->shown()) {
+            args.Cancel(true);
+            window_.AppWindow().Hide();
+            // Said once, ever: a window that vanishes unexplained looks like a
+            // crash, and someone who has closed to the tray twenty times knows
+            // where it went (TrayHideAnnounced in settings.def).
+            if (!settings.TrayHideAnnounced()) {
+                settings.setTrayHideAnnounced(true);
+                tray_->notify(app::tr("XPCog is still running"),
+                              app::tr("Playback continues. Use the tray icon to bring the "
+                                      "window back or to quit."));
+            }
+            return;
+        }
+        // Closing for real: the mini player is a window of its own and keeps
+        // the process alive while it is open, and the icon must not outlive
+        // the window it raises.
+        if (mini_) {
+            mini_->close();
+        }
+        tray_->remove();
+    });
+    window_.Closed([this](auto&&, auto&&) {
+        // Again here, because Window.Close() -- quit() -- does not go through
+        // Closing, which is the close button's and Alt+F4's.
+        persistState();
+        if (mini_) {
+            mini_->close();
+        }
+        tray_->remove();
         // Preferences goes with the player: WinUI keeps the process running
         // for as long as any window is open, and an orphaned settings window
         // would be a player with no player.
@@ -593,6 +597,11 @@ void MainWindow::wireUp() {
                 break;
             case app::Effect::WaveformSeekBar:
                 applyWaveformSetting();
+                break;
+            case app::Effect::MiniFloating:
+                if (mini_) {
+                    mini_->setFloating(session_.settings().FloatingMiniWindow());
+                }
                 break;
             case app::Effect::RefreshPanels:
                 lyrics_->setTimed(session_.settings().LyricsSynced());
@@ -659,7 +668,13 @@ void MainWindow::onTrackChanged(const PlaylistEntry* entry) {
     trackText_.Text(toH(text));
     mux::Controls::ToolTipService::SetToolTip(
         trackText_, text.empty() ? nullptr : winrt::box_value(toH(text)));
-    fitTitleBar();
+    // The tray's menu and tooltip, and the mini player's title.
+    trayState_.title  = entry != nullptr ? entry->title() : std::string{};
+    trayState_.artist = entry != nullptr ? entry->artist.str() : std::string{};
+    refreshTray();
+    if (mini_) {
+        mini_->setNowPlaying(trayState_.title, trayState_.artist);
+    }
     refreshCommands();
     refreshPanels();
 }
@@ -671,12 +686,15 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
     scope_->setSampleRate(session_.playback().sampleRate());
     refreshVisualizers();
     const bool showsPause = playing && !paused;
-    playGlyph_.Glyph(showsPause ? kGlyphPause : kGlyphPlay);
-    const winrt::hstring label = toH(app::tr(showsPause ? "Pause" : "Play"));
-    mux::Controls::ToolTipService::SetToolTip(playButton_, winrt::box_value(label));
-    mux::Automation::AutomationProperties::SetName(playButton_, label);
+    setGlyph(playButton_, showsPause ? kGlyphPause : kGlyphPlay, app::tr(showsPause ? "Pause" : "Play"));
     if (!playing) {
         onPositionChanged(0, 0);
+    }
+    trayState_.playing = playing;
+    trayState_.paused  = paused;
+    refreshTray();
+    if (mini_) {
+        mini_->setPlaybackState(playing, paused);
     }
     refreshCommands();
     refreshPanels();
@@ -689,12 +707,18 @@ void MainWindow::onPositionChanged(double seconds, double duration) {
     if (!seekBar_->scrubbing()) {
         setClock(seconds, duration);
     }
+    if (miniShown()) {
+        mini_->setPosition(seconds, duration);
+    }
 }
 
 void MainWindow::applyWaveformSetting() {
     const Settings& settings = session_.settings();
     seekBar_->setWaveformStyle(SeekBar::styleFrom(settings));
     seekBar_->setWaveformMode(settings.WaveformSeekBar());
+    if (mini_) {
+        mini_->applyWaveformSetting();
+    }
 }
 
 void MainWindow::setClock(double seconds, double duration) {
@@ -733,13 +757,10 @@ bool MainWindow::offered(app::CommandId id) {
         // No docking, so nothing ever floats to be docked -- the GTK player's
         // decision too, and for good: there is no dock manager to come back.
         case CommandId::ViewDockPanes:
-        // No MIDI build, no panel to show. And the mini player is a later step
-        // of the port: a menu item that does nothing is worse than one that is
-        // not there.
+        // No MIDI build, no panel to show.
 #ifndef XPCOG_HAVE_SC55_PANEL
         case CommandId::ViewSc55Panel:
 #endif
-        case CommandId::ViewMiniPlayer:
             return false;
         default:
             return true;
@@ -823,6 +844,8 @@ std::optional<bool> MainWindow::checked(app::CommandId id) const {
             return tools_ && tools_->shown("equalizer");
         case CommandId::ViewSpeed:
             return tools_ && tools_->shown("speed");
+        case CommandId::ViewMiniPlayer:
+            return miniShown();
         default:
             break;
     }
@@ -855,7 +878,7 @@ void MainWindow::onCommand(app::CommandId id) {
             savePlaylist(true);
             break;
         case CommandId::FileQuit:
-            window_.Close();
+            quit();
             break;
         case CommandId::FilePreferences:
             showPreferences(std::nullopt);
@@ -1002,6 +1025,9 @@ void MainWindow::onCommand(app::CommandId id) {
             break;
         case CommandId::ViewSpeed:
             showTool("speed", !tools_->shown("speed"));
+            break;
+        case CommandId::ViewMiniPlayer:
+            setMiniMode(!miniShown());
             break;
 
         default:
@@ -1257,7 +1283,7 @@ void MainWindow::restoreState() {
 void MainWindow::showPreferences(std::optional<PreferencesPage> page) {
     // One window, brought forward and turned to the page if already open.
     if (!preferences_) {
-        preferences_ = std::make_unique<PreferencesWindow>(session_, hwnd());
+        preferences_ = std::make_unique<PreferencesWindow>(session_, hwnd(), tray_ && tray_->shown());
         preferencesSubscriptions_.push_back(preferences_->settingChanged.connect(
             [this](const std::string& key) { session_.settingChanged(key); }));
         // Destroyed after its Closed event has finished, not inside it: the
@@ -1442,23 +1468,123 @@ winrt::fire_and_forget MainWindow::showAbout() {
         co_return;
     }
     dialogOpen_ = true;
-    auto box  = dialog("XPCog");
-    auto body = mux::Controls::StackPanel();
-    body.Spacing(4);
-    auto version = mux::Controls::TextBlock();
-    version.Text(toH(std::string(kVersionString)));
-    // The credits and licences table is the wx About box's, and comes over
-    // with the rest of that dialog; this says which build is running.
-    auto note = mux::Controls::TextBlock();
-    note.TextWrapping(mux::TextWrapping::Wrap);
-    note.Text(L"The WinUI player is a preview.");
-    body.Children().Append(version);
-    body.Children().Append(note);
-    box.Content(body);
-    box.CloseButtonText(L"OK");
+    auto box = dialog(app::tr("About XPCog"));
+    fillAboutDialog(box, session_.registry());
+    box.CloseButtonText(toH(app::tr("Close")));
     box.DefaultButton(mux::Controls::ContentDialogButton::Close);
     co_await box.ShowAsync();
     dialogOpen_ = false;
+}
+
+winrt::Windows::Foundation::IAsyncAction MainWindow::askCrashReportingConsent() {
+    Settings& settings = session_.settings();
+    if (!platform::crashReportingAvailable() || settings.SentryAskedConsent() || dialogOpen_) {
+        co_return;
+    }
+    // Recorded before the answer, as Cog records it (Window/MainWindow.m:36,
+    // outside the completion handler): "we won't ask you again" holds for
+    // whoever closes the dialog without answering as much as for a No.
+    settings.setSentryAskedConsent(true);
+    settings.sync();
+
+    // Cog's text, from its own Localizable.xcstrings, and the wx prompt's link
+    // to what is being agreed to.
+    dialogOpen_ = true;
+    auto box  = dialog(app::tr("Crash reporting"));
+    auto body = mux::Controls::StackPanel();
+    body.Spacing(12);
+    auto text = mux::Controls::TextBlock();
+    text.TextWrapping(mux::TextWrapping::Wrap);
+    text.Text(toH(app::tr("Would you like to allow Sentry to submit crash reports?\n\n"
+                          "You may turn this off again in Preferences. We won't ask you again.")));
+    auto policy = mux::Controls::HyperlinkButton();
+    policy.Content(winrt::box_value(toH(app::tr("Privacy policy"))));
+    policy.NavigateUri(winrt::Windows::Foundation::Uri(toH(platform::kPrivacyPolicyUrl)));
+    policy.Padding(mux::ThicknessHelper::FromUniformLength(0));
+    body.Children().Append(text);
+    body.Children().Append(policy);
+    box.Content(body);
+    box.PrimaryButtonText(toH(app::tr("Yes")));
+    box.CloseButtonText(toH(app::tr("No")));
+
+    // Only a deliberate yes: Escape and the close button are the close
+    // result, and so a no, the right default for the direction this runs in.
+    const auto result = co_await box.ShowAsync();
+    dialogOpen_       = false;
+    const bool yes    = result == mux::Controls::ContentDialogResult::Primary;
+    settings.setSentryConsented(yes);
+    // Flushed now: this is read on the next launch, including the one after a
+    // crash, which is the exit that never reaches the save at quit.
+    settings.sync();
+    if (yes) {
+        platform::startCrashReporting();
+    }
+}
+
+winrt::fire_and_forget MainWindow::startUp() {
+    // The question first and on the full window -- the mini player is one
+    // title bar tall, too short to hold a dialog -- and then the mini player,
+    // if that is where the listener left off (Cog restores it at launch from
+    // the same key, AppController.m:314). The wx frame does these the other
+    // way round, with the prompt over the mini window.
+    co_await askCrashReportingConsent();
+    if (session_.settings().MiniMode()) {
+        setMiniMode(true);
+    }
+}
+
+// --- the tray and the mini player ---------------------------------------------------
+
+void MainWindow::refreshTray() {
+    if (tray_) {
+        tray_->setState(trayState_);
+    }
+}
+
+bool MainWindow::miniShown() const {
+    return mini_ && mini_->shown();
+}
+
+void MainWindow::showCurrentWindow() {
+    raise();
+}
+
+void MainWindow::quit() {
+    quitting_ = true;
+    window_.Close();
+}
+
+void MainWindow::setMiniMode(bool mini) {
+    // Recorded as it changes, where Cog records it (AppController.m:1027): after
+    // a crash, the mode last in is the one to come back to.
+    session_.settings().setMiniMode(mini);
+
+    if (mini) {
+        if (!mini_) {
+            mini_ = std::make_unique<MiniPlayer>(session_);
+            mini_->dismissed     = [this] { setMiniMode(false); };
+            mini_->volumeChanged = [this](double gain) {
+                settingVolume_ = true;
+                volume_.Value(gain * 100.0);
+                settingVolume_ = false;
+            };
+        }
+        // What a fresh window has not been told, or a hidden one missed.
+        mini_->setNowPlaying(trayState_.title, trayState_.artist);
+        mini_->setPlaybackState(trayState_.playing, trayState_.paused);
+        mini_->setWaveform(seekBar_->waveform());
+        mini_->applyWaveformSetting();
+        mini_->setPosition(session_.playback().position(), duration_);
+        mini_->show();
+        window_.AppWindow().Hide();
+    } else {
+        if (mini_) {
+            mini_->hide();
+        }
+        window_.AppWindow().Show();
+        window_.Activate();
+    }
+    refreshCommands();
 }
 
 }  // namespace xpcog::winui

@@ -110,8 +110,8 @@ void PreferencesWindow::buildAppearancePage() {
                                         tr("Closing the window leaves XPCog running in the "
                                            "notification area instead of quitting."));
     // Offered only where there is somewhere to hide to, as the wx and GTK
-    // dialogs do: a switch that does nothing is worse than an absent one. The
-    // WinUI player has no tray icon yet, so for now this is always the case.
+    // dialogs do: a switch that does nothing is worse than an absent one --
+    // the shell can refuse the icon, and then there is nowhere.
     if (!hasTray_) {
         closeToTray.enable(false);
         row->note(tr("This session has no notification area to keep XPCog in."));

@@ -33,7 +33,9 @@ enum class PreferencesPage { Playlist, PitchTempo, Visualizers };
 /// reads the same in both and a change to one shows where the other needs it.
 class PreferencesWindow {
 public:
-    PreferencesWindow(app::Session& session, HWND owner);
+    /// `hasTray`: whether the player has a tray icon to close to, which is
+    /// what decides whether Close to tray is offered.
+    PreferencesWindow(app::Session& session, HWND owner, bool hasTray);
     ~PreferencesWindow();
 
     PreferencesWindow(const PreferencesWindow&)            = delete;

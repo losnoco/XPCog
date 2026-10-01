@@ -41,6 +41,9 @@ struct Component {
 /// The Windows frontend's toolkit and what it draws with.
 [[nodiscard]] std::span<const Component> wxComponents();
 
+/// The WinUI player's toolkit and what it draws with.
+[[nodiscard]] std::span<const Component> winuiComponents();
+
 /// The Linux frontend's toolkit, and the desktop libraries platform/ talks to.
 [[nodiscard]] std::span<const Component> gtkComponents();
 

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "Chrome.hpp"
 #include "CommandMenus.hpp"
 #include "FileTreePane.hpp"
+#include "MiniPlayer.hpp"
 #include "Panes.hpp"
 #include "Oscilloscope.hpp"
 #include "Visualizers.hpp"
@@ -12,6 +14,7 @@
 #include "PreferencesWindow.hpp"
 #include "SeekBar.hpp"
 #include "Sizer.hpp"
+#include "Tray.hpp"
 #include "WinRT.hpp"
 
 #include "xpcog/core/Signal.hpp"
@@ -61,14 +64,6 @@ private:
     void build();
     void wireUp();
 
-    /// Sizes the menu bar's host to the title bar's content column, so the
-    /// menus sit at its left rather than centred.
-    void fitTitleBar();
-
-    [[nodiscard]] mux::Controls::Button transportButton(const wchar_t* glyph,
-                                                       const std::string& tooltip,
-                                                       std::function<void()> action);
-
     // --- commands -------------------------------------------------------------
     void onCommand(app::CommandId id);
     [[nodiscard]] bool                enabled(app::CommandId id) const;
@@ -100,6 +95,17 @@ private:
     [[nodiscard]] TrackId panelTrackId() const;
     void refreshPanels();
 
+    // --- the tray and the mini player ---------------------------------------
+    /// Swaps the full window for the mini player or back. Recorded as it
+    /// changes, as Cog's -setMiniMode: records it.
+    void setMiniMode(bool mini);
+    [[nodiscard]] bool miniShown() const;
+    /// Brings back whichever of the two windows is the current mode.
+    void showCurrentWindow();
+    /// Closes the player for good, past close-to-tray.
+    void quit();
+    void refreshTray();
+
     // --- what is remembered -------------------------------------------------------
     void persistState();
     void restoreState();
@@ -111,6 +117,12 @@ private:
     winrt::fire_and_forget savePlaylist(bool selectionOnly);
     winrt::fire_and_forget trashSelected();
     winrt::fire_and_forget showAbout();
+    /// Cog's crash-reporting question, asked once ever, as the window first
+    /// appears.
+    winrt::Windows::Foundation::IAsyncAction askCrashReportingConsent();
+    /// What follows the window's first appearance: the consent question, and
+    /// then the mini player if that is where the listener left off.
+    winrt::fire_and_forget startUp();
     void showPreferences(std::optional<PreferencesPage> page);
     /// A ContentDialog ready to show over this window, with the default button
     /// and the theme set the way every dialog here wants them.
@@ -128,13 +140,8 @@ private:
 
     mux::Window                          window_{nullptr};
     mux::Controls::TitleBar              titleBar_{nullptr};
-    /// The title bar's content: the menu bar's host, sized by fitTitleBar().
-    mux::Controls::Grid                  titleContent_{nullptr};
     /// The playing track, at the title bar's right end.
     mux::Controls::TextBlock             trackText_{nullptr};
-    /// The template's content column, once fitTitleBar() has found it.
-    mux::FrameworkElement                contentColumn_{nullptr};
-    mux::Controls::FontIcon              playGlyph_{nullptr};
     mux::Controls::Button                playButton_{nullptr};
     std::unique_ptr<SeekBar>             seekBar_;
     mux::Controls::TextBlock             clock_{nullptr};
@@ -173,6 +180,16 @@ private:
     /// minimised -- what to restore it to, which AppWindow does not remember.
     winrt::Windows::Graphics::RectInt32  normalBounds_{};
     bool                                 maximizeOnShow_ = false;
+
+    std::unique_ptr<Tray>                tray_;
+    std::unique_ptr<MiniPlayer>          mini_;
+    /// What the tray and a newly made mini player are told about the
+    /// transport.
+    app::TrayState                       trayState_;
+    /// Set by quit(), so the close that follows is not taken to the tray.
+    bool                                 quitting_ = false;
+    /// The first Loaded has run startUp().
+    bool                                 started_ = false;
 
     double duration_ = 0.0;
     /// Set while the code moves the volume slider, so its ValueChanged is not

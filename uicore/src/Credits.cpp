@@ -44,6 +44,16 @@ constexpr std::array kWx = {
     Component{"dirent", "MIT", XPCOG_TRANSLATE("folder listing for the PSF cores")},
 };
 
+// The WinUI player draws its icons with the system's own Segoe Fluent Icons
+// font, which ships with Windows and is not redistributed, so it has no row.
+constexpr std::array kWinUI = {
+    Component{"WinUI 3", "MIT", XPCOG_TRANSLATE("user interface")},
+    Component{"Windows App SDK", "MIT", XPCOG_TRANSLATE("windowing, startup and single instance")},
+    Component{"Win2D", "MIT", XPCOG_TRANSLATE("drawing the spectrum, the oscilloscope and the waveform")},
+    Component{"C++/WinRT", "MIT", XPCOG_TRANSLATE("the Windows Runtime from C++")},
+    Component{"dirent", "MIT", XPCOG_TRANSLATE("folder listing for the PSF cores")},
+};
+
 constexpr std::array kGtk = {
     Component{"GTK", "LGPL-2.1-or-later", XPCOG_TRANSLATE("user interface")},
     Component{"libadwaita", "LGPL-2.1-or-later", XPCOG_TRANSLATE("user interface")},
@@ -120,6 +130,7 @@ constexpr std::array kData = {
 
 std::span<const Component> playerComponents() { return kPlayer; }
 std::span<const Component> wxComponents() { return kWx; }
+std::span<const Component> winuiComponents() { return kWinUI; }
 std::span<const Component> gtkComponents() { return kGtk; }
 std::span<const Component> codecComponents() { return kCodecs; }
 std::span<const Component> dataComponents() { return kData; }

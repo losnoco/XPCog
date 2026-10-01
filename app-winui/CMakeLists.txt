@@ -13,8 +13,12 @@
 # see cmake/XPCogWinAppSdk.cmake for how the SDK itself is brought in.
 
 set(XPCOG_WINUI_SOURCES
+    src/AboutDialog.cpp
+    src/AboutDialog.hpp
     src/App.cpp
     src/App.hpp
+    src/Chrome.cpp
+    src/Chrome.hpp
     src/CommandMenus.cpp
     src/CommandMenus.hpp
     src/FileTreePane.cpp
@@ -23,6 +27,8 @@ set(XPCOG_WINUI_SOURCES
     src/Instance.hpp
     src/MainWindow.cpp
     src/MainWindow.hpp
+    src/MiniPlayer.cpp
+    src/MiniPlayer.hpp
     src/Oscilloscope.cpp
     src/Oscilloscope.hpp
     src/Panes.cpp
@@ -42,6 +48,8 @@ set(XPCOG_WINUI_SOURCES
     src/SeekBar.hpp
     src/Sizer.cpp
     src/Sizer.hpp
+    src/Tray.cpp
+    src/Tray.hpp
     src/Visualizers.cpp
     src/Visualizers.hpp
     src/Win2D.cpp
@@ -60,7 +68,10 @@ target_link_libraries(xpcog-winuicore PUBLIC
     PRIVATE XPCog::warnings
     # The cover art's memory stream (SHCreateMemStream, and the WinRT
     # stream over it) and the Music folder's path.
-    Shlwapi.lib ShCore.lib Shell32.lib Ole32.lib)
+    Shlwapi.lib ShCore.lib Shell32.lib Ole32.lib
+    # The tray: its icon at the notification area's size, the mini player's
+    # window subclass, and the cover decoded for a notification.
+    Comctl32.lib WindowsCodecs.lib)
 
 set_target_properties(xpcog-winuicore PROPERTIES FOLDER app-winui)
 
