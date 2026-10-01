@@ -1,23 +1,16 @@
 // Translation without a toolkit.
 //
-// app/src/Localization.cpp hands the compiled-in catalogues to wxWidgets, and
-// `_()` reaches them through wxTranslations. That works and is not going
-// anywhere -- but it is wx's lookup, and everything below the window is meant to
-// be usable by a frontend that has no wx to ask. This is the same catalogue,
-// read directly.
+// The compiled-in catalogues, read directly: what both players look their
+// strings up through. It began as the second of two lookups, beside the wx
+// player's, which handed the same table to wxTranslations; since 3.0.0 it is
+// the only one.
 //
-// It is deliberately not a second source of truth. Both lookups are installed
-// from one call and read the same `CatalogEntry` table, and a test asserts they
-// give the same answer for every message in every catalogue compiled into this
-// build. A divergence between them would be the worst kind of bug here --
-// two halves of one window disagreeing about what language it is in.
-//
-// **There is no trUtf8() here, and no need for one.** app/src/Text.hpp exists
-// because `wxString(const char*)` decodes through the current 8-bit locale on
-// Windows, so a message whose English is not pure ASCII has to be spelled a
-// second way. Nothing in this file goes near a wxString: a msgid is UTF-8 bytes
-// in, and a std::string of UTF-8 bytes out. One function, every message,
-// including the ones carrying real typography.
+// **There is no trUtf8() here, and no need for one.** The wx player had to spell
+// a message whose English was not pure ASCII a second way, because
+// `wxString(const char*)` decoded through the current 8-bit locale on Windows.
+// Nothing here goes near a wxString: a msgid is UTF-8 bytes in, and a
+// std::string of UTF-8 bytes out. One function, every message, including the
+// ones carrying real typography.
 
 #pragma once
 

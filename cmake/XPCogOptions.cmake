@@ -1,19 +1,19 @@
 # Build-shape options. Codec toggles live next to their xpcog_add_codec() call.
 
 # The player. Which toolkit it is written in follows the platform rather than an
-# option, because each platform has exactly one: wxWidgets on Windows (app/),
+# option, because each platform has exactly one: WinUI 3 on Windows (app-winui/),
 # GTK4 and libadwaita on Linux (app-gtk/). macOS is not a target -- Cog is the
 # player there -- so the option is refused on it; a headless build of core,
 # codecs and xpcog-cli still configures anywhere.
-option(XPCOG_BUILD_APP   "Build the player (wxWidgets on Windows, GTK4 on Linux)" ON)
+option(XPCOG_BUILD_APP   "Build the player (WinUI 3 on Windows, GTK4 on Linux)" ON)
 
 # Which frontend that means, as two plain variables the rest of the build reads.
 # Not options: a cache entry would let a tree ask for the wrong one.
-set(XPCOG_BUILD_WX_APP OFF)
+set(XPCOG_BUILD_WINUI_APP OFF)
 set(XPCOG_BUILD_GTK_APP OFF)
 if(XPCOG_BUILD_APP)
     if(WIN32)
-        set(XPCOG_BUILD_WX_APP ON)
+        set(XPCOG_BUILD_WINUI_APP ON)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         set(XPCOG_BUILD_GTK_APP ON)
     else()
@@ -67,8 +67,8 @@ option(XPCOG_WITH_SID       "Commodore 64 tunes (libsidplayfp)" OFF)
 
 # The REST remote control. OFF for a bare `cmake` and ON in the presets, which is
 # XPCOG_WITH_SENTRY's rule -- but off here for a second reason the others do not
-# have. app/src/SingleInstance.hpp is an argument against this program owning a
-# listening socket at all: "the firewall asks the user to approve a *music
+# have. The wx player's single-instance code made the argument against this
+# program owning a listening socket at all: "the firewall asks the user to approve a *music
 # player* wanting network access, which is alarming, unanswerable and entirely
 # self-inflicted." That argument stands, and it is answered twice over as well.
 # This decides whether a server is *built*; `remoteEnable` decides whether it
@@ -83,16 +83,6 @@ option(XPCOG_WITH_REST "REST remote-control server (cpp-httplib)" OFF)
 # Linux, libunwind, which is a lot to hand someone who typed plain `cmake`. The
 # presets turn it on. See platform/include/xpcog/platform/CrashReporter.hpp.
 option(XPCOG_WITH_SENTRY "Opt-in crash reporting (sentry-native)" OFF)
-
-# A prototype: one WinUI 3 XAML island inside the wx main window, to find out
-# whether the Windows App SDK can be built from CMake and Ninja at all. Windows
-# only, OFF everywhere, and see cmake/XPCogWinAppSdk.cmake for what it fetches.
-option(XPCOG_WITH_WINUI_ISLAND "Prototype WinUI 3 island in the wx player (Windows)" OFF)
-
-# The WinUI 3 player, app-winui/, built beside the wx one while it catches up
-# with it. Windows only and OFF: it is on its way to replacing app/, and until
-# it has, the wx player is the one that ships.
-option(XPCOG_BUILD_WINUI_APP "WinUI 3 player, alongside the wx one (Windows)" OFF)
 
 # Sanitizers are opt-in; the RT-safety work in M1a wants them available early.
 set(XPCOG_SANITIZE "" CACHE STRING "Sanitizers, e.g. address;undefined")

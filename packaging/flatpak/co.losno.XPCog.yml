@@ -136,7 +136,7 @@ modules:
         # sandbox and has no flag that would -- so unlike the Arch package,
         # which inherits whatever makepkg was run with, exporting the variables
         # before the build reaches nothing here. A file is the way in, and it is
-        # the same one app/CMakeLists.txt already documents for a developer
+        # the same one uicore/CMakeLists.txt already documents for a developer
         # build:
         #
         #     op run --env-file=lastfm.env -- <build>

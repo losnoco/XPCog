@@ -12,7 +12,7 @@ background whose colour is not ours to know. (xpcog-tile.png, the same artwork
 on a rounded-square backdrop, was the macOS bundle's master; it is kept as
 artwork, and nothing is generated from it since 2.0.0.)
 
-Run from anywhere:  python app/icons/make-icons.py
+Run from anywhere:  python assets/icons/make-icons.py
 Needs ImageMagick 7 on PATH, or set MAGICK to point at magick.exe.
 """
 

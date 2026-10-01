@@ -12,8 +12,8 @@
 // before consent was read, and the only evidence is events arriving in a project
 // from people who never agreed to send any.
 //
-// Lives in the application suite rather than the core one because xpcog-tests
-// links core and codecs and no platform layer at all.
+// Lives in the uicore suite rather than the core one because xpcog-tests links
+// core and codecs and no platform layer at all; xpcog-uicore links platform.
 
 #include "xpcog/platform/CrashReporter.hpp"
 

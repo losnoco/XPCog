@@ -1,4 +1,4 @@
-// Preferences: the counterpart of app/src/PreferencesDialog.hpp, with one
+// Preferences: the counterpart of app-winui/src/PreferencesWindow.hpp, with one
 // page per wx pane.
 //
 // Not an AdwPreferencesDialog. That dialog switches pages with a view

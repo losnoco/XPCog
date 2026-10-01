@@ -1,6 +1,6 @@
 // The player window.
 //
-// The GTK counterpart of app/src/MainFrame.hpp, and a much smaller thing than
+// The GTK counterpart of app-winui/src/MainWindow.hpp, and a much smaller thing than
 // that file was, because the session owns everything that is not a window --
 // see uicore/src/Session.hpp. What is here is what draws: the transport, the
 // seek bar and the clock, the volume, the filter, the status line, and the

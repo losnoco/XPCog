@@ -13,10 +13,10 @@
 # to 14 -- 12 with the AUR's vgmstream-git installed as well, 11 with
 # libspessasynth-git too -- and 643 MB of vcpkg_installed down to 46 MB.
 #
-# This is the same trade cmake/XPCogWx.cmake already makes for wxWidgets, and for
-# the same reason. The difference is that wx is unconditional there (vcpkg's port
-# drags in GTK, so it is never the right answer on Linux) while these are decided
-# per machine, at configure time, against a version floor.
+# This is the trade cmake/XPCogGtk.cmake makes for GTK and libadwaita, and for
+# the same reason. The difference is that the toolkit is unconditional there
+# (vcpkg's ports would build the whole stack from source) while these are
+# decided per machine, at configure time, against a version floor.
 #
 # Off by default and Linux-only. `-D XPCOG_USE_SYSTEM_LIBS=ON` turns it on, and
 # the `linux-repo-debug` / `linux-repo-release` presets are that switch plus a
@@ -718,7 +718,7 @@ function(xpcog_probe_system_deps)
         endif()
     endforeach()
 
-    # The features that are not in this table at all -- gui, sentry, psf-cores,
+    # The features that are not in this table at all -- sentry, psf-cores,
     # mgba, libvgm -- are untouched: they came from the preset and stay in
     # _requested. `sentry` is the one of those with a system package worth naming
     # and still not substitutable: what has to be staged beside the binary is the

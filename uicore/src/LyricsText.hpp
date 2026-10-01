@@ -4,7 +4,7 @@
 // from the service -- and deciding them is not drawing: which of the file's
 // tags to show, what to say when it has none, whether to ask LRCLIB and what
 // to say while waiting, and which answer still belongs to the track on screen
-// by the time it arrives. That was app/src/LyricsPanel.cpp's, and it moved
+// by the time it arrives. That was the wx player's LyricsPanel.cpp's, and it moved
 // here so both panes decide it the same way and the wording lives once.
 //
 // The one rule worth stating: **the service is asked only when the file has

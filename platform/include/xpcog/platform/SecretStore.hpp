@@ -1,7 +1,7 @@
 // The platform's own password store.
 //
-// This was wxSecretStore, reached from app/src/LastFmAccount.cpp and
-// app/src/RemoteToken.cpp. It moves here because a second frontend needs the
+// This was wxSecretStore, reached from uicore/src/LastFmAccount.cpp and
+// uicore/src/RemoteToken.cpp. It moves here because a second frontend needs the
 // same records, and because a Last.fm session key is not a thing to keep two
 // copies of: log in on one binary and the other should already be logged in.
 //

@@ -1,5 +1,5 @@
 // The spectrum and the oscilloscope, painted. Counterparts of
-// app/src/SpectrumPanel.hpp and app/src/OscilloscopePanel.hpp, over the same
+// app-winui/src/Visualizers.hpp and app-winui/src/Oscilloscope.hpp, over the same
 // core: SpectrumAnalyzer for the bands, TapCursor for a window that slides at
 // the rate the audio is heard at, Oscilloscope.hpp for the trigger and the
 // fold. What is here is when to read, and how to get the numbers onto a

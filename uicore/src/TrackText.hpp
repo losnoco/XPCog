@@ -3,7 +3,7 @@
 // Cog's -trackText, -lengthInfo, -gainInfo and -playCountInfo, which is where
 // the wording and the rounding come from. None of it names a toolkit and all of
 // it is wanted by anything that shows a track's details, so it lives here rather
-// than in the panel that happened to need it first: app/src/InfoPanel.cpp
+// than in the panel that happened to need it first: app-winui/src/Panes.cpp
 // renders these into an HTML page for wxHtmlWindow, and the GTK frontend puts
 // the same strings in rows.
 //

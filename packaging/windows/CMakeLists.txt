@@ -56,8 +56,8 @@ if(NOT XPCOG_MAKENSIS)
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    # Worth saying out loud. A Debug build links the debug CRT and the debug wx
-    # DLLs, neither of which is redistributable, and an installer built from one
+    # Worth saying out loud. A Debug build links the debug CRT and vcpkg's debug
+    # DLLs, which are not redistributable, and an installer built from one
     # fails on any machine without Visual Studio -- as a missing-DLL dialog, long
     # after the point where it could have been explained.
     message(STATUS
@@ -130,31 +130,8 @@ else()
         "negrutiu's NSIS fork builds a 64-bit one; see packaging/windows/CMakeLists.txt.")
 endif()
 
-# Which player the installer carries. One, not both: the WinUI player is on its
-# way to replacing the wx one, and until the switch is made the wx player is
-# what a release ships -- so a release cut in between gives people what the
-# last one did, and the WinUI installer is there to be built and tried.
-set(XPCOG_INSTALLER_PLAYER "wx" CACHE STRING "The player the Windows installer carries: wx or winui")
-set_property(CACHE XPCOG_INSTALLER_PLAYER PROPERTY STRINGS wx winui)
-if(XPCOG_INSTALLER_PLAYER STREQUAL "wx")
-    set(XPCOG_PLAYER_TARGET xpcog-app)
-    set(XPCOG_PLAYER_EXE "XPCog.exe")
-    set(XPCOG_NSIS_WINUI 0)
-elseif(XPCOG_INSTALLER_PLAYER STREQUAL "winui")
-    if(NOT XPCOG_BUILD_WINUI_APP)
-        message(FATAL_ERROR
-            "XPCOG_INSTALLER_PLAYER=winui needs the WinUI player built: XPCOG_BUILD_WINUI_APP=ON.")
-    endif()
-    set(XPCOG_PLAYER_TARGET xpcog-winui)
-    set(XPCOG_PLAYER_EXE "XPCog-WinUI.exe")
-    set(XPCOG_NSIS_WINUI 1)
-else()
-    message(FATAL_ERROR "XPCOG_INSTALLER_PLAYER is \"${XPCOG_INSTALLER_PLAYER}\"; it must be wx or winui.")
-endif()
-
-# The runtime check and download, for the WinUI player only; see
-# WindowsAppRuntime.ps1. The values come from cmake/XPCogWinAppSdk.cmake, which
-# is only read when the WinUI player is built -- and only then are they used.
+# The runtime check and download; see WindowsAppRuntime.ps1. The values come
+# from cmake/XPCogWinAppSdk.cmake.
 file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/WindowsAppRuntime.ps1" XPCOG_RUNTIME_SCRIPT)
 set(XPCOG_RUNTIME_MINIMUM
     "${XPCOG_WINAPPSDK_RUNTIME_MAJOR}.${XPCOG_WINAPPSDK_RUNTIME_MINOR}.${XPCOG_WINAPPSDK_RUNTIME_PATCH}.0")
@@ -167,16 +144,8 @@ set(XPCOG_VERSION_4
 set(XPCOG_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${XPCOG_GENERATED_DIR}")
 
-# The WinUI player's installer is named for it, so the one a release publishes
-# -- XPCog-<version>-x64-setup.exe, the wx player's while the two coexist --
-# cannot be mistaken for it, and CI can build both in one tree.
-if(XPCOG_INSTALLER_PLAYER STREQUAL "winui")
-    set(XPCOG_INSTALLER_OUTPUT
-        "${CMAKE_BINARY_DIR}/XPCog-${PROJECT_VERSION}-x64-winui-setup.exe")
-else()
-    set(XPCOG_INSTALLER_OUTPUT
-        "${CMAKE_BINARY_DIR}/XPCog-${PROJECT_VERSION}-x64-setup.exe")
-endif()
+set(XPCOG_INSTALLER_OUTPUT
+    "${CMAKE_BINARY_DIR}/XPCog-${PROJECT_VERSION}-x64-setup.exe")
 
 # Native separators for everything that reaches the script, and not as a style
 # choice: makensis's !include resolves backslash paths only. Handed
@@ -188,7 +157,7 @@ endif()
 #
 # The CMake-form variables stay, because the other two consumers -- file() here
 # and the -D on the harvest command line -- want forward slashes.
-file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/app/icons/xpcog.ico" XPCOG_ICON)
+file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/assets/icons/xpcog.ico" XPCOG_ICON)
 file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/COPYING" XPCOG_LICENSE_FILE)
 file(TO_NATIVE_PATH "${XPCOG_GENERATED_DIR}" XPCOG_GENERATED_DIR_NATIVE)
 file(TO_NATIVE_PATH "${XPCOG_INSTALLER_OUTPUT}" XPCOG_INSTALLER_OUTPUT_NATIVE)
@@ -200,10 +169,8 @@ add_custom_target(installer
     # Harvest first: the file lists the script !includes describe what this build
     # produced, so they have to be regenerated every time rather than cached.
     COMMAND "${CMAKE_COMMAND}"
-            -D "XPCOG_STAGE_DIR=$<TARGET_FILE_DIR:${XPCOG_PLAYER_TARGET}>"
+            -D "XPCOG_STAGE_DIR=$<TARGET_FILE_DIR:xpcog-winui>"
             -D "XPCOG_OUT_DIR=${XPCOG_GENERATED_DIR}"
-            -D "XPCOG_PLAYER=${XPCOG_INSTALLER_PLAYER}"
-            -D "XPCOG_PLAYER_EXE=${XPCOG_PLAYER_EXE}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/Harvest.cmake"
     # And the file associations, from this build's codecs.
     COMMAND "${CMAKE_COMMAND}"
@@ -223,5 +190,5 @@ add_custom_target(installer
 # The app, and the assets it is packaged with -- xpcog-assets is an ALL target so
 # a plain build already staged them, but `--target installer` on a fresh tree
 # builds only what it names.
-add_dependencies(installer ${XPCOG_PLAYER_TARGET} xpcog-assets xpcog-list-extensions)
+add_dependencies(installer xpcog-winui xpcog-assets xpcog-list-extensions)
 set_target_properties(installer PROPERTIES FOLDER packaging)

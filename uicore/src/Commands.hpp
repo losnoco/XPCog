@@ -27,6 +27,13 @@
 // The enum is ActionId's, value for value, deliberately. It is effectively the
 // whole command surface of the application, and re-deriving it during a toolkit
 // port would only introduce differences nobody asked for.
+//
+// Since 3.0.0 neither player is wx: the WinUI one builds its menu bar from this
+// table (app-winui/src/CommandMenus.cpp) and the GTK one its GMenus
+// (app-gtk/src/Menus.cpp), each running a command through its own switch. What
+// is said above about wx is how the table got its shape. The ids keep wx's
+// numbers, which nothing depends on any more and which there is no reason to
+// change.
 
 #pragma once
 
@@ -46,10 +53,10 @@ namespace xpcog::app {
 /// dispatches on its own.
 enum CommandId : int {
     // Written out rather than taken from <wx/defs.h>, because this header names
-    // no toolkit -- and checked rather than trusted: app/src/CommandIds.cpp is a
+    // no toolkit -- and checked rather than trusted: the wx player's CommandIds.cpp was a
     // file of nothing but static_asserts against wx's own values, so a wx that
-    // renumbered these would fail to build on all three platforms rather than
-    // relocating the wrong menu items on one.
+    // renumbered these would have failed to build on all three platforms rather than
+    // relocated the wrong menu items on one.
     //
     // They are wx's numbering and not an arbitrary base, because the relocation
     // above keys on the *item's own id*. A neutral enum plus a translation table

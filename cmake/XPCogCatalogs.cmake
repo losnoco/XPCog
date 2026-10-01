@@ -7,7 +7,7 @@
 # error on the generated source.
 #
 #   xpcog_add_catalogs(
-#       TARGET xpcog-appcore
+#       TARGET xpcog-uicore
 #       NAME   catalogs                     # -> xpcog::app::catalogs()
 #       FILES  locale/es.po ...)
 #

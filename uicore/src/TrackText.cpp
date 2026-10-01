@@ -88,9 +88,8 @@ std::string replayGainText(const ReplayGainInfo& gain) {
     }
     // Cog's condition exactly: a volume of 1.0 is no scaling and says nothing.
     if (gain.volume && *gain.volume != 1.0F) {
-        // No trUtf8 twin needed here the way there is in app/src/Text.hpp: this
-        // layer has no wxString to convert a literal into, so a msgid carrying
-        // a multiplication sign is just bytes.
+        // A msgid carrying a multiplication sign is just bytes: this layer has
+        // no wxString to convert a literal into, as the wx player once did.
         lines.push_back(
             trf("Volume Scale: %s\xC3\x97", fixed(static_cast<double>(*gain.volume), 2)));
     }

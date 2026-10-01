@@ -1,4 +1,4 @@
-// The folder browser: the counterpart of app/src/FileTree.hpp.
+// The folder browser: the counterpart of app-winui/src/FileTreePane.hpp.
 //
 // A GtkListView over a GtkTreeListModel whose levels are GtkDirectoryLists,
 // each sorted with folders first and filtered to what the registry can decode

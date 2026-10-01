@@ -1,5 +1,5 @@
 // The Roland SC-55's front panel, in step with what is coming out of the
-// speakers. The counterpart of app/src/Sc55Panel.hpp; PanelFeed decides
+// speakers. The counterpart of app-winui/src/Sc55View.hpp; PanelFeed decides
 // *when*, by holding states with a position in their track and answering for
 // the position the speaker has reached, and this decides how the pixels get
 // onto a widget.

@@ -14,8 +14,7 @@ namespace xpcog::winui {
 /// time spent on a process about to exit.
 ///
 /// True: this is the player, carry on. False: another one is running and has
-/// been handed this launch, or the wx player is running and this one has
-/// said so; either way, exit.
+/// been handed this launch; exit.
 ///
 /// The handover is the Windows App SDK's AppInstance: the first instance
 /// claims a key, a later one finds it taken and redirects its activation --

@@ -11,7 +11,7 @@ xpcog_probe_system_deps()
 
 # The vcpkg toolchain must be set before project(); CMakePresets.json does that.
 project(XPCog
-    VERSION 2.0.2
+    VERSION 3.0.0
     DESCRIPTION "An audio player for Windows and Linux, ported from Cog"
     LANGUAGES C CXX)
 
@@ -67,11 +67,10 @@ include(XPCogResources)
 include(XPCogCatalogs)
 # The rpath and the one bundled shared library an installed Linux build needs.
 include(XPCogInstallRuntime)
-# The toolkits, one per platform. wxWidgets on Windows: an ordinary vcpkg
-# dependency, with no environment variable to set and no deploy step -- see
-# docs/WXPORT.md for what that replaced. GTK4 and libadwaita on Linux, from the
-# distribution, for the frontend in app-gtk/ -- see docs/GTKPORT.md.
-include(XPCogWx)
+# The toolkits, one per platform. WinUI 3 on Windows, from the Windows App SDK's
+# NuGet packages -- cmake/XPCogWinAppSdk.cmake, included below once the layers
+# it builds on exist; see docs/WINUIPORT.md. GTK4 and libadwaita on Linux, from
+# the distribution, for the frontend in app-gtk/ -- see docs/GTKPORT.md.
 include(XPCogGtk)
 include(XPCogBlueprint)
 
@@ -98,25 +97,13 @@ if(XPCOG_BUILD_APP)
     add_subdirectory(uicore)
 endif()
 
-# The Windows App SDK, for either WinUI consumer. Included here rather than by
-# each so the fetch, the projection and the imported target happen once, and
-# before app/, which reads what it defines.
-if(XPCOG_BUILD_WX_APP AND (XPCOG_WITH_WINUI_ISLAND OR XPCOG_BUILD_WINUI_APP))
+if(XPCOG_BUILD_WINUI_APP)
+    # The Windows App SDK: fetched, projected and wrapped in an imported target
+    # once, before the player that links it.
     include(XPCogWinAppSdk)
-endif()
-
-if(XPCOG_BUILD_WX_APP)
-    add_subdirectory(app)
-endif()
-
-if(XPCOG_BUILD_WX_APP AND XPCOG_BUILD_WINUI_APP)
     add_subdirectory(app-winui)
-endif()
-
-# Packaging, after both of the things it can package -- the installer carries
-# one player or the other, XPCOG_INSTALLER_PLAYER. `installer` is never built
-# by ALL; see packaging/windows/CMakeLists.txt.
-if(XPCOG_BUILD_WX_APP)
+    # Packaging, after the thing being packaged. `installer` is never built by
+    # ALL; see packaging/windows/CMakeLists.txt.
     add_subdirectory(packaging/windows)
 endif()
 
@@ -137,8 +124,8 @@ message(STATUS "")
 message(STATUS "XPCog ${PROJECT_VERSION}")
 message(STATUS "  build type ......... ${CMAKE_BUILD_TYPE}")
 message(STATUS "  app ................ ${XPCOG_BUILD_APP}")
-if(XPCOG_BUILD_WX_APP)
-    message(STATUS "  toolkit ............ wxWidgets (${XPCOG_WX_DISCOVERY})")
+if(XPCOG_BUILD_WINUI_APP)
+    message(STATUS "  toolkit ............ WinUI 3, Windows App SDK ${XPCOG_WINAPPSDK_RUNTIME_MAJOR}.${XPCOG_WINAPPSDK_RUNTIME_MINOR}.${XPCOG_WINAPPSDK_RUNTIME_PATCH}")
 elseif(XPCOG_BUILD_GTK_APP)
     message(STATUS "  toolkit ............ GTK ${XPCOG_GTK4_gtk4_VERSION}, libadwaita ${XPCOG_GTK4_libadwaita-1_VERSION}")
 endif()

@@ -1,4 +1,4 @@
-// The transport's position bar. The counterpart of app/src/SeekBar.hpp, with
+// The transport's position bar. The counterpart of app-winui/src/SeekBar.hpp, with
 // the mini player as its second user, so both behaviours live in the widget
 // rather than in a window.
 //

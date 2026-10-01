@@ -1,5 +1,5 @@
 // The player's presence off the window: the tray icon and the desktop's
-// notifications. The counterpart of app/src/StatusPresence.hpp, over the same
+// notifications. The counterpart of app-winui/src/Tray.hpp, over the same
 // two platform seams -- platform::TrayIcon, which is a StatusNotifierItem, and
 // platform::Notifier, which is org.freedesktop.Notifications -- with no wx
 // fallback behind either, because GTK 4 has no XEmbed tray and no

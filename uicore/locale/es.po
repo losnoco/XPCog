@@ -2504,3 +2504,23 @@ msgstr "matemática vectorial, bajo Rubber Band"
 #: uicore/src/Credits.cpp
 msgid "JIT helpers, under melonDS"
 msgstr "funciones auxiliares del JIT, bajo melonDS"
+
+#: app-winui/src/SeekBar.cpp app-gtk/src/SeekBar.cpp
+msgid "Position"
+msgstr "Posición"
+
+#: app-gtk/src/MainWindow.cpp
+msgid "Move to Trash"
+msgstr "Mover a la papelera"
+
+#: uicore/src/Credits.cpp
+msgid "windowing, startup and single instance"
+msgstr "ventanas, arranque e instancia única"
+
+#: uicore/src/Credits.cpp
+msgid "drawing the spectrum, the oscilloscope and the waveform"
+msgstr "dibujo del espectro, el osciloscopio y la forma de onda"
+
+#: uicore/src/Credits.cpp
+msgid "the Windows Runtime from C++"
+msgstr "Windows Runtime desde C++"

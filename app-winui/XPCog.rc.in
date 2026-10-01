@@ -1,6 +1,10 @@
-// The WinUI player's resources: the wx player's app/XPCog.rc.in, minus
-// wx/msw/wx.rc and with the manifest named directly, since nothing here has wx
-// to bring one. See that file for the version block's history.
+// The player's resources: its icon, its manifest, and the version block
+// Explorer's Details tab and the UAC prompt read.
+//
+// The icon is named AAAA_XPCOG rather than 1 so it sorts first among the
+// resources: the shell takes the first icon in a file as its icon. The wx
+// player needed that because wx.rc added icons of its own; nothing does here,
+// and the name stays so the tray (Tray.cpp) can load it by name.
 
 #include <winver.h>
 #include <winuser.h>
@@ -31,9 +35,9 @@ BEGIN
         BEGIN
             VALUE "FileDescription",  "XPCog"
             VALUE "FileVersion",      "@PROJECT_VERSION@"
-            VALUE "InternalName",     "XPCog-WinUI"
+            VALUE "InternalName",     "XPCog"
             VALUE "LegalCopyright",   "@XPCOG_COPYRIGHT@"
-            VALUE "OriginalFilename", "XPCog-WinUI.exe"
+            VALUE "OriginalFilename", "XPCog.exe"
             VALUE "ProductName",      "XPCog"
             VALUE "ProductVersion",   "@PROJECT_VERSION@"
         END

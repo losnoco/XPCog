@@ -126,7 +126,7 @@ set_target_properties(xpcog-uicore PROPERTIES FOLDER uicore)
 # The translations, which moved here with the lookup that reads them.
 #
 # Attached to this target rather than to the application for the reason they were
-# attached to xpcog-appcore before -- the code that reads them is here, and the
+# attached to the wx player's library before -- the code that reads them is here, and the
 # tests link it -- and now for a second reason: both frontends need the same
 # catalogue, and a catalogue compiled into one of them is not a catalogue the
 # other has. See uicore/locale/README.md for how a language is added.

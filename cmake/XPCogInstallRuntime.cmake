@@ -24,14 +24,13 @@
 # being moved or installed under any prefix -- which a DESTDIR-staged package,
 # a tarball unpacked into /opt, and a Flatpak's /app all need.
 #
-# This is the same problem app/CMakeLists.txt solves for the macOS bundle with
-# @executable_path/../Frameworks, and it is solved the same way, one loader's
-# vocabulary at a time.
+# This is the problem a macOS bundle solves with @executable_path/../Frameworks,
+# solved the same way, in this loader's vocabulary.
 
 # Arrange for `target` to find XPCog's bundled runtime libraries once installed.
 #
 # A function rather than two copies because both installed executables need it
-# and they are declared in different directories: xpcog-app in app/, xpcog-cli in
+# and they are declared in different directories: xpcog-gtk in app-gtk/, xpcog-cli in
 # tools/cli/, and a headless build installs the second without the first.
 function(xpcog_install_linux_runtime target)
     if(NOT UNIX)
@@ -59,8 +58,17 @@ function(xpcog_install_linux_runtime target)
     endif()
 endfunction()
 
-# crashpad's handler, staged beside a player's executable -- see the comment on
-# XPCOG_WITH_SENTRY in app/CMakeLists.txt for why it has to be there.
+# crashpad's handler, staged beside a player's executable.
+#
+# crashpad is out-of-process by design -- that is the whole reason it can report
+# a crash that has already taken the player's own address space with it -- so it
+# ships as a second executable that has to sit somewhere the first one can find.
+# sentry-native sets *no* default for its path, and the failure without it is
+# the quiet kind: sentry_init() succeeds, messages are still sent, and actual
+# crashes simply never appear. So it is staged beside the executable, which is
+# where SentryCrashReporter.cpp looks, and taken from vcpkg's tools/ directory
+# by name rather than found on PATH: what has to run is the handler from the
+# same sentry-native the player linked against.
 #
 # With the DLLs vcpkg keeps beside it, not only the .exe. vcpkg builds its tools
 # in release whatever the tree is, so the handler links the release zlib, z.dll;

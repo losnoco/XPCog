@@ -18,8 +18,8 @@
 ;     the extensions this build's codecs claim -- Associations.cmake asks the
 ;     codec registry at packaging time and generates the lines. Written here,
 ;     under the install's own scope, and removed by the uninstaller.
-;   * For the WinUI player, the Windows App Runtime it runs on, fetched from
-;     Microsoft when the machine does not have it already.
+;   * The Windows App Runtime the player runs on, fetched from Microsoft when
+;     the machine does not have it already.
 ;   * An uninstaller, and an Add/Remove Programs entry, so a folder of 45 DLLs
 ;     can be removed by the means Windows users actually reach for.
 ;
@@ -29,7 +29,7 @@
 ;   /AllUsers           install for everyone (Program Files; needs elevation)
 ;   /CurrentUser        install for the running user only (no elevation)
 ;   /NOASSOC            do not touch file associations
-;   /NORUNTIME          do not fetch the Windows App Runtime (WinUI player)
+;   /NORUNTIME          do not fetch the Windows App Runtime
 ;   /D=<dir>            installation directory; must be last, and unquoted
 ;
 ; The uninstaller takes /S and the same two scope switches; the scope it was
@@ -51,16 +51,14 @@ CRCCheck on
 !define XPCOG_PUBLISHER "LoSnoCo"
 !define XPCOG_URL       "https://github.com/losnoco/XPCog"
 
-; The player this installer carries -- XPCOG_INSTALLER_PLAYER in
-; packaging/windows/CMakeLists.txt -- and so the executable everything below
-; points at. XPCOG_WINUI is 1 for the WinUI player, which needs the Windows App
-; Runtime installed beside it.
-!define XPCOG_EXE       "@XPCOG_PLAYER_EXE@"
-!define XPCOG_WINUI     @XPCOG_NSIS_WINUI@
+; The executable everything below points at. XPCog.exe, as it has been in every
+; release: an upgrade keeps the Start menu shortcut and the "Open with" entries
+; the last one made.
+!define XPCOG_EXE       "XPCog.exe"
 
 ; The file associations' ProgID: what each extension's OpenWithProgids names,
-; and what describes the file type and how to open it. The same one the wx
-; player's --register writes, so the two never offer XPCog twice.
+; and what describes the file type and how to open it. The same one 2.x's
+; `XPCog --register` wrote, so an upgrade never offers XPCog twice.
 !define XPCOG_PROGID    "XPCog.AudioFile"
 !define XPCOG_CLASSES   "Software\Classes"
 
@@ -267,7 +265,7 @@ SectionEnd
 ; ---------------------------------------------------------------------------
 ; File associations.
 ;
-; The same keys the wx player's --register writes (platform/src/windows/
+; The keys 2.x's `XPCog --register` wrote (what was platform/src/windows/
 ; FileAssociations.cpp), written by this script instead, and the two halves of
 ; a change of approach worth stating:
 ;
@@ -319,7 +317,6 @@ Section "Offer XPCog in the $\"Open with$\" lists" SecAssoc
     !insertmacro XPCogNotifyShell
 SectionEnd
 
-!if ${XPCOG_WINUI} == 1
 ; ---------------------------------------------------------------------------
 ; The Windows App Runtime.
 ;
@@ -371,7 +368,6 @@ Section "Windows App Runtime (downloaded if missing)" SecRuntime
 
     xpcog_runtime_done:
 SectionEnd
-!endif
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
     !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} \
@@ -384,11 +380,9 @@ SectionEnd
         "Add ${XPCOG_NAME} to the $\"Open with$\" list for the audio formats this \
          build understands. It does not take any file type away from the program \
          that currently opens it."
-!if ${XPCOG_WINUI} == 1
     !insertmacro MUI_DESCRIPTION_TEXT ${SecRuntime} \
         "The Microsoft runtime ${XPCOG_NAME} is built on, downloaded from Microsoft \
          (about 120 MB) only if this computer does not have it yet."
-!endif
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ---------------------------------------------------------------------------
@@ -424,8 +418,8 @@ Section "Uninstall"
 
     DeleteRegKey SHCTX "${XPCOG_UNINST_KEY}"
 
-    ; Left alone, deliberately: HKCU\Software\LoSnoCo\XPCog (the settings wxConfig
-    ; writes) and the library database under %APPDATA%. Those are the user's
+    ; Left alone, deliberately: HKCU\Software\LoSnoCo\XPCog (the settings) and
+    ; the library database under %APPDATA%. Those are the user's
     ; data, not the program, and an uninstall that takes a curated library with
     ; it is not recoverable from.
 SectionEnd
@@ -495,7 +489,6 @@ Function .onInit
         !insertmacro UnselectSection ${SecAssoc}
     ${EndIf}
 
-!if ${XPCOG_WINUI} == 1
     ; /NORUNTIME, for a deployment that puts the Windows App Runtime on its
     ; machines by its own means and does not want each install reaching out to
     ; Microsoft for it.
@@ -504,7 +497,6 @@ Function .onInit
     ${IfNot} ${Errors}
         !insertmacro UnselectSection ${SecRuntime}
     ${EndIf}
-!endif
 FunctionEnd
 
 Function un.onInit

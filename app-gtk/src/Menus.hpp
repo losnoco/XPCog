@@ -1,6 +1,6 @@
 // The menus, built from the shared command table.
 //
-// app/src/WxMenus.cpp turns menuLayout() into a wxMenuBar; this turns the same
+// app-winui/src/CommandMenus.cpp turns menuLayout() into a WinUI MenuBar; this turns the same
 // rows into GMenus, so the wording, the ordering and the translations are
 // stated once. What differs is the shape, and deliberately: a libadwaita
 // application has no menu bar. It has a primary menu under the header bar's

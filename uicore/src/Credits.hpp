@@ -2,7 +2,7 @@
 //
 // One table for both frontends, because a licence list has to be right rather
 // than convenient: the wx and GTK dialogs each kept their own once, and the GTK
-// one shipped 2.0.0 with none at all. Kept by hand rather than generated -- a
+// one shipped 2.0.0 with none at all. The WinUI player's About reads it too. Kept by hand rather than generated -- a
 // library dropped from the build should be removed from here deliberately, not
 // vanish silently, and a library added should be credited by someone who read
 // its licence.
@@ -39,9 +39,6 @@ struct Component {
 [[nodiscard]] std::span<const Component> playerComponents();
 
 /// The Windows frontend's toolkit and what it draws with.
-[[nodiscard]] std::span<const Component> wxComponents();
-
-/// The WinUI player's toolkit and what it draws with.
 [[nodiscard]] std::span<const Component> winuiComponents();
 
 /// The Linux frontend's toolkit, and the desktop libraries platform/ talks to.

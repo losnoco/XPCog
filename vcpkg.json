@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "xpcog",
-  "version": "2.0.2",
+  "version": "3.0.0",
   "description": "An audio player for Windows and Linux, ported from Cog",
   "homepage": "https://github.com/losnoco/Cog",
   "license": "GPL-3.0-or-later",
@@ -122,18 +122,6 @@
       "description": "cpp-httplib, the HTTP server behind the REST remote control (XPCOG_WITH_REST). Header-only, so it costs a download and no build time -- the same trade as `nlohmann-json`, and made for the same reason: something parsing requests off a socket is a fuzzing target and not the place to save a dependency by hand-writing a parser. A default feature so a Linux build with XPCOG_USE_SYSTEM_LIBS can take the distribution's copy instead; see cmake/XPCogSystemDeps.cmake for the floor.",
       "dependencies": [
         "cpp-httplib"
-      ]
-    },
-    "gui": {
-      "description": "wxWidgets: the application's UI toolkit on Windows and macOS, neither of which packages it. A feature rather than a plain dependency for two reasons. The headless presets build no app and should not drag a toolkit into a target that links none -- and the Linux presets leave it off as well, because this port depends on vcpkg's gtk3 port: requesting it there builds 57 packages from source -- wx, GTK, glib, pango, cairo, harfbuzz, fontconfig, at-spi2, dbus and seven X11 libraries -- on a machine that already has every one of them. Linux takes wx from the distribution instead (libwxgtk3.2-dev); see cmake/XPCogWx.cmake. The `secretstore` feature is asked for because the Last.fm session key is kept in wxSecretStore rather than in settings: it is off by default in the port, and on Windows and macOS it costs nothing -- the libsecret dependency it carries is declared for neither. On Linux the distribution package already builds with it",
-      "dependencies": [
-        {
-          "name": "wxwidgets",
-          "default-features": false,
-          "features": [
-            "secretstore"
-          ]
-        }
       ]
     },
     "musepack": {

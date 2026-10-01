@@ -124,18 +124,18 @@ install(FILES "${_desktop}"
 install(FILES "${_metainfo}"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/metainfo")
 
-# The icons, renamed on the way in. app/icons/ names them for the size because
+# The icons, renamed on the way in. assets/icons/ names them for the size because
 # that is what the Windows .ico was built from; the
 # hicolor theme puts the size in the directory instead and wants every file
 # named for the application. Flatpak requires that name specifically, and the
 # tray icon's IconName resolves through the same theme.
 #
 # No scalable/ entry: the SVG artwork this project has is the layered
-# app/icons/xpcog.icon package, which is three layers meant for Icon Composer to
+# assets/icons/xpcog.icon package, which is three layers meant for Icon Composer to
 # compose, not one flat SVG a GTK icon loader can render. Adding a flattened one
 # is worth doing and is not this change.
 foreach(_size IN ITEMS 16 24 32 48 64 128 256)
-    install(FILES "${CMAKE_SOURCE_DIR}/app/icons/xpcog-${_size}.png"
+    install(FILES "${CMAKE_SOURCE_DIR}/assets/icons/xpcog-${_size}.png"
             DESTINATION
                 "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
             RENAME "${XPCOG_DESKTOP_ID}.png")

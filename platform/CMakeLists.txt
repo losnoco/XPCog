@@ -7,7 +7,8 @@
 # std::string, xpcog::Url, std::vector<std::byte> and xpcog::Signal.
 #
 # What that buys is substitutability. app/ can be rewritten in a different toolkit
-# -- which is what happened, Qt to wx, without this directory changing at all --
+# -- which is what happened twice, Qt to wx and wx to WinUI, without this
+# directory changing for either --
 # and the tests can link it without starting an application object.
 #
 # The one thing a toolkit was doing invisibly is thread marshalling: SMTC calls
@@ -19,9 +20,8 @@
 # Occupants:
 #   Settings       registry / CFPreferences / a file, and the paths around them
 #   MediaIntegration  MPNowPlayingInfoCenter / SMTC / MPRIS
-#   TrayIcon       StatusNotifierItem on Linux, where wxTaskBarIcon cannot go
+#   TrayIcon       StatusNotifierItem on Linux; the WinUI player draws its own
 #   TaskbarIntegration ITaskbarList3 done; NSDockTile outstanding
-#   FileAssociations   Windows only, by design
 #   FileManager    revealing a file and moving it to the trash
 #   Foreground     AllowSetForegroundWindow, Windows only
 #   CrashReporter  sentry-native, and only once the listener has said yes
@@ -58,7 +58,6 @@ if(WIN32)
     target_sources(xpcog-platform PRIVATE
         src/windows/WinString.hpp
         src/windows/Foreground.cpp
-        src/windows/FileAssociations.cpp
         src/windows/WindowsSettings.cpp
         src/windows/WindowsFileManager.cpp
         src/windows/WindowsAccentColour.cpp
@@ -89,7 +88,6 @@ if(WIN32)
 elseif(UNIX)
     target_sources(xpcog-platform PRIVATE
         src/common/Foreground.cpp
-        src/common/FileAssociations.cpp
         src/common/NullTaskbarIntegration.cpp
         src/common/CommonSettings.cpp
         src/common/NullAccentColour.cpp
@@ -137,7 +135,7 @@ elseif(UNIX)
     # what happens without it. No GLib means no MPRIS and no explanation, which
     # is a broken build; no libsecret means a player that plays and declines to
     # keep a Last.fm session, which is a defined state the interface already
-    # reports -- see app/src/RemoteToken.hpp on why refusing beats writing a
+    # reports -- see uicore/src/RemoteToken.hpp on why refusing beats writing a
     # token into the settings.
     #
     # The schema is wxSecretStore's, byte for byte, so the records the wx build
@@ -164,7 +162,6 @@ elseif(UNIX)
 else()
     target_sources(xpcog-platform PRIVATE
         src/common/Foreground.cpp
-        src/common/FileAssociations.cpp
         src/common/NullTaskbarIntegration.cpp
         src/common/NullMediaIntegration.cpp
         src/common/NullTrayIcon.cpp

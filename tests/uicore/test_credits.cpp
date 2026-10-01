@@ -40,7 +40,7 @@ void checkRows(std::span<const Component> rows, std::set<std::string>& seen) {
 TEST_CASE("every credit names its licence and its purpose, once", "[credits]") {
     std::set<std::string> seen;
     checkRows(xpcog::app::playerComponents(), seen);
-    checkRows(xpcog::app::wxComponents(), seen);
+    checkRows(xpcog::app::winuiComponents(), seen);
     checkRows(xpcog::app::gtkComponents(), seen);
     checkRows(xpcog::app::codecComponents(), seen);
     checkRows(xpcog::app::dataComponents(), seen);
@@ -51,7 +51,8 @@ TEST_CASE("each frontend credits its own toolkit", "[credits]") {
     // that are easiest to lose, because they are not in the shared list.
     CHECK(lists(xpcog::app::gtkComponents(), "GTK"));
     CHECK(lists(xpcog::app::gtkComponents(), "libadwaita"));
-    CHECK(lists(xpcog::app::wxComponents(), "wxWidgets"));
+    CHECK(lists(xpcog::app::winuiComponents(), "WinUI 3"));
+    CHECK(lists(xpcog::app::winuiComponents(), "Win2D"));
     // And the remote control's server, which the old list predated.
     CHECK(lists(xpcog::app::playerComponents(), "cpp-httplib"));
 }

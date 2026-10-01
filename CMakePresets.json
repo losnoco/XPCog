@@ -15,7 +15,7 @@
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_MANIFEST_FEATURES": "gui;sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm",
+        "VCPKG_MANIFEST_FEATURES": "sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm",
         "XPCOG_WITH_FFMPEG": "ON",
         "XPCOG_WITH_VGMSTREAM": "ON",
         "XPCOG_WITH_PSF": "ON",
@@ -55,14 +55,10 @@
       "name": "linux",
       "hidden": true,
       "inherits": "base",
-      "description": "Restates VCPKG_MANIFEST_FEATURES without `gui`: the player on Linux is the GTK4/libadwaita one in app-gtk/, and GTK, libadwaita and blueprint-compiler come from the distribution through pkg-config (cmake/XPCogGtk.cmake), never from vcpkg -- its gtk ports would build the whole stack from source on a machine that already has it. wxWidgets is the Windows toolkit only. A feature cannot be subtracted from an inherited list, hence the restatement rather than an override. `sentry` stays: it is the toolkit that comes from the distribution here, not the crash reporter.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
-      },
-      "cacheVariables": {
-        "VCPKG_MANIFEST_FEATURES": "sentry;ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
       }
     },
     {
@@ -136,7 +132,6 @@
       },
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "x64-windows",
-        "XPCOG_BUILD_WINUI_APP": "ON",
         "CMAKE_C_COMPILER": "cl",
         "CMAKE_CXX_COMPILER": "cl"
       }
@@ -155,7 +150,6 @@
       },
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "x64-windows",
-        "XPCOG_BUILD_WINUI_APP": "ON",
         "CMAKE_C_COMPILER": "cl",
         "CMAKE_CXX_COMPILER": "cl"
       }

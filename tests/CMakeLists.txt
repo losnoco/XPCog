@@ -433,82 +433,41 @@ catch_discover_tests(xpcog-tests)
 # ---------------------------------------------------------------------------
 # The toolkit-free half of the application layer, tested without one.
 #
-# A separate binary rather than more cases in xpcog-app-tests, and the point is
-# what it links: xpcog-uicore and nothing else. If something under uicore/ grows
-# a dependency on a widget this fails to link, which makes the extraction a fact
-# about the build rather than a claim in a comment -- the same trade
-# cmake/CheckNoToolkit.cmake makes, arrived at from the other side.
+# A separate binary, and the point is what it links: xpcog-uicore and nothing
+# else. If something under uicore/ grows a dependency on a widget this fails to
+# link, which makes the extraction a fact about the build rather than a claim in
+# a comment -- the same trade cmake/CheckNoToolkit.cmake makes, arrived at from
+# the other side.
 #
-# Gated on the player, like uicore/ itself, and built under either frontend:
-# on Linux, where there is no wx, it is the proof that this layer stands up on
-# its own.
+# Gated on the player, like uicore/ itself, and built under either frontend.
 # ---------------------------------------------------------------------------
 if(XPCOG_BUILD_APP)
     add_executable(xpcog-uicore-tests
         uicore/test_appcommands.cpp
         uicore/test_commands.cpp
+        uicore/test_crashreporter.cpp
         uicore/test_credits.cpp
         uicore/test_lyricstext.cpp
         uicore/test_remotejobs.cpp
         uicore/test_session.cpp
         uicore/test_settingeffect.cpp
+        uicore/test_translations.cpp
     )
     # codecs as well as uicore, and that keeps the rule rather than bending it:
     # the point is that no *toolkit* is linked, and codecs link none. Without
     # them the session test could scan nothing and play nothing.
     target_link_libraries(xpcog-uicore-tests
         PRIVATE xpcog-uicore xpcog-codecs Catch2::Catch2WithMain XPCog::warnings)
+    # So the crash reporter's availability case can assert rather than accept
+    # either answer. The test cannot ask the build system at run time, and a
+    # case that passes both ways is one that would not notice the reporter
+    # quietly dropping out of the build.
+    if(XPCOG_WITH_SENTRY)
+        target_compile_definitions(xpcog-uicore-tests PRIVATE XPCOG_TESTS_EXPECT_SENTRY=1)
+    endif()
     add_dependencies(xpcog-uicore-tests xpcog-assets)
     set_target_properties(xpcog-uicore-tests PROPERTIES FOLDER tests)
     catch_discover_tests(xpcog-uicore-tests)
-endif()
-
-# ---------------------------------------------------------------------------
-# The wx application's own suite, on Windows, where the wx application is.
-#
-# Separate from the core one because the headless preset builds no application at
-# all, and these link the toolkit. It uses Catch2's own main: nothing here wants
-# an application object, and that is deliberate rather than lucky -- everything
-# that needed one is either in core now or is a free function.
-# ---------------------------------------------------------------------------
-if(XPCOG_BUILD_WX_APP)
-    add_executable(xpcog-app-tests
-        app/test_commands.cpp
-        app/test_crashreporter.cpp
-        app/test_embedded_icons.cpp
-        app/test_helpers.cpp
-        app/test_infopanel.cpp
-        app/test_localization.cpp
-        app/test_playlistmodel.cpp
-    )
-
-    # So the availability case can assert rather than accept either answer. The
-    # test cannot ask the build system at run time, and a case that passes both
-    # ways is one that would not notice the reporter quietly dropping out of the
-    # build.
-    if(XPCOG_WITH_SENTRY)
-        target_compile_definitions(xpcog-app-tests PRIVATE XPCOG_TESTS_EXPECT_SENTRY=1)
-    endif()
-
-    # The panel photograph only exists in a MIDI build, and so does the test
-    # that checks it is still there.
-    if(XPCOG_WITH_MIDI)
-        target_sources(xpcog-app-tests PRIVATE app/test_sc55panel.cpp)
-    endif()
-
-    target_link_libraries(xpcog-app-tests PRIVATE
-        xpcog-appcore
-        Catch2::Catch2WithMain
-        XPCog::warnings)
-
-    set_target_properties(xpcog-app-tests PROPERTIES FOLDER tests)
-
-    # No DL_PATHS, which the Qt suite needed: test discovery *runs* this binary
-    # to enumerate its cases, and under Qt it could not start without the Qt DLLs
-    # on PATH -- failing at that step with 0xc0000135 rather than at link time,
-    # which made it look like a Catch2 fault. wx comes from vcpkg, so vcpkg's
-    # applocal post-build step has already copied its DLLs beside the binary.
-    catch_discover_tests(xpcog-app-tests)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -523,8 +482,13 @@ endif()
 # Exit code 4 is a skip: no Windows App Runtime on the machine, so no window can
 # be made. CI installs the runtime first, so there it runs.
 # ---------------------------------------------------------------------------
-if(XPCOG_BUILD_WX_APP AND XPCOG_BUILD_WINUI_APP)
+if(XPCOG_BUILD_WINUI_APP)
     add_executable(xpcog-winui-tests winui/test_winui.cpp)
+    # The panel photograph only exists in a MIDI build, and so does the case
+    # that checks it is still compiled in.
+    if(XPCOG_WITH_MIDI)
+        target_sources(xpcog-winui-tests PRIVATE winui/test_sc55panel.cpp)
+    endif()
     target_link_libraries(xpcog-winui-tests PRIVATE
         xpcog-winuicore
         Catch2::Catch2

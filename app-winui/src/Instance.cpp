@@ -2,8 +2,6 @@
 
 #include "WinRT.hpp"
 
-#include "Translations.hpp"
-
 #include "xpcog/platform/Foreground.hpp"
 
 #include <winrt/Microsoft.Windows.AppLifecycle.h>
@@ -12,7 +10,6 @@
 #include <combaseapi.h>
 #include <shellapi.h>
 
-#include <cwctype>
 #include <filesystem>
 #include <string>
 #include <thread>
@@ -25,49 +22,9 @@ namespace lifecycle = winrt::Microsoft::Windows::AppLifecycle;
 
 constexpr const wchar_t* kInstanceKey = L"XPCog";
 
-/// The named mutex the wx player's wxSingleInstanceChecker holds: "XPCog-"
-/// and the user name with everything but letters and digits taken out, as
-/// app/src/SingleInstance.cpp's defaultName() builds it.
-std::wstring wxPlayerMutex() {
-    wchar_t user[256] = {};
-    DWORD   length    = static_cast<DWORD>(std::size(user));
-    std::wstring name = L"XPCog-";
-    if (::GetUserNameW(user, &length) && length > 1) {
-        for (const wchar_t* c = user; *c != 0; ++c) {
-            if (std::iswalnum(*c) != 0 && *c < 0x80) {
-                name += *c;
-            }
-        }
-    } else {
-        name += L"default";
-    }
-    return name;
-}
-
-/// Whether the wx player is running. The two would share one library
-/// database, and neither can hand the other a launch -- wx's handover is DDE
-/// through wx -- so for as long as both exist, this one steps aside.
-bool wxPlayerRunning() {
-    const HANDLE mutex = ::OpenMutexW(SYNCHRONIZE, FALSE, wxPlayerMutex().c_str());
-    if (mutex == nullptr) {
-        return false;
-    }
-    ::CloseHandle(mutex);
-    return true;
-}
-
 }  // namespace
 
 bool claimInstance() {
-    if (wxPlayerRunning()) {
-        const std::wstring text = winrt::to_hstring(app::tr(
-            "The other XPCog player is already running. Close it first: the two share one "
-            "library and cannot both have it open."))
-                                      .c_str();
-        ::MessageBoxW(nullptr, text.c_str(), L"XPCog", MB_OK | MB_ICONINFORMATION);
-        return false;
-    }
-
     const lifecycle::AppInstance holder = lifecycle::AppInstance::FindOrRegisterForKey(kInstanceKey);
     if (holder.IsCurrent()) {
         return true;

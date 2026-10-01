@@ -25,7 +25,11 @@ constexpr float kMargin       = kThumbRadius + 1.0F;
 
 constexpr float  kWaveformPadding = 2.0F;
 constexpr float  kPlayheadWidth   = 2.0F;
-/// The bottom of the logarithmic scale; app/src/SeekBar.cpp says why -48.
+/// The bottom of the logarithmic scale. One step of the byte a bucket is
+/// stored in is 20*log10(1/255) = -48.1 dB, so a floor there is where the
+/// stored resolution runs out: the quietest non-zero bucket is drawn at the
+/// bottom of the scale rather than a fifth of the way up it, which a deeper
+/// floor would do, and silence and near-silence still tell apart.
 constexpr double kLogFloorDb = -48.0;
 
 constexpr float kPeakAlpha          = 55.0F / 255.0F;

@@ -13,7 +13,7 @@ namespace {
 
 using Column = PlaylistView::Column;
 
-/// The same key and the same spelling as app/src/PlaylistColumns.cpp, so a
+/// The same key and the same spelling as app-winui/src/PlaylistTable.cpp, so a
 /// width dragged in one frontend is the width the other opens with.
 constexpr const char* kWidthsKey = "xpcog.playlist.columns";
 

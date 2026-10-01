@@ -2,7 +2,7 @@
 //
 // Not a port of anything: Cog shows the lyrics a file carries and nothing
 // else. It is here because the pane that shows them already existed
-// (app/src/LyricsPanel.hpp) and was blank for most of a collection, and
+// (app-winui/src/Panes.hpp) and was blank for most of a collection, and
 // because LRCLIB is the one lyrics service that asks for nothing -- no key, no
 // account, no rate-limit token -- and answers a machine-friendly JSON to a
 // single GET. https://lrclib.net/docs is the reference; the server is open

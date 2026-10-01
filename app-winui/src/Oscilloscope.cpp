@@ -273,8 +273,16 @@ void OscilloscopeView::paintTrace(const canvas::CanvasDrawingSession& ds, int wi
     }
 
     // Dense: a column holds several samples, and the trace is the band from
-    // each column's lowest to its highest, a rectangle a column --
-    // app/src/OscilloscopePanel.cpp says why not a stroked outline.
+    // each column's lowest to its highest -- what a scope's phosphor shows for
+    // a signal faster than the sweep -- drawn as one rectangle a column and
+    // *not* as a stroked outline. The outline is a zigzag of two vertices a
+    // column with a join at every reversal, and on complex material at a
+    // logarithmic scale every column spans nearly the whole height: stroking
+    // it had the renderer tessellating thousands of joins sixty times a
+    // second. Rectangles are the fast path of every rasterizer there is. Each
+    // is stretched to meet its neighbour's span, so a jump between columns is
+    // a joined edge rather than a gap, and by half the stroke width each way,
+    // so the width setting still reads.
     const float half = stroke / 2.0F;
     if (fill_) {
         const Colour shaded = withAlpha(colour, kFillAlpha);

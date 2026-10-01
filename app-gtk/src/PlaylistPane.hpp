@@ -2,7 +2,7 @@
 // list does by itself -- the columns and their widths, the header's three-state
 // sort, the selection, activation, the context menu and dropped files.
 //
-// The counterpart of app/src/PlaylistColumns.hpp plus the list-handling half
+// The counterpart of app-winui/src/PlaylistTable.hpp plus the list-handling half
 // of MainFrame. What it does not do is decide anything about the playlist:
 // activating a row asks the session to play it, the context menu's commands
 // are the window's actions, and a drop hands its files up. It reports through

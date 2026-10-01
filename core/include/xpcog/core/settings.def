@@ -374,7 +374,7 @@ XPCOG_SETTING(GraphicEqTrackGenre, bool, "GraphicEQtrackgenre", false)
 /// **No Cog counterpart.** Cog ships its own localisations and takes the
 /// language from macOS's per-application preference, which is a system-level
 /// setting rather than one of its own; there is no equivalent on Windows, so the
-/// choice has to live here. Read once, by app/src/Localization.cpp, before any
+/// choice has to live here. Read once, by each player as it starts, before any
 /// window is built -- changing it relabels nothing that is already on screen,
 /// which is what the note beside the row in Preferences says.
 XPCOG_SETTING(Language, std::string, "language", "")
@@ -756,7 +756,7 @@ XPCOG_SETTING(UrlHistory, std::string, "UserDefaultURLsKey", "")
 ///
 /// The session key itself is deliberately **not** a setting. It is a credential,
 /// it belongs in the platform's secret store, and settings here are world-
-/// readable text in a registry key or a plist. See app/src/LastFmAccount.hpp.
+/// readable text in a registry key or a plist. See uicore/src/LastFmAccount.hpp.
 XPCOG_SETTING(EnableScrobbling, bool, "enableAudioScrobbler", false)
 
 /// The same switch for ListenBrainz. No Cog key, because Cog has no
@@ -765,7 +765,7 @@ XPCOG_SETTING(EnableScrobbling, bool, "enableAudioScrobbler", false)
 /// than one "scrobble" with a list of destinations -- a listener who
 /// disconnects from one has said nothing about the other. The user token is a
 /// credential and lives in the secret store, as the Last.fm session does; see
-/// app/src/ListenBrainzAccount.hpp.
+/// uicore/src/ListenBrainzAccount.hpp.
 XPCOG_SETTING(EnableListenBrainz, bool, "enableListenBrainz", false)
 
 /// Where the ListenBrainz API is. The public service by default; a self-hosted
@@ -839,8 +839,8 @@ XPCOG_SETTING(SentryAskedConsent, bool, "sentryAskedConsent", false)
 /// and macOS-only; none of its code, its protocol or its transport travels here,
 /// and this is not a port of it.
 ///
-/// False, and the default matters more than most. app/src/SingleInstance.hpp
-/// records a decision against this program owning a listening socket at all: on
+/// False, and the default matters more than most. The wx player's single-instance code
+/// recorded a decision against this program owning a listening socket at all: on
 /// Windows the firewall asks the user to approve a *music player* wanting
 /// network access, which is "alarming, unanswerable and entirely
 /// self-inflicted". That argument stands, so this is opt-in twice over --

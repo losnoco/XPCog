@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerates uicore/locale/xpcog.pot from the marked strings in uicore/src and app/src.
+"""Regenerates uicore/locale/xpcog.pot from the marked strings in uicore/ and both frontends.
 
 What xgettext would do, and it is here for the reason cmake/CompileCatalog.cmake
 exists rather than a call to msgfmt: gettext is not a tool this project needs
@@ -11,23 +11,15 @@ much smaller imposition than asking for a gettext they do not.
 
     python tools/extract-messages.py
 
-It reads `_()`, `wxPLURAL()`, `wxTRANSLATE()` and this project's own `trUtf8()`,
-along with the toolkit-free markers that go with them -- `tr()`, `trn()`,
-`trf()` and `XPCOG_TRANSLATE()` from app/src/Translations.hpp,
-and nothing else. Adjacent string literals are joined, so a message wrapped
-across four lines comes out as one.
-
-It also **refuses to write a template** when a message whose English is not pure
-ASCII has been marked with `_()` or `wxPLURAL()` rather than `trUtf8()`. See the
-second half of the rule in `app/src/Text.hpp`: those two let the literal convert
-to a wxString implicitly, which on Windows goes through the current 8-bit locale
-and turns an em dash into two characters of mojibake -- in the lookup key *and*
-in what is shown when the lookup misses. Nothing else in the build can catch it,
-because it compiles and because an ASCII test fixture never sees it.
+It reads `tr()`, `trn()`, `trf()` and `XPCOG_TRANSLATE()` from
+uicore/src/Translations.hpp -- also as `app::tr()` and the rest, the spelling
+the WinUI player uses -- and `_()` in the GTK player's Blueprint files, and
+nothing else. Adjacent string literals are joined, so a message wrapped across
+four lines comes out as one.
 
 Escapes are decoded and the .pot carries raw UTF-8, which is what every other .po
 in the world does and what the catalogue compiler wants: it copies the msgid into
-a C++ string literal verbatim, and app/src is compiled with /utf-8.
+a C++ string literal verbatim, and every source here is compiled as UTF-8.
 
 **It does not merge.** The output is a fresh template; uicore/locale/*.po are
 updated against it by hand or with msgmerge if you have one.
@@ -46,41 +38,38 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Two roots now, and both are needed. uicore/src holds the command tables, the
-# playback controller's messages and the undo labels -- about a fifth of the
-# catalogue -- and app/src holds the windows. A run that forgot one would read as
-# a mass deletion in the template and look like a legitimate diff.
-SRC = [os.path.join(ROOT, 'uicore', 'src'), os.path.join(ROOT, 'app', 'src'),
+# Every root, and all of them are needed. uicore/src holds the command tables,
+# the playback controller's messages and the undo labels; app-winui/src and
+# app-gtk/src hold the windows, app-gtk/ui the GTK interface files. A run that
+# forgot one would read as a mass deletion in the template and look like a
+# legitimate diff.
+SRC = [os.path.join(ROOT, 'uicore', 'src'), os.path.join(ROOT, 'app-winui', 'src'),
        os.path.join(ROOT, 'app-gtk', 'src'), os.path.join(ROOT, 'app-gtk', 'ui')]
 
 # The GTK frontend's interface files. Blueprint spells a translatable string
 # `_("...")` exactly as C does, with the same escapes, so the same scanner reads
 # them -- and GtkBuilder looks them up through gettext under the same domain
 # the compiled-in catalogue is written out as, so they belong in one template.
-# No wxString is anywhere near a .blp, so the ASCII-only rule does not apply.
 UI_EXTENSIONS = ('.blp',)
 OUT = os.path.join(ROOT, 'uicore', 'locale', 'xpcog.pot')
 
 STRING = re.compile(r'\s*"((?:[^"\\]|\\.)*)"')
-# The lookbehind excludes `.` and `:` as well as word characters, which the wx
-# names did not need and `tr` does: without them this would also match `foo.tr(`
-# and `ns::tr(`. Nothing in the tree spells either today, and a marker that
-# silently harvests a method call is the kind of thing found much later, by a
-# translator asking what a string is.
+# The lookbehind excludes `.` and `:` as well as word characters: without them
+# this would also match `foo.tr(` and `ns::tr(`, and a marker that silently
+# harvests a method call is the kind of thing found much later, by a translator
+# asking what a string is. The one qualified spelling that *is* a marker is
+# `app::tr(` -- the WinUI player calls the lookup that way from namespace
+# xpcog::winui -- and it is allowed by name.
 KEYWORD = re.compile(
-    r'(?<![A-Za-z0-9_.:])(_|wxTRANSLATE|wxPLURAL|trUtf8|tr|trn|trf|XPCOG_TRANSLATE)\(')
+    r'(?<![A-Za-z0-9_.:])(?:app::)?(_|tr|trn|trf|XPCOG_TRANSLATE)\(')
 
-# The two that convert their literal implicitly, and so may only carry ASCII.
-#
-# The toolkit-free markers are deliberately absent. That rule exists because
-# `wxString(const char*)` decodes through the current 8-bit locale on Windows,
-# and nothing in app/src/Translations.hpp goes near a wxString: a msgid is UTF-8
-# bytes in and UTF-8 bytes out. So `tr()` is what `_()` and `trUtf8()` both are,
-# there is no second spelling to get wrong, and requiring one would be cargo.
-ASCII_ONLY = ('_', 'wxPLURAL')
+# There was once a list here of markers that could carry only ASCII: wx's `_()`
+# turned its literal into a wxString through the current 8-bit locale on
+# Windows, and an em dash came out as mojibake. wx went in 3.0.0, and every
+# marker left is UTF-8 in and UTF-8 out.
 
 # Markers whose second literal is a plural form rather than another argument.
-PLURAL_KEYWORDS = ('wxPLURAL', 'trUtf8', 'trn')
+PLURAL_KEYWORDS = ('trn',)
 
 SIMPLE = {'n': '\n', 't': '\t', 'r': '\r', '\\': '\\', '"': '"', "'": "'"}
 
@@ -95,28 +84,7 @@ EXTERNAL = [
      "#: core/src/library/PlaylistView.cpp\n", "#"),
 ]
 
-# wxWidgets' own stock labels, for the buttons this application does not put a
-# label on itself -- Close, OK, Cancel, Yes, No on the standard dialog button
-# sizers.
-#
-# They belong here because wx looks them up with a plain `_()`, which is
-# wxGetTranslation with no domain, and that searches *every* loaded catalogue.
-# So ours can answer them. It has to: vcpkg's wxwidgets port installs none of
-# wx's own .mo files, so without these rows the buttons stay English in an
-# otherwise translated dialog -- which is exactly how they shipped.
-#
-# Both spellings of each, because the mnemonic form is what a button asks for
-# and the plain one is what wxMSW substitutes for Cancel, whose mnemonic it
-# drops to match the native dialogs.
-STOCK = [
-    "&Close", "Close",
-    "&OK", "OK",
-    "&Cancel", "Cancel",
-    "&Yes", "Yes",
-    "&No", "No",
-]
-
-HEADER = '''# XPCog, the wxWidgets port of Cog.
+HEADER = '''# XPCog, an audio player ported from Cog.
 # Copyright (C) 2026 the XPCog authors.
 # This file is distributed under the same licence as XPCog.
 #
@@ -138,7 +106,7 @@ msgstr ""
 def decode(raw):
     """C escapes to text.
 
-    `\\xNN` is read as exactly two digits, which is how app/src writes them --
+    `\\xNN` is read as exactly two digits, which is how the sources write them --
     and why a couple of those sources split a literal in two, so that the digits
     of the text after an escape are not swallowed by it.
     """
@@ -192,32 +160,24 @@ def read_literal(text, i):
     return decode(''.join(parts)), i
 
 
-def scan(path, complaints):
+def scan(path):
     text = io.open(path, encoding='utf-8').read()
     found = []
     for match in KEYWORD.finditer(text):
         keyword = match.group(1)
         value, i = read_literal(text, match.end())
         # `_(` also matches a member being initialised -- `settings_(settings)`
-        # -- and those have no string literal after them. `trUtf8(` matches its
-        # own two overloads and, harmlessly, a call taking a variable.
+        # -- and `tr(` a call taking a variable; neither has a string literal
+        # after it.
         if not value:
             continue
         line = text.count('\n', 0, match.start()) + 1
 
         plural = None
-        # trUtf8's plural overload takes the same three arguments wxPLURAL does,
-        # so a second literal after a comma is what distinguishes them.
         if keyword in PLURAL_KEYWORDS and i < len(text) and text[i] == ',':
             plural, i = read_literal(text, i + 1)
-        if keyword in ('wxPLURAL', 'trn') and plural is None:
+        if keyword == 'trn' and plural is None:
             raise SystemExit('%s:%d: %s needs two literals' % (path, line, keyword))
-
-        if (keyword in ASCII_ONLY and not path.endswith(UI_EXTENSIONS)
-                and not (value + (plural or '')).isascii()):
-            complaints.append(
-                '%s:%d: %s() carries a non-ASCII message; use trUtf8()'
-                % (os.path.relpath(path, ROOT), line, keyword))
 
         found.append((line, value, plural))
     return found
@@ -265,8 +225,7 @@ def report_drift(wanted):
     """What each catalogue lacks, and what it is still carrying pointlessly.
 
     `wanted` is every msgid the template ended up with -- the scanned ones and
-    the EXTERNAL and STOCK rows alike, or those ten would be reported obsolete
-    on every run.
+    the EXTERNAL rows alike, or those would be reported obsolete on every run.
     """
     directory = os.path.dirname(OUT)
     for name in sorted(os.listdir(directory)):
@@ -291,54 +250,35 @@ def report_drift(wanted):
 def main():
     entries = {}
     order = []
-    complaints = []
     for root in SRC:
         for name in sorted(os.listdir(root)):
             if not name.endswith(('.cpp', '.hpp') + UI_EXTENSIONS):
                 continue
             path = os.path.join(root, name)
-            for line, msgid, plural in scan(path, complaints):
+            for line, msgid, plural in scan(path):
                 key = (msgid, plural)
                 if key not in entries:
                     entries[key] = []
                     order.append(key)
-                # The real relative path, not a hard-coded 'app/src'. A
-                # reference claiming a uicore file lives under app/ sends a
+                # The real relative path, not a hard-coded root. A reference
+                # claiming a uicore file lives under a frontend sends a
                 # translator to a file that is not there.
                 entries[key].append(
                     '%s:%d' % (os.path.relpath(path, ROOT).replace(os.sep, '/'), line))
 
-    # Before writing anything: a template regenerated from sources carrying this
-    # fault would bake the mangling into every .po that was updated against it.
-    if complaints:
-        for complaint in complaints:
-            print(complaint, file=sys.stderr)
-        raise SystemExit('%d message(s) marked with the wrong macro; see '
-                         'app/src/Text.hpp' % len(complaints))
-
     with io.open(OUT, 'w', encoding='utf-8', newline='\n') as out:
         out.write(HEADER)
-        # A msgid is a key, so it may appear once. Several of the stock labels
-        # are words this application also marks for itself -- Cancel is a button
-        # on the Last.fm pane as well as wx's -- and emitting both would produce
-        # a catalogue with two entries under one key: undefined which one a
-        # lookup gets, and not a valid .mo. The source's own row wins, because it
-        # is the one with a file and a line number on it.
+        # A msgid is a key, so it may appear once. An EXTERNAL row whose English
+        # a frontend also marks for itself would otherwise come out twice -- a
+        # catalogue with two entries under one key, undefined which one a lookup
+        # gets, and not a valid .mo. The source's own row wins, because it is
+        # the one with a file and a line number on it.
         marked = {msgid for msgid, _plural in order}
         for note, msgid in EXTERNAL:
             if msgid in marked:
                 continue
             marked.add(msgid)
             out.write(note)
-            out.write(po_field('msgid', msgid))
-            out.write('msgstr ""\n\n')
-        for msgid in STOCK:
-            if msgid in marked:
-                continue
-            marked.add(msgid)
-            out.write('#. A wxWidgets stock label. See STOCK in '
-                      'tools/extract-messages.py.\n')
-            out.write('#: wxWidgets/src/common/stockitem.cpp\n')
             out.write(po_field('msgid', msgid))
             out.write('msgstr ""\n\n')
         for msgid, plural in order:

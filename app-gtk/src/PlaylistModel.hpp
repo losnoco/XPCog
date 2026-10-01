@@ -1,6 +1,6 @@
 // The playlist as a GListModel.
 //
-// Thin on purpose, the way app/src/PlaylistDataModel.hpp is: everything that
+// Thin on purpose, the way app-winui/src/PlaylistTable.hpp is: everything that
 // decides *what* is shown -- the order, the filter, the cell text -- is core's
 // PlaylistView, and this is the adapter that lets GTK ask it. The two GObject
 // types here are the only G_DEFINE_TYPEs in the frontend, and they exist

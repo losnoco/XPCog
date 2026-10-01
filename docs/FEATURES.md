@@ -174,8 +174,9 @@ switch, greyed out, saying why.
 Scrobbling, with the **desktop** authentication flow rather than the mobile one
 Cog uses: connecting opens last.fm in a browser and XPCog never sees the
 password. The session key that comes back is kept in the platform's own secret
-store — Credential Manager, the Keychain, the Secret Service — through
-`wxSecretStore`, not in the settings.
+store — Credential Manager on Windows, the Secret Service on Linux — not in
+the settings. The records are laid out as `wxSecretStore` laid them out, so a
+session made by an older wx build is still signed in.
 
 Plays go on a durable queue before they are sent, so an evening spent offline
 arrives the next time the machine has a network. Cog has no queue; a failed

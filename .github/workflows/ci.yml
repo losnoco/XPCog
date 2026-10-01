@@ -501,9 +501,9 @@ jobs:
     # genuine link-time dependency, and it is the job that proved the rule held
     # when the toolkit was swapped.
     #
-    # It also stays cheap: `gui`, the wx feature, is a vcpkg feature rather
-    # than a plain dependency, and GTK comes from apt only in the jobs that
-    # build the player, so this job builds no toolkit at all.
+    # It also stays cheap: GTK comes from apt only in the jobs that build the
+    # player, and the Windows App SDK is fetched only when the WinUI player is
+    # built, so this job builds no toolkit at all.
     name: Headless (no toolkit)
     runs-on: ubuntu-24.04
     # See the matrix job above for why.
@@ -574,7 +574,7 @@ jobs:
     #
     # It is a job of its own and not a step on the Windows matrix entry, for the
     # reason packaging/windows/CMakeLists.txt prints as a status line: a Debug
-    # tree links the debug CRT and the debug wx DLLs, neither of which may be
+    # tree links the debug CRT and vcpkg's debug DLLs, none of which may be
     # redistributed, so an installer built from one fails on any machine without
     # Visual Studio. The matrix job is a Debug tree because that is what runs the
     # test suite. This one is RelWithDebInfo because that is what a person
@@ -657,7 +657,7 @@ jobs:
 
       # The Last.fm credentials, and this is the only job that gets them.
       #
-      # Through the environment rather than `-D`, which app/CMakeLists.txt
+      # Through the environment rather than `-D`, which uicore/CMakeLists.txt
       # supports for the reason it gives there: a -D lands in CMakeCache.txt and
       # outlives the run that supplied it. Reading the environment leaves nothing
       # behind and keeps the value off the command line the log echoes.
@@ -687,7 +687,7 @@ jobs:
       # holds a trailing newline, a key without its matching secret, a rename of
       # either cache variable: all of them leave the workflow looking correct and
       # produce an installer whose Last.fm pane says the feature is not available
-      # in this build. The status line app/CMakeLists.txt prints is the build's
+      # in this build. The status line uicore/CMakeLists.txt prints is the build's
       # own account of what it did, so that is what gets read.
       #
       # Skipped for pull requests from forks, where GitHub withholds secrets by
@@ -736,24 +736,6 @@ jobs:
         with:
           name: XPCog-windows-x64-installer
           path: build/windows-app-release/XPCog-*-x64-setup.exe
-          if-no-files-found: error
-
-      # The WinUI player's installer, from the same tree, after the one above
-      # has been uploaded -- the -D lands in the cache, so it comes last. An
-      # artifact to try, not a release asset: the release job takes the one
-      # above by name, and this one's file name says winui so it cannot be
-      # taken for it. When app/ goes, XPCOG_INSTALLER_PLAYER's default flips
-      # and this step goes with it.
-      - name: Build the WinUI installer
-        run: |
-          cmake --preset windows-app-release -D XPCOG_INSTALLER_PLAYER=winui
-          cmake --build --preset windows-app-release --target installer
-
-      - name: Upload the WinUI installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: XPCog-windows-x64-winui-installer
-          path: build/windows-app-release/XPCog-*-x64-winui-setup.exe
           if-no-files-found: error
   linux-package:
     # The Linux tarball, built the way it would ship.

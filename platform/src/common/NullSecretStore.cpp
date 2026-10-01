@@ -8,7 +8,7 @@ namespace {
 /// Refusing rather than falling back to a file is the point. A Last.fm session
 /// key or a remote-control token written to the settings would be readable by
 /// anything that can read the settings, which on every one of these platforms is
-/// a lower bar than the keychain -- and app/src/RemoteToken.hpp is explicit that
+/// a lower bar than the keychain -- and uicore/src/RemoteToken.hpp is explicit that
 /// the server should decline to start rather than accept that trade.
 class NullSecretStore final : public SecretStore {
 public:

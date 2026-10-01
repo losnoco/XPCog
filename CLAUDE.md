@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 XPCog is an audio player for Windows and Linux, ported from
 [Cog](https://github.com/losnoco/Cog) (macOS, Objective-C). One engine under two
-native interfaces: wxWidgets on Windows (`app/`), GTK4 and libadwaita on Linux
-(`app-gtk/`). C++20, CMake, vcpkg. There is no macOS build since 2.0.0 — Cog is
-the player there.
+native interfaces: WinUI 3 on Windows (`app-winui/`), GTK4 and libadwaita on
+Linux (`app-gtk/`). C++20, CMake, vcpkg. There is no macOS build since 2.0.0 —
+Cog is the player there — and no wxWidgets since 3.0.0, when WinUI replaced it
+(`docs/WINUIPORT.md`).
 
 ## Versioning
 
@@ -29,7 +30,7 @@ The version lives in exactly two places, and they are kept identical:
 
 Everything else derives from the first of those and must not be edited by hand:
 `core/include/xpcog/core/Version.hpp.in` is configured into `Version.hpp`
-(`kVersionMajor`/`Minor`/`Patch`, `kVersionString`), `app/XPCog.rc.in` takes the
+(`kVersionMajor`/`Minor`/`Patch`, `kVersionString`), `app-winui/XPCog.rc.in` takes the
 Windows `FileVersion` and `ProductVersion`, and the Linux AppStream metainfo's
 `<release>` comes from it too. The version
 string is user-visible in the About dialog, in `xpcog-cli`'s banner and in
@@ -83,10 +84,14 @@ ctest --preset linux-debug            # test
 
 Preset families: `linux-*` and `windows-*`, each with `-debug` and `-release`.
 `XPCOG_BUILD_APP` builds the player, and the toolkit follows the platform rather
-than an option: wx on Windows, GTK on Linux (`cmake/XPCogOptions.cmake` derives
-`XPCOG_BUILD_WX_APP` / `XPCOG_BUILD_GTK_APP` from it, and refuses elsewhere).
-On Linux GTK 4.22, libadwaita 1.9 and blueprint-compiler come from the
-distribution through pkg-config, never vcpkg. Variants on top of those:
+than an option: WinUI on Windows, GTK on Linux (`cmake/XPCogOptions.cmake`
+derives `XPCOG_BUILD_WINUI_APP` / `XPCOG_BUILD_GTK_APP` from it, and refuses
+elsewhere). On Windows the Windows App SDK and Win2D are fetched from NuGet at
+configure time by `cmake/XPCogWinAppSdk.cmake`, and their C++/WinRT projection
+is generated with the Windows SDK's `cppwinrt.exe` — so configure from a Visual
+Studio developer shell. On Linux GTK 4.22, libadwaita 1.9 and blueprint-compiler
+come from the distribution through pkg-config, never vcpkg. Variants on top of
+those:
 
 - `*-app-debug` / `*-app-release` — application only, no CLI and no tests.
 - `linux-headless` — `XPCOG_BUILD_APP=OFF`, no toolkit built at all. The fastest
@@ -103,9 +108,8 @@ SID, MIDI, AdPlug, libvgm, Sentry and the REST remote control are all `OFF` for 
 bare `cmake` and `ON` in `base`. Configure with a preset unless you specifically want a minimal build.
 
 Catch2 v3 throughout, registered with ctest through `catch_discover_tests`:
-`xpcog-tests` (core and codecs) everywhere, `xpcog-uicore-tests` (the
-toolkit-free application layer) wherever the player is built, and
-`xpcog-app-tests` (the wx half, built as `xpcog-appcore`) on Windows.
+`xpcog-tests` (core and codecs) everywhere, and `xpcog-uicore-tests` (the
+toolkit-free application layer) wherever the player is built.
 `xpcog-uicore-tests` links `xpcog-uicore` and nothing else, so a widget
 dependency creeping into `uicore/` fails to link rather than passing.
 
@@ -119,8 +123,7 @@ how a rendering question gets answered without driving the player; under Xvfb
 on a Wayland desktop that needs `GDK_BACKEND=x11` and `WAYLAND_DISPLAY` unset,
 or GTK opens the test windows on the real screen.
 
-On Windows, where the presets now build the WinUI player beside the wx one,
-`xpcog-winui-tests` is its counterpart: it opens the WinUI main window, every
+On Windows `xpcog-winui-tests` is its counterpart: it opens the main window, every
 pane the View menu shows, Preferences page by page, the mini player and the
 About box, and fails on any XAML error. Also a single `add_test()`; it needs
 the Windows App Runtime, skips without it, and fails instead under `CI`, where
@@ -190,23 +193,24 @@ rest.
 ## Architecture
 
 ```
-xpcog-app (wx, Windows) ──┐
-                          ├── xpcog-uicore ──┬── xpcog-platform (per-OS; NO toolkit)
-xpcog-gtk (GTK4, Linux) ──┘                  └── xpcog-codecs ──┬── xpcog-core (NO toolkit)
-xpcog-cli ── core + codecs ─────────────────────────────────────┘
+xpcog-winui (WinUI 3, Windows) ──┐
+                                 ├── xpcog-uicore ──┬── xpcog-platform (per-OS; NO toolkit)
+xpcog-gtk (GTK4, Linux) ─────────┘                  └── xpcog-codecs ──┬── xpcog-core (NO toolkit)
+xpcog-cli ── core + codecs ────────────────────────────────────────────┘
 ```
 
 **Only the two frontends link a UI toolkit, and each links its own.** `core`,
 `codecs`, `uicore` and `platform`'s *public headers* name no toolkit at all —
-`platform`'s implementations talk to Win32, C++/WinRT, GDBus and libsecret,
-but nothing they do may leak into a header the app includes. `app/` (wxWidgets,
-Windows) includes no GTK or GLib and `app-gtk/` (GTK4/libadwaita, Linux)
-includes no wx; what both need lives in `uicore/` or `platform/`. This is
-enforced by `cmake/CheckNoToolkit.cmake` (which also fails on any Qt include
+`platform`'s implementations talk to Win32, C++/WinRT (`Windows.*`, the OS, not
+`Microsoft.UI.*`), GDBus and libsecret, but nothing they do may leak into a
+header the app includes. `app-winui/` (WinUI 3, Windows) includes no GTK or
+GLib and `app-gtk/` (GTK4/libadwaita, Linux) includes no WinUI; what both need
+lives in `uicore/` or `platform/`. This is enforced by
+`cmake/CheckNoToolkit.cmake` (which also fails on any Qt or wx include
 anywhere), and again by `xpcog-cli` linking no toolkit and by every Linux build
-having no wx at all, so a leak breaks a target. Keep it that way; it is the
-rule the Qt→wxWidgets move was a test of, and `docs/GTKPORT.md` is the second
-frontend's record.
+having no WinUI at all, so a leak breaks a target. Keep it that way; it is the
+rule the Qt→wxWidgets move was a test of, the GTK frontend the second
+(`docs/GTKPORT.md`) and the WinUI one the third (`docs/WINUIPORT.md`).
 
 **Codecs register at compile time.** Each codec exposes one registrar function and
 is declared with `xpcog_add_codec(NAME … REGISTER … SOURCES … DEPS …)`
@@ -245,17 +249,15 @@ orphans the value in every existing settings file. Add a
 setting there, not in `Settings.hpp`.
 
 **The interface is translated; nothing below it is.** User-visible strings are
-marked in `app/src` with `_()`, `wxPLURAL()` or `wxTRANSLATE()` and in `uicore/src`
-with the toolkit-free `tr()`, `trn()`, `trf()` and `XPCOG_TRANSLATE()` (see
-`uicore/src/Translations.hpp`, and note it needs no `trUtf8()` twin because
-nothing there goes near a `wxString`), compiled from
-`uicore/locale/*.po` into the binary by `cmake/CompileCatalog.cmake`, and installed
-by `app/src/Localization.cpp` before the first window. There is one trap and it
-is silent: `_()` converts its literal to a `wxString` *implicitly*, which on
-Windows goes through the current 8-bit locale — so **a message whose English is
-not pure ASCII must use `trUtf8()`** (see `app/src/Text.hpp`). Regenerating the
-template with `python tools/extract-messages.py` refuses to run when that rule is
-broken. `core`, `codecs` and `platform` have no catalogue and never will; the few
+marked with `tr()`, `trn()`, `trf()` and `XPCOG_TRANSLATE()` from
+`uicore/src/Translations.hpp` — in `uicore/src`, in `app-gtk/src`, and in
+`app-winui/src`, which spells them `app::tr()` — and with `_()` in the GTK
+player's Blueprint files. They are compiled from `uicore/locale/*.po` into the
+binary by `cmake/CompileCatalog.cmake`, and each player installs the catalogue
+with `app::installNeutralTranslations()` before its first window. Regenerate
+the template with `python tools/extract-messages.py` (on this machine, through
+WSL: there is no Windows Python); it also reports what each `.po` is missing.
+`core`, `codecs` and `platform` have no catalogue and never will; the few
 strings of theirs a listener reads are mapped in the app layer, which is what
 `PlaylistView::heading()`'s comment is about. `uicore/locale/README.md` covers
 adding a language and what is deliberately left untranslated.
@@ -277,9 +279,10 @@ model, settings, HTTP, scrobbling), `codecs/` (one directory per decoder),
 `platform/` (per-OS integration behind toolkit-free headers), `uicore/` (the
 application layer that links no toolkit -- playback controller, command tables,
 playlist edits, the remote control's player, the translation lookup, the
-catalogues), `app/` (the Windows player, wxWidgets), `app-gtk/` (the Linux
-player, GTK4/libadwaita, its interface in Blueprint under `app-gtk/ui/`),
-`tools/cli/`, `tests/`, `assets/`, `packaging/windows/`, `packaging/linux/`,
+catalogues), `app-winui/` (the Windows player, WinUI 3, built in code — no
+XAML compiler), `app-gtk/` (the Linux player, GTK4/libadwaita, its interface in
+Blueprint under `app-gtk/ui/`), `tools/cli/`, `tests/`, `assets/` (including
+the icons, `assets/icons/`), `packaging/windows/`, `packaging/linux/`,
 `packaging/arch/`, `packaging/flatpak/`.
 
 `uicore/` keeps the namespace `xpcog::app`: it names the layer, not the library.
@@ -308,7 +311,9 @@ and a *Where to pick up next* section at the end. Consult it before changing
 behaviour that mirrors Cog — differences are meant to be documented, not
 accidental. `docs/MIDI.md` covers the three MIDI backends, `docs/HIGHLYCOMPLETE.md`
 the eight PSF emulator cores,
-`docs/WXPORT.md` the Qt→wxWidgets move, and `docs/REST.md` the remote control.
+`docs/WXPORT.md` the Qt→wxWidgets move, `docs/GTKPORT.md` the GTK frontend,
+`docs/WINUIPORT.md` the wxWidgets→WinUI move, and `docs/REST.md` the remote
+control.
 
 Not ported, and macOS-only: the Mac App Store sandbox, AudioUnit MIDI instrument
 hosting, AppleScript, Spotlight. That list records what did not travel; it is not

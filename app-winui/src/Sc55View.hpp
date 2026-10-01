@@ -1,9 +1,8 @@
 // The Roland SC-55's front panel, in step with what is coming out of the
-// speakers. The counterpart of app/src/Sc55Panel.hpp and
-// app-gtk/src/Sc55View.hpp; PanelFeed decides *when*, by holding states with a
-// position in their track and answering for the position the speaker has
-// reached, and this decides how the pixels get onto the screen -- through a
-// Win2D CanvasBitmap over a CanvasControl.
+// speakers. The counterpart of app-gtk/src/Sc55View.hpp; PanelFeed decides
+// *when*, by holding states with a position in their track and answering for
+// the position the speaker has reached, and this decides how the pixels get
+// onto the screen -- through a Win2D CanvasBitmap over a CanvasControl.
 //
 // The emulator composites into a buffer 1024 words wide whatever the panel's
 // real width is, and writes R, G, B into the low bytes of each word: in memory

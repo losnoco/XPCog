@@ -7,7 +7,10 @@
 # --- Why harvest rather than install() -------------------------------------
 #
 # There are no install() rules for the application on Windows, and that is not an
-# oversight -- app/CMakeLists.txt explains it under "Deployment: there is none".
+# oversight: there is no deployment step to describe. Windows has no rpath, and
+# the Qt build once needed windeployqt before its exe could even start; since
+# then every dependency has come from vcpkg, whose applocal post-build step
+# copies each dependent DLL beside the executable as part of the build.
 # The DLLs beside XPCog.exe are put there by vcpkg's applocal post-build step,
 # which resolves the whole transitive import table and knows about the triplet's
 # debug/release name mangling. Re-deriving that list through
@@ -31,17 +34,9 @@ if(NOT XPCOG_STAGE_DIR OR NOT XPCOG_OUT_DIR)
     message(FATAL_ERROR "Harvest.cmake: set XPCOG_STAGE_DIR and XPCOG_OUT_DIR")
 endif()
 
-# Which player, and so which executable -- packaging/windows/CMakeLists.txt's
-# XPCOG_INSTALLER_PLAYER. Both are built into the same bin/ while the two
-# coexist, so each leaves out what only the other one loads (below).
-if(NOT XPCOG_PLAYER)
-    set(XPCOG_PLAYER wx)
-    set(XPCOG_PLAYER_EXE "XPCog.exe")
-endif()
-
-if(NOT EXISTS "${XPCOG_STAGE_DIR}/${XPCOG_PLAYER_EXE}")
+if(NOT EXISTS "${XPCOG_STAGE_DIR}/XPCog.exe")
     message(FATAL_ERROR
-        "Harvest.cmake: no ${XPCOG_PLAYER_EXE} in ${XPCOG_STAGE_DIR}. Build the app before "
+        "Harvest.cmake: no XPCog.exe in ${XPCOG_STAGE_DIR}. Build the app before "
         "packaging it.")
 endif()
 
@@ -60,22 +55,16 @@ set(_skipped "")
 file(GLOB _entries LIST_DIRECTORIES false "${XPCOG_STAGE_DIR}/*")
 foreach(_entry IN LISTS _entries)
     get_filename_component(_name "${_entry}" NAME)
-    # What belongs to the other player only. wx's DLLs are named for wx; the
-    # WinUI player's two are its runtime's bootstrapper and Win2D, and its
-    # window icon, which AppWindow takes as a file beside the executable. What
-    # wx alone pulls in under its own DLLs -- its image libraries -- still comes
-    # along with the WinUI player, until app/ goes and takes them with it.
-    if(XPCOG_PLAYER STREQUAL "winui")
-        if(_name MATCHES "^wx" OR _name STREQUAL "XPCog.exe")
-            list(APPEND _skipped "${_name}")
-            continue()
-        endif()
-    elseif(_name MATCHES "^Microsoft\\.(WindowsAppRuntime\\.Bootstrap|Graphics\\.Canvas)\\.dll$")
+    # wxWidgets' DLLs, in a build tree that once built the wx player: nothing
+    # loads them since 3.0.0, and a reused tree still has them beside the rest.
+    if(_name MATCHES "^wx.*\\.dll$")
         list(APPEND _skipped "${_name}")
         continue()
     endif()
-    if(_name STREQUAL XPCOG_PLAYER_EXE
-            OR (XPCOG_PLAYER STREQUAL "winui" AND _name STREQUAL "xpcog.ico")
+    # The window icon is a file the player reads at run time (AppWindow takes
+    # a path), not only a resource in the executable.
+    if(_name STREQUAL "XPCog.exe"
+            OR _name STREQUAL "xpcog.ico"
             OR _name STREQUAL "crashpad_handler.exe"
             OR _name MATCHES "\\.dll$")
         list(APPEND _ship "${_entry}")

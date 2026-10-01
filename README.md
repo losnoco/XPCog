@@ -3,7 +3,7 @@
 [![CI](https://github.com/losnoco/XPCog/actions/workflows/ci.yml/badge.svg)](https://github.com/losnoco/XPCog/actions/workflows/ci.yml)
 
 XPCog is an audio player for **Windows and Linux**, one engine under two native
-interfaces: wxWidgets on Windows, GTK 4 and libadwaita on Linux. It plays **842 extensions across 23 decoders**, and that list runs a
+interfaces: WinUI 3 on Windows, GTK 4 and libadwaita on Linux. It plays **842 extensions across 23 decoders**, and that list runs a
 long way past the usual lossless and lossy files.
 
 **The engine.** Gapless across formats *and* sample rates, ReplayGain, cue sheets and
@@ -49,9 +49,11 @@ The [latest release](https://github.com/losnoco/XPCog/releases/latest) carries
 the first two; the rest build on your machine. There is no macOS build: on a Mac,
 use [Cog](https://cog.losno.co/).
 
-- **Windows** — `XPCog-<version>-x64-setup.exe`, for **Windows 10 or newer,
-  64-bit**. Unsigned, so SmartScreen will say so. Silent switches and what it
-  registers: [Windows: the installer](docs/BUILDING.md#windows-the-installer).
+- **Windows** — `XPCog-<version>-x64-setup.exe`, for **Windows 10 version 1809
+  or newer, 64-bit**. It downloads Microsoft's Windows App Runtime, which the
+  player runs on, only if the machine does not have it yet. Unsigned, so
+  SmartScreen will say so. Silent switches and what it registers:
+  [Windows: the installer](docs/BUILDING.md#windows-the-installer).
 - **Linux** — `XPCog-<version>-x86_64.tar.gz`, for **GTK 4.22 and libadwaita 1.9
   or newer** (Ubuntu 26.04, Fedora 44, Arch, anything on GNOME 50 or later):
 
@@ -184,18 +186,19 @@ source and a decoder when the bytes are not what the decoder wants. Adding a
 format is one of those plus one `xpcog_add_codec()` call, never a refactor.
 
 ```
-xpcog-app (wx, Windows) ──┐
-                          ├── xpcog-uicore ──┬── xpcog-platform (per-OS; NO toolkit)
-xpcog-gtk (GTK4, Linux) ──┘                  └── xpcog-codecs ──┬── xpcog-core (NO toolkit)
-xpcog-cli ── core + codecs ─────────────────────────────────────┘
+xpcog-winui (WinUI 3, Windows) ──┐
+                                 ├── xpcog-uicore ──┬── xpcog-platform (per-OS; NO toolkit)
+xpcog-gtk (GTK4, Linux) ─────────┘                  └── xpcog-codecs ──┬── xpcog-core (NO toolkit)
+xpcog-cli ── core + codecs ────────────────────────────────────────────┘
 ```
 
 Two rules do the structural work. **Only the two frontends link a UI toolkit**,
 each its own, which `xpcog-cli` proves by linking none and
 `cmake/CheckNoToolkit.cmake` reports earlier — the interface moved from Qt 6 to
-wxWidgets, and then gained a second written for GTK, without `core/` or
-`codecs/` changing ([`docs/WXPORT.md`](docs/WXPORT.md),
-[`docs/GTKPORT.md`](docs/GTKPORT.md)). **Codecs register at compile time**,
+wxWidgets, gained a second written for GTK, and then moved on Windows from
+wxWidgets to WinUI 3, without `core/` or `codecs/` changing
+([`docs/WXPORT.md`](docs/WXPORT.md), [`docs/GTKPORT.md`](docs/GTKPORT.md),
+[`docs/WINUIPORT.md`](docs/WINUIPORT.md)). **Codecs register at compile time**,
 through a generated `RegisterAll.cpp`, because a self-registering static inside
 a static library is silently dropped by the linker.
 

@@ -8,7 +8,7 @@
 //
 // --- The socket is not free, and it is answered twice -----------------------
 //
-// app/src/SingleInstance.hpp records a decision against this program owning a
+// The wx player's single-instance code recorded a decision against this program owning a
 // listening socket at all: on Windows the firewall asks the user to approve a
 // *music player* wanting network access, which is "alarming, unanswerable and
 // entirely self-inflicted". That argument has not gone away, so it is answered

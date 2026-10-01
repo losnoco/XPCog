@@ -1,6 +1,6 @@
 // Telling the desktop what just started playing.
 //
-// This was wxNotificationMessage, reached from app/src/StatusPresence.cpp. It
+// This was wxNotificationMessage, reached from the wx player's StatusPresence.cpp. It
 // moves here for the reason SecretStore did: a second frontend wants the same
 // thing, and "announce the track" is not a widget.
 //

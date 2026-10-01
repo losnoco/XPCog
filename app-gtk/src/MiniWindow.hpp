@@ -1,4 +1,4 @@
-// The mini player: the counterpart of app/src/MiniFrame.hpp.
+// The mini player: the counterpart of app-winui/src/MiniPlayer.hpp.
 //
 // A second window over the same actions as the main one -- the main window's
 // action group is inserted here under the same "win" prefix, so the buttons

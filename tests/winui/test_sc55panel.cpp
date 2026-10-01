@@ -28,7 +28,7 @@ constexpr std::size_t kBackgroundBytes = 741U * 268U * 4U;
 
 }  // namespace
 
-TEST_CASE("the SC-55 front panel image is compiled in", "[wx][sc55]") {
+TEST_CASE("the SC-55 front panel image is compiled in", "[winui][sc55]") {
     const std::span<const std::byte> bytes = xpcog::resources::sc55("back.data");
     REQUIRE_FALSE(bytes.empty());
     // The exact size, not merely non-empty: the panel renderer indexes into this
@@ -37,7 +37,7 @@ TEST_CASE("the SC-55 front panel image is compiled in", "[wx][sc55]") {
     CHECK(bytes.size() == kBackgroundBytes);
 }
 
-TEST_CASE("a name the SC-55 resource does not hold comes back empty", "[wx][sc55]") {
+TEST_CASE("a name the SC-55 resource does not hold comes back empty", "[winui][sc55]") {
     // The behaviour the check above depends on. If a missing name answered with
     // some other file's bytes, the size assertion would be testing the wrong
     // thing.

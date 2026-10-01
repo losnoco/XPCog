@@ -55,7 +55,7 @@ XPCOG_LASTFM_API_KEY=... XPCOG_LASTFM_API_SECRET=... makepkg -si
 ```
 
 `makepkg` runs `build()` with the environment it was invoked with, and
-`app/CMakeLists.txt` reads those two variables when the cache variables are
+`uicore/CMakeLists.txt` reads those two variables when the cache variables are
 unset — so nothing in the `PKGBUILD` has to forward them. A plain `makepkg -si`
 builds a package that compiles all of the scrobbling code and reports the
 feature as unavailable, and `build()` says which of the two happened rather

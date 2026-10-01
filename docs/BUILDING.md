@@ -11,8 +11,8 @@ cut.
 Requires **CMake 3.24+**, **Ninja**, a **C++20** compiler, and
 [**vcpkg**](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set. XPCog
 builds on two platforms, and the player is written for each one's own
-toolkit: **wxWidgets on Windows** (`app/`), from vcpkg like every other
-dependency, and **GTK 4 and libadwaita on Linux** (`app-gtk/`), from the
+toolkit: **WinUI 3 on Windows** (`app-winui/`), from the Windows App SDK's
+NuGet packages, and **GTK 4 and libadwaita on Linux** (`app-gtk/`), from the
 distribution. On Linux the `linux-repo-*` presets also take as much of the rest
 from the distribution as the machine can supply; both are below. macOS is not a
 target — Cog is the player there — though a headless build of the engine and
@@ -40,9 +40,17 @@ beside the binary as a post-build step, on both platforms. What remains is
 packaging — an installer on Windows, an install tree and a tarball on Linux, both
 below.
 
-wxWidgets is declared under a `gui` feature rather than as a plain dependency, so
-a headless configuration (`-D XPCOG_BUILD_APP=OFF`) and the Linux presets build
-no wx at all.
+**On Windows the toolkit comes from NuGet**, not vcpkg, which has no port for
+it. `cmake/XPCogWinAppSdk.cmake` fetches the Windows App SDK's packages and
+Win2D at configure time, checks their hashes, and generates their C++/WinRT
+projection with the Windows SDK's own `cppwinrt.exe` — which is why Windows
+configures from a Developer Command Prompt. There is no MSBuild and no XAML
+compiler: the interface is built in code. Beside `XPCog.exe` the build stages
+the runtime's bootstrapper, Win2D's DLL and the window icon. The player is
+unpackaged, so it runs on the **Windows App Runtime** installed on the machine;
+the installer provides it (below), and a developer machine with Visual Studio's
+WinUI workload usually has it already. Without it the player says so and stops.
+A headless configuration (`-D XPCOG_BUILD_APP=OFF`) fetches none of this.
 
 **On Linux the toolkit comes from the distribution**, never from vcpkg, whose
 gtk ports would build the whole GNOME stack from source on a machine that
@@ -74,11 +82,11 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-2.0.2-x64-setup.exe
+:: -> build\windows-release\XPCog-3.0.0-x64-setup.exe
 ```
 
-Use a **release** tree. A Debug build links the debug CRT and the debug wx DLLs,
-neither of which may be redistributed, and the resulting installer fails on any
+Use a **release** tree. A Debug build links the debug CRT and vcpkg's debug DLLs,
+none of which may be redistributed, and the resulting installer fails on any
 machine without Visual Studio — as a missing-DLL dialog, long after the point
 where it could have been explained. Configuring says so.
 
@@ -100,7 +108,7 @@ reverses all of it and leaves settings and the library database alone. For
 unattended use:
 
 ```bat
-XPCog-2.0.2-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-3.0.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode
@@ -108,21 +116,20 @@ with nobody there to answer it; without it, pushing XPCog to a fleet would
 rearrange every machine's file associations on a default chosen for someone
 clicking through a wizard.
 
-**Which player it carries** is `XPCOG_INSTALLER_PLAYER`: `wx`, the default and
-what releases ship, or `winui`, which packages `XPCog-WinUI.exe` as
-`XPCog-<version>-x64-winui-setup.exe`. The WinUI player runs on the Windows App
-Runtime, which Microsoft's 120 MB installer provides; the WinUI installer checks
-for runtime 2.5.1 or later and, only where it is missing, downloads that
+**The Windows App Runtime**, which the player runs on, comes from Microsoft's
+own installer, and that is 120 MB — more than the rest of the installer several
+times over, for the machines that already have it. So the installer checks for
+runtime 2.5.1 or later and, only where it is missing, downloads Microsoft's
 installer from the URL `cmake/XPCogWinAppSdk.cmake` pins, checks its hash and
 runs it. `/NORUNTIME` skips that for a deployment that installs the runtime by
-its own means.
+its own means. Uninstalling leaves the runtime: it is shared with every other
+app built on it.
 
 **CI builds one on every run.** The `Windows installer` job installs the fork
 through [`negrutiu/nsis-install`](https://github.com/negrutiu/nsis-install) at a
 pinned release, configures `windows-app-release`, packages it, and attaches
 `XPCog-<version>-x64-setup.exe` to the run as an artifact — so a pull request that breaks the packaging says so
-where it broke rather than at release time. It then builds the WinUI installer
-from the same tree as a second artifact, to try rather than to release. It is unsigned, as a locally built
+where it broke rather than at release time. It is unsigned, as a locally built
 one is. Its Last.fm credentials come from repository secrets; see
 [Last.fm credentials](#lastfm-credentials) below.
 

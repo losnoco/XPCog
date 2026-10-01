@@ -82,18 +82,18 @@ xpcog_add_blueprints(
         ui/mini.blp
         ui/window.blp
     RESOURCES  ${_gtk_extra_resources}
-    # The application icon, at the sizes app/icons has, laid out as an icon
+    # The application icon, at the sizes assets/icons has, laid out as an icon
     # theme so the window and the tray find it by the desktop ID in the build
     # tree the way an installed copy is found.
     ICON_NAME  "${XPCOG_DESKTOP_ID}"
     ICONS
-        16=../app/icons/xpcog-16.png
-        24=../app/icons/xpcog-24.png
-        32=../app/icons/xpcog-32.png
-        48=../app/icons/xpcog-48.png
-        64=../app/icons/xpcog-64.png
-        128=../app/icons/xpcog-128.png
-        256=../app/icons/xpcog-256.png
+        16=../assets/icons/xpcog-16.png
+        24=../assets/icons/xpcog-24.png
+        32=../assets/icons/xpcog-32.png
+        48=../assets/icons/xpcog-48.png
+        64=../assets/icons/xpcog-64.png
+        128=../assets/icons/xpcog-128.png
+        256=../assets/icons/xpcog-256.png
 )
 
 add_executable(xpcog-gtk src/main.cpp)

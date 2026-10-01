@@ -15,7 +15,7 @@
 // MainFrame::onSettingChanged was where that knowledge lived, and a setting
 // added without a branch there was a bug nobody could see. The REST remote
 // control is a second writer, so the knowledge moves into a pure function that
-// can be tested against Settings::all() -- and it is: xpcog-app-tests asserts
+// can be tested against Settings::all() -- and it is: xpcog-uicore-tests asserts
 // that *every* key maps to a deliberate answer, with an explicit allow-list for
 // the ones that really do need nothing. Adding a setting without deciding this
 // is now a test failure rather than a silent inert row.

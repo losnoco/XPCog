@@ -13,7 +13,7 @@
 # much a part of that emulator as its ROMs are not.
 #
 #   xpcog_embed_resources(
-#       TARGET xpcog-appcore
+#       TARGET xpcog-winuicore
 #       NAME   icons                       # -> xpcog::resources::icons(path)
 #       BASE   ${CMAKE_CURRENT_SOURCE_DIR}/icons
 #       FILES  icons/xpcog-16.png ...)

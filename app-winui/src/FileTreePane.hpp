@@ -1,7 +1,6 @@
-// The folder browser: the counterpart of app/src/FileTree.hpp and
-// app-gtk/src/FileTreePane.hpp.
+// The folder browser: the counterpart of app-gtk/src/FileTreePane.hpp.
 //
-// A TreeView rooted at one folder, as Cog's is and as the other two are: the
+// A TreeView rooted at one folder, as Cog's is and as the GTK one is: the
 // button at the top is labelled with the folder's name -- showing a folder's
 // *contents* means the tree never says what it is showing -- and it opens the
 // chooser. Folders list their children only when they are first expanded, and

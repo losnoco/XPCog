@@ -24,7 +24,9 @@ namespace {
 
 namespace canvas = winrt::Microsoft::Graphics::Canvas;
 
-/// Thirty a second; app/src/Sc55Panel.cpp says why not more.
+/// Thirty a second. The panel is a character LCD whose firmware repaints it far
+/// faster than that; what is being chosen here is how often a *person* sees a
+/// change, and the feed's own 5 ms floor has already thrown away the rest.
 constexpr int kRefreshMs = 33;
 
 /// The emulator writes into a fixed 1024-wide buffer whatever the panel's

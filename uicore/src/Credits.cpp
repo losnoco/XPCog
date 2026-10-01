@@ -31,19 +31,6 @@ constexpr std::array kPlayer = {
     Component{"SLEEF", "BSL-1.0", XPCOG_TRANSLATE("vector maths, under Rubber Band")},
 };
 
-constexpr std::array kWx = {
-    Component{"wxWidgets", "wxWindows Licence", XPCOG_TRANSLATE("user interface")},
-    Component{"NanoSVG", "zlib licence", XPCOG_TRANSLATE("drawing the interface icons")},
-    Component{"Lucide", "ISC", XPCOG_TRANSLATE("the interface icons themselves")},
-    Component{"Expat", "MIT", XPCOG_TRANSLATE("XML, under wxWidgets")},
-    Component{"PCRE2", "BSD-3-Clause WITH PCRE2-exception", XPCOG_TRANSLATE("regular expressions, under wxWidgets")},
-    Component{"libpng", "libpng-2.0", XPCOG_TRANSLATE("PNG images, under wxWidgets")},
-    Component{"libjpeg-turbo", "IJG AND BSD-3-Clause AND Zlib", XPCOG_TRANSLATE("JPEG images, under wxWidgets")},
-    Component{"libwebp", "BSD-3-Clause", XPCOG_TRANSLATE("WebP images, under wxWidgets")},
-    Component{"LibTIFF", "libtiff", XPCOG_TRANSLATE("TIFF images, under wxWidgets")},
-    Component{"dirent", "MIT", XPCOG_TRANSLATE("folder listing for the PSF cores")},
-};
-
 // The WinUI player draws its icons with the system's own Segoe Fluent Icons
 // font, which ships with Windows and is not redistributed, so it has no row.
 constexpr std::array kWinUI = {
@@ -129,7 +116,6 @@ constexpr std::array kData = {
 }  // namespace
 
 std::span<const Component> playerComponents() { return kPlayer; }
-std::span<const Component> wxComponents() { return kWx; }
 std::span<const Component> winuiComponents() { return kWinUI; }
 std::span<const Component> gtkComponents() { return kGtk; }
 std::span<const Component> codecComponents() { return kCodecs; }
