@@ -115,7 +115,7 @@ bool textBoxWants(const Shortcut& shortcut) {
 }  // namespace
 
 CommandMenus::CommandMenus(Hooks hooks) : hooks_(std::move(hooks)) {
-    mainMenu_ = mux::Controls::MenuFlyout();
+    menuBar_ = mux::Controls::MenuBar();
 
     const std::vector<app::MenuItem>& rows = app::menuLayout();
     std::size_t start = 0;
@@ -123,23 +123,19 @@ CommandMenus::CommandMenus(Hooks hooks) : hooks_(std::move(hooks)) {
         if (i < rows.size() && rows[i].menu == nullptr) {
             continue;
         }
-        // rows[start, i) is one menu, titled by its first row: a submenu of the
-        // window's one menu.
+        // rows[start, i) is one menu, titled by its first row.
         const Label title = label(rows[start].menu);
-        auto        menu  = mux::Controls::MenuFlyoutSubItem();
-        menu.Text(toH(title.text));
+        auto        menu  = mux::Controls::MenuBarItem();
+        menu.Title(toH(title.text));
         if (title.accessKey != 0) {
             menu.AccessKey(winrt::hstring(std::wstring(1, static_cast<wchar_t>(title.accessKey))));
         }
         fill(menu.Items(), rows, start, i, /*withAccelerators=*/true);
         if (menu.Items().Size() > 0) {
-            mainMenu_.Items().Append(menu);
+            menuBar_.Items().Append(menu);
         }
         start = i;
     }
-    // States brought up to date as it opens, as well as on the events that
-    // change them -- a menu is the one place a stale tick would be seen.
-    mainMenu_.Opening([this](auto&&, auto&&) { refresh(); });
     refresh();
 }
 
@@ -218,10 +214,10 @@ mux::Controls::MenuFlyoutItemBase CommandMenus::makeItem(const app::MenuItem& ro
     if (row.accelerator != nullptr && *row.accelerator != '\0') {
         const Shortcut shortcut = parseShortcut(row.accelerator);
         if (withAccelerator && shortcut.key != VirtualKey::None) {
-            // Not on the item: the menu is a flyout, and the items of a closed
-            // flyout are not in the window's tree, where an accelerator has to
-            // be to hear a key. So it is made here and attached to the window
-            // (attachAccelerators), and the item only shows its text.
+            // Not on the item: the items of a closed menu are not in the
+            // window's tree, where an accelerator has to be to hear a key. So
+            // it is made here and attached to the window (attachAccelerators),
+            // and the item only shows its text.
             auto accelerator = mux::Input::KeyboardAccelerator();
             accelerator.Key(shortcut.key);
             accelerator.Modifiers(shortcut.modifiers);

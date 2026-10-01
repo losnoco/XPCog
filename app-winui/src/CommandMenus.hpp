@@ -16,15 +16,13 @@ namespace xpcog::winui {
 /// cannot disagree about what a menu holds, what it is called or what its
 /// shortcut is.
 ///
-/// The menu is one flyout, opened from the title bar's menu button, with each
-/// of the table's menus a submenu. Its shortcuts are KeyboardAccelerators on
-/// the window's root rather than on the items -- a closed flyout's items are
+/// The menu bar sits in the title bar. Its shortcuts are KeyboardAccelerators
+/// on the window's root rather than on the items -- a closed menu's items are
 /// not in the tree -- and each one checks its command is enabled when
 /// invoked; the items show the key as text.
 ///
-/// The enabled and checked states are refreshed as the menu opens and on the
-/// events that change them, which is what GTK's refreshActionState() is
-/// called for as well.
+/// The enabled and checked states are refreshed on the events that change
+/// them, which is what GTK's refreshActionState() is called for as well.
 class CommandMenus {
 public:
     struct Hooks {
@@ -39,9 +37,7 @@ public:
 
     explicit CommandMenus(Hooks hooks);
 
-    /// The window's one menu, every menu of the table a submenu of it: what
-    /// the title bar's menu button opens.
-    [[nodiscard]] mux::Controls::MenuFlyout mainMenu() const { return mainMenu_; }
+    [[nodiscard]] mux::Controls::MenuBar menuBar() const { return menuBar_; }
 
     /// The shortcuts, attached to `target` -- the window's root, so that a
     /// key pressed with focus anywhere in it reaches them.
@@ -69,10 +65,10 @@ private:
     void apply(const mux::Controls::MenuFlyoutItemBase& item, app::CommandId id) const;
 
     Hooks                  hooks_;
-    mux::Controls::MenuFlyout mainMenu_{nullptr};
+    mux::Controls::MenuBar menuBar_{nullptr};
     /// Every shortcut, for attachAccelerators().
     std::vector<mux::Input::KeyboardAccelerator> accelerators_;
-    /// The main menu's items by command, for refresh().
+    /// The menu bar's items by command, for refresh().
     std::multimap<app::CommandId, mux::Controls::MenuFlyoutItemBase> items_;
     /// The accelerators a text box also answers to.
     std::vector<mux::Input::KeyboardAccelerator> textKeys_;

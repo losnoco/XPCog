@@ -30,8 +30,8 @@ class Session;
 namespace xpcog::winui {
 
 /// The player's window: Mica under everything, the title bar drawn by WinUI's
-/// TitleBar control with the filter in it, the menu bar, a transport row, the
-/// playlist on a content layer, and a status line.
+/// TitleBar control with the menu bar in it, a transport row, the playlist on
+/// a content layer, and a status line.
 ///
 /// Layered the way the Windows 11 design guidance asks: the window's own
 /// surfaces are transparent so the Mica backdrop shows through, and the one
@@ -61,8 +61,8 @@ private:
     void build();
     void wireUp();
 
-    /// Sizes the transport to the title bar's content column and caps the
-    /// title, so the seek bar gets what is left of the bar.
+    /// Sizes the menu bar's host to the title bar's content column, so the
+    /// menus sit at its left rather than centred.
     void fitTitleBar();
 
     [[nodiscard]] mux::Controls::Button transportButton(const wchar_t* glyph,
@@ -128,8 +128,10 @@ private:
 
     mux::Window                          window_{nullptr};
     mux::Controls::TitleBar              titleBar_{nullptr};
-    /// The title bar's content: the transport, sized by fitTitleBar().
-    mux::Controls::Grid                  transport_{nullptr};
+    /// The title bar's content: the menu bar's host, sized by fitTitleBar().
+    mux::Controls::Grid                  titleContent_{nullptr};
+    /// The playing track, at the title bar's right end.
+    mux::Controls::TextBlock             trackText_{nullptr};
     /// The template's content column, once fitTitleBar() has found it.
     mux::FrameworkElement                contentColumn_{nullptr};
     mux::Controls::FontIcon              playGlyph_{nullptr};

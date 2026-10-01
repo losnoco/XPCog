@@ -38,10 +38,9 @@ constexpr double kMaxTreeWidth     = 640;
 constexpr double kMinPanelWidth    = 260;
 constexpr double kMaxPanelWidth    = 720;
 constexpr double kMinPlaylistWidth = 320;
-/// The title bar's track title and artist: room for most names, and the rest
-/// of the bar left to the seek bar.
-constexpr double kMaxTitleWidth    = 260;
-constexpr double kMaxSubtitleWidth = 180;
+/// The playing track at the title bar's right end: room for most names, and
+/// the rest of the bar left to the menus.
+constexpr double kMaxTrackTextWidth = 420;
 constexpr double kMinStripHeight   = 120;
 constexpr double kMinContentHeight = 160;
 
@@ -115,10 +114,9 @@ void MainWindow::build() {
 
     // The title bar is ours, so Mica runs up under it: the TitleBar control
     // draws the icon and title, keeps the caption buttons' space and drag
-    // region, and lets interactive content sit in it -- here the menu button
-    // and the whole transport, which makes the title bar the player's
-    // control strip rather than a band above one. Tall, so the caption
-    // buttons are as tall as the strip they end.
+    // region, and lets interactive content sit in it -- here the menu bar,
+    // and the playing track at its right end. Tall, so the caption buttons
+    // are as tall as the menu bar beside them.
     window_.ExtendsContentIntoTitleBar(true);
     window_.AppWindow().TitleBar().PreferredHeightOption(
         winrt::Microsoft::UI::Windowing::TitleBarHeightOption::Tall);
@@ -135,16 +133,20 @@ void MainWindow::build() {
         titleBar_.IconSource(source);
     }
 
-    // --- the transport, in the title bar ------------------------------------
-    //
-    // The playing track is the title bar's title and subtitle (onTrackChanged),
-    // and the controls are its content. The filter, which used to be here, is
-    // in the playlist's own header now, beside what it filters.
+    // The playing track, at the title bar's right end (onTrackChanged): there
+    // a name of any length moves nothing else, where a subtitle would push
+    // the menu bar along.
+    trackText_ = load<mux::Controls::TextBlock>(
+        std::wstring(L"<TextBlock ") + kXmlns +
+        L" VerticalAlignment='Center' TextTrimming='CharacterEllipsis' TextWrapping='NoWrap'"
+        L" Margin='8,0,8,0' Foreground='{ThemeResource TextFillColorSecondaryBrush}'/>");
+    trackText_.MaxWidth(kMaxTrackTextWidth);
+    titleBar_.RightHeader(trackText_);
+
+    // --- the transport row ---------------------------------------------------
     auto transport = mux::Controls::Grid();
     transport.ColumnSpacing(8);
-    transport.HorizontalAlignment(mux::HorizontalAlignment::Stretch);
-    transport.VerticalAlignment(mux::VerticalAlignment::Center);
-    transport.Margin(mux::ThicknessHelper::FromLengths(8, 0, 8, 0));
+    transport.Padding(mux::ThicknessHelper::FromLengths(12, 4, 16, 8));
     for (const auto& width : {mux::GridLengthHelper::Auto(),
                               mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
                               mux::GridLengthHelper::Auto(), mux::GridLengthHelper::Auto(),
@@ -203,9 +205,6 @@ void MainWindow::build() {
     mux::Controls::ToolTipService::SetToolTip(volume_, winrt::box_value(toH(app::tr("Volume"))));
     mux::Controls::Grid::SetColumn(volume_, 4);
     transport.Children().Append(volume_);
-    titleBar_.Content(transport);
-    transport_ = transport;
-    titleBar_.SizeChanged([this](auto&&, auto&&) { fitTitleBar(); });
 
     // --- the playlist, on the content layer -------------------------------------
     //
@@ -357,26 +356,19 @@ void MainWindow::build() {
         [this](app::CommandId id) { return checked(id); },
         &MainWindow::offered,
     });
-    // The menu, folded into a button at the title bar's left edge: every menu
-    // of the table a submenu of one flyout. The shortcuts do not live in it --
-    // see CommandMenus -- so they work with it closed.
+    // The menu bar, in the title bar after the icon and the player's name.
+    // The shortcuts do not live in it -- see CommandMenus -- so they work with
+    // every menu closed. It sits left in a host that fitTitleBar() sizes to
+    // the content column, which the template would otherwise centre it in.
     {
-        auto glyph = mux::Controls::FontIcon();
-        glyph.Glyph(L"\xE700");  // Segoe Fluent "GlobalNavigationButton"
-        glyph.FontSize(16);
-        auto menuButton = mux::Controls::Button();
-        menuButton.Content(glyph);
-        menuButton.Width(40);
-        menuButton.Height(36);
-        menuButton.Padding(mux::ThicknessHelper::FromUniformLength(0));
-        menuButton.Margin(mux::ThicknessHelper::FromLengths(4, 0, 0, 0));
-        menuButton.Background(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
-        menuButton.BorderBrush(mux::Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
-        menuButton.Flyout(commands_->mainMenu());
-        const winrt::hstring name = toH(app::tr("Menu"));
-        mux::Controls::ToolTipService::SetToolTip(menuButton, winrt::box_value(name));
-        mux::Automation::AutomationProperties::SetName(menuButton, name);
-        titleBar_.LeftHeader(menuButton);
+        auto menuBar = commands_->menuBar();
+        menuBar.HorizontalAlignment(mux::HorizontalAlignment::Left);
+        menuBar.VerticalAlignment(mux::VerticalAlignment::Center);
+        titleContent_ = mux::Controls::Grid();
+        titleContent_.HorizontalAlignment(mux::HorizontalAlignment::Left);
+        titleContent_.Children().Append(menuBar);
+        titleBar_.Content(titleContent_);
+        titleBar_.SizeChanged([this](auto&&, auto&&) { fitTitleBar(); });
     }
 
     status_ = load<mux::Controls::TextBlock>(
@@ -389,19 +381,18 @@ void MainWindow::build() {
     //
     // No Background anywhere on this tree: an opaque one would cover the Mica.
     auto root = mux::Controls::Grid();
-    for (const auto& height : {mux::GridLengthHelper::Auto(),
+    for (const auto& height : {mux::GridLengthHelper::Auto(), mux::GridLengthHelper::Auto(),
                                mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star),
                                mux::GridLengthHelper::Auto()}) {
         auto row = mux::Controls::RowDefinition();
         row.Height(height);
         root.RowDefinitions().Append(row);
     }
-    // A little air between the title bar's strip and the cards below it,
-    // which the transport row used to give.
-    middle.Margin(mux::ThicknessHelper::FromLengths(12, 4, 12, 0));
-    mux::Controls::Grid::SetRow(middle, 1);
-    mux::Controls::Grid::SetRow(status_, 2);
+    mux::Controls::Grid::SetRow(transport, 1);
+    mux::Controls::Grid::SetRow(middle, 2);
+    mux::Controls::Grid::SetRow(status_, 3);
     root.Children().Append(titleBar_);
+    root.Children().Append(transport);
     root.Children().Append(middle);
     root.Children().Append(status_);
     // On the root, so the keys reach them from anywhere in the window.
@@ -434,26 +425,18 @@ mux::FrameworkElement findNamed(const mux::DependencyObject& root, std::wstring_
 
 void MainWindow::fitTitleBar() {
     // The TitleBar template puts its content in a presenter aligned by a theme
-    // resource, and its compact state pins that presenter Left whatever the
-    // resource says (microsoft-ui-xaml #11181) -- either way the transport
-    // gets only the width it asks for, and the seek bar's star column comes
-    // to nothing. So the transport is given the width of the template's
-    // content column outright, which is what is left once the header, icon,
-    // title and caption buttons have theirs.
+    // resource -- centred, for a search box -- and its compact state pins it
+    // Left whatever the resource says (microsoft-ui-xaml #11181). The menu
+    // bar belongs at the left in both, so its host is given the width of the
+    // template's content column outright, which is what is left once the
+    // icon, title, track and caption buttons have theirs.
     //
-    // The title and subtitle are Auto columns before it, and a long track
-    // name would take the seek bar's room; they are capped and trim.
-    //
-    // The parts are deferred-load, realised when what they show first is
-    // set, so this looks them up each time rather than once.
-    if (!transport_)
+    // The column is deferred-load, realised when the content is first set,
+    // so this looks it up until it has it.
+    if (!titleContent_)
         return;
-    if (auto title = findNamed(titleBar_, L"PART_TitleText"))
-        title.MaxWidth(kMaxTitleWidth);
-    if (auto subtitle = findNamed(titleBar_, L"PART_SubtitleText"))
-        subtitle.MaxWidth(kMaxSubtitleWidth);
-
-    const auto column = findNamed(titleBar_, L"PART_ContentPresenterGrid");
+    const auto column = contentColumn_ ? contentColumn_
+                                       : findNamed(titleBar_, L"PART_ContentPresenterGrid");
     if (!column)
         return;
     if (!contentColumn_) {
@@ -465,11 +448,9 @@ void MainWindow::fitTitleBar() {
         const auto margin = presenter.Margin();
         inset += margin.Left + margin.Right;
     }
-    const auto margin = transport_.Margin();
-    inset += margin.Left + margin.Right;
     const double width = column.ActualWidth() - inset;
-    if (width > 0 && width != transport_.Width())
-        transport_.Width(width);
+    if (width > 0 && width != titleContent_.Width())
+        titleContent_.Width(width);
 }
 
 mux::Controls::Button MainWindow::transportButton(const wchar_t* glyph, const std::string& tooltip,
@@ -673,10 +654,11 @@ void MainWindow::onTrackChanged(const PlaylistEntry* entry) {
     // shows; the same convention, and the same untranslated dash, as the wx
     // frame's (see MainFrame::onTrackChanged).
     window_.Title(text.empty() ? winrt::hstring(L"XPCog") : toH(text + " \xE2\x80\x94 XPCog"));
-    // In the title bar, the track's title over its artist, as GTK's header has
-    // them; the player's name when nothing is playing.
-    titleBar_.Title(entry != nullptr ? toH(entry->title()) : winrt::hstring(L"XPCog"));
-    titleBar_.Subtitle(entry != nullptr ? toH(entry->artist.str()) : winrt::hstring());
+    // And at the title bar's right end, with the whole of it as its tooltip
+    // for when it is trimmed.
+    trackText_.Text(toH(text));
+    mux::Controls::ToolTipService::SetToolTip(
+        trackText_, text.empty() ? nullptr : winrt::box_value(toH(text)));
     fitTitleBar();
     refreshCommands();
     refreshPanels();
