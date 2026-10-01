@@ -9,6 +9,7 @@
 #include "Sc55View.hpp"
 #endif
 #include "PlaylistTable.hpp"
+#include "PreferencesWindow.hpp"
 #include "SeekBar.hpp"
 #include "Sizer.hpp"
 #include "WinRT.hpp"
@@ -106,6 +107,7 @@ private:
     winrt::fire_and_forget savePlaylist(bool selectionOnly);
     winrt::fire_and_forget trashSelected();
     winrt::fire_and_forget showAbout();
+    void showPreferences(std::optional<PreferencesPage> page);
     /// A ContentDialog ready to show over this window, with the default button
     /// and the theme set the way every dialog here wants them.
     [[nodiscard]] mux::Controls::ContentDialog dialog(const std::string& title) const;
@@ -131,6 +133,8 @@ private:
     mux::Controls::TextBlock             status_{nullptr};
     std::unique_ptr<PlaylistTable>       playlist_;
     std::unique_ptr<CommandMenus>        commands_;
+    std::unique_ptr<PreferencesWindow>   preferences_;
+    std::vector<Subscription>            preferencesSubscriptions_;
 
     // --- the panes ------------------------------------------------------------
     std::unique_ptr<FileTreePane>        fileTree_;

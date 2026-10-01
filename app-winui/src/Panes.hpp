@@ -139,6 +139,8 @@ public:
     void refresh();
 
     Signal<std::string> settingChanged;
+    /// The pane's Preferences..., for the Pitch & Tempo page.
+    Signal<> settingsRequested;
 
 private:
     void write(const char* key, double ratio);

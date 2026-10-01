@@ -470,6 +470,12 @@ void MainWindow::wireUp() {
 
     window_.Closed([this](auto&&, auto&&) {
         persistState();
+        // Preferences goes with the player: WinUI keeps the process running
+        // for as long as any window is open, and an orphaned settings window
+        // would be a player with no player.
+        if (preferences_) {
+            preferences_->close();
+        }
         if (closed) {
             closed();
         }
@@ -496,6 +502,13 @@ void MainWindow::wireUp() {
         subscriptions_.push_back(
             signal->connect([this](const std::string& key) { session_.settingChanged(key); }));
     }
+    // The panes' own Preferences..., each to its page.
+    for (auto* signal : {&spectrum_->settingsRequested, &scope_->settingsRequested}) {
+        subscriptions_.push_back(
+            signal->connect([this] { showPreferences(PreferencesPage::Visualizers); }));
+    }
+    subscriptions_.push_back(
+        speed_->settingsRequested.connect([this] { showPreferences(PreferencesPage::PitchTempo); }));
     // What the session changes on its own -- a genre's preset at a track
     // boundary, a setting from the remote control -- reaches the panes here.
     observe(session_.effectApplied, [this](app::Effect effect, const std::string&) {
@@ -641,14 +654,13 @@ bool MainWindow::offered(app::CommandId id) {
         // No docking, so nothing ever floats to be docked -- the GTK player's
         // decision too, and for good: there is no dock manager to come back.
         case CommandId::ViewDockPanes:
-        // The rest have nowhere to go yet: the painted panes, the preferences
-        // and the mini player are later steps of the port, and a menu item
-        // that does nothing is worse than one that is not there.
+        // No MIDI build, no panel to show. And the mini player is a later step
+        // of the port: a menu item that does nothing is worse than one that is
+        // not there.
 #ifndef XPCOG_HAVE_SC55_PANEL
         case CommandId::ViewSc55Panel:
 #endif
         case CommandId::ViewMiniPlayer:
-        case CommandId::FilePreferences:
             return false;
         default:
             return true;
@@ -765,6 +777,9 @@ void MainWindow::onCommand(app::CommandId id) {
             break;
         case CommandId::FileQuit:
             window_.Close();
+            break;
+        case CommandId::FilePreferences:
+            showPreferences(std::nullopt);
             break;
         case CommandId::HelpAbout:
             showAbout();
@@ -1159,6 +1174,24 @@ void MainWindow::restoreState() {
 }
 
 // --- dialogs ----------------------------------------------------------------------
+
+void MainWindow::showPreferences(std::optional<PreferencesPage> page) {
+    // One window, brought forward and turned to the page if already open.
+    if (!preferences_) {
+        preferences_ = std::make_unique<PreferencesWindow>(session_, hwnd());
+        preferencesSubscriptions_.push_back(preferences_->settingChanged.connect(
+            [this](const std::string& key) { session_.settingChanged(key); }));
+        // Destroyed after its Closed event has finished, not inside it: the
+        // window is still in the middle of closing when it says so.
+        preferencesSubscriptions_.push_back(preferences_->closed.connect([this] {
+            session_.dispatcher()([this] {
+                preferencesSubscriptions_.clear();
+                preferences_.reset();
+            });
+        }));
+    }
+    preferences_->show(page);
+}
 
 mux::Controls::ContentDialog MainWindow::dialog(const std::string& title) const {
     auto box = mux::Controls::ContentDialog();

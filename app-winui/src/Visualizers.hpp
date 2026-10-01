@@ -47,6 +47,8 @@ public:
     void setActive(bool active);
 
     Signal<std::string> settingChanged;
+    /// The menu's Preferences..., for the Visualizers page.
+    Signal<> settingsRequested;
 
 private:
     void tick();

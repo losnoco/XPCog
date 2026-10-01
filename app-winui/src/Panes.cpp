@@ -725,6 +725,12 @@ SpeedPane::SpeedPane(Settings& settings) : settings_(settings) {
         write("tempo", 1.0);
     });
     footer.Children().Append(reset);
+    // The engine and its options are on the Pitch & Tempo page, as GTK's
+    // pane points there too.
+    auto preferences = mux::Controls::Button();
+    preferences.Content(winrt::box_value(toH(tr("Preferences\xE2\x80\xA6"))));
+    preferences.Click([this](auto&&, auto&&) { settingsRequested.publish(); });
+    footer.Children().Append(preferences);
     note_ = secondaryText(L"TextWrapping='Wrap' VerticalAlignment='Center' MaxWidth='320'");
     note_.Text(toH(tr("No engine is chosen, so these do nothing yet.")));
     footer.Children().Append(note_);

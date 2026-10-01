@@ -344,6 +344,11 @@ void OscilloscopeView::showMenu(winrt::Windows::Foundation::Point at) {
         settings_.setScopeLogScale(!settings_.ScopeLogScale());
         settingChanged.publish("scopeLogScale");
     });
+    menu.Items().Append(mux::Controls::MenuFlyoutSeparator());
+    auto preferences = mux::Controls::MenuFlyoutItem();
+    preferences.Text(toH(tr("Preferences\xE2\x80\xA6")));
+    preferences.Click([this](auto&&, auto&&) { settingsRequested.publish(); });
+    menu.Items().Append(preferences);
 
     auto options = mux::Controls::Primitives::FlyoutShowOptions();
     options.Position(at);

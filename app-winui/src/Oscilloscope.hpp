@@ -46,6 +46,8 @@ public:
     void setActive(bool active);
 
     Signal<std::string> settingChanged;
+    /// The menu's Preferences..., for the Visualizers page.
+    Signal<> settingsRequested;
 
     [[nodiscard]] Channels channels() const noexcept { return channels_; }
 

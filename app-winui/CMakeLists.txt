@@ -30,6 +30,12 @@ set(XPCOG_WINUI_SOURCES
     src/Panes.hpp
     src/PlaylistTable.cpp
     src/PlaylistTable.hpp
+    src/PreferencesGeneral.cpp
+    src/PreferencesRows.hpp
+    src/PreferencesServices.cpp
+    src/PreferencesSound.cpp
+    src/PreferencesWindow.cpp
+    src/PreferencesWindow.hpp
     src/Runtime.cpp
     src/Runtime.hpp
     src/SeekBar.cpp
