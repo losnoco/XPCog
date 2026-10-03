@@ -94,7 +94,8 @@ jobs:
 
   build:
     name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    # Self-hosted, except for a pull request from a fork; see the matrix.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && matrix.hosted || matrix.os }}
     # A hung job is not a slow job, and GitHub's default lets it run for six
     # hours before saying so. A green run here is five to eight minutes on a warm
     # binary cache; a cold one is about thirty on Linux and seventy on Windows, where vcpkg's configure alone took fifty-eight for
@@ -124,14 +125,22 @@ jobs:
           # chosen to pick out one machine each: `ubuntu-26.04` and not the
           # bare `Linux`, which the Arch runner also carries.
           #
+          # `hosted` is the GitHub image a pull request from a fork runs on
+          # instead. The repository is public, and a fork's pull request is
+          # code nobody here has read yet; it does not get to run on our own
+          # machines. It gets no secrets either way, so on the hosted image it
+          # builds every dependency from source, as forks always have.
+          #
           # Ubuntu 26.04 because the GTK frontend's floor is GTK 4.22 and
           # libadwaita 1.9 (cmake/XPCogGtk.cmake), and 26.04 is the first
           # Ubuntu that ships them: 24.04 has 4.14 and 1.5.
           - name: Linux
             os: [self-hosted, ubuntu-26.04]
+            hosted: ubuntu-26.04
             preset: linux-debug
           - name: Windows
             os: [self-hosted, Windows]
+            hosted: windows-2022
             preset: windows-debug
 
     steps:
@@ -295,10 +304,10 @@ jobs:
 
       # The Ninja generator does not activate the MSVC environment by itself, and
       # the self-hosted runner's Build Tools put nothing on PATH until something
-      # does. On the hosted image this was also what kept CMake off the MinGW gcc
-      # sitting earlier on PATH, which linked against vcpkg's MSVC-ABI x64-windows
-      # libraries and failed on their mangled symbols; the self-hosted runner has
-      # no MinGW, but it still needs the environment.
+      # does. On the hosted image, which a fork's pull request still runs on, it
+      # is also what keeps CMake off the MinGW gcc sitting earlier on PATH, which
+      # links against vcpkg's MSVC-ABI x64-windows libraries and fails on their
+      # mangled symbols.
       - name: Activate MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -616,9 +625,9 @@ jobs:
     # harvest no longer finds. All of those are invisible to every other job here
     # and none of them is worth discovering at release time.
     name: Windows installer
-    # Self-hosted, the same Windows runner as the matrix job; see there for the
-    # labels.
-    runs-on: [self-hosted, Windows]
+    # Self-hosted, the same Windows runner as the matrix job, and the hosted
+    # image for a pull request from a fork; see the matrix for both.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'windows-2022' || fromJSON('["self-hosted", "Windows"]') }}
     # See the matrix job above for why.
     timeout-minutes: 90
     steps:
@@ -809,11 +818,12 @@ jobs:
     # -- but GTK is the higher of the two in practice. The release notes say so,
     # so nobody has to guess.
     #
-    # Self-hosted, the same Ubuntu 26.04 runner as the matrix job's Linux entry.
+    # Self-hosted, the same Ubuntu 26.04 runner as the matrix job's Linux entry,
+    # and the hosted image for a pull request from a fork; see the matrix.
     # Whatever runs this has to stay on 26.04 -- not newer -- or the glibc floor
     # above rises with it.
     name: Linux tarball
-    runs-on: [self-hosted, ubuntu-26.04]
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-26.04' || fromJSON('["self-hosted", "ubuntu-26.04"]') }}
     # See the matrix job for why ninety minutes.
     timeout-minutes: 90
 
