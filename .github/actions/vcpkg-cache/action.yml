@@ -1,14 +1,15 @@
 name: Connect vcpkg to the binary cache
 description: >-
   Points vcpkg's binary caching at the Cloudflare R2 bucket, through the AWS
-  CLI the runner images already carry. With no credentials it leaves vcpkg to
-  build from source and says so.
+  CLI the runner images already carry, or on a self-hosted runner at a
+  directory on its own disk. With no credentials on a hosted runner it leaves
+  vcpkg to build from source and says so.
 
 # The cache is an S3-compatible bucket on Cloudflare R2, and vcpkg reaches it
 # with its `x-aws` provider: `aws s3 ls` to ask whether a package is there,
 # `aws s3 cp` to fetch or store it, one object per port named by its ABI hash.
-# Only the jobs on GitHub's hosted runners call this; the self-hosted runners
-# keep vcpkg's local cache on their own disks instead (see ci.yml's matrix job).
+# That is on GitHub's hosted runners. On a self-hosted runner this points vcpkg
+# at a directory on the machine's own disk instead; the step below says why.
 # Nothing is installed for it -- the AWS CLI is on the hosted images -- and
 # nothing expires it. Objects accumulate: a compiler update on a runner
 # image adds one platform's worth of new ABIs, a few hundred megabytes, and
@@ -81,7 +82,36 @@ runs:
         SECRET_ACCESS_KEY: ${{ inputs.secret-access-key }}
         ENDPOINT: ${{ inputs.endpoint }}
         BUCKET: ${{ inputs.bucket }}
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
       run: |
+        # A self-hosted runner keeps its disk, so it caches into a directory
+        # there instead of the bucket: the same archives, no network, and no
+        # R2 credentials on a machine that is not GitHub's.
+        #
+        # It has to be said explicitly, because lukka/run-vcpkg does not leave
+        # vcpkg's default alone. It sets VCPKG_BINARY_SOURCES to
+        # `clear;x-gha,readwrite` -- `clear` drops the default local cache and
+        # x-gha is a backend vcpkg has since removed -- and points
+        # VCPKG_DEFAULT_BINARY_CACHE at a fresh GUID-named directory per job.
+        # Left as it is, nothing is cached at all: the first self-hosted run
+        # rebuilt all 47 ports in the installer job and again in the Windows
+        # job, on the same machine, an hour apart.
+        #
+        # The directory is vcpkg's own default location, under the runner
+        # account's profile: outside the workspace, so a checkout's clean never
+        # touches it. It only grows; prune it on the machine if the disk fills.
+        if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
+          if [ -n "${LOCALAPPDATA:-}" ]; then
+            archives=$(cygpath -m "$LOCALAPPDATA")/vcpkg/archives
+          else
+            archives=${XDG_CACHE_HOME:-$HOME/.cache}/vcpkg/archives
+          fi
+          mkdir -p "$archives"
+          echo "Binary cache: $archives (self-hosted runner, local disk), $(ls "$archives" | wc -l) entries"
+          echo "VCPKG_BINARY_SOURCES=clear;files,$archives,readwrite" >> "$GITHUB_ENV"
+          exit 0
+        fi
+
         if [ -z "$ACCESS_KEY_ID" ] || [ -z "$SECRET_ACCESS_KEY" ] || [ -z "$ENDPOINT" ]; then
           echo "::notice::No binary cache credentials (a pull request from a fork, or the R2 secrets are unset): vcpkg builds every dependency from source."
           exit 0

@@ -38,9 +38,9 @@ env:
   # worth. A bucket has the shape and no cap, and the runners already carry
   # the CLI that talks to it.
   #
-  # That is for GitHub's hosted runners, which start empty every time. The
-  # jobs on the self-hosted runners skip the bucket and use vcpkg's default
-  # local cache, which survives between jobs there; see the matrix job.
+  # That is for GitHub's hosted runners, which start empty every time. On the
+  # self-hosted runners the same action points vcpkg at a directory on the
+  # machine's own disk instead, which survives between jobs there.
 
 jobs:
   version:
@@ -326,21 +326,18 @@ jobs:
           # The first overlay port added here took all four jobs down this way.
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
-      # Only on GitHub's hosted runners. A self-hosted runner keeps its disk
-      # between jobs, so vcpkg's own default cache -- a directory of archives
-      # under the runner account's profile, outside the checkout, which
-      # actions/checkout's clean therefore never touches -- already does what
-      # the bucket is for, without a network round trip per port. Skipping the
-      # step also keeps the R2 credentials off machines that are not GitHub's.
-      # The runner's local cache grows without bound, like the bucket; prune it
-      # on the machine if the disk fills.
+      # The bucket on GitHub's hosted runners, and a directory on the machine's
+      # own disk on the self-hosted ones, which keep it between jobs. The
+      # action decides which, and says why it has to be set explicitly there.
+      # The R2 secrets are only handed over on a hosted runner, so they never
+      # reach a self-hosted machine at all; the installer and tarball jobs do
+      # the same.
       - name: Connect vcpkg to the binary cache
-        if: runner.environment == 'github-hosted'
         uses: ./.github/actions/vcpkg-cache
         with:
-          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          endpoint: ${{ secrets.R2_ENDPOINT }}
+          access-key-id: ${{ runner.environment == 'github-hosted' && secrets.R2_ACCESS_KEY_ID || '' }}
+          secret-access-key: ${{ runner.environment == 'github-hosted' && secrets.R2_SECRET_ACCESS_KEY || '' }}
+          endpoint: ${{ runner.environment == 'github-hosted' && secrets.R2_ENDPOINT || '' }}
 
       - name: Configure
         id: configure
@@ -685,14 +682,12 @@ jobs:
           # See the matrix job: an overlay port's manifest is also a vcpkg.json.
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
-      # Hosted runners only; see the matrix job.
       - name: Connect vcpkg to the binary cache
-        if: runner.environment == 'github-hosted'
         uses: ./.github/actions/vcpkg-cache
         with:
-          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          endpoint: ${{ secrets.R2_ENDPOINT }}
+          access-key-id: ${{ runner.environment == 'github-hosted' && secrets.R2_ACCESS_KEY_ID || '' }}
+          secret-access-key: ${{ runner.environment == 'github-hosted' && secrets.R2_SECRET_ACCESS_KEY || '' }}
+          endpoint: ${{ runner.environment == 'github-hosted' && secrets.R2_ENDPOINT || '' }}
 
       # The Last.fm credentials, and this is the only job that gets them.
       #
@@ -863,14 +858,12 @@ jobs:
           # See the matrix job: an overlay port's manifest is also a vcpkg.json.
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
-      # Hosted runners only; see the matrix job.
       - name: Connect vcpkg to the binary cache
-        if: runner.environment == 'github-hosted'
         uses: ./.github/actions/vcpkg-cache
         with:
-          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          endpoint: ${{ secrets.R2_ENDPOINT }}
+          access-key-id: ${{ runner.environment == 'github-hosted' && secrets.R2_ACCESS_KEY_ID || '' }}
+          secret-access-key: ${{ runner.environment == 'github-hosted' && secrets.R2_SECRET_ACCESS_KEY || '' }}
+          endpoint: ${{ runner.environment == 'github-hosted' && secrets.R2_ENDPOINT || '' }}
 
       # The Last.fm credentials, through the environment for the reason the
       # Windows installer job sets out at length: a -D lands in CMakeCache.txt and
