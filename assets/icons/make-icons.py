@@ -49,7 +49,9 @@ def magick() -> str:
 
 def resize(tool: str, source: Path, size: int, destination: Path) -> None:
     subprocess.run(
-        [tool, str(source), "-resize", f"{size}x{size}", "-strip", str(destination)],
+        # -depth 8: an HDRI/Q16 build otherwise writes 16-bit PNGs, at three
+        # times the size for no visible difference.
+        [tool, str(source), "-resize", f"{size}x{size}", "-strip", "-depth", "8", str(destination)],
         check=True,
     )
 
