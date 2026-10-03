@@ -37,6 +37,10 @@ env:
   # storage is capped at 500 MB for the organisation, below one platform's
   # worth. A bucket has the shape and no cap, and the runners already carry
   # the CLI that talks to it.
+  #
+  # That is for GitHub's hosted runners, which start empty every time. The
+  # jobs on the self-hosted runners skip the bucket and use vcpkg's default
+  # local cache, which survives between jobs there; see the matrix job.
 
 jobs:
   version:
@@ -115,14 +119,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ubuntu-26.04 because the GTK frontend's floor is GTK 4.22 and
+          # Both entries run on the self-hosted runners, VMs on ruxstor, and
+          # `os` is a label list rather than an image name. The labels are
+          # chosen to pick out one machine each: `ubuntu-26.04` and not the
+          # bare `Linux`, which the Arch runner also carries.
+          #
+          # Ubuntu 26.04 because the GTK frontend's floor is GTK 4.22 and
           # libadwaita 1.9 (cmake/XPCogGtk.cmake), and 26.04 is the first
           # Ubuntu that ships them: 24.04 has 4.14 and 1.5.
           - name: Linux
-            os: ubuntu-26.04
+            os: [self-hosted, ubuntu-26.04]
             preset: linux-debug
           - name: Windows
-            os: windows-2022
+            os: [self-hosted, Windows]
             preset: windows-debug
 
     steps:
@@ -284,10 +293,12 @@ jobs:
           }
           if ($missing) { throw "not on PATH: $($missing -join ', ')" }
 
-      # vcpkg's x64-windows triplet is MSVC-ABI, but MinGW's gcc sits earlier on the
-      # runner's PATH and the Ninja generator does not activate the MSVC environment
-      # by itself. Without this, CMake picks MinGW and the link fails on
-      # MSVC-mangled symbols in the vcpkg libraries.
+      # The Ninja generator does not activate the MSVC environment by itself, and
+      # the self-hosted runner's Build Tools put nothing on PATH until something
+      # does. On the hosted image this was also what kept CMake off the MinGW gcc
+      # sitting earlier on PATH, which linked against vcpkg's MSVC-ABI x64-windows
+      # libraries and failed on their mangled symbols; the self-hosted runner has
+      # no MinGW, but it still needs the environment.
       - name: Activate MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -306,7 +317,16 @@ jobs:
           # The first overlay port added here took all four jobs down this way.
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
+      # Only on GitHub's hosted runners. A self-hosted runner keeps its disk
+      # between jobs, so vcpkg's own default cache -- a directory of archives
+      # under the runner account's profile, outside the checkout, which
+      # actions/checkout's clean therefore never touches -- already does what
+      # the bucket is for, without a network round trip per port. Skipping the
+      # step also keeps the R2 credentials off machines that are not GitHub's.
+      # The runner's local cache grows without bound, like the bucket; prune it
+      # on the machine if the disk fills.
       - name: Connect vcpkg to the binary cache
+        if: runner.environment == 'github-hosted'
         uses: ./.github/actions/vcpkg-cache
         with:
           access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -321,7 +341,9 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
 
       # The Windows App Runtime, which the WinUI suite (tests/winui) needs to
-      # make a window at all and which no runner image carries. The version,
+      # make a window at all. The self-hosted runner keeps it between jobs, and
+      # installing it again over itself is harmless; it stays a step so a fresh
+      # machine needs nothing done to it by hand. The version,
       # URL and hash are cmake/XPCogWinAppSdk.cmake's, read out of it rather
       # than restated, and the same script the installer runs fetches it.
       - name: Install the Windows App Runtime
@@ -594,14 +616,16 @@ jobs:
     # harvest no longer finds. All of those are invisible to every other job here
     # and none of them is worth discovering at release time.
     name: Windows installer
-    runs-on: windows-2022
+    # Self-hosted, the same Windows runner as the matrix job; see there for the
+    # labels.
+    runs-on: [self-hosted, Windows]
     # See the matrix job above for why.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
-      # See the matrix job: MinGW's gcc sits earlier on the runner's PATH and the
-      # Ninja generator does not activate the MSVC environment by itself.
+      # See the matrix job: the Ninja generator does not activate the MSVC
+      # environment by itself.
       - name: Activate MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -609,6 +633,10 @@ jobs:
 
       # NSIS, from negrutiu's fork rather than from whatever the runner image
       # happens to carry.
+      #
+      # (Written for the hosted windows-2022 image. The self-hosted runner has no
+      # NSIS of its own, so today this is simply what installs it; the reasons
+      # below are why it stays pinned rather than left to the machine.)
       #
       # The image does have an official NSIS today, and it would build an
       # installer. Two reasons not to leave it at that. That NSIS emits a 32-bit
@@ -648,7 +676,9 @@ jobs:
           # See the matrix job: an overlay port's manifest is also a vcpkg.json.
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
+      # Hosted runners only; see the matrix job.
       - name: Connect vcpkg to the binary cache
+        if: runner.environment == 'github-hosted'
         uses: ./.github/actions/vcpkg-cache
         with:
           access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -775,11 +805,15 @@ jobs:
     # nothing in the artifact says it: Ubuntu 26.04, Fedora 44, Arch and other
     # distributions on GNOME 50 or newer meet it; Ubuntu 24.04 and Debian 13 do
     # not and cannot run this download. The C library is a floor too -- this
-    # runs on ubuntu-26.04, so the tarball wants that release's glibc or newer
+    # runs on Ubuntu 26.04, so the tarball wants that release's glibc or newer
     # -- but GTK is the higher of the two in practice. The release notes say so,
     # so nobody has to guess.
+    #
+    # Self-hosted, the same Ubuntu 26.04 runner as the matrix job's Linux entry.
+    # Whatever runs this has to stay on 26.04 -- not newer -- or the glibc floor
+    # above rises with it.
     name: Linux tarball
-    runs-on: ubuntu-26.04
+    runs-on: [self-hosted, ubuntu-26.04]
     # See the matrix job for why ninety minutes.
     timeout-minutes: 90
 
@@ -819,7 +853,9 @@ jobs:
           # See the matrix job: an overlay port's manifest is also a vcpkg.json.
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
 
+      # Hosted runners only; see the matrix job.
       - name: Connect vcpkg to the binary cache
+        if: runner.environment == 'github-hosted'
         uses: ./.github/actions/vcpkg-cache
         with:
           access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}

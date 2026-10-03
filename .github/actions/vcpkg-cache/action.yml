@@ -7,8 +7,10 @@ description: >-
 # The cache is an S3-compatible bucket on Cloudflare R2, and vcpkg reaches it
 # with its `x-aws` provider: `aws s3 ls` to ask whether a package is there,
 # `aws s3 cp` to fetch or store it, one object per port named by its ABI hash.
-# Nothing is installed for it -- the AWS CLI is on all three hosted images --
-# and nothing expires it. Objects accumulate: a compiler update on a runner
+# Only the jobs on GitHub's hosted runners call this; the self-hosted runners
+# keep vcpkg's local cache on their own disks instead (see ci.yml's matrix job).
+# Nothing is installed for it -- the AWS CLI is on the hosted images -- and
+# nothing expires it. Objects accumulate: a compiler update on a runner
 # image adds one platform's worth of new ABIs, a few hundred megabytes, and
 # the old ones stay. That is deliberate; R2 gives ten gigabytes before it
 # charges, and a lifecycle rule that deleted by age would also delete the
@@ -33,7 +35,7 @@ description: >-
 # twenty hours before it, which had restored all 58. Nothing had invalidated;
 # the reads had simply failed.
 #
-# The CLI on all three images is v2 (2.36.40 at the time of writing), whose
+# The CLI on the hosted images is v2 (2.36.40 at the time of writing), whose
 # defaults are already `standard` retries -- throttling, 5xx and transient
 # connection errors -- but only **three attempts**. So what changes here is
 # mostly the headroom: ten attempts of exponential backoff before a read is
