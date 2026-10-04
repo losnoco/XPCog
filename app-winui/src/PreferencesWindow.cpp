@@ -1,5 +1,6 @@
 #include "PreferencesRows.hpp"
 
+#include "Chrome.hpp"
 #include "Commands.hpp"
 #include "Painting.hpp"
 #include "Session.hpp"
@@ -425,6 +426,7 @@ PreferencesWindow::PreferencesWindow(app::Session& session, HWND owner, bool has
     window_.ExtendsContentIntoTitleBar(true);
 
     auto titleBar = mux::Controls::TitleBar();
+    padTitleBarForCaptions(titleBar);
     titleBar.Title(toH(app::commandLabel(app::CommandId::FilePreferences)));
 
     navigation_ = mux::Controls::NavigationView();

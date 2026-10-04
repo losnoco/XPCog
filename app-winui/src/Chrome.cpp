@@ -1,5 +1,7 @@
 #include "Chrome.hpp"
 
+#include <winrt/Microsoft.UI.Content.h>
+
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -99,6 +101,48 @@ void fitTitleBarContent(const mux::Controls::TitleBar& bar, const mux::Framework
     };
     // The bar's handler owns the function; the column's reaches it weakly.
     bar.SizeChanged([fit](auto&&, auto&&) { (*fit)(); });
+}
+
+void padTitleBarForCaptions(const mux::Controls::TitleBar& bar) {
+    // The template's first and last columns, LeftPaddingColumn and
+    // RightPaddingColumn, sized from AppWindowTitleBar's insets -- which are
+    // physical pixels -- divided by the XamlRoot's scale, as TitleBar.cpp's
+    // UpdatePadding() should and does not. That only runs when the template is
+    // applied, so what is set here stays set.
+    auto pad = [weak = winrt::make_weak(bar)] {
+        const auto bar = weak.get();
+        if (!bar || !bar.XamlRoot()) {
+            return;
+        }
+        const auto island = bar.XamlRoot().ContentIslandEnvironment();
+        if (!island) {
+            return;
+        }
+        const auto appWindow = winrt::Microsoft::UI::Windowing::AppWindow::GetFromWindowId(island.AppWindowId());
+        const auto root      = findNamed(bar, L"PART_LayoutRoot").try_as<mux::Controls::Grid>();
+        if (!appWindow || !root || root.ColumnDefinitions().Size() < 2) {
+            return;
+        }
+        const double scale  = bar.XamlRoot().RasterizationScale();
+        const auto   insets = appWindow.TitleBar();
+        const bool   ltr    = bar.FlowDirection() == mux::FlowDirection::LeftToRight;
+        const auto   columns = root.ColumnDefinitions();
+        const auto set = [](const mux::Controls::ColumnDefinition& column, double width) {
+            if (column.Width().Value != width) {
+                column.Width(mux::GridLengthHelper::FromPixels(width));
+            }
+        };
+        set(columns.GetAt(0), (ltr ? insets.LeftInset() : insets.RightInset()) / scale);
+        set(columns.GetAt(columns.Size() - 1), (ltr ? insets.RightInset() : insets.LeftInset()) / scale);
+    };
+    // Size changes cover the first layout and maximising, which moves the
+    // caption buttons; the root's changes cover a move to another scale.
+    bar.SizeChanged([pad](auto&&, auto&&) { pad(); });
+    bar.Loaded([pad, weak = winrt::make_weak(bar)](auto&&, auto&&) {
+        if (const auto bar = weak.get(); bar && bar.XamlRoot()) {
+            bar.XamlRoot().Changed([pad](auto&&, auto&&) { pad(); });
+        }
+    });
 }
 
 std::filesystem::path besideExecutable(const wchar_t* name) {

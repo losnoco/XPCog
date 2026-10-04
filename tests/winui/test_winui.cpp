@@ -44,6 +44,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -66,6 +67,7 @@ struct TestAccess {
     static void run(MainWindow& window, app::CommandId id) { window.onCommand(id); }
     static bool miniShown(const MainWindow& window) { return window.miniShown(); }
     static mux::Window window(const MainWindow& window) { return window.window_; }
+    static mux::Controls::TitleBar titleBar(const MainWindow& window) { return window.titleBar_; }
     static PreferencesWindow* preferences(const MainWindow& window) {
         return window.preferences_.get();
     }
@@ -215,6 +217,33 @@ TEST_CASE("The main window opens and lays out", "[winui]") {
         return root.ActualSize().x;
     });
     CHECK(width > 0);
+    checkQuiet();
+}
+
+TEST_CASE("The title bar reserves the caption buttons' width and no more", "[winui]") {
+    // The template's last column is the caption buttons' space, sized from
+    // AppWindowTitleBar::RightInset -- physical pixels -- and taken as DIPs
+    // unless padTitleBarForCaptions() divides by the scale. In pixels here, so
+    // a scaled display shows the difference and an unscaled one passes either way.
+    Player& p = thePlayer();
+    struct Widths {
+        double column = -1;
+        double inset  = 0;
+    };
+    const Widths widths = ui([&] {
+        Widths     result;
+        const auto bar   = TestAccess::titleBar(*p.window);
+        const auto scale = bar.XamlRoot().RasterizationScale();
+        result.inset     = TestAccess::window(*p.window).AppWindow().TitleBar().RightInset();
+        if (const auto root = mux::Media::VisualTreeHelper::GetChild(bar, 0).try_as<mux::Controls::Grid>()) {
+            const auto columns = root.ColumnDefinitions();
+            result.column = columns.GetAt(columns.Size() - 1).ActualWidth() * scale;
+        }
+        return result;
+    });
+    INFO("inset " << widths.inset << " px, column " << widths.column << " px");
+    CHECK(widths.inset > 0);
+    CHECK(std::abs(widths.column - widths.inset) <= 1.0);
     checkQuiet();
 }
 

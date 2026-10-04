@@ -41,6 +41,12 @@ void setGlyph(const mux::Controls::Button& button, const wchar_t* glyph, const s
 /// left once the icon, title, headers and caption buttons have theirs.
 void fitTitleBarContent(const mux::Controls::TitleBar& bar, const mux::FrameworkElement& content);
 
+/// Keeps the space the bar reserves for the caption buttons the buttons' own
+/// width. The template's padding columns take AppWindowTitleBar's insets,
+/// which are physical pixels, as DIPs (microsoft-ui-xaml #10344), so at 200%
+/// the bar leaves a gap as wide again as the buttons beside them.
+void padTitleBarForCaptions(const mux::Controls::TitleBar& bar);
+
 /// A file beside the executable: the icon, which AppWindow and the tray take
 /// as a path.
 [[nodiscard]] std::filesystem::path besideExecutable(const wchar_t* name);

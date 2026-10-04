@@ -124,6 +124,7 @@ void MainWindow::build() {
     window_.AppWindow().SetIcon(icon.wstring());
 
     titleBar_ = mux::Controls::TitleBar();
+    padTitleBarForCaptions(titleBar_);
     titleBar_.Title(L"XPCog");
     {
         auto source = mux::Controls::ImageIconSource();

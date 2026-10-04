@@ -42,6 +42,7 @@ MiniPlayer::MiniPlayer(app::Session& session) : session_(session) {
     window_.AppWindow().SetIcon(besideExecutable(L"xpcog.ico").wstring());
 
     auto titleBar = mux::Controls::TitleBar();
+    padTitleBarForCaptions(titleBar);
     {
         auto source = mux::Controls::ImageIconSource();
         source.ImageSource(mux::Media::Imaging::BitmapImage(winrt::Windows::Foundation::Uri(
