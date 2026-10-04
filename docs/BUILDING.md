@@ -82,7 +82,7 @@ build\windows-release -U XPCOG_MAKENSIS` makes it look again.
 
 ```bat
 cmake --build build\windows-release --target installer
-:: -> build\windows-release\XPCog-3.0.1-x64-setup.exe
+:: -> build\windows-release\XPCog-3.1.0-x64-setup.exe
 ```
 
 Use a **release** tree. A Debug build links the debug CRT and vcpkg's debug DLLs,
@@ -108,7 +108,7 @@ reverses all of it and leaves settings and the library database alone. For
 unattended use:
 
 ```bat
-XPCog-3.0.1-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
+XPCog-3.1.0-x64-setup.exe /S /CurrentUser /NOASSOC /D=C:\Somewhere\XPCog
 ```
 
 `/NOASSOC` exists because a component page is a question and `/S` is the mode

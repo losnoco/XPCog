@@ -13,6 +13,7 @@
 #include <microsoft.ui.xaml.window.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace xpcog::winui {
@@ -25,7 +26,8 @@ namespace windowing = winrt::Microsoft::UI::Windowing;
 constexpr double kHeight = 48;
 /// Wide enough for the controls and a usable seek bar; the starting width.
 constexpr double kMinWidth     = 520;
-constexpr double kInitialWidth = 640;
+constexpr double kInitialWidth = 820;
+constexpr const wchar_t* kXmlns = L"xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'";
 /// A waveform taller than this would not fit in the bar.
 constexpr int kMaxWaveformHeight = 36;
 constexpr UINT_PTR kSubclassId = 1;
@@ -86,11 +88,51 @@ MiniPlayer::MiniPlayer(app::Session& session) : session_(session) {
         mux::Controls::Grid::SetColumn(bar, 1);
         transport.Children().Append(bar);
     }
-    subscriptions_.push_back(seekBar_->seekRequested.connect(
-        [this](double seconds) { session_.playback().seek(seconds); }));
-    subscriptions_.push_back(seekBar_->scrubbed.connect(
-        [this](double seconds) { clock_.Text(toH(app::formatClock(seconds))); }));
+    subscriptions_.push_back(seekBar_->seekRequested.connect([this](double seconds) {
+        session_.playback().seek(seconds);
+        updateOverlay();
+    }));
+    subscriptions_.push_back(seekBar_->scrubbed.connect([this](double seconds) {
+        clock_.Text(toH(app::formatClock(seconds)));
+        updateOverlay();
+    }));
     applyWaveformSetting();
+
+    // The track, over the seek bar on a translucent scrim: there is no other
+    // room in a window that is one row high. It takes no input, so the bar
+    // under it seeks as ever, and fades out while the pointer is over the bar
+    // or a scrub is going, so the thumb is never hidden while it is wanted.
+    overlay_ = mux::Markup::XamlReader::Load(
+                   std::wstring(L"<Grid ") + kXmlns +
+                   L" IsHitTestVisible='False' Visibility='Collapsed' Margin='4,0,4,0'>"
+                   L"<Border CornerRadius='4' Opacity='0.75'"
+                   L" Background='{ThemeResource SolidBackgroundFillColorBaseBrush}'/>"
+                   L"<TextBlock Margin='8,0' VerticalAlignment='Center' TextAlignment='Center'"
+                   L" TextTrimming='CharacterEllipsis' TextWrapping='NoWrap'>"
+                   L"<Run FontWeight='SemiBold'/>"
+                   L"<Run Foreground='{ThemeResource TextFillColorSecondaryBrush}'/>"
+                   L"</TextBlock></Grid>")
+                   .as<mux::Controls::Grid>();
+    {
+        const auto text = overlay_.Children().GetAt(1).as<mux::Controls::TextBlock>();
+        overlayTitle_   = text.Inlines().GetAt(0).as<mux::Documents::Run>();
+        overlayArtist_  = text.Inlines().GetAt(1).as<mux::Documents::Run>();
+        auto fade = mux::ScalarTransition();
+        fade.Duration(std::chrono::milliseconds(150));
+        overlay_.OpacityTransition(fade);
+        mux::Controls::Grid::SetColumn(overlay_, 1);
+        transport.Children().Append(overlay_);
+
+        auto bar = seekBar_->element();
+        bar.PointerEntered([this](auto&&, auto&&) {
+            hovering_ = true;
+            updateOverlay();
+        });
+        bar.PointerExited([this](auto&&, auto&&) {
+            hovering_ = false;
+            updateOverlay();
+        });
+    }
 
     // The position alone, as the wx MiniFrame's clock: there is not the room
     // for the length beside it, and the bar shows how far along it is.
@@ -222,11 +264,19 @@ void MiniPlayer::close() {
 }
 
 void MiniPlayer::setNowPlaying(const std::string& title, const std::string& artist) {
+    overlayTitle_.Text(toH(title));
+    overlayArtist_.Text(artist.empty() ? winrt::hstring() : toH(" \xE2\x80\x94 " + artist));
+    overlay_.Visibility(title.empty() ? mux::Visibility::Collapsed : mux::Visibility::Visible);
+    updateOverlay();
     if (title.empty()) {
         window_.Title(L"XPCog");
         return;
     }
     window_.Title(toH(artist.empty() ? title : title + " \xE2\x80\x94 " + artist));
+}
+
+void MiniPlayer::updateOverlay() {
+    overlay_.Opacity(hovering_ || seekBar_->scrubbing() ? 0.0 : 1.0);
 }
 
 void MiniPlayer::setPlaybackState(bool playing, bool paused) {

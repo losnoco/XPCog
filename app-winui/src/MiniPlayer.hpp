@@ -22,6 +22,8 @@
 #include "SeekBar.hpp"
 #include "WinRT.hpp"
 
+#include <winrt/Microsoft.UI.Xaml.Documents.h>
+
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/audio/Waveform.hpp"
 
@@ -53,7 +55,8 @@ public:
     void close();
 
     /// The track, as the window's title (the taskbar's) -- "title -- artist",
-    /// the wx MiniFrame's form.
+    /// the wx MiniFrame's form -- and over the seek bar, the window having no
+    /// title text of its own to show it in.
     void setNowPlaying(const std::string& title, const std::string& artist);
     void setPlaybackState(bool playing, bool paused);
     void setPosition(double seconds, double duration);
@@ -77,6 +80,8 @@ private:
                                          UINT_PTR id, DWORD_PTR self);
     /// The client height the window is pinned to, in physical pixels.
     [[nodiscard]] int clientHeight() const;
+    /// Shows the track over the seek bar, or fades it while the bar is in use.
+    void updateOverlay();
 
     app::Session& session_;
 
@@ -86,8 +91,13 @@ private:
     std::unique_ptr<SeekBar> seekBar_;
     mux::Controls::TextBlock clock_{nullptr};
     mux::Controls::Slider    volume_{nullptr};
+    mux::Controls::Grid      overlay_{nullptr};
+    mux::Documents::Run      overlayTitle_{nullptr};
+    mux::Documents::Run      overlayArtist_{nullptr};
 
     double duration_       = 0.0;
+    /// The pointer is over the seek bar.
+    bool   hovering_       = false;
     bool   shown_          = false;
     bool   closing_        = false;
     bool   settingVolume_  = false;
