@@ -5,6 +5,7 @@
 // the same trigger, fold, layouts, colours and right-click menu. The spectrum
 // beside it (Visualizers.hpp) is the pattern this follows.
 
+#include "FrameTicker.hpp"
 #include "Painting.hpp"
 #include "WinRT.hpp"
 
@@ -59,14 +60,13 @@ private:
                     const float* samples, std::size_t count, float top, float height, Colour colour);
     [[nodiscard]] std::size_t windowFrames() const noexcept;
     [[nodiscard]] std::size_t fetchFrames() const noexcept;
-    void restartTimer();
     void showMenu(winrt::Windows::Foundation::Point at);
 
     AudioTap& tap_;
     Settings& settings_;
 
     winrt::Microsoft::Graphics::Canvas::UI::Xaml::CanvasControl canvas_{nullptr};
-    winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer     timer_{nullptr};
+    FrameTicker                                                 ticker_{[this] { tick(); }};
 
     TapCursor                             cursor_;
     std::chrono::steady_clock::time_point lastTick_{};

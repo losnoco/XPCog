@@ -70,28 +70,18 @@ SpectrumView::SpectrumView(AudioTap& tap, Settings& settings) : tap_(tap), setti
     });
     // Unloaded with the pane closed: the timer stops with it, as GTK stops
     // its own at unmap.
-    canvas_.Unloaded([this](auto&&, auto&&) { timer_.Stop(); });
+    canvas_.Unloaded([this](auto&&, auto&&) { ticker_.stop(); });
     canvas_.Loaded([this](auto&&, auto&&) { setActive(playing_); });
 
-    timer_ = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread().CreateTimer();
-    timer_.Interval(std::chrono::milliseconds(kSpectrumFrameMs));
-    timer_.Tick([this](auto&&, auto&&) { tick(); });
+    ticker_.setInterval(std::chrono::milliseconds(kSpectrumFrameMs));
 
     applySettings(settings_);
 }
 
-SpectrumView::~SpectrumView() {
-    // This runs after the XAML loop has ended -- the player is torn down once
-    // Application::Start returns -- and by then the dispatcher queue is shut
-    // down and a call on it throws. A throw out of a destructor is
-    // std::terminate, which a debug build shows as an "abort() has been
-    // called" box at every close. Nothing here is worth that: with the loop
-    // gone the timer can fire no more ticks anyway.
-    try {
-        timer_.Stop();
-    } catch (const winrt::hresult_error&) {
-    }
-}
+// The ticker's destructor runs after the XAML loop has ended -- the player is
+// torn down once Application::Start returns -- and swallows the throw a call
+// into XAML makes by then; see FrameTicker.
+SpectrumView::~SpectrumView() = default;
 
 void SpectrumView::setSampleRate(double rate) {
     for (SpectrumAnalyzer& analyzer : analyzers_) {
@@ -147,9 +137,9 @@ void SpectrumView::setActive(bool active) {
     if (active && canvas_.IsLoaded()) {
         cursor_.reset();
         lastTick_ = std::chrono::steady_clock::now();
-        timer_.Start();
+        ticker_.start();
     } else {
-        timer_.Stop();
+        ticker_.stop();
     }
 }
 

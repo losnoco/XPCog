@@ -60,28 +60,16 @@ OscilloscopeView::OscilloscopeView(AudioTap& tap, Settings& settings) : tap_(tap
         showMenu(at);
         args.Handled(true);
     });
-    canvas_.Unloaded([this](auto&&, auto&&) { timer_.Stop(); });
+    canvas_.Unloaded([this](auto&&, auto&&) { ticker_.stop(); });
     canvas_.Loaded([this](auto&&, auto&&) { setActive(playing_); });
 
-    timer_ = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread().CreateTimer();
-    timer_.Tick([this](auto&&, auto&&) { tick(); });
-    restartTimer();
+    ticker_.setInterval(std::chrono::microseconds(1'000'000 / frameRate_));
 
     applySettings(settings_);
 }
 
-OscilloscopeView::~OscilloscopeView() {
-    // After the XAML loop has ended, a call on the dispatcher queue throws,
-    // and a throw out of a destructor is std::terminate -- see SpectrumView's.
-    try {
-        timer_.Stop();
-    } catch (const winrt::hresult_error&) {
-    }
-}
-
-void OscilloscopeView::restartTimer() {
-    timer_.Interval(std::chrono::milliseconds(std::max(1, 1000 / frameRate_)));
-}
+// The ticker outlives the XAML loop safely on its own; see SpectrumView's.
+OscilloscopeView::~OscilloscopeView() = default;
 
 void OscilloscopeView::setSampleRate(double rate) {
     sampleRate_ = rate > 0.0 ? rate : 0.0;
@@ -114,8 +102,9 @@ void OscilloscopeView::applySettings(const Settings& settings) {
     const int frameRate = std::clamp(settings.ScopeFrameRate(), 15, 120);
     if (frameRate != frameRate_) {
         frameRate_ = frameRate;
-        // Interval takes effect at the next tick; a running timer keeps going.
-        restartTimer();
+        // Takes effect at the next tick; a running ticker keeps going. Above
+        // the display's rate it is the display's rate.
+        ticker_.setInterval(std::chrono::microseconds(1'000'000 / frameRate_));
     }
     canvas_.ClearColor(background_);
     canvas_.Invalidate();
@@ -147,9 +136,9 @@ void OscilloscopeView::setActive(bool active) {
     if (active && canvas_.IsLoaded()) {
         cursor_.reset();
         lastTick_ = std::chrono::steady_clock::now();
-        timer_.Start();
+        ticker_.start();
     } else {
-        timer_.Stop();
+        ticker_.stop();
     }
 }
 

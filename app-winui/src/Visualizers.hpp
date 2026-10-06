@@ -4,6 +4,7 @@
 // views with a CanvasControl where GTK has a GtkDrawingArea, and the same
 // analysis, colours, layouts and right-click menus.
 
+#include "FrameTicker.hpp"
 #include "Painting.hpp"
 #include "WinRT.hpp"
 
@@ -65,7 +66,7 @@ private:
     Settings& settings_;
 
     canvas::UI::Xaml::CanvasControl canvas_{nullptr};
-    winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer timer_{nullptr};
+    FrameTicker                     ticker_{[this] { tick(); }};
 
     TapCursor                             cursor_;
     std::array<SpectrumAnalyzer, 2>       analyzers_;

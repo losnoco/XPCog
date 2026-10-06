@@ -24,6 +24,7 @@ set(XPCOG_WINUI_SOURCES
     src/CommandMenus.hpp
     src/FileTreePane.cpp
     src/FileTreePane.hpp
+    src/FrameTicker.hpp
     src/Instance.cpp
     src/Instance.hpp
     src/MainWindow.cpp

@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "xpcog",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "An audio player for Windows and Linux, ported from Cog",
   "homepage": "https://github.com/losnoco/Cog",
   "license": "GPL-3.0-or-later",
