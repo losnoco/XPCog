@@ -9,6 +9,10 @@
 
 #include "xpcog/core/Plugin.hpp"
 #include "xpcog/core/PluginRegistry.hpp"
+#include "xpcog/core/Settings.hpp"
+#include "xpcog/core/audio/AudioEngine.hpp"
+#include "xpcog/core/audio/OfflineOutput.hpp"
+#include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/SampleConvert.hpp"
 
@@ -388,4 +392,48 @@ TEST_CASE("a cue URL without a fragment does not decode", "[cue]") {
     // silently decode the whole album as one track.
     const Url cue = Url::fromLocalPath(albumCue());
     CHECK_FALSE(registry().open(cue));
+}
+
+TEST_CASE("a cue album plays through the engine sample for sample", "[cue][gapless]") {
+    if (!haveCue()) SKIP("cue sheet support not built");
+    const auto flac = albumFlac();
+    if (flac.empty()) SKIP("the `flac` command-line tool is not available");
+
+    const auto entries = registry().expandContainer(Url::fromLocalPath(albumCue()));
+    REQUIRE(entries.size() == 3);
+
+    struct Album final : AudioEngine::Delegate {
+        std::vector<Url> queue;
+        std::size_t      next = 0;
+
+        std::optional<Url> nextTrack() override {
+            return next < queue.size() ? std::optional<Url>{queue[next++]} : std::nullopt;
+        }
+    } album;
+    album.queue = {entries[1], entries[2]};
+
+    RingBuffer ring{44100 * 2};
+    auto       output = makeOfflineOutput(ring);
+    auto       store  = makeMemorySettingsStore();
+    Settings   settings{*store};
+    // The fade in would change the first samples this compares.
+    settings.setEnableFading(false);
+
+    AudioEngine engine{registry(), *output, ring, settings};
+    engine.setDelegate(&album);
+    REQUIRE(engine.play(entries[0]));
+    engine.waitUntilFinished();
+    engine.stop();
+
+    const std::vector<float> whole  = decodeAll(Url::fromLocalPath(flac));
+    const std::vector<float> played = capturedAudio(*output);
+
+    REQUIRE(played.size() == whole.size());
+    std::size_t differing = 0;
+    for (std::size_t i = 0; i < whole.size(); ++i) {
+        if (std::abs(played[i] - whole[i]) > 1e-6F) {
+            ++differing;
+        }
+    }
+    CHECK(differing == 0);
 }
