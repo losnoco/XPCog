@@ -71,6 +71,7 @@ vcpkg_extract_source_archive(SOURCE_PATH
         log2-name-collision.patch
         msvc-provides-asinh.patch
         extern-requant-tables.patch
+        writable-fastmath-tables.patch
 )
 
 file(COPY "${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt" DESTINATION "${SOURCE_PATH}")
