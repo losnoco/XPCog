@@ -100,6 +100,11 @@ const std::vector<MenuItem>& layout() {
         // The other visualiser. No shortcut: U is the spectrum's, and one key
         // for the pane most people open once is enough.
         {nullptr, ViewOscilloscope, XPCOG_TRANSLATE("&Oscilloscope"), "", ItemKind::Check},
+        {nullptr, ViewEnvelope, XPCOG_TRANSLATE("Scrolling &Waveform"), "", ItemKind::Check},
+        {nullptr, ViewVuMeter, XPCOG_TRANSLATE("&VU Meter"), "", ItemKind::Check},
+        // Cog's panel, on Cog's shortcut.
+        {nullptr, ViewSignalInspector, XPCOG_TRANSLATE("Signal &Inspector"), "Ctrl+Alt+I",
+         ItemKind::Check},
         // The seek bar's waveform: on, the transport is taller and shows the
         // track's shape; off, it is the plain bar it always was. Here as well
         // as on the Appearance pane, which holds the two drawing choices too,
@@ -359,7 +364,7 @@ const std::vector<CommandId>& allCommands() {
         PlaylistSearchAlbum, PlaylistReloadInfo, PlaylistResetPlayCount, PlaylistRemoveRating,
         PlaylistReveal,    PlaylistTrash,
         FileNewPlaylist,   FileNewPlaylistFromSelection, FileRenamePlaylist, FileDeletePlaylist,
-        ViewNextPlaylist,  ViewPreviousPlaylist,
+        ViewNextPlaylist,  ViewPreviousPlaylist, ViewVuMeter, ViewEnvelope, ViewSignalInspector,
     };
     return table;
 }
@@ -431,6 +436,9 @@ CommandAction commandAction(CommandId id) {
         case FileDeletePlaylist:    return {"delete-playlist", nullptr};
         case ViewNextPlaylist:      return {"next-playlist", nullptr};
         case ViewPreviousPlaylist:  return {"previous-playlist", nullptr};
+        case ViewVuMeter:           return {"vu-meter", nullptr};
+        case ViewEnvelope:          return {"envelope", nullptr};
+        case ViewSignalInspector:   return {"signal-inspector", nullptr};
 
         case HelpAbout:             return {"about", nullptr};
 

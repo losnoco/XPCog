@@ -45,6 +45,7 @@
 #include "xpcog/core/audio/Fader.hpp"
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
+#include "xpcog/core/audio/SignalReport.hpp"
 #include "xpcog/core/audio/TimeStretch.hpp"
 
 #include <atomic>
@@ -182,6 +183,10 @@ public:
 
     [[nodiscard]] std::uint64_t underrunCount() const { return output_.underrunCount(); }
 
+    /// What is being done to the audio being heard. Safe from any thread; the
+    /// Signal Inspector asks a few times a second.
+    [[nodiscard]] SignalReport signalReport() const;
+
     /// Re-reads the DSP settings. Call after changing an equaliser setting.
     ///
     /// Push rather than poll: the chain's settings are 32 keys, and re-reading
@@ -234,6 +239,8 @@ private:
         /// Total frames delivered to the device before this track becomes audible.
         std::uint64_t framePosition = 0;
         Url           url;
+        /// The incoming track, so the report changes with the audio.
+        SignalReport::Source source;
     };
 
     void feederLoop();
@@ -389,7 +396,18 @@ private:
     /// Whether it is actually running, which additionally needs a device six
     /// channels wide. Re-decided whenever a switch changes how wide the device
     /// is -- a move to stereo headphones drops the upmix rather than the switch.
-    bool freeSurroundActive_ = false;
+    std::atomic<bool> freeSurroundActive_{false};
+
+    /// What signalReport() says of the track being heard, under seamMutex_.
+    SignalReport::Source heardSource_;
+
+    /// The chain's settings as applied. Written on the DSP thread whenever they
+    /// are re-read, never per block.
+    mutable std::mutex dspFactsMutex_;
+    SignalReport::Dsp  dspFacts_;
+
+    /// The converter's, copied where the feeder can publish it.
+    std::atomic<bool> hdcdDecoded_{false};
 
     // The open track, touched only by the feeder thread.
     struct OpenTrack;

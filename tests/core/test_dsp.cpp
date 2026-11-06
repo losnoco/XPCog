@@ -20,6 +20,9 @@
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/Url.hpp"
+#include "xpcog/core/audio/AudioTap.hpp"
+#include "xpcog/core/audio/EnvelopeHistory.hpp"
+#include "xpcog/core/audio/LevelMeter.hpp"
 #include "xpcog/core/audio/AudioEngine.hpp"
 #include "xpcog/core/audio/Equalizer.hpp"
 #include "xpcog/core/audio/Downmix.hpp"
@@ -1268,4 +1271,78 @@ TEST_CASE("a track played after a faded stop is not silent", "[dsp]") {
                                   captured.end());
     INFO("steady-state RMS " << rmsOf(body));
     REQUIRE(rmsOf(body) > 0.1);
+}
+
+TEST_CASE("the level meter reads peak and RMS and falls back to rest", "[dsp]") {
+    std::vector<float> tone(4800);
+    for (std::size_t i = 0; i < tone.size(); ++i) {
+        tone[i] = 0.5F * static_cast<float>(std::sin(2.0 * 3.14159265358979 * 480.0 *
+                                                     static_cast<double>(i) / 48000.0));
+    }
+
+    LevelMeter meter;
+    meter.measure(0, tone.data(), tone.size(), 0.1);
+
+    // A sine at half scale: -6 dB peak, 3 dB under that for its RMS.
+    CHECK(meter.left().peak == Catch::Approx(-6.02).margin(0.05));
+    CHECK(meter.left().rms == Catch::Approx(-9.03).margin(0.05));
+    CHECK(meter.left().hold == Catch::Approx(-6.02).margin(0.05));
+    CHECK_FALSE(meter.left().clipped);
+    CHECK(meter.right().peak == LevelMeter::kFloor);
+
+    // The peak falls at its rate; the hold waits.
+    meter.measure(0, nullptr, 0, 0.5);
+    CHECK(meter.left().peak == Catch::Approx(-6.02 - 12.0).margin(0.05));
+    CHECK(meter.left().hold == Catch::Approx(-6.02).margin(0.05));
+    meter.measure(0, nullptr, 0, 1.2);
+    CHECK(meter.left().hold < -6.5);
+
+    const float over[] = {1.0F, -0.2F};
+    meter.measure(1, over, 2, 0.01);
+    CHECK(meter.right().clipped);
+    meter.clearClip();
+    CHECK_FALSE(meter.right().clipped);
+}
+
+TEST_CASE("the level meter reads both sides of the tap", "[dsp]") {
+    AudioTap           tap;
+    std::vector<float> frames(9600);
+    for (std::size_t i = 0; i < frames.size(); i += 2) {
+        frames[i]     = 0.25F;
+        frames[i + 1] = 0.5F;
+    }
+    tap.write(frames.data(), frames.size(), 2);
+
+    LevelMeter meter;
+    meter.update(tap, 0.05, 48000.0, true);
+    CHECK(meter.left().peak == Catch::Approx(-12.04).margin(0.05));
+    CHECK(meter.right().peak == Catch::Approx(-6.02).margin(0.05));
+
+    // Stopped: the same samples are in the tap, and nothing is playing them.
+    meter.update(tap, 10.0, 48000.0, false);
+    CHECK(meter.right().peak == LevelMeter::kFloor);
+}
+
+TEST_CASE("the envelope keeps the last few seconds, oldest first", "[dsp]") {
+    EnvelopeHistory history{4};
+    history.setSampleRate(100.0);  // 4 seconds over 4 columns: 100 samples each
+
+    std::vector<float> loud(100, 0.5F);
+    loud[10] = -0.75F;
+    history.push(loud.data(), loud.size());
+    CHECK(history.at(3).high == 0.5F);
+    CHECK(history.at(3).low == -0.75F);
+    CHECK(history.at(0).high == 0.0F);
+
+    // Time passing with nothing heard moves it along and off the end.
+    history.pushSilence(100);
+    CHECK(history.at(2).high == 0.5F);
+    CHECK(history.at(3).high == 0.0F);
+    history.pushSilence(300);
+    CHECK(history.at(0).high == 0.0F);
+
+    // A new rate is a new scale, so what was there goes.
+    history.push(loud.data(), loud.size());
+    history.setSampleRate(200.0);
+    CHECK(history.at(3).high == 0.0F);
 }

@@ -61,6 +61,21 @@ AudioEngine::AudioEngine(const PluginRegistry& registry, IAudioOutput& output,
 
 AudioEngine::~AudioEngine() { stop(); }
 
+namespace {
+
+[[nodiscard]] SignalReport::Source describeSource(const TrackProperties& props,
+                                                  float                  trackGain) {
+    SignalReport::Source source;
+    source.format    = props.format;
+    source.codec     = props.codec.str();
+    source.encoding  = props.encoding.str();
+    source.lossless  = props.lossless;
+    source.trackGain = trackGain;
+    return source;
+}
+
+}  // namespace
+
 bool AudioEngine::openTrack(const Url& url) {
     auto opened = registry_.open(url);
     if (!opened) {
@@ -352,6 +367,7 @@ bool AudioEngine::play(const Url& url) {
     {
         const std::lock_guard lock(seamMutex_);
         deviceRunning_ = true;
+        heardSource_   = describeSource(firstProps, converter_.gain());
     }
 
     // What the running device was asked for, so a later request can be told
@@ -367,6 +383,39 @@ bool AudioEngine::play(const Url& url) {
         delegate_->trackBegan(url);
     }
     return true;
+}
+
+SignalReport AudioEngine::signalReport() const {
+    SignalReport report;
+    const PlaybackStatus playback = status();
+    if (playback == PlaybackStatus::Stopped) {
+        return report;
+    }
+
+    report.active = true;
+    report.paused = playback == PlaybackStatus::Paused;
+    {
+        const std::lock_guard lock(seamMutex_);
+        report.source = heardSource_;
+        report.device = format_;
+    }
+    {
+        const std::lock_guard lock(dspFactsMutex_);
+        report.dsp = dspFacts_;
+    }
+
+    report.hdcdDecoded     = hdcdDecoded_.load(std::memory_order_relaxed);
+    report.freeSurround    = freeSurroundActive_.load(std::memory_order_relaxed);
+    report.resampleQuality = settings_.Resampling();
+    report.exclusive       = output_.exclusiveHeld();
+    report.volume          = output_.volume();
+    report.latencySeconds  = output_.latencySeconds();
+    report.underruns       = output_.underrunCount();
+    if (report.device.valid() && report.device.channels > 0) {
+        report.bufferedSeconds = static_cast<double>(ring_.availableToRead()) /
+                                 report.device.channels / report.device.sampleRate;
+    }
+    return report;
 }
 
 void AudioEngine::applyReplayGain(const TrackProperties& props) {
@@ -404,6 +453,14 @@ void AudioEngine::applyDspSettings() {
         gains[band]           = raw.empty() ? 0.0 : std::strtod(raw.c_str(), nullptr);
     }
     equalizer_.setBandGains(gains);
+
+    const std::lock_guard lock(dspFactsMutex_);
+    dspFacts_.equalizer = equalizer_.active();
+    dspFacts_.preamp    = settings_.EqPreamp();
+    dspFacts_.fades     = settings_.EnableFading();
+    dspFacts_.tempo     = stretch.tempo;
+    dspFacts_.pitch     = stretch.pitch;
+    dspFacts_.stretch   = stretch.tempo != 1.0 || stretch.pitch != 1.0;
 }
 
 void AudioEngine::dspLoop() {
@@ -650,6 +707,7 @@ bool AudioEngine::writeToRing(const AudioChunk& chunk) {
         // emitting noise at the wrong scale.
         return true;
     }
+    hdcdDecoded_.store(converter_.hdcdDetected(), std::memory_order_relaxed);
     if (converted_.empty()) {
         return true;  // the resampler is still filling its delay line
     }
@@ -826,7 +884,10 @@ bool AudioEngine::pumpTrack() {
 
                     {
                         std::lock_guard lock(seamMutex_);
-                        pendingSeams_.push_back(Seam{framesWritten_, candidate});
+                        const TrackProperties incoming = track_->decoder->properties();
+                        pendingSeams_.push_back(
+                            Seam{framesWritten_, candidate,
+                                 describeSource(incoming, converter_.gain())});
                     }
                     advanced = true;
                     break;
@@ -1550,6 +1611,7 @@ void AudioEngine::publishSeams() {
             pendingSeams_.pop_front();
             audibleUrl_        = seam.url;
             audibleTrackStart_ = seam.framePosition;
+            heardSource_       = seam.source;
             became             = seam.url;
             // A new track starts at zero, so any seek base from the previous one
             // no longer applies.

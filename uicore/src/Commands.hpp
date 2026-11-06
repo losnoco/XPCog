@@ -138,6 +138,12 @@ enum CommandId : int {
     ViewNextPlaylist,
     ViewPreviousPlaylist,
 
+    // Cog's level and signal views. The envelope is ViewEnvelope because
+    // ViewWaveform is the seek bar's, which came first.
+    ViewVuMeter,
+    ViewEnvelope,
+    ViewSignalInspector,
+
     /// Not a command: the first id a widget in this application may use for
     /// itself, so nothing invents one that collides with the list above.
     FirstWidgetId,

@@ -451,6 +451,7 @@ if(XPCOG_BUILD_APP)
         uicore/test_lyricstext.cpp
         uicore/test_remotejobs.cpp
         uicore/test_session.cpp
+        uicore/test_signalchain.cpp
         uicore/test_settingeffect.cpp
         uicore/test_translations.cpp
     )

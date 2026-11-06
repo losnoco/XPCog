@@ -116,6 +116,11 @@ public:
     /// Owned here because this owns the output that fills it, and the output
     /// writes to it from the device callback -- so its lifetime has to be at
     /// least the output's. Borrowed by whoever draws it.
+    /// What is being done to the audio being heard, or an inactive report.
+    [[nodiscard]] SignalReport signalReport() const {
+        return engine_ ? engine_->signalReport() : SignalReport{};
+    }
+
     [[nodiscard]] AudioTap& tap() noexcept { return tap_; }
 
     // --- commands ----------------------------------------------------------

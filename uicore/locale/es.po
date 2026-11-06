@@ -2586,3 +2586,125 @@ msgstr "Cambiar nombre de la lista…"
 #: app-winui/src/PlaylistTabs.cpp
 msgid "Delete Playlist..."
 msgstr "Eliminar lista…"
+
+#: uicore/src/SignalChain.cpp
+msgid "%s dB"
+msgstr "%s dB"
+
+#: uicore/src/SignalChain.cpp
+msgid "%s kHz"
+msgstr "%s kHz"
+
+#: uicore/src/SignalChain.cpp
+msgid "%s%%"
+msgstr "%s %%"
+
+#: uicore/src/SignalChain.cpp
+msgid "%u channel"
+msgid_plural "%u channels"
+msgstr[0] "%u canal"
+msgstr[1] "%u canales"
+
+#: uicore/src/SignalChain.cpp
+msgid "%u-bit"
+msgstr "%u bits"
+
+#: uicore/src/Commands.cpp
+msgid "&VU Meter"
+msgstr "Vúmetro (&V)"
+
+#: uicore/src/SignalChain.cpp
+msgid "At normal speed"
+msgstr "A velocidad normal"
+
+#: uicore/src/SignalChain.cpp
+msgid "Decoder"
+msgstr "Decodificador"
+
+#: uicore/src/SignalChain.cpp
+msgid "Exclusive"
+msgstr "Exclusivo"
+
+#: uicore/src/SignalChain.cpp
+msgid "FreeSurround"
+msgstr "FreeSurround"
+
+#: uicore/src/SignalChain.cpp
+msgid "Full"
+msgstr "Máximo"
+
+#: uicore/src/SignalChain.cpp
+msgid "HDCD"
+msgstr "HDCD"
+
+#: uicore/src/SignalChain.cpp
+msgid "None for this track"
+msgstr "Ninguna para esta pista"
+
+#: uicore/src/SignalChain.cpp
+msgid "Not in this track"
+msgstr "No está en esta pista"
+
+#: uicore/src/SignalChain.cpp
+msgid "Nothing playing"
+msgstr "No se reproduce nada"
+
+#: uicore/src/SignalChain.cpp
+msgid "Off or flat"
+msgstr "Desactivado o plano"
+
+#: uicore/src/SignalChain.cpp
+msgid "Output latency: %s ms"
+msgstr "Latencia de salida: %s ms"
+
+#: uicore/src/SignalChain.cpp
+msgid "Peak extension and gain decoded"
+msgstr "Extensión de picos y ganancia decodificadas"
+
+#: uicore/src/SignalChain.cpp
+msgid "Preamp %s dB"
+msgstr "Preamplificador %s dB"
+
+#: uicore/src/SignalChain.cpp
+msgid "Processed"
+msgstr "Procesado"
+
+#: uicore/src/SignalChain.cpp
+msgid "Queued: %s ms"
+msgstr "En cola: %s ms"
+
+#: uicore/src/SignalChain.cpp
+msgid "Resampler"
+msgstr "Remuestreador"
+
+#: uicore/src/Commands.cpp
+msgid "Scrolling &Waveform"
+msgstr "Forma de &onda continua"
+
+#: uicore/src/Commands.cpp
+msgid "Signal &Inspector"
+msgstr "&Inspector de señal"
+
+#: app-gtk/src/Meters.cpp app-winui/src/Meters.cpp
+msgid "Signal Inspector"
+msgstr "Inspector de señal"
+
+#: uicore/src/SignalChain.cpp
+msgid "Stereo upmixed to 5.1"
+msgstr "Estéreo ampliado a 5.1"
+
+#: uicore/src/SignalChain.cpp
+msgid "Tempo %s%%, pitch %s%%"
+msgstr "Tempo %s %%, tono %s %%"
+
+#: uicore/src/SignalChain.cpp
+msgid "The device runs at the track's rate"
+msgstr "El dispositivo funciona a la frecuencia de la pista"
+
+#: uicore/src/SignalChain.cpp
+msgid "Unchanged"
+msgstr "Sin cambios"
+
+#: uicore/src/SignalChain.cpp
+msgid "Underruns: %zu"
+msgstr "Subejecuciones: %zu"

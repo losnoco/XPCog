@@ -29,7 +29,7 @@ TEST_CASE("every command has an action name, and the names are stable", "[uicore
     }
     // Every enumerator, once. The count is the enum's, and moves with it.
     CHECK(allCommands().size() == static_cast<std::size_t>(seen.size()));
-    CHECK(allCommands().size() == 56);
+    CHECK(allCommands().size() == 59);
 }
 
 TEST_CASE("the radio groups are one action each, by target", "[uicore][commands]") {

@@ -12,7 +12,9 @@ add_library(xpcog-core STATIC
     src/audio/Downmix.cpp
     src/audio/Equalizer.cpp
     src/audio/EqualizerPresets.cpp
+    src/audio/EnvelopeHistory.cpp
     src/audio/Fader.cpp
+    src/audio/LevelMeter.cpp
     src/audio/FreeSurround.cpp
     src/audio/Fft.cpp
     src/audio/RealFft.cpp

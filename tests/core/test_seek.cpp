@@ -497,3 +497,36 @@ TEST_CASE("a seek during the last track's play-out is still serviced", "[seek]")
     const std::size_t frames = capturedAudio(*output).size() / kChannels;
     CHECK(frames > static_cast<std::size_t>(kSampleRate) * 7);
 }
+
+TEST_CASE("the signal report describes what the engine is doing", "[seek][signal]") {
+    constexpr int kFrames = static_cast<int>(kSampleRate) * 4;
+
+    const auto file = makeFlac("report", kFrames);
+    if (!file) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer ring{static_cast<std::size_t>(kSampleRate * 0.25) * kChannels};
+    auto       output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    settings.setTempo(1.25);
+    AudioEngine engine{registry(), *output, ring, settings};
+
+    CHECK_FALSE(engine.signalReport().active);
+
+    REQUIRE(engine.play(Url::fromLocalPath(*file)));
+    const SignalReport report = engine.signalReport();
+    CHECK(report.active);
+    CHECK(report.source.format.sampleRate == kSampleRate);
+    CHECK(report.source.format.bitsPerSample == 16);
+    CHECK(report.source.codec == "FLAC");
+    CHECK(report.source.lossless);
+    CHECK(report.device.sampleRate == kSampleRate);
+    CHECK(report.dsp.stretch);
+    CHECK(report.dsp.tempo == 1.25);
+
+    engine.stop();
+    CHECK_FALSE(engine.signalReport().active);
+}

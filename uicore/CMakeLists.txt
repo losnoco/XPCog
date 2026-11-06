@@ -95,6 +95,8 @@ add_library(xpcog-uicore STATIC
     src/SettingChoices.hpp
     src/SettingEffect.cpp
     src/SettingEffect.hpp
+    src/SignalChain.cpp
+    src/SignalChain.hpp
     src/SpeedCurve.hpp
     src/TrackText.cpp
     src/TrackText.hpp
