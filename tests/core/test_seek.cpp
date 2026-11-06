@@ -530,3 +530,80 @@ TEST_CASE("the signal report describes what the engine is doing", "[seek][signal
     engine.stop();
     CHECK_FALSE(engine.signalReport().active);
 }
+
+TEST_CASE("a manual track change crossfades in the running pipeline", "[seek][crossfade]") {
+    constexpr int kFrames = static_cast<int>(kSampleRate) * 3;
+
+    const auto loud  = makeFlac("switch-loud", kFrames, 20000.0);
+    const auto quiet = makeFlac("switch-quiet", kFrames, 6000.0);
+    if (!loud || !quiet) {
+        SKIP("flac is not installed");
+    }
+
+    RingBuffer ring{static_cast<std::size_t>(kSampleRate * 0.25) * kChannels};
+    auto       output = makeOfflineOutput(ring, 8.0);
+
+    auto     store = makeMemorySettingsStore();
+    Settings settings{*store};
+    AudioEngine engine{registry(), *output, ring, settings};
+
+    TwoTrackDelegate delegate;
+    engine.setDelegate(&delegate);
+
+    SECTION("playing, it moves without a stop") {
+        REQUIRE(engine.play(Url::fromLocalPath(*loud)));
+        for (int i = 0; i < 1000 && engine.trackPositionSeconds() < 1.0; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+
+        REQUIRE(engine.switchTrack(Url::fromLocalPath(*quiet)));
+        CHECK(engine.signalReport().source.format.valid());
+        engine.waitUntilFinished();
+        engine.stop();
+
+        const std::vector<float> played = capturedAudio(*output);
+        CHECK(framesAtLevel(played, 0.4F, 1.0F) > static_cast<std::size_t>(kSampleRate * 0.5));
+
+        // The second track whole, from its top.
+        const std::size_t quietFrames = framesAtLevel(played, 0.08F, 0.35F);
+        CHECK(quietFrames > static_cast<std::size_t>(kSampleRate * 2.7));
+        CHECK(quietFrames < static_cast<std::size_t>(kSampleRate * 3.3));
+
+        // No gap: stopping and starting again leaves one, and this does not. The
+        // first frames are the track's own fade in, and the last the ring running
+        // dry. A step at the join is not asserted, because a seek leaves the same
+        // one: the fader's tail is the discarded audio only to within the ring's
+        // fill, which a pure tone shows as a jump in phase.
+        const std::size_t frames  = played.size() / kChannels;
+        std::size_t       silent  = 0;
+        std::size_t       longest = 0;
+        for (std::size_t frame = 4096; frame + 4096 < frames; ++frame) {
+            silent  = std::abs(played[frame * kChannels]) < 1e-4F ? silent + 1 : 0;
+            longest = std::max(longest, silent);
+        }
+        CHECK(longest < 64);
+
+        const std::lock_guard lock(delegate.mutex);
+        REQUIRE(delegate.began.size() == 2);
+        CHECK(delegate.began.back().toString() == Url::fromLocalPath(*quiet).toString());
+    }
+
+    SECTION("with fades off it declines, and playback is untouched") {
+        settings.setEnableFading(false);
+        REQUIRE(engine.play(Url::fromLocalPath(*loud)));
+        CHECK_FALSE(engine.switchTrack(Url::fromLocalPath(*quiet)));
+        CHECK(engine.status() == PlaybackStatus::Playing);
+        engine.stop();
+    }
+
+    SECTION("stopped, it declines") {
+        CHECK_FALSE(engine.switchTrack(Url::fromLocalPath(*quiet)));
+    }
+
+    SECTION("a file that will not open is declined, and playback is untouched") {
+        REQUIRE(engine.play(Url::fromLocalPath(*loud)));
+        CHECK_FALSE(engine.switchTrack(Url::fromLocalPath("/nonexistent/file.flac")));
+        CHECK(engine.status() == PlaybackStatus::Playing);
+        engine.stop();
+    }
+}

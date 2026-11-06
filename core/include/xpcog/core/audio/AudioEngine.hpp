@@ -37,6 +37,7 @@
 #include "xpcog/core/AudioFormat.hpp"
 #include "xpcog/core/MetadataMap.hpp"
 #include "xpcog/core/TrackProperties.hpp"
+#include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Url.hpp"
 #include "xpcog/core/Settings.hpp"
 #include "xpcog/core/audio/AudioConverter.hpp"
@@ -153,6 +154,17 @@ public:
     /// Opens `url` and starts playing. Replaces anything already playing.
     bool play(const Url& url);
 
+    /// Moves the running pipeline to `url` without stopping it, so the fader
+    /// crossfades from what is playing to the new track as it does for a seek.
+    /// Port of Cog's 1599115c0.
+    ///
+    /// Answers false, having changed nothing, whenever that cannot be done: not
+    /// playing, paused, fades off, a device held exclusively (whose rate should
+    /// follow the track), or a file that does not open. The caller then stops
+    /// and plays as it always did. Opens the file on the calling thread, so a
+    /// slow source stalls neither the feeder nor the audio.
+    bool switchTrack(const Url& url);
+
     void stop();
     void pause();
     void resume();
@@ -263,6 +275,9 @@ private:
     /// answer returns false, the same as no request at all.
     bool applyPendingSeek();
 
+    /// Takes on the track switchTrack() opened, if there is one.
+    bool applyPendingSwitch();
+
     /// Closes whatever is open and opens `url` again, discarding the queued
     /// seams that say another track is coming. Feeder thread only.
     ///
@@ -348,6 +363,7 @@ private:
     void interruptTrack();
     /// Opens `url`, returning false if nothing could decode it.
     bool openTrack(const Url& url);
+    void adoptTrack(PluginRegistry::OpenResult opened, const Url& url);
     void closeTrack();
     /// Writes `chunk` into the ring, blocking until it all fits or we stop.
     bool writeToRing(const class AudioChunk& chunk);
@@ -397,6 +413,12 @@ private:
     /// channels wide. Re-decided whenever a switch changes how wide the device
     /// is -- a move to stereo headphones drops the upmix rather than the switch.
     std::atomic<bool> freeSurroundActive_{false};
+
+    /// A track on its way from switchTrack() to the feeder, under switchMutex_.
+    struct PendingSwitch;
+    std::mutex                     switchMutex_;
+    std::condition_variable        switchTaken_;
+    std::unique_ptr<PendingSwitch> pendingSwitch_;
 
     /// What signalReport() says of the track being heard, under seamMutex_.
     SignalReport::Source heardSource_;

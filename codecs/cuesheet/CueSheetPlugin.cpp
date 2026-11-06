@@ -66,10 +66,9 @@ public:
             return false;
         }
 
-        const codecs::CueSheet sheet =
-            codecs::CueSheet::parse(codecs::readAllText(*source), url);
+        sheet_ = codecs::CueSheet::parse(codecs::readAllText(*source), url);
 
-        const codecs::CueTrack* track = sheet.findTrack(url.fragment());
+        const codecs::CueTrack* track = sheet_.findTrack(url.fragment());
         if (track == nullptr) {
             return false;
         }
@@ -85,26 +84,23 @@ public:
         lossless_  = innerProps.lossless;
         codecName_ = innerProps.codec;
 
-        const double rate = format_.sampleRate;
-        startFrame_       = track->startFrame(rate);
+        fileUrl_    = track->url;
+        fileFrames_ = innerProps.totalFrames;
+        return enterTrack(*track) && format_.valid();
+    }
 
-        const std::size_t         index = sheet.indexOf(track);
-        const codecs::CueTrack*   next  = sheet.nextInSameFile(index);
-        endFrame_ = (next != nullptr) ? next->startFrame(rate) : innerProps.totalFrames;
-
-        if (endFrame_ <= startFrame_) {
+    /// The next track of the same file, on the decoder already open. Cog's
+    /// -setTrack:. A seek rather than reading on, because the last chunk of the
+    /// track before was trimmed at its end and what was cut went with it.
+    bool setTrack(const Url& url) override {
+        if (!inner_) {
             return false;
         }
-
-        tags_       = track->metadata();
-        replayGain_ = track->replayGain;
-
-        // Seek eagerly so a failure surfaces at open() rather than mid-playback.
-        if (inner_.decoder->seek(startFrame_) < 0) {
+        const codecs::CueTrack* track = sheet_.findTrack(url.fragment());
+        if (track == nullptr || track->url != fileUrl_) {
             return false;
         }
-        framePos_ = startFrame_;
-        return format_.valid();
+        return enterTrack(*track);
     }
 
     bool readAudio(AudioChunk& out) override {
@@ -176,8 +172,35 @@ public:
     [[nodiscard]] MetadataMap metadata() const override { return tags_; }
 
 private:
+    /// Moves to `track`'s span of the open file, and leaves things as they were
+    /// if the decoder will not go there.
+    bool enterTrack(const codecs::CueTrack& track) {
+        const double              rate  = format_.sampleRate;
+        const std::int64_t        start = track.startFrame(rate);
+        const std::size_t         index = sheet_.indexOf(&track);
+        const codecs::CueTrack*   next  = sheet_.nextInSameFile(index);
+        const std::int64_t        end   = (next != nullptr) ? next->startFrame(rate) : fileFrames_;
+        if (end <= start) {
+            return false;
+        }
+
+        // Seek eagerly so a failure surfaces here rather than mid-playback.
+        if (inner_.decoder->seek(start) < 0) {
+            return false;
+        }
+        startFrame_ = start;
+        endFrame_   = end;
+        framePos_   = start;
+        tags_       = track.metadata();
+        replayGain_ = track.replayGain;
+        return true;
+    }
+
     const PluginRegistry*        registry_ = nullptr;
     PluginRegistry::OpenResult   inner_;
+    codecs::CueSheet             sheet_;
+    Url                          fileUrl_;
+    std::int64_t                 fileFrames_ = 0;
 
     AudioFormat  format_{};
     std::int64_t startFrame_ = 0;

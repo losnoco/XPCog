@@ -63,6 +63,15 @@ AudioEngine::~AudioEngine() { stop(); }
 
 namespace {
 
+/// Whether two URLs name the same file, fragment aside: a cue sheet's tracks.
+[[nodiscard]] bool sameFile(const Url& left, const Url& right) {
+    const auto withoutFragment = [](const Url& url) {
+        const std::string text = url.toString();
+        return text.substr(0, text.find('#'));
+    };
+    return withoutFragment(left) == withoutFragment(right);
+}
+
 [[nodiscard]] SignalReport::Source describeSource(const TrackProperties& props,
                                                   float                  trackGain) {
     SignalReport::Source source;
@@ -81,7 +90,11 @@ bool AudioEngine::openTrack(const Url& url) {
     if (!opened) {
         return false;
     }
+    adoptTrack(std::move(opened), url);
+    return true;
+}
 
+void AudioEngine::adoptTrack(PluginRegistry::OpenResult opened, const Url& url) {
     auto track     = std::make_unique<OpenTrack>();
     track->source  = std::move(opened.source);
     track->decoder = std::move(opened.decoder);
@@ -126,7 +139,6 @@ bool AudioEngine::openTrack(const Url& url) {
         const std::lock_guard lock(trackMutex_);
         track_ = std::move(track);
     }
-    return true;
 }
 
 void AudioEngine::closeTrack() {
@@ -784,6 +796,7 @@ bool AudioEngine::pumpTrack() {
             }
         }
 
+        static_cast<void>(applyPendingSwitch());
         static_cast<void>(applyPendingSeek());
 
         // Nothing may be written until the consumer has dropped the pre-seek
@@ -858,6 +871,26 @@ bool AudioEngine::pumpTrack() {
                 const std::string key = candidate.toString();
                 if (std::find(failedThisAdvance.begin(), failedThisAdvance.end(),
                               key) != failedThisAdvance.end()) {
+                    break;
+                }
+
+                // The next track of the same file, where the decoder can move
+                // to it: no reopening, and with the rate and channels the same
+                // nothing downstream has anything to flush. Cog's fd06f5761.
+                //
+                // There may be nothing open: a candidate before this one failed.
+                if (track_ && sameFile(track_->url, candidate) &&
+                    track_->decoder->setTrack(candidate)) {
+                    track_->url = candidate;
+                    const TrackProperties incoming = track_->decoder->properties();
+                    applyReplayGain(incoming);
+                    {
+                        std::lock_guard lock(seamMutex_);
+                        pendingSeams_.push_back(
+                            Seam{framesWritten_, candidate,
+                                 describeSource(incoming, converter_.gain())});
+                    }
+                    advanced = true;
                     break;
                 }
 
@@ -988,7 +1021,7 @@ bool AudioEngine::pumpTrack() {
         // handoff has moved past is applyPendingSeek()'s business, not this
         // loop's; after publishSeams() rather than before it so that it is
         // asking about the track that is audible now.
-        if (applyPendingSeek()) {
+        if (applyPendingSwitch() || applyPendingSeek()) {
             return true;
         }
 
@@ -1485,6 +1518,74 @@ bool AudioEngine::applyPendingSeek() {
     return false;
 }
 
+struct AudioEngine::PendingSwitch {
+    PluginRegistry::OpenResult opened;
+    Url                        url;
+};
+
+bool AudioEngine::switchTrack(const Url& url) {
+    if (status_.load(std::memory_order_relaxed) != PlaybackStatus::Playing ||
+        pendingPause_.load(std::memory_order_acquire) || !settings_.EnableFading() ||
+        output_.exclusiveHeld()) {
+        return false;
+    }
+
+    auto opened = registry_.open(url);
+    if (!opened) {
+        return false;
+    }
+
+    std::unique_lock lock(switchMutex_);
+    pendingSwitch_ = std::make_unique<PendingSwitch>(PendingSwitch{std::move(opened), url});
+
+    // The feeder takes it at the top of its loop. If it never does -- it was
+    // finishing as this arrived -- the caller's stop and play is the answer, and
+    // the track is taken back so nothing lands on the next session.
+    const bool taken = switchTaken_.wait_for(lock, std::chrono::milliseconds(500),
+                                             [this] { return pendingSwitch_ == nullptr; });
+    if (!taken) {
+        pendingSwitch_.reset();
+        return false;
+    }
+    lock.unlock();
+
+    if (delegate_ != nullptr) {
+        delegate_->trackBegan(url);
+    }
+    return true;
+}
+
+bool AudioEngine::applyPendingSwitch() {
+    std::unique_ptr<PendingSwitch> pending;
+    {
+        const std::lock_guard lock(switchMutex_);
+        pending = std::move(pendingSwitch_);
+    }
+    if (!pending) {
+        return false;
+    }
+
+    closeTrack();
+    adoptTrack(std::move(pending->opened), pending->url);
+
+    const TrackProperties properties = track_->decoder->properties();
+    applyReplayGain(properties);
+    {
+        const std::lock_guard lock(seamMutex_);
+        // Whatever was queued to follow is not coming now.
+        pendingSeams_.clear();
+        audibleUrl_  = pending->url;
+        heardSource_ = describeSource(properties, converter_.gain());
+    }
+
+    // From here it is a seek to the top of a different file, which is the whole
+    // idea: the discarded audio becomes the fader's tail.
+    dropQueuedAudio(0);
+
+    switchTaken_.notify_all();
+    return true;
+}
+
 bool AudioEngine::reopenAudibleTrack(const Url& url) {
     closeTrack();
     if (!openTrack(url)) {
@@ -1625,6 +1726,12 @@ void AudioEngine::publishSeams() {
 }
 
 void AudioEngine::stop() {
+    {
+        const std::lock_guard lock(switchMutex_);
+        pendingSwitch_.reset();
+    }
+    switchTaken_.notify_all();
+
     // Fade before tearing anything down, or the last thing heard is a step to
     // silence. Bounded and short: stop() already blocks to join two threads, so
     // waiting out a 200 ms ramp is in keeping -- but it must never hang, hence the

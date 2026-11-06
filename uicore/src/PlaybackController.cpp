@@ -276,14 +276,21 @@ void PlaybackController::requestStart(TrackId id, Search hunt) {
     startPending.publish(id);
     playbackStateChanged.publish(false, false);
 
-    starter_->post([this, id, url, generation] {
+    // A resumed session and a device reopen have a position to land on, and a
+    // fade from whatever was running into that is not what either means.
+    const bool crossfade = resumeAt_ <= 0.0;
+
+    starter_->post([this, id, url, generation, crossfade] {
         bool opened = false;
         // A newer request landed while this one waited its turn. Doing the work
         // anyway would open a source only to tear it down a moment later --
         // which for a URL means a whole connection made and dropped.
         if (generation == startGeneration_.load()) {
-            engine_->stop();
-            opened = engine_->play(url);
+            opened = crossfade && engine_->switchTrack(url);
+            if (!opened) {
+                engine_->stop();
+                opened = engine_->play(url);
+            }
         }
         dispatch_([this, id, opened, generation] { finishStart(id, opened, generation); });
     });

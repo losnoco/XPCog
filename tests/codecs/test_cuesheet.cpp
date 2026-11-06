@@ -297,6 +297,44 @@ TEST_CASE("cue tracks decode the correct span of the audio file", "[cue]") {
     CHECK(total == whole.size());
 }
 
+TEST_CASE("a cue decoder moves to the next track on the file it has open", "[cue]") {
+    if (!haveCue()) SKIP("cue sheet support not built");
+    const auto flac = albumFlac();
+    if (flac.empty()) SKIP("the `flac` command-line tool is not available");
+
+    const auto entries = registry().expandContainer(Url::fromLocalPath(albumCue()));
+    REQUIRE(entries.size() == 3);
+
+    auto opened = registry().open(entries[0]);
+    REQUIRE(opened);
+
+    // Through to the end of the first, so its last chunk has been trimmed.
+    AudioChunk chunk;
+    while (opened.decoder->readAudio(chunk)) {
+    }
+
+    REQUIRE(opened.decoder->setTrack(entries[1]));
+    CHECK(opened.decoder->properties().totalFrames > 0);
+
+    std::vector<float> moved;
+    while (opened.decoder->readAudio(chunk)) {
+        const std::size_t samples = float32SampleCount(chunk);
+        const std::size_t offset  = moved.size();
+        moved.resize(offset + samples);
+        convertToFloat32(chunk, std::span<float>{moved}.subspan(offset, samples));
+    }
+
+    // Sample for sample what opening that track on its own gives.
+    const std::vector<float> fresh = decodeAll(entries[1]);
+    REQUIRE(moved.size() == fresh.size());
+    CHECK(moved == fresh);
+
+    // A fragment the sheet does not have is declined and changes nothing.
+    const auto bogus = Url::parse(entries[1].toString().substr(0, entries[1].toString().find('#')) + "#99");
+    REQUIRE(bogus);
+    CHECK_FALSE(opened.decoder->setTrack(*bogus));
+}
+
 TEST_CASE("a cue track reports its own duration, not the file's", "[cue]") {
     if (!haveCue()) SKIP("cue sheet support not built");
     if (albumFlac().empty()) SKIP("the `flac` command-line tool is not available");
