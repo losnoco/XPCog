@@ -17,7 +17,7 @@
 +    endif()
  endif()
  
- set_target_properties(spessasynth PROPERTIES VERSION 4.3.17 SOVERSION 11)
+ set_target_properties(spessasynth PROPERTIES VERSION 4.3.22 SOVERSION 11)
 @@ -211,3 +222,7 @@
      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
