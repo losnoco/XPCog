@@ -30,6 +30,7 @@
 #ifdef XPCOG_HAVE_SC55_PANEL
 #include "Sc55View.hpp"
 #endif
+#include "Meters.hpp"
 #include "PlaylistPane.hpp"
 #include "PlaylistTabs.hpp"
 #include "PreferencesDialog.hpp"
@@ -172,11 +173,15 @@ private:
     std::unique_ptr<SeekBar>      seekBar_;
     std::unique_ptr<PlaylistPane> playlist_;
     std::unique_ptr<PlaylistTabs> tabs_;
+    std::unique_ptr<VuMeterView>     vuMeter_;
+    std::unique_ptr<EnvelopeView>    envelope_;
+    std::unique_ptr<SignalInspector> inspector_;
 
     /// Holds the Add to Playlist submenu while there is somewhere to add to.
     GObjectPtr<GMenu>             addToSection_;
     GObjectPtr<GSimpleAction>     addToAction_;
     Connection                    addToActivated_;
+    Connection                    statusClicked_;
     std::unique_ptr<FileTreePane> fileTree_;
     std::unique_ptr<InfoPane>      info_;
     std::unique_ptr<LyricsPane>    lyrics_;

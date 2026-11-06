@@ -27,6 +27,7 @@
 #include "SeekBar.hpp"
 #include "Session.hpp"
 #include "Translations.hpp"
+#include "Meters.hpp"
 #include "PlaylistTabs.hpp"
 #include "Visualizers.hpp"
 #ifdef XPCOG_HAVE_SC55_PANEL
@@ -950,6 +951,67 @@ TEST_CASE("the oscilloscope draws every channel mode and its menu writes setting
 }
 
 #ifdef XPCOG_HAVE_SC55_PANEL
+TEST_CASE("the VU meter and the waveform pane draw what the tap holds", "[gtk][meters]") {
+    if (!toolkit()) {
+        SKIP("no display: GTK could not initialise");
+    }
+    xpcog::AudioTap    tap;
+    std::vector<float> stereo;
+    for (int frame = 0; frame < 48000; ++frame) {
+        const double t     = frame / 48000.0;
+        const double swell = 0.5 + 0.5 * std::sin(2.0 * 3.14159265 * 3.0 * t);
+        stereo.push_back(static_cast<float>(0.8 * swell * std::sin(2.0 * 3.14159265 * 110.0 * t)));
+        stereo.push_back(static_cast<float>(0.2 * std::sin(2.0 * 3.14159265 * 330.0 * t)));
+    }
+    tap.write(stereo.data(), stereo.size(), 2);
+
+    xpcog::gtk::VuMeterView meter(tap);
+    meter.setSampleRate(48000.0);
+    {
+        TestWindow window(meter.widget(), 500, 70);
+        meter.setActive(true);
+        settle(10);
+        capture(meter.widget(), "vu-meter");
+        meter.setActive(false);
+    }
+
+    xpcog::gtk::EnvelopeView envelope(tap);
+    envelope.setSampleRate(48000.0);
+    {
+        TestWindow window(envelope.widget(), 600, 140);
+        envelope.setActive(true);
+        settle(10);
+        tap.write(stereo.data(), stereo.size(), 2);
+        settle(10);
+        capture(envelope.widget(), "envelope");
+        envelope.setActive(false);
+    }
+}
+
+TEST_CASE("the signal inspector opens with nothing playing and closes", "[gtk][meters]") {
+    if (!toolkit()) {
+        SKIP("no display: GTK could not initialise");
+    }
+    SessionHarness h;
+    GtkWidget*     parent = gtk_window_new();
+    {
+        xpcog::gtk::SignalInspector inspector(GTK_WINDOW(parent), h.session);
+        int                         changes = 0;
+        inspector.visibilityChanged         = [&changes] { ++changes; };
+
+        CHECK_FALSE(inspector.shown());
+        inspector.toggle();
+        settle(5);
+        CHECK(inspector.shown());
+        capture(GTK_WIDGET(inspector.window()), "signal-inspector");
+        inspector.toggle();
+        settle(5);
+        CHECK_FALSE(inspector.shown());
+        CHECK(changes == 2);
+    }
+    gtk_window_destroy(GTK_WINDOW(parent));
+}
+
 TEST_CASE("the SC-55 panel explains itself with nothing to show", "[gtk][sc55]") {
     if (!toolkit()) {
         SKIP("no display: GTK could not initialise");

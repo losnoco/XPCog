@@ -28,6 +28,8 @@ set(XPCOG_GTK_SOURCES
     src/MainWindow.hpp
     src/PlaylistTabs.cpp
     src/PlaylistTabs.hpp
+    src/Meters.cpp
+    src/Meters.hpp
     src/Menus.cpp
     src/Menus.hpp
     src/MiniWindow.cpp

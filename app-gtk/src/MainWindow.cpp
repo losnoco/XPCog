@@ -170,6 +170,11 @@ void MainWindow::buildUi(AdwApplication* application) {
                        spectrum_->widget());
     tools_->addSection("scope", app::commandLabel(CommandId::ViewOscilloscope),
                        scope_->widget());
+    vuMeter_  = std::make_unique<VuMeterView>(session_.playback().tap());
+    envelope_ = std::make_unique<EnvelopeView>(session_.playback().tap());
+    tools_->addSection("envelope", app::commandLabel(CommandId::ViewEnvelope),
+                       envelope_->widget());
+    tools_->addSection("vu", app::commandLabel(CommandId::ViewVuMeter), vuMeter_->widget());
     tools_->addSection("equalizer", app::commandLabel(CommandId::ViewEqualizer),
                        equalizer_->widget());
     tools_->addSection("speed", app::commandLabel(CommandId::ViewSpeed),
@@ -200,6 +205,20 @@ void MainWindow::buildUi(AdwApplication* application) {
     gtk_popover_set_has_arrow(GTK_POPOVER(playlistMenu_), FALSE);
     gtk_widget_set_halign(playlistMenu_, GTK_ALIGN_START);
     gtk_widget_set_parent(playlistMenu_, playlist_->listWidget());
+
+    // The inspector, reached from the View menu and by clicking the status line.
+    inspector_ = std::make_unique<SignalInspector>(window_, session_);
+    inspector_->visibilityChanged = [this] {
+        actions_->setChecked(CommandId::ViewSignalInspector, inspector_->shown());
+    };
+    {
+        GtkGesture* click = gtk_gesture_click_new();
+        statusClicked_    = Connection::to<void(GtkGestureClick*, int, double, double)>(
+            click, "released", [this](GtkGestureClick*, int, double, double) {
+                inspector_->toggle();
+            });
+        gtk_widget_add_controller(GTK_WIDGET(statusLabel_), GTK_EVENT_CONTROLLER(click));
+    }
 
     // The volume, seeded from the setting the engine was seeded from.
     settingScales_ = true;
@@ -334,6 +353,8 @@ void MainWindow::wireUp() {
     observe(session_.playbackStateChanged, [this](bool, bool) {
         spectrum_->setSampleRate(session_.playback().sampleRate());
         scope_->setSampleRate(session_.playback().sampleRate());
+        vuMeter_->setSampleRate(session_.playback().sampleRate());
+        envelope_->setSampleRate(session_.playback().sampleRate());
         refreshVisualizers();
     });
     observe(spectrum_->settingsRequested, [this] { showPreferences(PreferencesPage::Visualizers); });
@@ -594,6 +615,15 @@ void MainWindow::onCommand(CommandId id) {
             break;
         case CommandId::ViewOscilloscope:
             showTool("scope", !tools_->shown("scope"));
+            break;
+        case CommandId::ViewVuMeter:
+            showTool("vu", !tools_->shown("vu"));
+            break;
+        case CommandId::ViewEnvelope:
+            showTool("envelope", !tools_->shown("envelope"));
+            break;
+        case CommandId::ViewSignalInspector:
+            inspector_->toggle();
             break;
         case CommandId::ViewEqualizer:
             showTool("equalizer", !tools_->shown("equalizer"));
@@ -947,6 +977,8 @@ void MainWindow::refreshVisualizers() {
     const bool playing = session_.playback().playing() && !session_.playback().paused();
     spectrum_->setActive(tools_->shown("spectrum") && playing);
     scope_->setActive(tools_->shown("scope") && playing);
+    vuMeter_->setActive(tools_->shown("vu") && playing);
+    envelope_->setActive(tools_->shown("envelope") && playing);
 #ifdef XPCOG_HAVE_SC55_PANEL
     // Shown is enough: the panel explains itself when nothing is playing on
     // a machine that has one, which is a thing worth seeing.
@@ -1001,6 +1033,9 @@ void MainWindow::refreshPaneState() {
     actions_->setChecked(CommandId::ViewLyrics, shown && g_strcmp0(current, "lyrics") == 0);
     actions_->setChecked(CommandId::ViewSpectrum, tools_->shown("spectrum"));
     actions_->setChecked(CommandId::ViewOscilloscope, tools_->shown("scope"));
+    actions_->setChecked(CommandId::ViewVuMeter, tools_->shown("vu"));
+    actions_->setChecked(CommandId::ViewEnvelope, tools_->shown("envelope"));
+    actions_->setChecked(CommandId::ViewSignalInspector, inspector_ && inspector_->shown());
     actions_->setChecked(CommandId::ViewEqualizer, tools_->shown("equalizer"));
     actions_->setChecked(CommandId::ViewSpeed, tools_->shown("speed"));
     actions_->setChecked(CommandId::ViewSc55Panel, tools_->shown("sc55"));
