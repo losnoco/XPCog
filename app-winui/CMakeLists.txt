@@ -33,6 +33,8 @@ set(XPCOG_WINUI_SOURCES
     src/PlaylistTabs.hpp
     src/MiniPlayer.cpp
     src/MiniPlayer.hpp
+    src/Meters.cpp
+    src/Meters.hpp
     src/Oscilloscope.cpp
     src/Oscilloscope.hpp
     src/Panes.cpp

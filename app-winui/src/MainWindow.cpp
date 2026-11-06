@@ -296,6 +296,12 @@ void MainWindow::build() {
                        spectrum_->element(), ToolsStrip::Scroll::None, ToolsStrip::Chrome::Dark);
     tools_->addSection("scope", app::commandLabel(app::CommandId::ViewOscilloscope),
                        scope_->element(), ToolsStrip::Scroll::None, ToolsStrip::Chrome::Dark);
+    vuMeter_  = std::make_unique<VuMeterView>(session_.playback().tap(), session_.settings());
+    envelope_ = std::make_unique<EnvelopeView>(session_.playback().tap(), session_.settings());
+    tools_->addSection("envelope", app::commandLabel(app::CommandId::ViewEnvelope),
+                       envelope_->element(), ToolsStrip::Scroll::None, ToolsStrip::Chrome::Dark);
+    tools_->addSection("vu", app::commandLabel(app::CommandId::ViewVuMeter), vuMeter_->element(),
+                       ToolsStrip::Scroll::None, ToolsStrip::Chrome::Dark);
     tools_->addSection("equalizer", app::commandLabel(app::CommandId::ViewEqualizer),
                        equalizer_->element(), ToolsStrip::Scroll::Both);
     tools_->addSection("speed", app::commandLabel(app::CommandId::ViewSpeed), speed_->element(),
@@ -664,6 +670,11 @@ void MainWindow::wireUp() {
     observe(session_.tracksUpdated, [this] { refreshCommands(); });
     observe(session_.scanFinished, [this] { refreshCommands(); });
     observe(session_.playlistsChanged, [this] { refreshPlaylists(); });
+
+    // The inspector, reached from the View menu and by clicking the status line.
+    inspector_ = std::make_unique<SignalInspector>(session_);
+    inspector_->visibilityChanged = [this] { refreshCommands(); };
+    status_.Tapped([this](auto&&, auto&&) { inspector_->toggle(); });
     observe(session_.undo().changed, [this] { refreshCommands(); });
 
     // Which shortcuts a text box should have to itself: see setTextFocus().
@@ -706,6 +717,8 @@ void MainWindow::onPlaybackStateChanged(bool playing, bool paused) {
     // only once a track has opened one.
     spectrum_->setSampleRate(session_.playback().sampleRate());
     scope_->setSampleRate(session_.playback().sampleRate());
+    vuMeter_->setSampleRate(session_.playback().sampleRate());
+    envelope_->setSampleRate(session_.playback().sampleRate());
     refreshVisualizers();
     const bool showsPause = playing && !paused;
     setGlyph(playButton_, showsPause ? kGlyphPause : kGlyphPlay, app::tr(showsPause ? "Pause" : "Play"));
@@ -863,6 +876,12 @@ std::optional<bool> MainWindow::checked(app::CommandId id) const {
             return tools_ && tools_->shown("spectrum");
         case CommandId::ViewOscilloscope:
             return tools_ && tools_->shown("scope");
+        case CommandId::ViewVuMeter:
+            return tools_ && tools_->shown("vu");
+        case CommandId::ViewEnvelope:
+            return tools_ && tools_->shown("envelope");
+        case CommandId::ViewSignalInspector:
+            return inspector_ && inspector_->shown();
         case CommandId::ViewWaveform:
             return settings.WaveformSeekBar();
         case CommandId::ViewSc55Panel:
@@ -1059,6 +1078,15 @@ void MainWindow::onCommand(app::CommandId id) {
         case CommandId::ViewOscilloscope:
             showTool("scope", !tools_->shown("scope"));
             break;
+        case CommandId::ViewVuMeter:
+            showTool("vu", !tools_->shown("vu"));
+            break;
+        case CommandId::ViewEnvelope:
+            showTool("envelope", !tools_->shown("envelope"));
+            break;
+        case CommandId::ViewSignalInspector:
+            inspector_->toggle();
+            break;
         case CommandId::ViewWaveform:
             settings.setWaveformSeekBar(!settings.WaveformSeekBar());
             session_.settingChanged("waveformSeekBar");
@@ -1171,6 +1199,8 @@ void MainWindow::refreshVisualizers() {
     const bool playing = session_.playback().playing() && !session_.playback().paused();
     spectrum_->setActive(tools_->shown("spectrum") && playing);
     scope_->setActive(tools_->shown("scope") && playing);
+    vuMeter_->setActive(tools_->shown("vu") && playing);
+    envelope_->setActive(tools_->shown("envelope") && playing);
 #ifdef XPCOG_HAVE_SC55_PANEL
     // Whether or not anything plays: the panel shows the synth's idle state
     // too, as GTK's does.

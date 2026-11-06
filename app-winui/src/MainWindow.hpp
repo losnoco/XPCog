@@ -3,6 +3,7 @@
 #include "Chrome.hpp"
 #include "CommandMenus.hpp"
 #include "FileTreePane.hpp"
+#include "Meters.hpp"
 #include "MiniPlayer.hpp"
 #include "Panes.hpp"
 #include "Oscilloscope.hpp"
@@ -149,6 +150,9 @@ private:
     app::Session& session_;
 
     std::unique_ptr<PlaylistTabs>        tabs_;
+    std::unique_ptr<VuMeterView>         vuMeter_;
+    std::unique_ptr<EnvelopeView>        envelope_;
+    std::unique_ptr<SignalInspector>     inspector_;
     mux::Window                          window_{nullptr};
     mux::Controls::TitleBar              titleBar_{nullptr};
     /// The playing track, at the title bar's right end.

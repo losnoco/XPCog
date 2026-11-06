@@ -253,6 +253,7 @@ TEST_CASE("Every pane the View menu shows opens and closes", "[winui]") {
         CommandId::ViewFileTree, CommandId::ViewInfo,       CommandId::ViewLyrics,
         CommandId::ViewSpectrum, CommandId::ViewOscilloscope, CommandId::ViewEqualizer,
         CommandId::ViewSpeed,    CommandId::ViewWaveform,
+        CommandId::ViewVuMeter,  CommandId::ViewEnvelope, CommandId::ViewSignalInspector,
 #ifdef XPCOG_HAVE_SC55_PANEL
         CommandId::ViewSc55Panel,
 #endif
