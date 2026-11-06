@@ -209,8 +209,27 @@ void MainWindow::build() {
     //
     // On a card -- see card() in WinRT.hpp -- as every region holding content is.
     playlist_ = std::make_unique<PlaylistTable>(session_.view(), session_.settings());
+    tabs_ = std::make_unique<PlaylistTabs>(
+        session_.playlists(),
+        PlaylistTabs::Hooks{
+            [this](PlaylistSet::Id id) { return session_.playlistTitle(id); },
+            [this](PlaylistSet::Id id) { confirmDeletePlaylist(id); },
+            [this](app::CommandId id) { onCommand(id); },
+        });
+    auto playlistColumn = mux::Controls::Grid();
+    {
+        auto tabsRow = mux::Controls::RowDefinition();
+        tabsRow.Height(mux::GridLengthHelper::Auto());
+        auto listRow = mux::Controls::RowDefinition();
+        listRow.Height(mux::GridLengthHelper::FromValueAndType(1, mux::GridUnitType::Star));
+        playlistColumn.RowDefinitions().Append(tabsRow);
+        playlistColumn.RowDefinitions().Append(listRow);
+    }
+    mux::Controls::Grid::SetRow(playlist_->element().as<mux::FrameworkElement>(), 1);
+    playlistColumn.Children().Append(tabs_->element());
+    playlistColumn.Children().Append(playlist_->element());
     auto playlistCard = card();
-    playlistCard.Child(playlist_->element());
+    playlistCard.Child(playlistColumn);
 
     // --- the panes, as GTK lays them out -------------------------------------------
     //
@@ -644,6 +663,8 @@ void MainWindow::wireUp() {
     subscriptions_.push_back(session_.view().rebuilt.connect([this] { refreshCommands(); }));
     observe(session_.tracksUpdated, [this] { refreshCommands(); });
     observe(session_.scanFinished, [this] { refreshCommands(); });
+    observe(session_.playlistsChanged, [this] { refreshPlaylists(); });
+    observe(session_.undo().changed, [this] { refreshCommands(); });
 
     // Which shortcuts a text box should have to itself: see setTextFocus().
     window_.Content().as<mux::UIElement>().GotFocus([this](auto&&, mux::RoutedEventArgs const& args) {
@@ -788,6 +809,11 @@ bool MainWindow::enabled(app::CommandId id) const {
             return session_.playback().playing();
         case CommandId::EditScrollToCurrent:
             return session_.currentTrack() != kInvalidTrackId;
+        case CommandId::FileDeletePlaylist:
+        case CommandId::ViewNextPlaylist:
+        case CommandId::ViewPreviousPlaylist:
+            return session_.playlists().size() > 1;
+        case CommandId::FileNewPlaylistFromSelection:
         case CommandId::EditRemove:
         case CommandId::PlaybackEnqueue:
         case CommandId::PlaylistToggleQueued:
@@ -901,6 +927,25 @@ void MainWindow::onCommand(app::CommandId id) {
             session_.playback().previous();
             break;
 
+        case CommandId::FileNewPlaylist:
+            session_.newPlaylist();
+            break;
+        case CommandId::FileNewPlaylistFromSelection:
+            session_.newPlaylist(selectedTracks());
+            break;
+        case CommandId::FileRenamePlaylist:
+            renameShownPlaylist();
+            break;
+        case CommandId::FileDeletePlaylist:
+            confirmDeletePlaylist(session_.playlists().shownId());
+            break;
+        case CommandId::ViewNextPlaylist:
+            session_.showPlaylistOffset(1);
+            break;
+        case CommandId::ViewPreviousPlaylist:
+            session_.showPlaylistOffset(-1);
+            break;
+
         case CommandId::EditUndo:
             session_.undo().undo();
             break;
@@ -914,6 +959,7 @@ void MainWindow::onCommand(app::CommandId id) {
             // Cog's "select currently playing": scroll to it and select it,
             // replacing the selection. A filter can be hiding it, and saying
             // so beats doing nothing.
+            session_.showPlayingPlaylist();
             if (const auto row = session_.view().rowForTrack(session_.currentTrack())) {
                 playlist_->selectOnly(*row);
             } else {
@@ -1039,7 +1085,30 @@ void MainWindow::onCommand(app::CommandId id) {
 void MainWindow::showPlaylistMenu(const mux::UIElement& target,
                                   std::optional<winrt::Windows::Foundation::Point> at) {
     refreshCommands();
-    auto menu    = commands_->playlistMenu();
+    auto menu = commands_->playlistMenu();
+
+    // Add to Playlist names the playlists there are, so it is built here rather
+    // than coming from the command table.
+    PlaylistSet& playlists = session_.playlists();
+    if (playlists.size() > 1) {
+        auto targets = mux::Controls::MenuFlyoutSubItem();
+        targets.Text(toH(app::tr("Add to Playlist")));
+        for (std::size_t i = 0; i < playlists.size(); ++i) {
+            const PlaylistSet::Id id = playlists.at(i).id;
+            if (id == playlists.shownId()) {
+                continue;
+            }
+            auto item = mux::Controls::MenuFlyoutItem();
+            item.Text(toH(session_.playlistTitle(id)));
+            item.Click([this, id](auto&&, auto&&) {
+                session_.addToPlaylist(selectedTracks(), id);
+            });
+            targets.Items().Append(item);
+        }
+        menu.Items().Append(mux::Controls::MenuFlyoutSeparator());
+        menu.Items().Append(targets);
+    }
+
     auto options = mux::Controls::Primitives::FlyoutShowOptions();
     if (at) {
         options.Position(*at);
@@ -1412,6 +1481,66 @@ winrt::fire_and_forget MainWindow::openUrl() {
         if (const std::optional<Url> url = Url::parse(toUtf8(entry.Text()))) {
             session_.addUrls({*url});
         }
+    }
+}
+
+void MainWindow::refreshPlaylists() {
+    tabs_->refresh();
+    refreshCommands();
+}
+
+winrt::fire_and_forget MainWindow::renameShownPlaylist() {
+    if (dialogOpen_) {
+        co_return;
+    }
+    dialogOpen_ = true;
+
+    const PlaylistSet::Id id = session_.playlists().shownId();
+
+    auto box   = dialog(app::tr("Rename Playlist"));
+    auto entry = mux::Controls::TextBox();
+    entry.Text(toH(session_.playlistTitle(id)));
+    entry.MinWidth(320);
+    box.Content(entry);
+    box.PrimaryButtonText(toH(app::tr("Rename")));
+    box.CloseButtonText(toH(app::tr("Cancel")));
+
+    const auto result = co_await box.ShowAsync();
+    dialogOpen_ = false;
+    if (result == mux::Controls::ContentDialogResult::Primary) {
+        std::string name = toUtf8(entry.Text());
+        if (!name.empty()) {
+            static_cast<void>(session_.playlists().rename(id, std::move(name)));
+        }
+    }
+}
+
+winrt::fire_and_forget MainWindow::confirmDeletePlaylist(PlaylistSet::Id id) {
+    PlaylistSet& playlists = session_.playlists();
+    Playlist*    list      = playlists.playlist(id);
+    if (list == nullptr || playlists.size() <= 1 || dialogOpen_) {
+        co_return;
+    }
+    if (list->empty()) {
+        session_.deletePlaylist(id);
+        co_return;
+    }
+
+    dialogOpen_ = true;
+    auto box    = dialog(app::trf("Delete \xE2\x80\x9C%s\xE2\x80\x9D?", session_.playlistTitle(id)));
+    box.Content(winrt::box_value(toH(app::fmt(
+        app::trn("Its %zu track is removed from the playlist. This cannot be undone.",
+                 "Its %zu tracks are removed from the playlist. This cannot be undone.",
+                 list->size()),
+        list->size()))));
+    box.PrimaryButtonText(toH(app::tr("Delete")));
+    box.CloseButtonText(toH(app::tr("Cancel")));
+    box.DefaultButton(mux::Controls::ContentDialogButton::Close);
+
+    const auto result = co_await box.ShowAsync();
+    dialogOpen_ = false;
+    if (result == mux::Controls::ContentDialogResult::Primary) {
+        session_.deletePlaylist(id);
     }
 }
 

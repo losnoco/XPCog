@@ -2524,3 +2524,65 @@ msgstr "dibujo del espectro, el osciloscopio y la forma de onda"
 #: uicore/src/Credits.cpp
 msgid "the Windows Runtime from C++"
 msgstr "Windows Runtime desde C++"
+
+#: uicore/src/Commands.cpp
+msgid "&New Playlist"
+msgstr "&Nueva lista de reproducción"
+
+#: uicore/src/Commands.cpp
+msgid "New Playlist from Se&lection"
+msgstr "Nueva lista a partir de la se&lección"
+
+#: uicore/src/Commands.cpp
+msgid "Rena&me Playlist..."
+msgstr "Cambiar no&mbre de la lista…"
+
+#: uicore/src/Commands.cpp
+msgid "&Delete Playlist..."
+msgstr "&Eliminar lista…"
+
+#: uicore/src/Commands.cpp
+msgid "Ne&xt Playlist"
+msgstr "Lista si&guiente"
+
+#: uicore/src/Commands.cpp
+msgid "Pre&vious Playlist"
+msgstr "Lista a&nterior"
+
+#: uicore/src/Session.cpp
+msgid "Playlist %zu"
+msgstr "Lista %zu"
+
+#: app-gtk/src/MainWindow.cpp app-winui/src/MainWindow.cpp
+msgid "Add to Playlist"
+msgstr "Añadir a la lista"
+
+#: app-gtk/src/MainWindow.cpp app-winui/src/MainWindow.cpp
+msgid "Delete"
+msgstr "Eliminar"
+
+#: app-gtk/src/MainWindow.cpp app-winui/src/MainWindow.cpp
+msgid "Delete “%s”?"
+msgstr "¿Eliminar «%s»?"
+
+#: app-gtk/src/MainWindow.cpp app-winui/src/MainWindow.cpp
+msgid "Its %zu track is removed from the playlist. This cannot be undone."
+msgid_plural "Its %zu tracks are removed from the playlist. This cannot be undone."
+msgstr[0] "Se quita su %zu pista de la lista. Esto no se puede deshacer."
+msgstr[1] "Se quitan sus %zu pistas de la lista. Esto no se puede deshacer."
+
+#: app-gtk/src/MainWindow.cpp app-winui/src/MainWindow.cpp
+msgid "Rename"
+msgstr "Cambiar nombre"
+
+#: app-gtk/src/MainWindow.cpp app-winui/src/MainWindow.cpp
+msgid "Rename Playlist"
+msgstr "Cambiar nombre de la lista"
+
+#: app-winui/src/PlaylistTabs.cpp
+msgid "Rename Playlist..."
+msgstr "Cambiar nombre de la lista…"
+
+#: app-winui/src/PlaylistTabs.cpp
+msgid "Delete Playlist..."
+msgstr "Eliminar lista…"

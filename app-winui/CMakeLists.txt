@@ -29,6 +29,8 @@ set(XPCOG_WINUI_SOURCES
     src/Instance.hpp
     src/MainWindow.cpp
     src/MainWindow.hpp
+    src/PlaylistTabs.cpp
+    src/PlaylistTabs.hpp
     src/MiniPlayer.cpp
     src/MiniPlayer.hpp
     src/Oscilloscope.cpp

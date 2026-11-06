@@ -11,6 +11,7 @@
 #include "Sc55View.hpp"
 #endif
 #include "PlaylistTable.hpp"
+#include "PlaylistTabs.hpp"
 #include "PreferencesWindow.hpp"
 #include "SeekBar.hpp"
 #include "Sizer.hpp"
@@ -120,6 +121,11 @@ private:
     winrt::fire_and_forget openUrl();
     winrt::fire_and_forget savePlaylist(bool selectionOnly);
     winrt::fire_and_forget trashSelected();
+    winrt::fire_and_forget renameShownPlaylist();
+    /// Deletes `id`, asking first when there are tracks in it.
+    winrt::fire_and_forget confirmDeletePlaylist(PlaylistSet::Id id);
+    /// The tabs, and what can be done about them.
+    void refreshPlaylists();
     winrt::fire_and_forget showAbout();
     /// Cog's crash-reporting question, asked once ever, as the window first
     /// appears.
@@ -142,6 +148,7 @@ private:
 
     app::Session& session_;
 
+    std::unique_ptr<PlaylistTabs>        tabs_;
     mux::Window                          window_{nullptr};
     mux::Controls::TitleBar              titleBar_{nullptr};
     /// The playing track, at the title bar's right end.

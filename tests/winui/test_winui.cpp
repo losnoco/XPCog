@@ -270,6 +270,19 @@ TEST_CASE("Every pane the View menu shows opens and closes", "[winui]") {
     }
 }
 
+TEST_CASE("Playlists come and go as tabs", "[winui]") {
+    Player& p = thePlayer();
+    for (const CommandId id :
+         {CommandId::FileNewPlaylist, CommandId::FileNewPlaylist, CommandId::ViewNextPlaylist,
+          CommandId::ViewPreviousPlaylist, CommandId::FileDeletePlaylist,
+          CommandId::FileDeletePlaylist}) {
+        INFO("command " << static_cast<int>(id));
+        ui([&] { p.run(id); });
+        settle();
+        checkQuiet();
+    }
+}
+
 TEST_CASE("Preferences opens on every page", "[winui]") {
     Player& p = thePlayer();
     ui([&] { p.run(CommandId::FilePreferences); });

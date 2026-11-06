@@ -24,35 +24,35 @@ msgstr ""
 msgid "%s (remote)"
 msgstr ""
 
-#: uicore/src/AppCommands.cpp:46
+#: uicore/src/AppCommands.cpp:58
 msgid "Add %zu Track"
 msgid_plural "Add %zu Tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/AppCommands.cpp:62
+#: uicore/src/AppCommands.cpp:74
 msgid "Remove %zu Track"
 msgid_plural "Remove %zu Tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/AppCommands.cpp:74
+#: uicore/src/AppCommands.cpp:86
 msgid "Move %zu Track to the Trash"
 msgid_plural "Move %zu Tracks to the Trash"
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/AppCommands.cpp:91
+#: uicore/src/AppCommands.cpp:103
 msgid "Move %zu Track"
 msgid_plural "Move %zu Tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/AppCommands.cpp:100
+#: uicore/src/AppCommands.cpp:112
 msgid "Randomize"
 msgstr ""
 
-#: uicore/src/AppCommands.cpp:111
+#: uicore/src/AppCommands.cpp:123
 msgid "Clear Playlist"
 msgstr ""
 
@@ -92,195 +92,219 @@ msgstr ""
 msgid "&Save Playlist..."
 msgstr ""
 
-#: uicore/src/Commands.cpp:58
+#: uicore/src/Commands.cpp:59
+msgid "&New Playlist"
+msgstr ""
+
+#: uicore/src/Commands.cpp:60 uicore/src/Commands.cpp:215
+msgid "New Playlist from Se&lection"
+msgstr ""
+
+#: uicore/src/Commands.cpp:61
+msgid "Rena&me Playlist..."
+msgstr ""
+
+#: uicore/src/Commands.cpp:62
+msgid "&Delete Playlist..."
+msgstr ""
+
+#: uicore/src/Commands.cpp:63
 msgid "&Preferences..."
 msgstr ""
 
-#: uicore/src/Commands.cpp:59
+#: uicore/src/Commands.cpp:64
 msgid "&Quit"
 msgstr ""
 
-#: uicore/src/Commands.cpp:61
+#: uicore/src/Commands.cpp:66
 msgid "&View"
 msgstr ""
 
-#: uicore/src/Commands.cpp:61
+#: uicore/src/Commands.cpp:66
 msgid "&File Browser"
 msgstr ""
 
-#: uicore/src/Commands.cpp:65 app-winui/src/FileTreePane.cpp:255
+#: uicore/src/Commands.cpp:70 app-winui/src/FileTreePane.cpp:255
 msgid "Choose &Root Folder..."
 msgstr ""
 
-#: uicore/src/Commands.cpp:67 uicore/src/Commands.cpp:207
+#: uicore/src/Commands.cpp:72 uicore/src/Commands.cpp:216
 msgid "&Info"
 msgstr ""
 
-#: uicore/src/Commands.cpp:73
+#: uicore/src/Commands.cpp:78
 msgid "&Lyrics"
 msgstr ""
 
-#: uicore/src/Commands.cpp:77
+#: uicore/src/Commands.cpp:82
 msgid "&Timed Lyrics"
 msgstr ""
 
-#: uicore/src/Commands.cpp:92
+#: uicore/src/Commands.cpp:97
 msgid "Panels Follow &Selection"
 msgstr ""
 
-#: uicore/src/Commands.cpp:93
+#: uicore/src/Commands.cpp:98
 msgid "Panels Follow Play&back"
 msgstr ""
 
-#: uicore/src/Commands.cpp:94
+#: uicore/src/Commands.cpp:99
 msgid "&Spectrum"
 msgstr ""
 
-#: uicore/src/Commands.cpp:97
+#: uicore/src/Commands.cpp:102
 msgid "&Oscilloscope"
 msgstr ""
 
-#: uicore/src/Commands.cpp:102
+#: uicore/src/Commands.cpp:107
 msgid "Show &Waveform"
 msgstr ""
 
-#: uicore/src/Commands.cpp:105
+#: uicore/src/Commands.cpp:110
 msgid "&Equalizer"
 msgstr ""
 
-#: uicore/src/Commands.cpp:109
+#: uicore/src/Commands.cpp:114
 msgid "&Pitch && Tempo"
 msgstr ""
 
-#: uicore/src/Commands.cpp:115
+#: uicore/src/Commands.cpp:120
 msgid "SC-55 &Panel"
 msgstr ""
 
-#: uicore/src/Commands.cpp:124
+#: uicore/src/Commands.cpp:129
 msgid "&Dock Floating Panes"
 msgstr ""
 
-#: uicore/src/Commands.cpp:125
+#: uicore/src/Commands.cpp:130
 msgid "&Mini Player"
 msgstr ""
 
-#: uicore/src/Commands.cpp:127
+#: uicore/src/Commands.cpp:131
+msgid "Ne&xt Playlist"
+msgstr ""
+
+#: uicore/src/Commands.cpp:132
+msgid "Pre&vious Playlist"
+msgstr ""
+
+#: uicore/src/Commands.cpp:134
 msgid "&Edit"
 msgstr ""
 
-#: uicore/src/Commands.cpp:127
+#: uicore/src/Commands.cpp:134
 msgid "&Undo"
 msgstr ""
 
-#: uicore/src/Commands.cpp:128
+#: uicore/src/Commands.cpp:135
 msgid "&Redo"
 msgstr ""
 
-#: uicore/src/Commands.cpp:129
+#: uicore/src/Commands.cpp:136
 msgid "Select &All"
 msgstr ""
 
-#: uicore/src/Commands.cpp:140
+#: uicore/src/Commands.cpp:147
 msgid "Select Currently &Playing"
 msgstr ""
 
-#: uicore/src/Commands.cpp:141 uicore/src/Commands.cpp:204
+#: uicore/src/Commands.cpp:148 uicore/src/Commands.cpp:211
 msgid "&Remove from Playlist"
 msgstr ""
 
-#: uicore/src/Commands.cpp:142
+#: uicore/src/Commands.cpp:149
 msgid "Randomi&ze Playlist"
 msgstr ""
 
-#: uicore/src/Commands.cpp:144
+#: uicore/src/Commands.cpp:151
 msgid "&Playback"
 msgstr ""
 
-#: uicore/src/Commands.cpp:144
+#: uicore/src/Commands.cpp:151
 msgid "&Play/Pause"
 msgstr ""
 
-#: uicore/src/Commands.cpp:145
+#: uicore/src/Commands.cpp:152
 msgid "&Stop"
 msgstr ""
 
-#: uicore/src/Commands.cpp:146
+#: uicore/src/Commands.cpp:153
 msgid "Pre&vious"
 msgstr ""
 
-#: uicore/src/Commands.cpp:147
+#: uicore/src/Commands.cpp:154
 msgid "&Next"
 msgstr ""
 
-#: uicore/src/Commands.cpp:148 uicore/src/Commands.cpp:192
+#: uicore/src/Commands.cpp:155 uicore/src/Commands.cpp:199
 msgid "Add to &Queue"
 msgstr ""
 
-#: uicore/src/Commands.cpp:157
+#: uicore/src/Commands.cpp:164
 msgid "&Order"
 msgstr ""
 
-#: uicore/src/Commands.cpp:157
+#: uicore/src/Commands.cpp:164
 msgid "Repeat: &Off"
 msgstr ""
 
-#: uicore/src/Commands.cpp:158
+#: uicore/src/Commands.cpp:165
 msgid "Repeat: &One"
 msgstr ""
 
-#: uicore/src/Commands.cpp:159
+#: uicore/src/Commands.cpp:166
 msgid "Repeat: &Album"
 msgstr ""
 
-#: uicore/src/Commands.cpp:160
+#: uicore/src/Commands.cpp:167
 msgid "Repeat: A&ll"
 msgstr ""
 
-#: uicore/src/Commands.cpp:161
+#: uicore/src/Commands.cpp:168
 msgid "Shuffle: O&ff"
 msgstr ""
 
-#: uicore/src/Commands.cpp:162
+#: uicore/src/Commands.cpp:169
 msgid "Shuffle: Al&bums"
 msgstr ""
 
-#: uicore/src/Commands.cpp:163
+#: uicore/src/Commands.cpp:170
 msgid "Shuffle: A&ll Tracks"
 msgstr ""
 
-#: uicore/src/Commands.cpp:167
+#: uicore/src/Commands.cpp:174
 msgid "&Help"
 msgstr ""
 
-#: uicore/src/Commands.cpp:167
+#: uicore/src/Commands.cpp:174
 msgid "&About XPCog"
 msgstr ""
 
-#: uicore/src/Commands.cpp:193
+#: uicore/src/Commands.cpp:200
 msgid "Stop after &Selection"
 msgstr ""
 
-#: uicore/src/Commands.cpp:194
+#: uicore/src/Commands.cpp:201
 msgid "Save Selection as &Playlist..."
 msgstr ""
 
-#: uicore/src/Commands.cpp:196
+#: uicore/src/Commands.cpp:203
 msgid "Search for &Artist"
 msgstr ""
 
-#: uicore/src/Commands.cpp:198
+#: uicore/src/Commands.cpp:205
 msgid "Search for Al&bum"
 msgstr ""
 
-#: uicore/src/Commands.cpp:199
+#: uicore/src/Commands.cpp:206
 msgid "Re&load Info"
 msgstr ""
 
-#: uicore/src/Commands.cpp:201
+#: uicore/src/Commands.cpp:208
 msgid "Reset Play &Count"
 msgstr ""
 
-#: uicore/src/Commands.cpp:202
+#: uicore/src/Commands.cpp:209
 msgid "Remove Ra&ting"
 msgstr ""
 
@@ -695,7 +719,7 @@ msgstr ""
 msgid "Looking for a playable track..."
 msgstr ""
 
-#: uicore/src/PlaybackController.cpp:612 uicore/src/PlaybackController.cpp:764
+#: uicore/src/PlaybackController.cpp:612 uicore/src/PlaybackController.cpp:751
 msgid "Could not play %s"
 msgstr ""
 
@@ -719,103 +743,111 @@ msgstr ""
 msgid "Reading %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:98
+#: uicore/src/Session.cpp:100
 msgid "Library unavailable: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:129
+#: uicore/src/Session.cpp:131
 msgid "Connecting to %s..."
 msgstr ""
 
-#: uicore/src/Session.cpp:130
+#: uicore/src/Session.cpp:132
 msgid "Connecting..."
 msgstr ""
 
-#: uicore/src/Session.cpp:238
+#: uicore/src/Session.cpp:244
 msgid "Could not save the playlist: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:255
+#: uicore/src/Session.cpp:292 uicore/src/Session.cpp:294
+msgid "Playlist %zu"
+msgstr ""
+
+#: uicore/src/Session.cpp:354 app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:642
+msgid "Playlist"
+msgstr ""
+
+#: uicore/src/Session.cpp:363
 msgid "%zu track — %s"
 msgid_plural "%zu tracks — %s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:389
+#: uicore/src/Session.cpp:500
 msgid "Nothing was added."
 msgstr ""
 
-#: uicore/src/Session.cpp:389
+#: uicore/src/Session.cpp:500
 msgid "Nothing playable was found."
 msgstr ""
 
-#: uicore/src/Session.cpp:435
+#: uicore/src/Session.cpp:558
 msgid "Nothing could be read."
 msgstr ""
 
-#: uicore/src/Session.cpp:490
+#: uicore/src/Session.cpp:614
 msgid "Re-read %zu track."
 msgid_plural "Re-read %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:588
+#: uicore/src/Session.cpp:713
 msgid "Playlist saved: %zu selected track."
 msgid_plural "Playlist saved: %zu selected tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:592
+#: uicore/src/Session.cpp:717
 msgid "Playlist saved: %zu of %zu tracks, the rest hidden by the filter."
 msgstr ""
 
-#: uicore/src/Session.cpp:595
+#: uicore/src/Session.cpp:720
 msgid "Playlist saved."
 msgstr ""
 
-#: uicore/src/Session.cpp:625
+#: uicore/src/Session.cpp:750
 msgid "%zu file could not be moved to the trash."
 msgid_plural "%zu files could not be moved to the trash."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:644
+#: uicore/src/Session.cpp:769
 msgid "Could not show the file."
 msgstr ""
 
-#: uicore/src/Session.cpp:654
+#: uicore/src/Session.cpp:779
 msgid "Play count reset for %zu track."
 msgid_plural "Play count reset for %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:668
+#: uicore/src/Session.cpp:793
 msgid "Rating removed from %zu track."
 msgid_plural "Rating removed from %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:826
+#: uicore/src/Session.cpp:951
 msgid "Last.fm access was withdrawn. Reconnect in Preferences."
 msgstr ""
 
-#: uicore/src/Session.cpp:841
+#: uicore/src/Session.cpp:966
 msgid "ListenBrainz rejected the token. Reconnect in Preferences."
 msgstr ""
 
-#: uicore/src/Session.cpp:1119
+#: uicore/src/Session.cpp:1244
 msgid "Now Playing"
 msgstr ""
 
-#: uicore/src/Session.cpp:1272
+#: uicore/src/Session.cpp:1397
 msgid "The remote control could not create an access token."
 msgstr ""
 
-#: uicore/src/Session.cpp:1306
+#: uicore/src/Session.cpp:1431
 msgid "Remote control unavailable: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:1311
+#: uicore/src/Session.cpp:1436
 msgid "Remote control listening on http://%s:%d"
 msgstr ""
 
@@ -1023,103 +1055,103 @@ msgstr ""
 msgid "SoundCheck: %s"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:95
+#: uicore/src/TrackText.cpp:94
 msgid "Volume Scale: %s×"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:125
+#: uicore/src/TrackText.cpp:124
 msgid "First seen: %s"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:128
+#: uicore/src/TrackText.cpp:127
 msgid "Last played: %s"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:166
+#: uicore/src/TrackText.cpp:165
 msgid "Album Artist"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:166
+#: uicore/src/TrackText.cpp:165
 msgid "Artist"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:167
+#: uicore/src/TrackText.cpp:166
 msgid "Composer"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:167
+#: uicore/src/TrackText.cpp:166
 msgid "Album"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:168
+#: uicore/src/TrackText.cpp:167
 msgid "Title"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:168
+#: uicore/src/TrackText.cpp:167
 msgid "Track"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:169
+#: uicore/src/TrackText.cpp:168
 msgid "Length"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:169
+#: uicore/src/TrackText.cpp:168
 msgid "Date"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:170
+#: uicore/src/TrackText.cpp:169
 msgid "Genre"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:170
+#: uicore/src/TrackText.cpp:169
 msgid "Filename"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:171
+#: uicore/src/TrackText.cpp:170
 msgid "Sample Rate"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:171 app-winui/src/PreferencesGeneral.cpp:211 app-winui/src/PreferencesGeneral.cpp:227 app-winui/src/PreferencesSound.cpp:243 app-gtk/src/PreferencesDialog.cpp:873 app-gtk/src/PreferencesDialog.cpp:1348 app-gtk/src/PreferencesDialog.cpp:1364
+#: uicore/src/TrackText.cpp:170 app-winui/src/PreferencesGeneral.cpp:211 app-winui/src/PreferencesGeneral.cpp:227 app-winui/src/PreferencesSound.cpp:243 app-gtk/src/PreferencesDialog.cpp:873 app-gtk/src/PreferencesDialog.cpp:1348 app-gtk/src/PreferencesDialog.cpp:1364
 msgid "Channels"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:172
+#: uicore/src/TrackText.cpp:171
 msgid "Bitrate"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:172
+#: uicore/src/TrackText.cpp:171
 msgid "Bits"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:173
+#: uicore/src/TrackText.cpp:172
 msgid "Codec"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:173
+#: uicore/src/TrackText.cpp:172
 msgid "Encoding"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:174
+#: uicore/src/TrackText.cpp:173
 msgid "Cuesheet"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:174
+#: uicore/src/TrackText.cpp:173
 msgid "Replay Gain"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:175
+#: uicore/src/TrackText.cpp:174
 msgid "Play Count"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:175
+#: uicore/src/TrackText.cpp:174
 msgid "Comment"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:217
+#: uicore/src/TrackText.cpp:216
 msgid "yes"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:217
+#: uicore/src/TrackText.cpp:216
 msgid "no"
 msgstr ""
 
@@ -1131,19 +1163,19 @@ msgstr ""
 msgid "Pause"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:62 app-winui/src/MainWindow.cpp:163 app-winui/src/MiniPlayer.cpp:71
+#: uicore/src/TrayMenu.cpp:62 app-winui/src/MainWindow.cpp:164 app-winui/src/MiniPlayer.cpp:74
 msgid "Play"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:64 app-winui/src/MainWindow.cpp:166 app-winui/src/MiniPlayer.cpp:74 app-gtk/ui/window.blp:50
+#: uicore/src/TrayMenu.cpp:64 app-winui/src/MainWindow.cpp:167 app-winui/src/MiniPlayer.cpp:77 app-gtk/ui/window.blp:50
 msgid "Stop"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:66 app-winui/src/MainWindow.cpp:161 app-winui/src/MiniPlayer.cpp:69 app-gtk/ui/window.blp:40
+#: uicore/src/TrayMenu.cpp:66 app-winui/src/MainWindow.cpp:162 app-winui/src/MiniPlayer.cpp:72 app-gtk/ui/window.blp:40
 msgid "Previous"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:67 app-winui/src/MainWindow.cpp:168 app-winui/src/MiniPlayer.cpp:76 app-gtk/ui/window.blp:55
+#: uicore/src/TrayMenu.cpp:67 app-winui/src/MainWindow.cpp:169 app-winui/src/MiniPlayer.cpp:79 app-gtk/ui/window.blp:55
 msgid "Next"
 msgstr ""
 
@@ -1155,11 +1187,11 @@ msgstr ""
 msgid "Quit"
 msgstr ""
 
-#: app-winui/src/AboutDialog.cpp:131 app-gtk/src/Dialogs.cpp:323
+#: app-winui/src/AboutDialog.cpp:131 app-gtk/src/Dialogs.cpp:376
 msgid "An audio player for Windows and Linux."
 msgstr ""
 
-#: app-winui/src/AboutDialog.cpp:132 app-gtk/src/Dialogs.cpp:329
+#: app-winui/src/AboutDialog.cpp:132 app-gtk/src/Dialogs.cpp:382
 msgid "Copyright © 2026 the XPCog authors."
 msgstr ""
 
@@ -1181,7 +1213,7 @@ msgstr ""
 msgid "Source:"
 msgstr ""
 
-#: app-winui/src/AboutDialog.cpp:161 app-gtk/src/Dialogs.cpp:292
+#: app-winui/src/AboutDialog.cpp:161 app-gtk/src/Dialogs.cpp:345
 msgid ""
 "%zu decoder is compiled in. A file goes to the first row below that claims its extension:"
 msgid_plural ""
@@ -1189,7 +1221,7 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/AboutDialog.cpp:187 app-gtk/src/Dialogs.cpp:309
+#: app-winui/src/AboutDialog.cpp:187 app-gtk/src/Dialogs.cpp:362
 msgid "chosen by scheme or MIME type"
 msgstr ""
 
@@ -1243,102 +1275,129 @@ msgstr ""
 msgid "&Add to Playlist"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:203 app-winui/src/MiniPlayer.cpp:110 app-gtk/ui/window.blp:102
+#: app-winui/src/MainWindow.cpp:204 app-winui/src/MiniPlayer.cpp:153 app-gtk/ui/window.blp:102
 msgid "Volume"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:521 app-gtk/src/MainWindow.cpp:358
+#: app-winui/src/MainWindow.cpp:541 app-gtk/src/MainWindow.cpp:381
 msgid "XPCog is still running"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:522 app-gtk/src/MainWindow.cpp:359
+#: app-winui/src/MainWindow.cpp:542 app-gtk/src/MainWindow.cpp:382
 msgid ""
 "Playback continues. Use the tray icon to bring the window back or to quit."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:919 app-gtk/src/MainWindow.cpp:458
+#: app-winui/src/MainWindow.cpp:966 app-gtk/src/MainWindow.cpp:501
 msgid "The playing track is hidden by the filter"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1326 app-gtk/src/MainWindow.cpp:758
+#: app-winui/src/MainWindow.cpp:1095 app-gtk/src/MainWindow.cpp:1027
+msgid "Add to Playlist"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1396 app-gtk/src/MainWindow.cpp:806
 msgid "Audio Files"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1327 app-gtk/src/MainWindow.cpp:763 app-gtk/src/PreferencesDialog.cpp:268
+#: app-winui/src/MainWindow.cpp:1397 app-gtk/src/MainWindow.cpp:811 app-gtk/src/PreferencesDialog.cpp:268
 msgid "All Files"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1369
+#: app-winui/src/MainWindow.cpp:1439
 msgid "M3U Playlist (*.m3u8)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1371
+#: app-winui/src/MainWindow.cpp:1441
 msgid "PLS Playlist (*.pls)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1373
+#: app-winui/src/MainWindow.cpp:1443
 msgid "XSPF Playlist (*.xspf)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1382 app-gtk/src/Dialogs.cpp:197
+#: app-winui/src/MainWindow.cpp:1452 app-gtk/src/Dialogs.cpp:250
 msgid "Could not write the playlist."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1395 app-gtk/src/Dialogs.cpp:76
+#: app-winui/src/MainWindow.cpp:1465 app-gtk/src/Dialogs.cpp:76
 msgid "Open URL"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1400 app-gtk/src/Dialogs.cpp:120
+#: app-winui/src/MainWindow.cpp:1470 app-gtk/src/Dialogs.cpp:120
 msgid "Open"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1401 app-winui/src/MainWindow.cpp:1450 app-winui/src/PreferencesServices.cpp:90 app-winui/src/PreferencesServices.cpp:461 app-gtk/src/Dialogs.cpp:119 app-gtk/src/MainWindow.cpp:995 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/ui/window.blp:200
+#: app-winui/src/MainWindow.cpp:1471 app-winui/src/MainWindow.cpp:1506 app-winui/src/MainWindow.cpp:1537 app-winui/src/MainWindow.cpp:1580 app-winui/src/PreferencesServices.cpp:90 app-winui/src/PreferencesServices.cpp:461 app-gtk/src/Dialogs.cpp:119 app-gtk/src/Dialogs.cpp:159 app-gtk/src/MainWindow.cpp:1097 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/ui/window.blp:200
 msgid "Cancel"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1432 app-gtk/src/MainWindow.cpp:988
+#: app-winui/src/MainWindow.cpp:1500 app-gtk/src/MainWindow.cpp:1055
+msgid "Rename Playlist"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1505 app-gtk/src/MainWindow.cpp:1056
+msgid "Rename"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1530 app-gtk/src/MainWindow.cpp:1045
+msgid "Delete “%s”?"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1532 app-gtk/src/MainWindow.cpp:1046
+msgid "Its %zu track is removed from the playlist. This cannot be undone."
+msgid_plural ""
+"Its %zu tracks are removed from the playlist. This cannot be undone."
+msgstr[0] ""
+msgstr[1] ""
+
+#: app-winui/src/MainWindow.cpp:1536 app-gtk/src/MainWindow.cpp:1050
+msgid "Delete"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1562 app-gtk/src/MainWindow.cpp:1090
 msgid "Move %u file to the trash?"
 msgid_plural "Move %u files to the trash?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/MainWindow.cpp:1442 app-gtk/src/MainWindow.cpp:992
+#: app-winui/src/MainWindow.cpp:1572 app-gtk/src/MainWindow.cpp:1094
 msgid ""
 "Undo puts the rows back in the playlist. It does not bring the files back -- restore those from the trash itself."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1445 app-gtk/src/MainWindow.cpp:1002
+#: app-winui/src/MainWindow.cpp:1575 app-gtk/src/MainWindow.cpp:1104
 msgid "Do not ask again"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1471
+#: app-winui/src/MainWindow.cpp:1601
 msgid "About XPCog"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1473 app-winui/src/Panes.cpp:835 app-winui/src/PlaylistTable.cpp:393
+#: app-winui/src/MainWindow.cpp:1603 app-winui/src/Panes.cpp:835 app-winui/src/PlaylistTable.cpp:393
 msgid "Close"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1493 app-gtk/src/MainWindow.cpp:1044
+#: app-winui/src/MainWindow.cpp:1623 app-gtk/src/MainWindow.cpp:1146
 msgid "Crash reporting"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1498 app-gtk/src/MainWindow.cpp:1045
+#: app-winui/src/MainWindow.cpp:1628 app-gtk/src/MainWindow.cpp:1147
 msgid ""
 "Would you like to allow Sentry to submit crash reports?\n"
 "\n"
 "You may turn this off again in Preferences. We won't ask you again."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1501 app-winui/src/PreferencesGeneral.cpp:61 app-gtk/src/MainWindow.cpp:1056 app-gtk/src/PreferencesDialog.cpp:909
+#: app-winui/src/MainWindow.cpp:1631 app-winui/src/PreferencesGeneral.cpp:61 app-gtk/src/MainWindow.cpp:1158 app-gtk/src/PreferencesDialog.cpp:909
 msgid "Privacy policy"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1507 app-gtk/src/MainWindow.cpp:1049
+#: app-winui/src/MainWindow.cpp:1637 app-gtk/src/MainWindow.cpp:1151
 msgid "Yes"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1508 app-gtk/src/MainWindow.cpp:1048
+#: app-winui/src/MainWindow.cpp:1638 app-gtk/src/MainWindow.cpp:1150
 msgid "No"
 msgstr ""
 
@@ -1362,19 +1421,19 @@ msgstr ""
 msgid "Stereo, overlaid"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:335 app-winui/src/PreferencesGeneral.cpp:234 app-gtk/src/PreferencesDialog.cpp:1371 app-gtk/src/Visualizers.cpp:530
+#: app-winui/src/Oscilloscope.cpp:332 app-winui/src/PreferencesGeneral.cpp:234 app-gtk/src/PreferencesDialog.cpp:1371 app-gtk/src/Visualizers.cpp:530
 msgid "Hold a steady tone still"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:339 app-winui/src/PreferencesGeneral.cpp:237 app-gtk/src/PreferencesDialog.cpp:1374 app-gtk/src/Visualizers.cpp:531
+#: app-winui/src/Oscilloscope.cpp:336 app-winui/src/PreferencesGeneral.cpp:237 app-gtk/src/PreferencesDialog.cpp:1374 app-gtk/src/Visualizers.cpp:531
 msgid "Fill under the trace"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:343 app-winui/src/PreferencesGeneral.cpp:238 app-gtk/src/PreferencesDialog.cpp:1375 app-gtk/src/Visualizers.cpp:532
+#: app-winui/src/Oscilloscope.cpp:340 app-winui/src/PreferencesGeneral.cpp:238 app-gtk/src/PreferencesDialog.cpp:1375 app-gtk/src/Visualizers.cpp:532
 msgid "Logarithmic scale"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:349 app-winui/src/Panes.cpp:731 app-winui/src/Visualizers.cpp:308 app-gtk/src/Panes.cpp:750 app-gtk/src/Visualizers.cpp:130
+#: app-winui/src/Oscilloscope.cpp:346 app-winui/src/Panes.cpp:731 app-winui/src/Visualizers.cpp:298 app-gtk/src/Panes.cpp:750 app-gtk/src/Visualizers.cpp:130
 msgid "Preferences…"
 msgstr ""
 
@@ -1471,7 +1530,15 @@ msgstr ""
 msgid "Filter the playlist"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:32 app-gtk/src/Dialogs.cpp:235 app-gtk/src/PreferencesDialog.cpp:880
+#: app-winui/src/PlaylistTabs.cpp:62
+msgid "Rename Playlist..."
+msgstr ""
+
+#: app-winui/src/PlaylistTabs.cpp:63
+msgid "Delete Playlist..."
+msgstr ""
+
+#: app-winui/src/PreferencesGeneral.cpp:32 app-gtk/src/Dialogs.cpp:288 app-gtk/src/PreferencesDialog.cpp:880
 msgid "General"
 msgstr ""
 
@@ -1537,10 +1604,6 @@ msgstr ""
 #: app-winui/src/PreferencesGeneral.cpp:83 app-gtk/src/PreferencesDialog.cpp:931
 msgid ""
 "This build was configured without HTTP support, so it cannot reach LRCLIB."
-msgstr ""
-
-#: app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:642
-msgid "Playlist"
 msgstr ""
 
 #: app-winui/src/PreferencesGeneral.cpp:89 app-gtk/src/PreferencesDialog.cpp:643
@@ -1705,7 +1768,7 @@ msgstr ""
 msgid "Peak colour"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:214 app-winui/src/Visualizers.cpp:298 app-gtk/src/PreferencesDialog.cpp:1351 app-gtk/src/Visualizers.cpp:220
+#: app-winui/src/PreferencesGeneral.cpp:214 app-winui/src/Visualizers.cpp:288 app-gtk/src/PreferencesDialog.cpp:1351 app-gtk/src/Visualizers.cpp:220
 msgid "Show peak markers"
 msgstr ""
 
@@ -2168,42 +2231,42 @@ msgstr ""
 msgid "These apply to every synthesised format, not only MIDI."
 msgstr ""
 
-#: app-winui/src/PreferencesWindow.cpp:311 app-gtk/src/PreferencesDialog.cpp:227
+#: app-winui/src/PreferencesWindow.cpp:312 app-gtk/src/PreferencesDialog.cpp:227
 msgid "Folder..."
 msgstr ""
 
-#: app-winui/src/PreferencesWindow.cpp:325 app-gtk/src/PreferencesDialog.cpp:253
+#: app-winui/src/PreferencesWindow.cpp:326 app-gtk/src/PreferencesDialog.cpp:253
 msgid "Archive..."
 msgstr ""
 
-#: app-winui/src/PreferencesWindow.cpp:325 app-gtk/src/PreferencesDialog.cpp:253
+#: app-winui/src/PreferencesWindow.cpp:326 app-gtk/src/PreferencesDialog.cpp:253
 msgid "Choose..."
 msgstr ""
 
-#: app-winui/src/PreferencesWindow.cpp:438 app-gtk/src/PreferencesDialog.cpp:443
+#: app-winui/src/PreferencesWindow.cpp:440 app-gtk/src/PreferencesDialog.cpp:443
 msgid "Search"
 msgstr ""
 
-#: app-winui/src/PreferencesWindow.cpp:476 app-gtk/src/PreferencesDialog.cpp:501
+#: app-winui/src/PreferencesWindow.cpp:478 app-gtk/src/PreferencesDialog.cpp:501
 msgid "Sound"
 msgstr ""
 
-#: app-winui/src/PreferencesWindow.cpp:480 app-gtk/src/PreferencesDialog.cpp:505
+#: app-winui/src/PreferencesWindow.cpp:482 app-gtk/src/PreferencesDialog.cpp:505
 msgid "Services"
 msgstr ""
 
-#: app-winui/src/Sc55View.cpp:122 app-gtk/src/Sc55View.cpp:99
+#: app-winui/src/Sc55View.cpp:124 app-gtk/src/Sc55View.cpp:99
 msgid "Waiting for the panel…"
 msgstr ""
 
-#: app-winui/src/Sc55View.cpp:123 app-gtk/src/Sc55View.cpp:100
+#: app-winui/src/Sc55View.cpp:125 app-gtk/src/Sc55View.cpp:100
 msgid ""
 "Nothing is playing on the SC-55.\n"
 "\n"
 "Choose it under Preferences → MIDI; the OPL3 synthesisers have no display."
 msgstr ""
 
-#: app-winui/src/SeekBar.cpp:81 app-gtk/src/SeekBar.cpp:87
+#: app-winui/src/SeekBar.cpp:85 app-gtk/src/SeekBar.cpp:87
 msgid "Position"
 msgstr ""
 
@@ -2228,63 +2291,63 @@ msgstr ""
 msgid "Recent"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:161
+#: app-gtk/src/Dialogs.cpp:214
 msgid "Save Playlist"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:237 app-gtk/src/Menus.cpp:154
+#: app-gtk/src/Dialogs.cpp:290 app-gtk/src/Menus.cpp:164
 msgid "&Keyboard Shortcuts"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:274
+#: app-gtk/src/Dialogs.cpp:327
 msgid "Data: %s"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:275
+#: app-gtk/src/Dialogs.cpp:328
 msgid "Used for: %s"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:276
+#: app-gtk/src/Dialogs.cpp:329
 msgid "Credit: %s"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:277
+#: app-gtk/src/Dialogs.cpp:330
 msgid "Library: %s"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:278
+#: app-gtk/src/Dialogs.cpp:331
 msgid "Feature: %s"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:279
+#: app-gtk/src/Dialogs.cpp:332
 msgid "Licence: %s"
 msgstr ""
 
-#: app-gtk/src/Dialogs.cpp:337
+#: app-gtk/src/Dialogs.cpp:390
 msgid "Ported from Cog"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:751
+#: app-gtk/src/MainWindow.cpp:799
 msgid "Open Files"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:789
+#: app-gtk/src/MainWindow.cpp:837
 msgid "Open Folder"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:996
+#: app-gtk/src/MainWindow.cpp:1098
 msgid "Move to Trash"
 msgstr ""
 
-#: app-gtk/src/Menus.cpp:129
+#: app-gtk/src/Menus.cpp:138
 msgid "&Repeat"
 msgstr ""
 
-#: app-gtk/src/Menus.cpp:131
+#: app-gtk/src/Menus.cpp:140
 msgid "&Shuffle"
 msgstr ""
 
-#: app-gtk/src/Menus.cpp:146
+#: app-gtk/src/Menus.cpp:156
 msgid "&Panels"
 msgstr ""
 
