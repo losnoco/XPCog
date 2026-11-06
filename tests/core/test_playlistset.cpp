@@ -152,16 +152,34 @@ TEST_CASE("a queued track from another playlist carries playback across", "[play
     list.enqueue(second[1]);
 
     SECTION("at a seam, keeping the audible row until the audio arrives") {
+        int published = 0;
+        const Subscription watch =
+            set.observe([&published](const PlaylistSet::Change&) { ++published; });
+
         CHECK(set.nextForPlayback() == second[1]);
-        CHECK(set.playingId() == other);
         CHECK(set.playlist(PlaylistSet::kFirstId)->current() == first[0]);
+
+        // This runs on the feeder, so nothing may be published from it, and the
+        // playing playlist is still the one being heard.
+        CHECK(published == 0);
+        CHECK(set.playingId() == PlaylistSet::kFirstId);
 
         // What follows is measured from where the queue left playback.
         CHECK(set.nextForPlayback() == second[2]);
 
         set.noteAudible(second[1]);
+        CHECK(published == 1);
+        CHECK(set.playingId() == other);
         CHECK_FALSE(set.playlist(PlaylistSet::kFirstId)->current());
         CHECK(list.current() == second[1]);
+    }
+
+    SECTION("and Next in that moment means the track being heard") {
+        CHECK(set.nextForPlayback() == second[1]);
+        REQUIRE(set.next());
+        CHECK(set.playingId() == PlaylistSet::kFirstId);
+        CHECK(set.playing().current() == first[1]);
+        CHECK(set.nextForPlayback() == first[2]);
     }
 
     SECTION("by the Next button") {
@@ -170,6 +188,16 @@ TEST_CASE("a queued track from another playlist carries playback across", "[play
         CHECK(list.current() == second[1]);
         CHECK(list.queue().empty());
     }
+}
+
+TEST_CASE("the queue reaches out of an empty playlist", "[playlist]") {
+    PlaylistSet                set;
+    const PlaylistSet::Id      other  = set.add("other");
+    const std::vector<TrackId> second = fill(*set.playlist(other), "b", 2);
+    set.playlist(other)->enqueue(second[1]);
+
+    CHECK(set.nextForPlayback() == second[1]);
+    CHECK(set.playlist(other)->queue().empty());
 }
 
 TEST_CASE("clearing a playlist takes only its own tracks out of the queue", "[playlist]") {

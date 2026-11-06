@@ -139,8 +139,9 @@ rather than opening the file again, which on a network share is the difference
 between a seam and a pause.
 
 Choosing a track while another plays crossfades into it, the way a seek does, when
-fades are on. With fades off, on a device held exclusively, or while paused it stops
-and starts as before.
+fades are on and the new track has the same sample rate and channels. Otherwise, on a
+device held exclusively, or while paused it stops and starts as before, so the device
+opens for the new track.
 
 ## HDCD
 

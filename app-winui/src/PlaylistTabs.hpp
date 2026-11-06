@@ -39,6 +39,9 @@ public:
     /// Brings the tabs into line with the set.
     void refresh();
 
+    /// Whether anything is playing, which is when the playing tab says so.
+    void setPlaybackActive(bool active);
+
 private:
     [[nodiscard]] mux::Controls::TabViewItem makeTab(PlaylistSet::Id id);
     [[nodiscard]] mux::Controls::MenuFlyout  makeMenu(PlaylistSet::Id id);
@@ -52,6 +55,7 @@ private:
     /// Set while refresh() moves things, so its own moves are not taken for
     /// the listener's.
     bool syncing_ = false;
+    bool active_  = false;
 };
 
 }  // namespace xpcog::winui

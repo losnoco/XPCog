@@ -670,6 +670,8 @@ void MainWindow::wireUp() {
     observe(session_.tracksUpdated, [this] { refreshCommands(); });
     observe(session_.scanFinished, [this] { refreshCommands(); });
     observe(session_.playlistsChanged, [this] { refreshPlaylists(); });
+    observe(session_.playbackStateChanged,
+            [this](bool playing, bool) { tabs_->setPlaybackActive(playing); });
 
     // The inspector, reached from the View menu and by clicking the status line.
     inspector_ = std::make_unique<SignalInspector>(session_);

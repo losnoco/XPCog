@@ -65,11 +65,7 @@ namespace {
 
 /// Whether two URLs name the same file, fragment aside: a cue sheet's tracks.
 [[nodiscard]] bool sameFile(const Url& left, const Url& right) {
-    const auto withoutFragment = [](const Url& url) {
-        const std::string text = url.toString();
-        return text.substr(0, text.find('#'));
-    };
-    return withoutFragment(left) == withoutFragment(right);
+    return left.withoutFragment() == right.withoutFragment();
 }
 
 [[nodiscard]] SignalReport::Source describeSource(const TrackProperties& props,
@@ -270,6 +266,10 @@ bool AudioEngine::play(const Url& url) {
     converter_.reset();
     converter_.setHdcdEnabled(settings_.EnableHDCD());
     converter_.setHalveDsd(settings_.HalveDsdVolume());
+    {
+        const std::lock_guard lock(dspFactsMutex_);
+        builtWith_ = settingsNow();
+    }
     applyReplayGain(firstProps);
 
     // The chain runs at the device format, so it is sized here rather than per
@@ -413,12 +413,12 @@ SignalReport AudioEngine::signalReport() const {
     }
     {
         const std::lock_guard lock(dspFactsMutex_);
-        report.dsp = dspFacts_;
+        report.dsp             = dspFacts_;
+        report.resampleQuality = builtWith_.resampling;
     }
 
     report.hdcdDecoded     = hdcdDecoded_.load(std::memory_order_relaxed);
     report.freeSurround    = freeSurroundActive_.load(std::memory_order_relaxed);
-    report.resampleQuality = settings_.Resampling();
     report.exclusive       = output_.exclusiveHeld();
     report.volume          = output_.volume();
     report.latencySeconds  = output_.latencySeconds();
@@ -1180,6 +1180,10 @@ void AudioEngine::adoptDeviceFormat(const AudioFormat& negotiated) {
     // of those into a device that would not open.
     static_cast<void>(converter_.setOutputFormat(format_.sampleRate, format_.channels,
                                                  settings_.Resampling()));
+    {
+        const std::lock_guard lock(dspFactsMutex_);
+        builtWith_.resampling = settings_.Resampling();
+    }
     converter_.setFreeSurround(freeSurroundActive_);
     converter_.reset();
 
@@ -1523,6 +1527,11 @@ struct AudioEngine::PendingSwitch {
     Url                        url;
 };
 
+AudioEngine::BuiltWith AudioEngine::settingsNow() const {
+    return {settings_.Resampling(), settings_.EnableHDCD(), settings_.HalveDsdVolume(),
+            settings_.EnableFSurround()};
+}
+
 bool AudioEngine::switchTrack(const Url& url) {
     if (status_.load(std::memory_order_relaxed) != PlaybackStatus::Playing ||
         pendingPause_.load(std::memory_order_acquire) || !settings_.EnableFading() ||
@@ -1530,9 +1539,29 @@ bool AudioEngine::switchTrack(const Url& url) {
         return false;
     }
 
+    {
+        const std::lock_guard lock(dspFactsMutex_);
+        if (builtWith_ != settingsNow()) {
+            return false;
+        }
+    }
+
     auto opened = registry_.open(url);
     if (!opened) {
         return false;
+    }
+
+    // play() would open the device for this track. A track of another rate or
+    // width belongs on a device opened for it, not fitted to the one running.
+    {
+        const AudioFormat incoming = opened.decoder->properties().format;
+        const std::lock_guard lock(seamMutex_);
+        const bool upmixed = freeSurroundActive_.load(std::memory_order_relaxed) &&
+                             incoming.channels == 2;
+        if (incoming.sampleRate != format_.sampleRate ||
+            (incoming.channels != format_.channels && !upmixed)) {
+            return false;
+        }
     }
 
     std::unique_lock lock(switchMutex_);
@@ -1564,6 +1593,9 @@ bool AudioEngine::applyPendingSwitch() {
     if (!pending) {
         return false;
     }
+
+    // A seek asked of the track that is going does not apply to this one.
+    pendingSeekMicros_.store(-1, std::memory_order_relaxed);
 
     closeTrack();
     adoptTrack(std::move(pending->opened), pending->url);

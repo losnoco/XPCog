@@ -84,6 +84,13 @@ PlaylistTabs::Tab* PlaylistTabs::tabFor(PlaylistSet::Id id) {
     return found != tabs_.end() ? &*found : nullptr;
 }
 
+void PlaylistTabs::setPlaybackActive(bool active) {
+    if (active != active_) {
+        active_ = active;
+        refresh();
+    }
+}
+
 void PlaylistTabs::refresh() {
     syncing_ = true;
 
@@ -113,7 +120,7 @@ void PlaylistTabs::refresh() {
         adw_tab_page_set_title(tab->page, title_(id).c_str());
 
         GIcon* icon = nullptr;
-        if (id == playlists_.playingId() && playlists_.playing().current()) {
+        if (id == playlists_.playingId() && active_) {
             icon = g_themed_icon_new("media-playback-start-symbolic");
         }
         adw_tab_page_set_icon(tab->page, icon);

@@ -208,8 +208,9 @@ void Session::attachDesktop(void* nativeWindow) {
 }
 
 void Session::start() {
+    // Before the load, which shows a playlist of its own and writes it down.
+    const PlaylistSet::Id shown = settings_.ShownPlaylist();
     if (library_ && library_->loadPlaylists(playlists_)) {
-        const PlaylistSet::Id shown = settings_.ShownPlaylist();
         if (shown > 0 && playlists_.indexOf(shown)) {
             playlists_.show(shown);
         }
@@ -329,6 +330,7 @@ void Session::addToPlaylist(const std::vector<TrackId>& tracks, PlaylistSet::Id 
     }
     if (!copies.empty()) {
         destination->insert(destination->size(), std::move(copies));
+        parkedUndo_.erase(target);
     }
 }
 
@@ -546,8 +548,10 @@ void Session::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, b
     if (target == playlists_.shownId()) {
         commands_.insert(std::move(entries), where);
     } else {
-        // Undo lives with what is on screen, and this is not.
+        // Undo lives with what is on screen, and this is not. What that
+        // playlist had parked described rows that no longer line up.
         destination->insert(where, std::move(entries));
+        parkedUndo_.erase(target);
     }
 
     setStatus(statusSummary());
@@ -559,10 +563,11 @@ void Session::applyReloadedEntries(std::vector<PlaylistEntry> entries) {
         return;
     }
 
-    std::unordered_map<std::string, TrackId> byUrl;
+    // Every copy: the same file in two playlists is the same tags.
+    std::unordered_map<std::string, std::vector<TrackId>> byUrl;
     for (std::size_t list = 0; list < playlists_.size(); ++list) {
         for (const PlaylistEntry& entry : playlists_.at(list).playlist->entries()) {
-            byUrl.emplace(entry.url.toString(), entry.id);
+            byUrl[entry.url.toString()].push_back(entry.id);
         }
     }
 
@@ -580,31 +585,33 @@ void Session::applyReloadedEntries(std::vector<PlaylistEntry> entries) {
             static_cast<void>(library_->adoptArtwork(fresh));
         }
 
-        playlists_.update(found->second, [&fresh](PlaylistEntry& entry) {
-            // Everything a file can answer for is replaced; everything the
-            // playlist knows and the file does not is kept. Getting this
-            // backwards is not visible -- a reload that reset the play count and
-            // dropped the track out of the queue would look like it had worked.
-            const std::int64_t playCount     = entry.playCount;
-            const double       position      = entry.currentPosition;
-            const bool         stopAfter     = entry.stopAfter;
-            const std::int64_t shuffleIndex  = entry.shuffleIndex;
-            const std::int32_t queuePosition = entry.queuePosition;
-            const Url          url           = entry.url;
+        for (const TrackId id : found->second) {
+            playlists_.update(id, [&fresh](PlaylistEntry& entry) {
+                // Everything a file can answer for is replaced; everything the
+                // playlist knows and the file does not is kept. Getting this
+                // backwards is not visible -- a reload that reset the play count and
+                // dropped the track out of the queue would look like it had worked.
+                const std::int64_t playCount     = entry.playCount;
+                const double       position      = entry.currentPosition;
+                const bool         stopAfter     = entry.stopAfter;
+                const std::int64_t shuffleIndex  = entry.shuffleIndex;
+                const std::int32_t queuePosition = entry.queuePosition;
+                const Url          url           = entry.url;
 
-            entry = fresh;
+                entry = fresh;
 
-            entry.url             = url;
-            entry.playCount       = playCount;
-            entry.currentPosition = position;
-            entry.stopAfter       = stopAfter;
-            entry.shuffleIndex    = shuffleIndex;
-            entry.queuePosition   = queuePosition;
-        });
+                entry.url             = url;
+                entry.playCount       = playCount;
+                entry.currentPosition = position;
+                entry.stopAfter       = stopAfter;
+                entry.shuffleIndex    = shuffleIndex;
+                entry.queuePosition   = queuePosition;
+            });
 
-        if (library_) {
-            if (const PlaylistEntry* entry = playlists_.find(found->second); entry != nullptr) {
-                static_cast<void>(library_->saveEntry(*entry));
+            if (library_) {
+                if (const PlaylistEntry* entry = playlists_.find(id); entry != nullptr) {
+                    static_cast<void>(library_->saveEntry(*entry));
+                }
             }
         }
         ++updated;

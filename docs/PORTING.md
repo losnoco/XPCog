@@ -3574,10 +3574,11 @@ belongs; this is the index, not the detail.
   its front pair: the tap keeps two channels.
 - **The Waveform pane is the envelope alone.** Cog's has an oscilloscope mode as
   well; here that would be the Oscilloscope pane a second time.
-- **A manual track change crossfades, but stays at the running rate.**
-  `switchTrack()` declines on a device held exclusively, whose
-  rate should follow the track, and a track that will not open falls back to
-  stopping and playing, where it fails as it always did.
+- **A manual track change crossfades only into a track that fits.** `switchTrack()`
+  declines a track of another rate or width, on a device held exclusively, after a
+  change to a setting only `play()` reads, and for a file that will not open, and
+  the player then stops and plays as it always did. Otherwise a 5.1 file chosen over
+  a stereo one would be fitted to the two channels already open.
 - **The remote control addresses the playlist on screen.** Its reads and edits go
   through the window's view and commands, so they follow the tab; the transport
   follows what is playing. There are no routes for choosing a playlist.

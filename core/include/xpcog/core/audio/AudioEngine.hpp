@@ -159,10 +159,11 @@ public:
     /// Port of Cog's 1599115c0.
     ///
     /// Answers false, having changed nothing, whenever that cannot be done: not
-    /// playing, paused, fades off, a device held exclusively (whose rate should
-    /// follow the track), or a file that does not open. The caller then stops
-    /// and plays as it always did. Opens the file on the calling thread, so a
-    /// slow source stalls neither the feeder nor the audio.
+    /// playing, paused, fades off, a device held exclusively, a file that does
+    /// not open, a track the running device is the wrong shape for, or a setting
+    /// only play() reads having changed. All of those are what stopping and
+    /// playing is for, and the caller then does that. Opens the file on the
+    /// calling thread, so a slow source stalls neither the feeder nor the audio.
     bool switchTrack(const Url& url);
 
     void stop();
@@ -413,6 +414,20 @@ private:
     /// channels wide. Re-decided whenever a switch changes how wide the device
     /// is -- a move to stereo headphones drops the upmix rather than the switch.
     std::atomic<bool> freeSurroundActive_{false};
+
+    /// What play() read of the settings it alone reads, so switchTrack() can
+    /// tell a pipeline that would be built differently now.
+    struct BuiltWith {
+        std::string resampling;
+        bool        hdcd         = false;
+        bool        halveDsd     = false;
+        bool        freeSurround = false;
+
+        [[nodiscard]] friend bool operator==(const BuiltWith&, const BuiltWith&) = default;
+    };
+    [[nodiscard]] BuiltWith settingsNow() const;
+    /// Under dspFactsMutex_, since the report reads it from any thread.
+    BuiltWith builtWith_;
 
     /// A track on its way from switchTrack() to the feeder, under switchMutex_.
     struct PendingSwitch;

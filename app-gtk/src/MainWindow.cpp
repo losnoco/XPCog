@@ -278,6 +278,8 @@ void MainWindow::wireUp() {
     });
     observe(session_.undo().changed, [this] { refreshActionState(); });
     observe(session_.playlistsChanged, [this] { refreshPlaylists(); });
+    observe(session_.playbackStateChanged,
+            [this](bool playing, bool) { tabs_->setPlaybackActive(playing); });
     observe(session_.revealRequested, [this](TrackId id) { playlist_->revealTrack(id); });
     observe(session_.announceTrack,
             [this](const std::string& title, const std::string& body,

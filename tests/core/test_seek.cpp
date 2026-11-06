@@ -129,7 +129,8 @@ std::filesystem::path fixtureDir() {
 /// engine resamples nothing here and applies no gain, so a window's peak level
 /// says which file is being heard.
 std::optional<std::filesystem::path> makeFlac(const std::string& name, int frames,
-                                              double amplitude = 20000.0) {
+                                              double amplitude = 20000.0,
+                                              std::uint32_t rate = static_cast<std::uint32_t>(kSampleRate)) {
     const auto wav  = fixtureDir() / (name + ".wav");
     const auto flac = fixtureDir() / (name + ".flac");
 
@@ -157,8 +158,8 @@ std::optional<std::filesystem::path> makeFlac(const std::string& name, int frame
     u32(16);
     u16(1);
     u16(kChannels);
-    u32(static_cast<std::uint32_t>(kSampleRate));
-    u32(static_cast<std::uint32_t>(kSampleRate) * kChannels * 2);
+    u32(rate);
+    u32(rate * kChannels * 2);
     u16(kChannels * 2);
     u16(16);
     std::fwrite("data", 1, 4, f);
@@ -592,6 +593,22 @@ TEST_CASE("a manual track change crossfades in the running pipeline", "[seek][cr
         settings.setEnableFading(false);
         REQUIRE(engine.play(Url::fromLocalPath(*loud)));
         CHECK_FALSE(engine.switchTrack(Url::fromLocalPath(*quiet)));
+        CHECK(engine.status() == PlaybackStatus::Playing);
+        engine.stop();
+    }
+
+    SECTION("a setting only play() reads having changed, it declines") {
+        REQUIRE(engine.play(Url::fromLocalPath(*loud)));
+        settings.setResampling("low");
+        CHECK_FALSE(engine.switchTrack(Url::fromLocalPath(*quiet)));
+        engine.stop();
+    }
+
+    SECTION("a track of another rate belongs on a device opened for it") {
+        const auto other = makeFlac("switch-rate", kFrames, 6000.0, 48000);
+        REQUIRE(other);
+        REQUIRE(engine.play(Url::fromLocalPath(*loud)));
+        CHECK_FALSE(engine.switchTrack(Url::fromLocalPath(*other)));
         CHECK(engine.status() == PlaybackStatus::Playing);
         engine.stop();
     }

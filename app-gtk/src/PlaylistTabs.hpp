@@ -42,6 +42,9 @@ public:
     /// Brings the tabs into line with the set.
     void refresh();
 
+    /// Whether anything is playing, which is when the playing tab says so.
+    void setPlaybackActive(bool active);
+
 private:
     struct Tab {
         AdwTabPage*     page = nullptr;
@@ -65,6 +68,7 @@ private:
     /// Set while refresh() moves things, so its own moves are not taken for
     /// the listener's.
     bool syncing_ = false;
+    bool active_  = false;
 };
 
 }  // namespace xpcog::gtk

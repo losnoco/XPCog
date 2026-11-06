@@ -371,7 +371,11 @@ void PlaybackController::playPause() {
     }
 
     if (!playing()) {
-        // Nothing running: start the current entry, or the first one.
+        // Nothing running, so what the listener is looking at is what they mean,
+        // unless it is empty. Then the current entry, or the first one.
+        if (!playlists_.shown().empty()) {
+            playlists_.setPlaying(playlists_.shownId());
+        }
         const TrackId start = playlists_.playing().current().value_or(kInvalidTrackId);
         if (playlists_.find(start) != nullptr) {
             playTrack(start);
@@ -658,7 +662,8 @@ std::optional<Url> PlaybackController::nextTrack() {
     // Reading the playlist from this thread is safe only because the interface
     // does not mutate it during playback without stopping first. That is the one
     // rule this class relies on, and the reason playlist edits go through the
-    // undo stack on the interface's thread rather than being touched here.
+    // undo stack on the interface's thread rather than being touched here. The
+    // list of playlists does change under playback, and PlaylistSet locks for it.
     const auto id = playlists_.nextForPlayback();
     if (!id) {
         return std::nullopt;

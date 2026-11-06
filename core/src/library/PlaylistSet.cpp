@@ -32,6 +32,7 @@ PlaylistSet::Item& PlaylistSet::append(Id id, std::string name,
 }
 
 std::optional<std::size_t> PlaylistSet::indexOf(Id id) const {
+    const std::lock_guard lock(mutex_);
     for (std::size_t i = 0; i < items_.size(); ++i) {
         if (items_[i]->id == id) {
             return i;
@@ -61,6 +62,7 @@ const Playlist* PlaylistSet::playlist(Id id) const {
 }
 
 PlaylistSet::Id PlaylistSet::add(std::string name, std::optional<std::size_t> position) {
+    const std::lock_guard lock(mutex_);
     const Id id = nextId_++;
     append(id, std::move(name), position);
     publish({Change::Kind::Added, id});
@@ -68,6 +70,7 @@ PlaylistSet::Id PlaylistSet::add(std::string name, std::optional<std::size_t> po
 }
 
 bool PlaylistSet::remove(Id id) {
+    const std::lock_guard lock(mutex_);
     const auto index = indexOf(id);
     if (!index || items_.size() <= 1) {
         return false;
@@ -84,6 +87,10 @@ bool PlaylistSet::remove(Id id) {
         setPlaying(fallback);
     }
 
+    if (cursorOwner_ == id) {
+        cursorOwner_ = playing_;
+    }
+
     // Through clear(), so the shared queue loses what was queued from here.
     items_[*index]->playlist->clear();
     items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(*index));
@@ -92,6 +99,7 @@ bool PlaylistSet::remove(Id id) {
 }
 
 bool PlaylistSet::rename(Id id, std::string name) {
+    const std::lock_guard lock(mutex_);
     Item* found = item(id);
     if (found == nullptr || found->name == name) {
         return false;
@@ -102,6 +110,7 @@ bool PlaylistSet::rename(Id id, std::string name) {
 }
 
 bool PlaylistSet::move(Id id, std::size_t position) {
+    const std::lock_guard lock(mutex_);
     const auto index = indexOf(id);
     if (!index) {
         return false;
@@ -126,15 +135,21 @@ void PlaylistSet::show(Id id) {
 }
 
 void PlaylistSet::setPlaying(Id id) {
+    const std::lock_guard lock(mutex_);
     if (id == playing_ || item(id) == nullptr) {
         return;
     }
     playing().setCurrent(std::nullopt);
-    playing_ = id;
+    if (cursorOwner_ != playing_) {
+        playlist(cursorOwner_)->forgetCursor();
+    }
+    playing_     = id;
+    cursorOwner_ = id;
     publish({Change::Kind::Playing, id});
 }
 
 const PlaylistEntry* PlaylistSet::find(TrackId id) const {
+    const std::lock_guard lock(mutex_);
     for (const auto& candidate : items_) {
         if (const PlaylistEntry* entry = candidate->playlist->find(id)) {
             return entry;
@@ -144,6 +159,7 @@ const PlaylistEntry* PlaylistSet::find(TrackId id) const {
 }
 
 Playlist* PlaylistSet::ownerOf(TrackId id) {
+    const std::lock_guard lock(mutex_);
     for (const auto& candidate : items_) {
         if (candidate->playlist->find(id) != nullptr) {
             return candidate->playlist.get();
@@ -153,6 +169,7 @@ Playlist* PlaylistSet::ownerOf(TrackId id) {
 }
 
 std::optional<PlaylistSet::Id> PlaylistSet::ownerIdOf(TrackId id) const {
+    const std::lock_guard lock(mutex_);
     for (const auto& candidate : items_) {
         if (candidate->playlist->find(id) != nullptr) {
             return candidate->id;
@@ -162,6 +179,7 @@ std::optional<PlaylistSet::Id> PlaylistSet::ownerIdOf(TrackId id) const {
 }
 
 std::optional<TrackId> PlaylistSet::findByUrl(const std::string& url) const {
+    const std::lock_guard lock(mutex_);
     const auto search = [&url](const Playlist& list) -> std::optional<TrackId> {
         for (const PlaylistEntry& entry : list.entries()) {
             if (entry.url.toString() == url) {
@@ -186,33 +204,51 @@ std::optional<TrackId> PlaylistSet::findByUrl(const std::string& url) const {
 }
 
 void PlaylistSet::update(TrackId id, const std::function<void(PlaylistEntry&)>& mutate) {
+    const std::lock_guard lock(mutex_);
     if (Playlist* owner = ownerOf(id)) {
         owner->update(id, mutate);
     }
 }
 
+std::optional<TrackId> PlaylistSet::peekNextForPlayback() const {
+    const std::lock_guard lock(mutex_);
+    return playlist(cursorOwner_)->peekNextForPlayback();
+}
+
 std::optional<TrackId> PlaylistSet::nextForPlayback() {
-    Playlist&                    from = playing();
-    const std::optional<TrackId> id   = from.nextForPlayback();
+    const std::lock_guard lock(mutex_);
+    Playlist&             from = *playlist(cursorOwner_);
+
+    // An empty playlist has nothing to ask, but the queue may still reach
+    // somewhere else.
+    std::optional<TrackId> id;
+    if (from.empty() && !shared_->queue.empty()) {
+        id = shared_->queue.front();
+        if (Playlist* owner = ownerOf(*id)) {
+            owner->dequeue(*id);
+        }
+    } else {
+        id = from.nextForPlayback();
+    }
     if (!id || from.find(*id) != nullptr) {
         return id;
     }
 
-    // Queued from another playlist. The cursor crosses now, but the row marked
-    // as playing stays put until noteAudible(): that audio is still to come.
+    // Queued from another playlist. Only the cursor crosses: the audio before
+    // it is still to be heard, and noteAudible() moves the rest.
     const std::optional<Id> owner = ownerIdOf(*id);
     if (!owner) {
         return id;
     }
     from.forgetCursor();
     playlist(*owner)->adoptCursor(*id);
-    playing_ = *owner;
-    publish({Change::Kind::Playing, *owner});
+    cursorOwner_ = *owner;
     return id;
 }
 
 bool PlaylistSet::next() {
-    Playlist& from = playing();
+    const std::lock_guard lock(mutex_);
+    Playlist&             from = playing();
 
     if (!shared_->queue.empty() && from.find(shared_->queue.front()) == nullptr) {
         const TrackId id = shared_->queue.front();
@@ -222,29 +258,51 @@ bool PlaylistSet::next() {
             return true;
         }
     }
+
+    // Whatever the feeder had read ahead into is abandoned by this.
+    if (cursorOwner_ != playing_) {
+        playlist(cursorOwner_)->forgetCursor();
+        cursorOwner_ = playing_;
+    }
     return from.next();
 }
 
 void PlaylistSet::setCurrent(TrackId id) {
+    const std::lock_guard lock(mutex_);
     const std::optional<Id> owner = ownerIdOf(id);
     if (!owner) {
         return;
     }
     setPlaying(*owner);
+    if (cursorOwner_ != playing_) {
+        playlist(cursorOwner_)->forgetCursor();
+        cursorOwner_ = playing_;
+    }
     playing().setCurrent(id);
 }
 
 void PlaylistSet::noteAudible(TrackId id) {
-    const std::optional<Id> owner = ownerIdOf(id);
-    if (!owner) {
-        return;
-    }
-    for (const auto& candidate : items_) {
-        if (candidate->id != *owner && candidate->playlist->current()) {
-            candidate->playlist->setAudible(std::nullopt);
+    Id   now     = 0;
+    bool crossed = false;
+    {
+        const std::lock_guard lock(mutex_);
+        const std::optional<Id> owner = ownerIdOf(id);
+        if (!owner) {
+            return;
         }
+        for (const auto& candidate : items_) {
+            if (candidate->id != *owner && candidate->playlist->current()) {
+                candidate->playlist->setAudible(std::nullopt);
+            }
+        }
+        playlist(*owner)->setAudible(id);
+        crossed  = *owner != playing_;
+        playing_ = *owner;
+        now      = *owner;
     }
-    playlist(*owner)->setAudible(id);
+    if (crossed) {
+        publish({Change::Kind::Playing, now});
+    }
 }
 
 void PlaylistSet::setRepeat(RepeatMode mode) {
@@ -275,6 +333,7 @@ void PlaylistSet::syncQueue() {
 }
 
 void PlaylistSet::restore(std::vector<Stored> playlists, std::vector<TrackId> queue) {
+    const std::lock_guard lock(mutex_);
     items_.clear();
     shared_->queue.clear();
     shared_->nextId = 1;
@@ -298,8 +357,8 @@ void PlaylistSet::restore(std::vector<Stored> playlists, std::vector<TrackId> qu
     }
 
     // Whichever one has a current entry is the one that was playing.
-    shown_   = items_.front()->id;
-    playing_ = items_.front()->id;
+    shown_       = items_.front()->id;
+    playing_     = items_.front()->id;
     for (const auto& candidate : items_) {
         if (candidate->playlist->current()) {
             playing_ = candidate->id;
@@ -307,6 +366,8 @@ void PlaylistSet::restore(std::vector<Stored> playlists, std::vector<TrackId> qu
             break;
         }
     }
+
+    cursorOwner_ = playing_;
 
     std::erase_if(queue, [this](TrackId id) { return find(id) == nullptr; });
     shared_->queue = std::move(queue);

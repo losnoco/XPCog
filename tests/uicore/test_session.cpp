@@ -580,3 +580,100 @@ TEST_CASE("a scan lands in the playlist it was started from", "[uicore][session]
     CHECK(h.session.playlist().empty());
     CHECK(h.session.playlists().playlist(PlaylistSet::kFirstId)->size() == 1);
 }
+
+TEST_CASE("the tab on screen survives a restart", "[uicore][session][playlist]") {
+    std::filesystem::path data;
+    PlaylistSet::Id       second = 0;
+    {
+        Harness h;
+        data   = h.data;
+        second = h.session.newPlaylist();
+        PlaylistEntry entry;
+        entry.url = Url::fromLocalPath("/music/one.flac");
+        h.session.playlists().playlist(PlaylistSet::kFirstId)->add(entry);
+        h.session.save();
+    }
+
+    Session::Options o;
+    o.dataDirectory  = data.string();
+    o.cacheDirectory = (data / "cache").string();
+    o.makeOutput     = [](RingBuffer& ring) { return makeOfflineOutput(ring, 8.0); };
+    Loop     loop;
+    auto     store = makeMemorySettingsStore();
+    Settings settings(*store);
+    settings.setShownPlaylist(static_cast<int>(second));
+    Session session(registry(), settings, loop.dispatcher(), o);
+    session.start();
+
+    CHECK(session.playlists().size() == 2);
+    CHECK(session.playlists().shownId() == second);
+}
+
+TEST_CASE("Play starts from the playlist on screen", "[uicore][session][playlist]") {
+    if (!test::haveTool("flac")) {
+        SKIP("flac encoder not on PATH");
+    }
+    const auto one = makeFlac("play-shown", 1.0, 440.0);
+    REQUIRE(one);
+
+    // The first playlist stays empty, which is how a fresh install begins.
+    Harness h;
+    const PlaylistSet::Id second = h.session.newPlaylist();
+    h.add({*one});
+    REQUIRE(h.session.playlist().size() == 1);
+
+    h.session.playback().playPause();
+    REQUIRE(h.loop.waitFor(h.session, [&] { return h.session.playback().playing(); },
+                           std::chrono::seconds(10)));
+    CHECK(h.session.playlists().playingId() == second);
+
+    h.session.playback().stop();
+    h.loop.waitFor(h.session, [&] { return !h.session.playback().playing(); },
+                   std::chrono::seconds(5));
+}
+
+TEST_CASE("reloading a track reaches every copy of it", "[uicore][session][playlist]") {
+    if (!test::haveTool("flac")) {
+        SKIP("flac encoder not on PATH");
+    }
+    const auto one = makeFlac("reload-copies", 0.2, 440.0);
+    REQUIRE(one);
+
+    Harness h;
+    h.add({*one});
+    const TrackId original = h.session.playlist().entries().front().id;
+    h.session.newPlaylist({original});
+    const TrackId copy = h.session.playlist().entries().front().id;
+
+    Playlist& first = *h.session.playlists().playlist(PlaylistSet::kFirstId);
+    first.update(original, [](PlaylistEntry& entry) { entry.year = 1; });
+    h.session.playlist().update(copy, [](PlaylistEntry& entry) { entry.year = 1; });
+
+    const int before = h.scansFinished;
+    h.session.reloadTracks({copy});
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+
+    CHECK(h.session.playlist().find(copy)->year != 1);
+    CHECK(first.find(original)->year != 1);
+}
+
+TEST_CASE("an edit behind a parked undo history drops it", "[uicore][session][playlist]") {
+    Harness h;
+    PlaylistEntry one;
+    one.url = Url::fromLocalPath("/music/one.flac");
+    PlaylistEntry two;
+    two.url = Url::fromLocalPath("/music/two.flac");
+    h.session.commands().insert({one, two}, 0);
+    const std::vector<TrackId> tracks = {h.session.playlist().at(0).id,
+                                         h.session.playlist().at(1).id};
+    h.session.commands().randomize();
+
+    h.session.newPlaylist(tracks);
+    h.session.addToPlaylist({h.session.playlist().at(0).id}, PlaylistSet::kFirstId);
+
+    h.session.playlists().show(PlaylistSet::kFirstId);
+    CHECK_FALSE(h.session.undo().canUndo());
+    CHECK(h.session.playlist().size() == 3);
+}

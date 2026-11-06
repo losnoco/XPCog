@@ -87,6 +87,13 @@ void PlaylistTabs::onItemsChanged() {
     }
 }
 
+void PlaylistTabs::setPlaybackActive(bool active) {
+    if (active != active_) {
+        active_ = active;
+        refresh();
+    }
+}
+
 void PlaylistTabs::refresh() {
     syncing_ = true;
 
@@ -124,7 +131,7 @@ void PlaylistTabs::refresh() {
         tab.Header(winrt::box_value(toH(hooks_.title(id))));
         tab.IsClosable(playlists_.size() > 1);
 
-        if (id == playlists_.playingId() && playlists_.playing().current()) {
+        if (id == playlists_.playingId() && active_) {
             auto icon = mux::Controls::SymbolIconSource();
             icon.Symbol(mux::Controls::Symbol::Play);
             tab.IconSource(icon);

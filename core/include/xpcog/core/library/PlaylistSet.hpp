@@ -13,6 +13,14 @@
 //
 // `shown` and `playing` are independent. Looking at another playlist never
 // changes what plays next, which is the rule Cog's 14ed421cd exists to state.
+//
+// --- Threads ---------------------------------------------------------------
+//
+// The feeder thread asks nextForPlayback() while the interface adds, moves and
+// removes tabs, which unlike a playlist edit is not something it stops playback
+// for. So the list of playlists is under a lock, and nothing published here is
+// published from the feeder: `playing` moves in noteAudible(), which is on the
+// interface's thread, and until then only the read-ahead cursor has crossed.
 
 #pragma once
 
@@ -23,6 +31,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -129,14 +138,13 @@ public:
     // --- playback across playlists -------------------------------------------
 
     /// Playlist::nextForPlayback(), following the queue into another playlist.
-    /// The playing playlist changes here, a buffer ahead of the audio, so the
-    /// entry after this one is measured from where it now is.
+    /// The cursor crosses here, a buffer ahead of the audio, so the entry after
+    /// this one is measured from where it now is. `playing` waits for
+    /// noteAudible(): Next pressed in between means the track being heard.
     [[nodiscard]] std::optional<TrackId> nextForPlayback();
 
     /// Playlist::peekNextForPlayback() on the playing one. Consumes nothing.
-    [[nodiscard]] std::optional<TrackId> peekNextForPlayback() const {
-        return playing().peekNextForPlayback();
-    }
+    [[nodiscard]] std::optional<TrackId> peekNextForPlayback() const;
 
     /// Playlist::next(), the same way.
     bool next();
@@ -144,8 +152,8 @@ public:
     /// Moves `id` to current in its own playlist and makes that the playing one.
     void setCurrent(TrackId id);
 
-    /// `id` reached the speaker. Only now does the playlist the audio came from
-    /// let go of its playing row.
+    /// `id` reached the speaker. Only now does its playlist become the playing
+    /// one, and the one the audio came from let go of its playing row.
     void noteAudible(TrackId id);
 
     // --- every playlist at once -----------------------------------------------
@@ -177,6 +185,11 @@ private:
     Id nextId_  = kFirstId;
     Id shown_   = kFirstId;
     Id playing_ = kFirstId;
+    /// Whose read-ahead cursor is live. `playing_` but for the moments between
+    /// the queue crossing into another playlist and that audio being heard.
+    Id cursorOwner_ = kFirstId;
+
+    mutable std::recursive_mutex mutex_;
 
     RepeatMode  repeat_     = RepeatMode::All;
     ShuffleMode shuffle_    = ShuffleMode::Off;
