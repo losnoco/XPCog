@@ -55,6 +55,11 @@ const std::vector<MenuItem>& layout() {
         // they move over from Cog, and a shortcut for it would be occupying a
         // key for the rest of the installation's life.
         {nullptr, FileSavePlaylist, XPCOG_TRANSLATE("&Save Playlist..."), "Ctrl+S", ItemKind::Normal, true},
+        // Cog's playlists, on the key a browser opens a tab with.
+        {nullptr, FileNewPlaylist, XPCOG_TRANSLATE("&New Playlist"), "Ctrl+T", ItemKind::Normal, true},
+        {nullptr, FileNewPlaylistFromSelection, XPCOG_TRANSLATE("New Playlist from Se&lection"), ""},
+        {nullptr, FileRenamePlaylist, XPCOG_TRANSLATE("Rena&me Playlist..."), ""},
+        {nullptr, FileDeletePlaylist, XPCOG_TRANSLATE("&Delete Playlist..."), ""},
         {nullptr, FilePreferences, XPCOG_TRANSLATE("&Preferences..."), "Ctrl+,", ItemKind::Normal, true},
         {nullptr, FileQuit, XPCOG_TRANSLATE("&Quit"), "Ctrl+Q", ItemKind::Normal, true},
 
@@ -123,6 +128,8 @@ const std::vector<MenuItem>& layout() {
         // torn off" rather than sitting there permanently clickable.
         {nullptr, ViewDockPanes, XPCOG_TRANSLATE("&Dock Floating Panes"), "", ItemKind::Normal, true},
         {nullptr, ViewMiniPlayer, XPCOG_TRANSLATE("&Mini Player"), "Ctrl+M", ItemKind::Check, true},
+        {nullptr, ViewNextPlaylist, XPCOG_TRANSLATE("Ne&xt Playlist"), "Ctrl+PageDown", ItemKind::Normal, true},
+        {nullptr, ViewPreviousPlaylist, XPCOG_TRANSLATE("Pre&vious Playlist"), "Ctrl+PageUp"},
 
         {XPCOG_TRANSLATE("&Edit"), EditUndo, XPCOG_TRANSLATE("&Undo"), "Ctrl+Z"},
         {nullptr, EditRedo, XPCOG_TRANSLATE("&Redo"), "Ctrl+Y"},
@@ -204,6 +211,8 @@ const std::vector<MenuItem>& playlistLayout() {
         {nullptr, EditRemove, XPCOG_TRANSLATE("&Remove from Playlist"), "Del",
          ItemKind::Normal, true},
         {nullptr, PlaylistTrash, kTrashLabel, ""},
+        {nullptr, FileNewPlaylistFromSelection,
+         XPCOG_TRANSLATE("New Playlist from Se&lection"), "", ItemKind::Normal, true},
         {nullptr, ViewInfo, XPCOG_TRANSLATE("&Info"), "", ItemKind::Check, true},
     };
     return table;
@@ -349,6 +358,8 @@ const std::vector<CommandId>& allCommands() {
         PlaylistToggleQueued, PlaylistStopAfter, PlaylistSaveSelection, PlaylistSearchArtist,
         PlaylistSearchAlbum, PlaylistReloadInfo, PlaylistResetPlayCount, PlaylistRemoveRating,
         PlaylistReveal,    PlaylistTrash,
+        FileNewPlaylist,   FileNewPlaylistFromSelection, FileRenamePlaylist, FileDeletePlaylist,
+        ViewNextPlaylist,  ViewPreviousPlaylist,
     };
     return table;
 }
@@ -413,6 +424,13 @@ CommandAction commandAction(CommandId id) {
         case PlaylistRemoveRating:  return {"remove-rating", nullptr};
         case PlaylistReveal:        return {"reveal", nullptr};
         case PlaylistTrash:         return {"trash", nullptr};
+
+        case FileNewPlaylist:       return {"new-playlist", nullptr};
+        case FileNewPlaylistFromSelection: return {"new-playlist-from-selection", nullptr};
+        case FileRenamePlaylist:    return {"rename-playlist", nullptr};
+        case FileDeletePlaylist:    return {"delete-playlist", nullptr};
+        case ViewNextPlaylist:      return {"next-playlist", nullptr};
+        case ViewPreviousPlaylist:  return {"previous-playlist", nullptr};
 
         case HelpAbout:             return {"about", nullptr};
 

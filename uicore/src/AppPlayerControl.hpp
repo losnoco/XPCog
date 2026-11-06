@@ -53,7 +53,7 @@ public:
     using ScanStarter = std::function<std::string(std::vector<std::string> urls,
                                                   std::optional<std::size_t> at)>;
 
-    AppPlayerControl(PlaybackController& playback, Playlist& playlist,
+    AppPlayerControl(PlaybackController& playback, PlaylistSet& playlists,
                      PlaylistView& view, AppCommands& commands, Settings& settings,
                      RemoteJobs& jobs, Library* library, ScanStarter startScan);
 
@@ -122,7 +122,7 @@ private:
     [[nodiscard]] remote::SettingInfo describe(std::string_view key) const;
 
     PlaybackController& playback_;
-    Playlist&           playlist_;
+    PlaylistSet&           playlists_;
     PlaylistView&       view_;
     AppCommands&        commands_;
     Settings&           settings_;
@@ -139,6 +139,7 @@ private:
     /// deletes the wrong thing.
     std::uint64_t revision_ = 0;
     Subscription  playlistWatch_;
+    Subscription  playlistsWatch_;
 };
 
 }  // namespace xpcog::app

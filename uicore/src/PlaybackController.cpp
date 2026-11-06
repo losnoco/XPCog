@@ -35,10 +35,10 @@ constexpr auto kTickInterval =
 }  // namespace
 
 PlaybackController::PlaybackController(const PluginRegistry& registry,
-                                       Playlist& playlist, Settings& settings,
+                                       PlaylistSet& playlists, Settings& settings,
                                        Dispatcher dispatch, OutputFactory makeOutput)
     : registry_(registry),
-      playlist_(playlist),
+      playlists_(playlists),
       settings_(settings),
       dispatch_(std::move(dispatch)),
       ring_(kRingSamples) {
@@ -116,7 +116,7 @@ double PlaybackController::playedSeconds() const {
 }
 
 double PlaybackController::duration() const {
-    const PlaylistEntry* entry = playlist_.find(audible_);
+    const PlaylistEntry* entry = playlists_.find(audible_);
     return (entry != nullptr) ? entry->duration() : 0.0;
 }
 
@@ -175,7 +175,7 @@ void PlaybackController::reopenOutput() {
 }
 
 void PlaybackController::resumeTrack(TrackId id, double seconds, bool startPaused) {
-    if (playlist_.find(id) == nullptr) {
+    if (playlists_.find(id) == nullptr) {
         return;
     }
     // The same route restartForOutputChange() takes, and for the same reason:
@@ -231,7 +231,7 @@ void PlaybackController::requestStart(TrackId id, Search hunt) {
         searched_.clear();
     }
 
-    const PlaylistEntry* entry = playlist_.find(id);
+    const PlaylistEntry* entry = playlists_.find(id);
     if (entry == nullptr) {
         // Cog's "Invalid playlist entry reached" (PlaybackController.m:863), and
         // reported for Cog's reason: something asked to play a track the playlist
@@ -247,7 +247,7 @@ void PlaybackController::requestStart(TrackId id, Search hunt) {
     }
 
     const Url url = entry->url;
-    playlist_.setCurrent(id);
+    playlists_.setCurrent(id);
     paused_ = false;
 
     // Nothing is audible until the answer comes back, and the ticker must not
@@ -336,10 +336,10 @@ void PlaybackController::finishStart(TrackId id, bool opened,
     if (searching_ != Search::None) {
         const Search direction = searching_;
         searched_.push_back(id);
-        const bool stepped = direction == Search::Backward ? playlist_.previous()
-                                                           : playlist_.next();
+        const bool stepped = direction == Search::Backward ? playlists_.playing().previous()
+                                                           : playlists_.next();
         if (stepped) {
-            const TrackId following = playlist_.current().value_or(kInvalidTrackId);
+            const TrackId following = playlists_.playing().current().value_or(kInvalidTrackId);
             if (std::find(searched_.begin(), searched_.end(), following) ==
                 searched_.end()) {
                 requestStart(following, direction);
@@ -365,11 +365,11 @@ void PlaybackController::playPause() {
 
     if (!playing()) {
         // Nothing running: start the current entry, or the first one.
-        const TrackId start = playlist_.current().value_or(kInvalidTrackId);
-        if (playlist_.find(start) != nullptr) {
+        const TrackId start = playlists_.playing().current().value_or(kInvalidTrackId);
+        if (playlists_.find(start) != nullptr) {
             playTrack(start);
-        } else if (!playlist_.empty()) {
-            playTrack(playlist_.at(0).id);
+        } else if (!playlists_.playing().empty()) {
+            playTrack(playlists_.playing().at(0).id);
         }
         return;
     }
@@ -475,7 +475,7 @@ void PlaybackController::next() {
         // towards, so this one starts from the track being heard.
         const TrackId from = searching_ == Search::Forward && !searched_.empty()
                                  ? searched_.back()
-                                 : playlist_.current().value_or(kInvalidTrackId);
+                                 : playlists_.playing().current().value_or(kInvalidTrackId);
         if (from != kInvalidTrackId) {
             startProbe(from, Search::Forward);
             return;
@@ -483,14 +483,14 @@ void PlaybackController::next() {
     }
 
     searched_.clear();
-    if (!playlist_.next()) {
+    if (!playlists_.next()) {
         stop();
         return;
     }
     // Not playTrack(): this start is allowed to keep looking, and playTrack() is
     // the gesture that names one entry and means it.
     resumeAt_ = 0.0;
-    requestStart(*playlist_.current(), Search::Forward);
+    requestStart(*playlists_.playing().current(), Search::Forward);
 }
 
 void PlaybackController::previous() {
@@ -516,7 +516,7 @@ void PlaybackController::previous() {
     if (settings_.KeepPlayingWhileSkipping() && playing() && !paused_) {
         const TrackId from = continuing
                                  ? searched_.back()
-                                 : playlist_.current().value_or(kInvalidTrackId);
+                                 : playlists_.playing().current().value_or(kInvalidTrackId);
         if (from != kInvalidTrackId) {
             startProbe(from, Search::Backward);
             return;
@@ -524,7 +524,7 @@ void PlaybackController::previous() {
     }
 
     searched_.clear();
-    if (!playlist_.previous()) {
+    if (!playlists_.playing().previous()) {
         // Unlike Next, which stops: running off the top of the playlist is not
         // the end of it, and Cog's -prev leaves what is playing alone there.
         return;
@@ -532,7 +532,7 @@ void PlaybackController::previous() {
     // Not playTrack(): this start is allowed to keep looking backwards, and
     // playTrack() is the gesture that names one entry and means it.
     resumeAt_ = 0.0;
-    requestStart(*playlist_.current(), Search::Backward);
+    requestStart(*playlists_.playing().current(), Search::Backward);
 }
 
 // --- the quiet search ---------------------------------------------------
@@ -559,14 +559,14 @@ void PlaybackController::probeNext(TrackId from, std::uint64_t generation) {
     // hop, and it is safe to: the generation check is what says this call still
     // belongs to the search that set it, and anything that ends one clears it.
     const auto candidate = searching_ == Search::Backward
-                               ? playlist_.peekPrevious(from)
-                               : playlist_.peekNext(from);
+                               ? playlists_.playing().peekPrevious(from)
+                               : playlists_.playing().peekNext(from);
     if (!candidate || std::find(searched_.begin(), searched_.end(), *candidate) !=
                           searched_.end()) {
         endSearch(/*found=*/false);
         return;
     }
-    const PlaylistEntry* entry = playlist_.find(*candidate);
+    const PlaylistEntry* entry = playlists_.find(*candidate);
     if (entry == nullptr) {
         endSearch(/*found=*/false);
         return;
@@ -652,11 +652,11 @@ std::optional<Url> PlaybackController::nextTrack() {
     // does not mutate it during playback without stopping first. That is the one
     // rule this class relies on, and the reason playlist edits go through the
     // undo stack on the interface's thread rather than being touched here.
-    const auto id = playlist_.nextForPlayback();
+    const auto id = playlists_.nextForPlayback();
     if (!id) {
         return std::nullopt;
     }
-    const PlaylistEntry* entry = playlist_.find(*id);
+    const PlaylistEntry* entry = playlists_.find(*id);
     return (entry != nullptr) ? std::optional{entry->url} : std::nullopt;
 }
 
@@ -676,11 +676,9 @@ void PlaybackController::nextTrackAbandoned(const Url& audible) {
     // this is: playback has been repositioned to `audible`, which is where the
     // next question should be measured from. current_ is already that entry, so
     // nothing is published.
-    for (std::size_t i = 0; i < playlist_.size(); ++i) {
-        if (playlist_.at(i).url.toString() == audible.toString()) {
-            playlist_.setCurrent(playlist_.at(i).id);
-            return;
-        }
+    if (const auto id = playlists_.findByUrl(audible.toString())) {
+        // The queue may have carried playback into another playlist already.
+        playlists_.setCurrent(*id);
     }
 }
 
@@ -695,27 +693,24 @@ void PlaybackController::trackBegan(const Url& url) {
     // interface; the dispatcher is what moves the work across.
     const std::string text = url.toString();
     dispatch_([this, text] {
-        for (std::size_t i = 0; i < playlist_.size(); ++i) {
-            if (playlist_.at(i).url.toString() == text) {
-                audible_ = playlist_.at(i).id;
-                // The share came back, or the file did. A row marked unplayable
-                // by an earlier failure has just played, so the mark is stale.
-                clearFailure(audible_);
-                // setAudible, not setCurrent: this is the seam reaching the
-                // speaker, and the engine asked what follows this track a
-                // buffer's worth of audio ago. Resetting the read-ahead cursor
-                // to here would have it answer with that same track again.
-                playlist_.setAudible(audible_);
-                currentTrackChanged.publish(audible_);
-                publishState();
-                // The seam moved the clock to a new track's frame of reference,
-                // and the ticker will not say so for up to a quarter of a
-                // second -- during which the label reads the end of the track
-                // that has just finished. Gapless is the one track change that
-                // does not go through requestStart(), so it needs its own.
-                positionChanged.publish(position(), duration());
-                return;
-            }
+        if (const auto found = playlists_.findByUrl(text)) {
+            audible_ = *found;
+            // The share came back, or the file did. A row marked unplayable
+            // by an earlier failure has just played, so the mark is stale.
+            clearFailure(audible_);
+            // setAudible, not setCurrent: this is the seam reaching the
+            // speaker, and the engine asked what follows this track a
+            // buffer's worth of audio ago. Resetting the read-ahead cursor
+            // to here would have it answer with that same track again.
+            playlists_.noteAudible(audible_);
+            currentTrackChanged.publish(audible_);
+            publishState();
+            // The seam moved the clock to a new track's frame of reference,
+            // and the ticker will not say so for up to a quarter of a
+            // second -- during which the label reads the end of the track
+            // that has just finished. Gapless is the one track change that
+            // does not go through requestStart(), so it needs its own.
+            positionChanged.publish(position(), duration());
         }
     });
 }
@@ -725,18 +720,13 @@ void PlaybackController::streamMetadataChanged(const Url& url, const MetadataMap
     // playlist nor the map by the time the interface runs this.
     const std::string text = url.toString();
     dispatch_([this, text, tags] {
-        for (std::size_t i = 0; i < playlist_.size(); ++i) {
-            if (playlist_.at(i).url.toString() != text) {
-                continue;
-            }
+        if (const auto found = playlists_.findByUrl(text)) {
             // Through update() rather than by writing to the entry, so the
             // playlist's own change notification fires and the id index stays
             // intact.
-            const TrackId id = playlist_.at(i).id;
-            playlist_.update(id,
-                             [&tags](PlaylistEntry& entry) { entry.applyMetadata(tags); });
-            trackMetadataChanged.publish(id);
-            return;
+            playlists_.update(*found,
+                              [&tags](PlaylistEntry& entry) { entry.applyMetadata(tags); });
+            trackMetadataChanged.publish(*found);
         }
     });
 }
@@ -754,12 +744,9 @@ void PlaybackController::trackFailed(const Url& url) {
     const std::string name = url.toString();
     dispatch_([this, name] {
         TrackId id = kInvalidTrackId;
-        for (std::size_t i = 0; i < playlist_.size(); ++i) {
-            if (playlist_.at(i).url.toString() == name) {
-                id = playlist_.at(i).id;
-                markFailure(id);
-                break;
-            }
+        if (const auto found = playlists_.findByUrl(name)) {
+            id = *found;
+            markFailure(id);
         }
         playbackFailed.publish(id, trf("Could not play %s", nameOf(id, name)));
     });
@@ -771,7 +758,7 @@ std::string PlaybackController::nameOf(TrackId id, const std::string& fallback) 
     // file:///Users/.../04%20Untitled.flac" has been told the truth in the least
     // useful available form, and a stream that is not in the playlist is the only
     // case with nothing better to offer.
-    const PlaylistEntry* entry = playlist_.find(id);
+    const PlaylistEntry* entry = playlists_.find(id);
     return entry != nullptr ? entry->title() : fallback;
 }
 
@@ -784,7 +771,7 @@ std::string PlaybackController::nameOf(TrackId id, const std::string& fallback) 
 // wanted, which is what a share going away looks like.
 
 void PlaybackController::markFailure(TrackId id) {
-    if (playlist_.find(id) == nullptr) {
+    if (playlists_.find(id) == nullptr) {
         return;
     }
     // Through update() rather than by writing to the entry, so the playlist's
@@ -793,7 +780,7 @@ void PlaybackController::markFailure(TrackId id) {
     // The stored sentence is English and stays English: the library persists this
     // field, and what goes in a database is not what a window says. The
     // translated sentence is the one published to the status line.
-    playlist_.update(id, [](PlaylistEntry& entry) {
+    playlists_.update(id, [](PlaylistEntry& entry) {
         entry.error        = true;
         entry.errorMessage = "could not be opened for playback";
     });
@@ -801,11 +788,11 @@ void PlaybackController::markFailure(TrackId id) {
 }
 
 void PlaybackController::clearFailure(TrackId id) {
-    const PlaylistEntry* entry = playlist_.find(id);
+    const PlaylistEntry* entry = playlists_.find(id);
     if (entry == nullptr || !entry->error) {
         return;
     }
-    playlist_.update(id, [](PlaylistEntry& target) {
+    playlists_.update(id, [](PlaylistEntry& target) {
         target.error = false;
         target.errorMessage.clear();
     });

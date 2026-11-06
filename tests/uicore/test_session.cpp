@@ -505,3 +505,78 @@ TEST_CASE("the session leaves the playlist and the position for the next one",
     loop.drain();
     CHECK_FALSE(session.playback().playing());
 }
+
+TEST_CASE("a new playlist is shown, numbered, and holds copies of what it was made from",
+          "[uicore][session][playlist]") {
+    Harness h;
+    Playlist& first = h.session.playlist();
+    PlaylistEntry entry;
+    entry.url = Url::fromLocalPath("/music/one.flac");
+    const TrackId original = first.add(entry);
+    first.enqueue(original);
+
+    const PlaylistSet::Id id = h.session.newPlaylist({original});
+
+    CHECK(h.session.playlists().shownId() == id);
+    CHECK(h.session.playlistTitle(id) == "Playlist 2");
+    REQUIRE(h.session.playlist().size() == 1);
+    const PlaylistEntry& copy = h.session.playlist().at(0);
+    CHECK(copy.id != original);
+    CHECK_FALSE(copy.queued());
+
+    // The first has no name of its own, and the view has followed the tab.
+    CHECK(h.session.playlistTitle(PlaylistSet::kFirstId) == "Playlist");
+    CHECK(h.session.view().rowCount() == 1);
+}
+
+TEST_CASE("each playlist keeps its own undo", "[uicore][session][playlist]") {
+    Harness h;
+    PlaylistEntry entry;
+    entry.url = Url::fromLocalPath("/music/one.flac");
+    h.session.commands().insert({entry}, 0);
+    REQUIRE(h.session.undo().canUndo());
+
+    const PlaylistSet::Id second = h.session.newPlaylist();
+    CHECK_FALSE(h.session.undo().canUndo());
+
+    h.session.playlists().show(PlaylistSet::kFirstId);
+    REQUIRE(h.session.undo().canUndo());
+    h.session.undo().undo();
+    CHECK(h.session.playlist().empty());
+
+    // And deleting a playlist takes its history with it.
+    h.session.playlists().show(second);
+    h.session.commands().insert({entry}, 0);
+    h.session.deletePlaylist(second);
+    CHECK(h.session.playlists().size() == 1);
+    CHECK_FALSE(h.session.undo().canUndo());
+    CHECK(h.session.undo().canRedo());
+}
+
+TEST_CASE("the tab that was on screen comes back", "[uicore][session][playlist]") {
+    Harness h;
+    h.session.newPlaylist();
+    h.session.newPlaylist();
+    h.session.showPlaylistOffset(-1);
+    CHECK(h.session.settings().ShownPlaylist() == h.session.playlists().at(1).id);
+    h.session.showPlaylistOffset(2);
+    CHECK(h.session.playlists().shownId() == h.session.playlists().at(0).id);
+}
+
+TEST_CASE("a scan lands in the playlist it was started from", "[uicore][session][playlist]") {
+    if (!test::haveTool("flac")) {
+        SKIP("flac not installed");
+    }
+    const auto one = makeFlac("tab-scan", 0.2, 440.0);
+    REQUIRE(one);
+
+    Harness h;
+    h.session.addUrls({Url::fromLocalPath(*one)});
+    h.session.newPlaylist();
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished == 1 && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+
+    CHECK(h.session.playlist().empty());
+    CHECK(h.session.playlists().playlist(PlaylistSet::kFirstId)->size() == 1);
+}

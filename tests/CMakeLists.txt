@@ -25,6 +25,7 @@ add_executable(xpcog-tests
     core/test_playmonitor.cpp
     core/test_scrobbler.cpp
     core/test_playlist.cpp
+    core/test_playlistset.cpp
     core/test_paths.cpp
     core/test_playlistcommands.cpp
     core/test_playlistfile.cpp

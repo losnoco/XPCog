@@ -65,20 +65,28 @@ namespace {
 
 }  // namespace
 
-PlaylistView::PlaylistView(Playlist& playlist) : playlist_(playlist) {
-    subscription_ = playlist_.observe(
+PlaylistView::PlaylistView(Playlist& playlist) : playlist_(&playlist) {
+    subscription_ = playlist_->observe(
         [this](const Playlist::Change& change) { onPlaylistChanged(change); });
     rebuild();
+}
+
+void PlaylistView::setPlaylist(Playlist& playlist) {
+    playlist_     = &playlist;
+    subscription_ = playlist_->observe(
+        [this](const Playlist::Change& change) { onPlaylistChanged(change); });
+    rebuild();
+    rebuilt.publish();
 }
 
 // --- the mapping ---------------------------------------------------------
 
 void PlaylistView::rebuild() {
     visible_.clear();
-    visible_.reserve(playlist_.size());
+    visible_.reserve(playlist_->size());
 
-    for (std::size_t index = 0; index < playlist_.size(); ++index) {
-        if (matches(playlist_.at(index))) {
+    for (std::size_t index = 0; index < playlist_->size(); ++index) {
+        if (matches(playlist_->at(index))) {
             visible_.push_back(index);
         }
     }
@@ -106,8 +114,8 @@ bool PlaylistView::matches(const PlaylistEntry& entry) const {
 }
 
 bool PlaylistView::less(std::size_t leftIndex, std::size_t rightIndex) const {
-    const PlaylistEntry& left  = playlist_.at(leftIndex);
-    const PlaylistEntry& right = playlist_.at(rightIndex);
+    const PlaylistEntry& left  = playlist_->at(leftIndex);
+    const PlaylistEntry& right = playlist_->at(rightIndex);
 
     // Numeric columns compare as numbers. "4:07" sorts as a string; 247 does not.
     const auto numeric = [this](double a, double b) {
@@ -174,12 +182,12 @@ void PlaylistView::onPlaylistChanged(const Playlist::Change& change) {
             bool mappingStillValid = true;
             for (std::size_t i = 0; i < change.count; ++i) {
                 const std::size_t index = change.index + i;
-                if (index >= playlist_.size()) {
+                if (index >= playlist_->size()) {
                     break;
                 }
                 const bool shown = std::find(visible_.begin(), visible_.end(), index) !=
                                    visible_.end();
-                if (shown != matches(playlist_.at(index))) {
+                if (shown != matches(playlist_->at(index))) {
                     mappingStillValid = false;
                     break;
                 }
@@ -241,10 +249,10 @@ const PlaylistEntry* PlaylistView::entryAt(std::size_t row) const {
         return nullptr;
     }
     const std::size_t index = visible_[row];
-    if (index >= playlist_.size()) {
+    if (index >= playlist_->size()) {
         return nullptr;
     }
-    return &playlist_.at(index);
+    return &playlist_->at(index);
 }
 
 TrackId PlaylistView::trackAt(std::size_t row) const {
@@ -253,7 +261,7 @@ TrackId PlaylistView::trackAt(std::size_t row) const {
 }
 
 std::optional<std::size_t> PlaylistView::rowForTrack(TrackId id) const {
-    const auto index = playlist_.indexOf(id);
+    const auto index = playlist_->indexOf(id);
     if (!index) {
         return std::nullopt;
     }
@@ -268,7 +276,7 @@ std::vector<TrackId> PlaylistView::visibleTracks() const {
     std::vector<TrackId> tracks;
     tracks.reserve(visible_.size());
     for (const std::size_t index : visible_) {
-        tracks.push_back(playlist_.at(index).id);
+        tracks.push_back(playlist_->at(index).id);
     }
     return tracks;
 }
@@ -277,7 +285,7 @@ std::vector<PlaylistEntry> PlaylistView::visibleEntries() const {
     std::vector<PlaylistEntry> entries;
     entries.reserve(visible_.size());
     for (const std::size_t index : visible_) {
-        entries.push_back(playlist_.at(index));
+        entries.push_back(playlist_->at(index));
     }
     return entries;
 }

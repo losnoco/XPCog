@@ -99,12 +99,12 @@ remote::TrackSummary summarise(const PlaylistEntry& entry) {
 
 }  // namespace
 
-AppPlayerControl::AppPlayerControl(PlaybackController& playback, Playlist& playlist,
+AppPlayerControl::AppPlayerControl(PlaybackController& playback, PlaylistSet& playlists,
                                    PlaylistView& view, AppCommands& commands,
                                    Settings& settings, RemoteJobs& jobs,
                                    Library* library, ScanStarter startScan)
     : playback_(playback),
-      playlist_(playlist),
+      playlists_(playlists),
       view_(view),
       commands_(commands),
       settings_(settings),
@@ -116,7 +116,9 @@ AppPlayerControl::AppPlayerControl(PlaybackController& playback, Playlist& playl
       // that happen to start in the same second, which a clock does not
       // guarantee.
       sessionId_(remote::generateRemoteToken().substr(0, 16)) {
-    playlistWatch_ = playlist_.observe([this](const Playlist::Change&) { ++revision_; });
+    playlistWatch_ = playlists_.observeContent(
+        [this](PlaylistSet::Id, const Playlist::Change&) { ++revision_; });
+    playlistsWatch_ = playlists_.observe([this](const PlaylistSet::Change&) { ++revision_; });
 }
 
 remote::Status AppPlayerControl::status() {
@@ -127,10 +129,10 @@ remote::Status AppPlayerControl::status() {
     status.position         = playback_.position();
     status.duration         = playback_.duration();
     status.volume           = playback_.volume();
-    status.repeat           = nameOf(playlist_.repeat());
-    status.shuffle          = nameOf(playlist_.shuffle());
-    status.stopAfterCurrent = playlist_.stopAfterCurrent();
-    status.playlistSize     = playlist_.size();
+    status.repeat           = nameOf(playlists_.shown().repeat());
+    status.shuffle          = nameOf(playlists_.shown().shuffle());
+    status.stopAfterCurrent = playlists_.shown().stopAfterCurrent();
+    status.playlistSize     = playlists_.shown().size();
     status.playlistRevision = revision_;
     status.sessionId        = sessionId_;
     return status;
@@ -144,7 +146,7 @@ remote::Outcome AppPlayerControl::play(std::optional<TrackId> id) {
         return Outcome::Busy;
     }
     if (id) {
-        if (playlist_.find(*id) == nullptr) {
+        if (playlists_.find(*id) == nullptr) {
             return Outcome::NotFound;
         }
         playback_.playTrack(*id);
@@ -159,14 +161,14 @@ remote::Outcome AppPlayerControl::play(std::optional<TrackId> id) {
     }
     // Nothing loaded and nothing named: start at the playlist's current entry,
     // which is what pressing Play in the window does.
-    if (const std::optional<TrackId> current = playlist_.current()) {
+    if (const std::optional<TrackId> current = playlists_.shown().current()) {
         playback_.playTrack(*current);
         return Outcome::Ok;
     }
-    if (playlist_.size() == 0) {
+    if (playlists_.shown().size() == 0) {
         return Outcome::NotFound;
     }
-    playback_.playTrack(playlist_.at(0).id);
+    playback_.playTrack(playlists_.shown().at(0).id);
     return Outcome::Ok;
 }
 
@@ -299,7 +301,7 @@ remote::TrackPage AppPlayerControl::tracks(std::size_t offset, std::size_t limit
 }
 
 std::optional<remote::TrackDetail> AppPlayerControl::track(TrackId id) {
-    const PlaylistEntry* entry = playlist_.find(id);
+    const PlaylistEntry* entry = playlists_.find(id);
     if (entry == nullptr) {
         return std::nullopt;
     }
@@ -400,7 +402,7 @@ remote::Outcome AppPlayerControl::setRating(const std::vector<TrackId>& ids,
     }
     if (rating && *rating != 0.0) {
         for (const TrackId id : ids) {
-            if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
+            if (const PlaylistEntry* entry = playlists_.find(id); entry != nullptr) {
                 static_cast<void>(
                     library_->setRating(*entry, static_cast<float>(*rating)));
             }
@@ -570,7 +572,7 @@ std::shared_ptr<const std::vector<std::byte>> AppPlayerControl::artwork(TrackId 
     if (library_ == nullptr) {
         return nullptr;
     }
-    const PlaylistEntry* entry = playlist_.find(id);
+    const PlaylistEntry* entry = playlists_.find(id);
     if (entry == nullptr || entry->artHash.empty()) {
         return nullptr;
     }

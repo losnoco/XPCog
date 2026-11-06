@@ -42,6 +42,7 @@
 #include "xpcog/core/audio/IAudioOutput.hpp"
 #include "xpcog/core/audio/RingBuffer.hpp"
 #include "xpcog/core/library/Playlist.hpp"
+#include "xpcog/core/library/PlaylistSet.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -68,7 +69,7 @@ public:
     /// told it produced some.
     using OutputFactory = std::function<std::unique_ptr<IAudioOutput>(RingBuffer&)>;
 
-    PlaybackController(const PluginRegistry& registry, Playlist& playlist,
+    PlaybackController(const PluginRegistry& registry, PlaylistSet& playlists,
                        Settings& settings, Dispatcher dispatch,
                        OutputFactory makeOutput = {});
     ~PlaybackController() override;
@@ -76,7 +77,7 @@ public:
     PlaybackController(const PlaybackController&)            = delete;
     PlaybackController& operator=(const PlaybackController&) = delete;
 
-    [[nodiscard]] Playlist& playlist() noexcept { return playlist_; }
+    [[nodiscard]] Playlist& playlist() noexcept { return playlists_.playing(); }
 
     /// A start or a stop is in flight.
     ///
@@ -281,7 +282,7 @@ private:
     void clearFailure(TrackId id);
 
     const PluginRegistry& registry_;
-    Playlist&             playlist_;
+    PlaylistSet&          playlists_;
     Settings&             settings_;
     Dispatcher            dispatch_;
 

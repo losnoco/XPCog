@@ -32,7 +32,19 @@ std::string label(std::string text, Origin origin) {
 }  // namespace
 
 AppCommands::AppCommands(Playlist& playlist, UndoStack& undo, Library* library)
-    : playlist_(playlist), undo_(undo), library_(library) {}
+    : lone_(&playlist), undo_(undo), library_(library) {}
+
+AppCommands::AppCommands(PlaylistSet& playlists, UndoStack& undo, Library* library)
+    : set_(&playlists), undo_(undo), library_(library) {}
+
+Playlist& AppCommands::list() const { return set_ != nullptr ? set_->shown() : *lone_; }
+
+Playlist* AppCommands::ownerOf(TrackId id) const {
+    if (set_ != nullptr) {
+        return set_->ownerOf(id);
+    }
+    return lone_->find(id) != nullptr ? lone_ : nullptr;
+}
 
 std::vector<TrackId> AppCommands::insert(std::vector<PlaylistEntry> entries,
                                          std::size_t at, Origin origin) {
@@ -42,7 +54,7 @@ std::vector<TrackId> AppCommands::insert(std::vector<PlaylistEntry> entries,
     const std::size_t count = entries.size();
 
     auto command = std::make_unique<InsertTracksCommand>(
-        playlist_, at, std::move(entries),
+        list(), at, std::move(entries),
         label(fmt(trn("Add %zu Track", "Add %zu Tracks", count), count), origin));
 
     // Held before the push, because push() performs the first redo() and that is
@@ -58,7 +70,7 @@ std::size_t AppCommands::remove(std::vector<TrackId> ids, Origin origin) {
     }
     const std::size_t count = ids.size();
     undo_.push(std::make_unique<RemoveTracksCommand>(
-        playlist_, std::move(ids),
+        list(), std::move(ids),
         label(fmt(trn("Remove %zu Track", "Remove %zu Tracks", count), count),
               origin)));
     return count;
@@ -70,7 +82,7 @@ std::size_t AppCommands::removeTrashed(std::vector<TrackId> ids) {
     }
     const std::size_t count = ids.size();
     undo_.push(std::make_unique<RemoveTracksCommand>(
-        playlist_, std::move(ids),
+        list(), std::move(ids),
         fmt(trn("Move %zu Track to the Trash", "Move %zu Tracks to the Trash",
                 count),
             count)));
@@ -81,47 +93,48 @@ bool AppCommands::move(const std::vector<TrackId>& ids, TrackId anchor, Origin o
     if (ids.empty()) {
         return false;
     }
-    std::vector<TrackId> after = orderAfterMove(playlist_, ids, anchor);
-    if (after == currentOrder(playlist_)) {
+    std::vector<TrackId> after = orderAfterMove(list(), ids, anchor);
+    if (after == currentOrder(list())) {
         return false;
     }
     const std::size_t count = ids.size();
     undo_.push(std::make_unique<ReorderCommand>(
-        playlist_, std::move(after),
+        list(), std::move(after),
         label(fmt(trn("Move %zu Track", "Move %zu Tracks", count), count),
               origin)));
     return true;
 }
 
 bool AppCommands::randomize(Origin origin) {
-    if (playlist_.size() <= 1) {
+    if (list().size() <= 1) {
         return false;
     }
-    undo_.push(std::make_unique<RandomizeCommand>(playlist_, label(tr("Randomize"), origin)));
+    undo_.push(std::make_unique<RandomizeCommand>(list(), label(tr("Randomize"), origin)));
     return true;
 }
 
 std::size_t AppCommands::clear(Origin origin) {
-    std::vector<TrackId> ids = currentOrder(playlist_);
+    std::vector<TrackId> ids = currentOrder(list());
     if (ids.empty()) {
         return 0;
     }
     const std::size_t count = ids.size();
     undo_.push(std::make_unique<RemoveTracksCommand>(
-        playlist_, std::move(ids), label(tr("Clear Playlist"), origin)));
+        list(), std::move(ids), label(tr("Clear Playlist"), origin)));
     return count;
 }
 
 std::size_t AppCommands::setQueued(const std::vector<TrackId>& ids, bool queued) {
     std::size_t count = 0;
     for (const TrackId id : ids) {
-        if (playlist_.find(id) == nullptr) {
+        Playlist* owner = ownerOf(id);
+        if (owner == nullptr) {
             continue;
         }
         if (queued) {
-            playlist_.enqueue(id);
+            owner->enqueue(id);
         } else {
-            playlist_.dequeue(id);
+            owner->dequeue(id);
         }
         ++count;
     }
@@ -131,29 +144,29 @@ std::size_t AppCommands::setQueued(const std::vector<TrackId>& ids, bool queued)
 std::size_t AppCommands::toggleQueued(const std::vector<TrackId>& ids) {
     std::size_t count = 0;
     for (const TrackId id : ids) {
-        const PlaylistEntry* entry = playlist_.find(id);
-        if (entry == nullptr) {
+        Playlist* owner = ownerOf(id);
+        if (owner == nullptr) {
             continue;
         }
-        if (entry->queued()) {
-            playlist_.dequeue(id);
+        if (owner->find(id)->queued()) {
+            owner->dequeue(id);
         } else {
-            playlist_.enqueue(id);
+            owner->enqueue(id);
         }
         ++count;
     }
     return count;
 }
 
-void AppCommands::clearQueue() { playlist_.clearQueue(); }
+void AppCommands::clearQueue() { list().clearQueue(); }
 
 std::size_t AppCommands::setStopAfter(const std::vector<TrackId>& ids, bool stopAfter) {
     std::size_t count = 0;
     for (const TrackId id : ids) {
-        if (playlist_.find(id) == nullptr) {
+        if (list().find(id) == nullptr) {
             continue;
         }
-        playlist_.update(id, [stopAfter](PlaylistEntry& entry) {
+        list().update(id, [stopAfter](PlaylistEntry& entry) {
             entry.stopAfter = stopAfter;
         });
         ++count;
@@ -164,10 +177,10 @@ std::size_t AppCommands::setStopAfter(const std::vector<TrackId>& ids, bool stop
 std::size_t AppCommands::toggleStopAfter(const std::vector<TrackId>& ids) {
     std::size_t count = 0;
     for (const TrackId id : ids) {
-        if (playlist_.find(id) == nullptr) {
+        if (list().find(id) == nullptr) {
             continue;
         }
-        playlist_.update(id,
+        list().update(id,
                          [](PlaylistEntry& entry) { entry.stopAfter = !entry.stopAfter; });
         ++count;
     }
@@ -177,7 +190,7 @@ std::size_t AppCommands::toggleStopAfter(const std::vector<TrackId>& ids) {
 std::size_t AppCommands::resetPlayCount(const std::vector<TrackId>& ids) {
     std::size_t count = 0;
     for (const TrackId id : ids) {
-        const PlaylistEntry* entry = playlist_.find(id);
+        const PlaylistEntry* entry = list().find(id);
         if (entry == nullptr) {
             continue;
         }
@@ -186,7 +199,7 @@ std::size_t AppCommands::resetPlayCount(const std::vector<TrackId>& ids) {
         }
         // And on the entry, which is the copy the Info pane reads. The database
         // alone would leave the old number on screen until the next launch.
-        playlist_.update(id, [](PlaylistEntry& target) { target.playCount = 0; });
+        list().update(id, [](PlaylistEntry& target) { target.playCount = 0; });
         ++count;
     }
     return count;
@@ -198,7 +211,7 @@ std::size_t AppCommands::removeRating(const std::vector<TrackId>& ids) {
     }
     std::size_t count = 0;
     for (const TrackId id : ids) {
-        if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
+        if (const PlaylistEntry* entry = list().find(id); entry != nullptr) {
             static_cast<void>(library_->setRating(*entry, 0.0F));
             ++count;
         }

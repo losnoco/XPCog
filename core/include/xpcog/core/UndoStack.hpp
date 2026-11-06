@@ -73,6 +73,17 @@ public:
     /// first thing Undo offers to take back.
     void clear();
 
+    /// What a stack holds, for parking while another playlist is on screen.
+    /// The menus keep watching this object; only what is in it changes.
+    struct Contents {
+        std::vector<std::unique_ptr<UndoCommand>> commands;
+        std::size_t                               index = 0;
+    };
+
+    /// Takes `contents` and hands back what was here, without performing
+    /// anything.
+    void exchange(Contents& contents);
+
     [[nodiscard]] bool canUndo() const noexcept { return index_ > 0; }
     [[nodiscard]] bool canRedo() const noexcept { return index_ < commands_.size(); }
 

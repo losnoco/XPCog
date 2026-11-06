@@ -35,6 +35,7 @@ add_library(xpcog-core STATIC
     src/library/Library.cpp
     src/library/PlaylistCommands.cpp
     src/library/Playlist.cpp
+    src/library/PlaylistSet.cpp
     src/library/PlaylistEntry.cpp
     src/library/PlaylistFile.cpp
     src/library/PlaylistView.cpp

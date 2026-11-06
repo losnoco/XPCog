@@ -24,7 +24,7 @@ namespace {
 /// Cog has no equivalent -- Core Data infers lightweight migrations from the
 /// model file, which is convenient right up to the point where it cannot, and
 /// then the store fails to open with nothing to fix by hand.
-constexpr std::array<std::string_view, 4> kMigrations = {
+constexpr std::array<std::string_view, 5> kMigrations = {
     R"sql(
 CREATE TABLE playlist_entry (
     id               INTEGER PRIMARY KEY,
@@ -260,6 +260,19 @@ CREATE TABLE lyrics_cache (
     fetched_at   INTEGER NOT NULL DEFAULT 0
 );
 )sql",
+    R"sql(
+-- Several playlists. What the file holds already becomes the first of them,
+-- unnamed so the interface can say "Playlist" in the listener's language: core
+-- has no catalogue. Entries keep their one table and their one key, which is
+-- why ids are unique across playlists; `position` counts within a playlist.
+CREATE TABLE playlist (
+    id       INTEGER PRIMARY KEY,
+    name     TEXT    NOT NULL DEFAULT '',
+    position INTEGER NOT NULL
+);
+INSERT INTO playlist (id, name, position) VALUES (1, '', 0);
+ALTER TABLE playlist_entry ADD COLUMN playlist_id INTEGER NOT NULL DEFAULT 1;
+)sql",
 };
 
 /// Columns of playlist_entry, in the order both the insert and the select use.
@@ -275,9 +288,9 @@ constexpr std::string_view kEntryColumns =
     "rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak, rg_volume, "
     "rg_soundcheck, "
     "metadata_loaded, error, error_message, play_count, current_position, "
-    "stop_after, shuffle_index, queue_position, is_current, tag_hash";
+    "stop_after, shuffle_index, queue_position, is_current, tag_hash, playlist_id";
 
-constexpr int kEntryColumnCount = 45;
+constexpr int kEntryColumnCount = 46;
 
 /// kEntryColumns split into names, for building the upsert's assignment list.
 [[nodiscard]] std::vector<std::string_view> entryColumnNames() {
@@ -489,7 +502,7 @@ struct Library::Impl {
 
     [[nodiscard]] bool migrate();
     [[nodiscard]] bool writeEntry(EntryWriter& writer, const PlaylistEntry& entry,
-                                  std::int64_t position, const std::string& tagHash,
+                                  std::int64_t playlistId, std::int64_t position, const std::string& tagHash,
                                   bool tagsChanged);
     [[nodiscard]] bool writeTags(EntryWriter& writer, const PlaylistEntry& entry);
     [[nodiscard]] bool readEntries(std::vector<PlaylistEntry>& entries,
@@ -572,7 +585,7 @@ bool Library::Impl::migrate() {
 // --- entries ------------------------------------------------------------
 
 bool Library::Impl::writeEntry(EntryWriter& writer, const PlaylistEntry& entry,
-                               std::int64_t position, const std::string& tagHash,
+                               std::int64_t playlistId, std::int64_t position, const std::string& tagHash,
                                bool tagsChanged) {
     sql::Statement& statement = writer.insert;
     statement.reset();
@@ -666,6 +679,7 @@ bool Library::Impl::writeEntry(EntryWriter& writer, const PlaylistEntry& entry,
     statement.bind(i++, static_cast<std::int64_t>(entry.queuePosition));
     statement.bind(i++, static_cast<std::int64_t>(0));  // is_current, set below
     statement.bind(i++, tagHash);
+    statement.bind(i++, playlistId);
 
     if (!statement.run()) {
         return fail("cannot write entry " + entry.url.toString());
@@ -861,11 +875,26 @@ bool Library::Impl::readEntries(std::vector<PlaylistEntry>& entries,
 // --- playlist -----------------------------------------------------------
 
 bool Library::savePlaylist(const Playlist& playlist) {
+    std::vector<PlaylistSet::Stored> lists(1);
+    lists.front().id    = PlaylistSet::kFirstId;
+    lists.front().state = playlist.snapshot();
+    return saveStored(std::move(lists));
+}
+
+bool Library::savePlaylists(const PlaylistSet& playlists) {
+    std::vector<PlaylistSet::Stored> lists;
+    lists.reserve(playlists.size());
+    for (std::size_t i = 0; i < playlists.size(); ++i) {
+        const PlaylistSet::Item& item = playlists.at(i);
+        lists.push_back({item.id, item.name, item.playlist->snapshot()});
+    }
+    return saveStored(std::move(lists));
+}
+
+bool Library::saveStored(std::vector<PlaylistSet::Stored> lists) {
     if (!isOpen()) {
         return impl_->fail("no database");
     }
-
-    Playlist::Snapshot state = playlist.snapshot();
 
     // Covers that are still inline go to the artwork table on the way past.
     //
@@ -875,8 +904,10 @@ bool Library::savePlaylist(const Playlist& playlist) {
     // existing library shed them: the entries about to be written are the
     // snapshot's own copies, so this changes what gets stored without touching
     // what the listener is looking at.
-    for (PlaylistEntry& entry : state.entries) {
-        static_cast<void>(adoptArtwork(entry));
+    for (PlaylistSet::Stored& list : lists) {
+        for (PlaylistEntry& entry : list.state.entries) {
+            static_cast<void>(adoptArtwork(entry));
+        }
     }
 
     sql::Transaction transaction{impl_->database};
@@ -902,9 +933,10 @@ bool Library::savePlaylist(const Playlist& playlist) {
     // arrive at what was already there.
     {
         std::unordered_set<std::int64_t> keep;
-        keep.reserve(state.entries.size());
-        for (const PlaylistEntry& entry : state.entries) {
-            keep.insert(static_cast<std::int64_t>(entry.id));
+        for (const PlaylistSet::Stored& list : lists) {
+            for (const PlaylistEntry& entry : list.state.entries) {
+                keep.insert(static_cast<std::int64_t>(entry.id));
+            }
         }
 
         sql::Statement drop{impl_->database, "DELETE FROM playlist_entry WHERE id = ?;"};
@@ -928,27 +960,50 @@ bool Library::savePlaylist(const Playlist& playlist) {
     if (!writer.valid()) {
         return impl_->fail("cannot prepare the entry statements");
     }
-    for (std::size_t position = 0; position < state.entries.size(); ++position) {
-        const PlaylistEntry& entry = state.entries[position];
+    for (const PlaylistSet::Stored& list : lists) {
+        const std::vector<PlaylistEntry>& entries = list.state.entries;
+        for (std::size_t position = 0; position < entries.size(); ++position) {
+            const PlaylistEntry& entry = entries[position];
 
-        // The row is rewritten either way -- it is one row, and its position or
-        // play count may well have moved. The tags are what get skipped.
-        const std::string tagHash = hashTags(entry.metadata);
-        const auto        stored  = storedHash.find(static_cast<std::int64_t>(entry.id));
-        const bool        changed = stored == storedHash.end() || stored->second != tagHash;
+            // The row is rewritten either way -- it is one row, and its position
+            // or play count may well have moved. The tags are what get skipped.
+            const std::string tagHash = hashTags(entry.metadata);
+            const auto        stored  = storedHash.find(static_cast<std::int64_t>(entry.id));
+            const bool        changed = stored == storedHash.end() || stored->second != tagHash;
 
-        if (!impl_->writeEntry(writer, entry, static_cast<std::int64_t>(position),
-                               tagHash, changed)) {
-            return false;
+            if (!impl_->writeEntry(writer, entry, list.id,
+                                   static_cast<std::int64_t>(position), tagHash, changed)) {
+                return false;
+            }
         }
     }
 
-    if (state.current) {
+    for (const PlaylistSet::Stored& list : lists) {
+        if (!list.state.current) {
+            continue;
+        }
         sql::Statement mark{impl_->database,
                             "UPDATE playlist_entry SET is_current = 1 WHERE id = ?;"};
-        mark.bind(1, static_cast<std::int64_t>(*state.current));
+        mark.bind(1, static_cast<std::int64_t>(*list.state.current));
         if (!mark.run()) {
             return impl_->fail("cannot mark the playing entry");
+        }
+    }
+
+    {
+        if (!impl_->database.exec("DELETE FROM playlist;")) {
+            return impl_->fail("cannot clear the playlists");
+        }
+        sql::Statement insert{impl_->database,
+                              "INSERT INTO playlist (id, name, position) VALUES (?,?,?);"};
+        for (std::size_t i = 0; i < lists.size(); ++i) {
+            insert.reset();
+            insert.bind(1, lists[i].id);
+            insert.bind(2, lists[i].name);
+            insert.bind(3, static_cast<std::int64_t>(i));
+            if (!insert.run()) {
+                return impl_->fail("cannot write a playlist");
+            }
         }
     }
 
@@ -963,12 +1018,15 @@ bool Library::savePlaylist(const Playlist& playlist) {
         }
         sql::Statement mark{impl_->database,
                             "UPDATE playlist_entry SET shuffle_index = ? WHERE id = ?;"};
-        for (std::size_t i = 0; i < state.shuffleOrder.size(); ++i) {
-            mark.reset();
-            mark.bind(1, static_cast<std::int64_t>(i));
-            mark.bind(2, static_cast<std::int64_t>(state.shuffleOrder[i]));
-            if (!mark.run()) {
-                return impl_->fail("cannot write the shuffle order");
+        for (const PlaylistSet::Stored& list : lists) {
+            const std::vector<TrackId>& order = list.state.shuffleOrder;
+            for (std::size_t i = 0; i < order.size(); ++i) {
+                mark.reset();
+                mark.bind(1, static_cast<std::int64_t>(i));
+                mark.bind(2, static_cast<std::int64_t>(order[i]));
+                if (!mark.run()) {
+                    return impl_->fail("cannot write the shuffle order");
+                }
             }
         }
     }
@@ -977,8 +1035,9 @@ bool Library::savePlaylist(const Playlist& playlist) {
         sql::Statement modes{impl_->database,
                              "INSERT OR REPLACE INTO playlist_state (id, repeat, "
                              "shuffle) VALUES (1, ?, ?);"};
-        modes.bind(1, static_cast<std::int64_t>(state.repeat));
-        modes.bind(2, static_cast<std::int64_t>(state.shuffle));
+        // One pair for the lot: both are settings, and every playlist has them.
+        modes.bind(1, static_cast<std::int64_t>(lists.front().state.repeat));
+        modes.bind(2, static_cast<std::int64_t>(lists.front().state.shuffle));
         if (!modes.run()) {
             return impl_->fail("cannot write playback modes");
         }
@@ -1077,6 +1136,101 @@ bool Library::loadPlaylist(Playlist& playlist) {
     return true;
 }
 
+bool Library::loadPlaylists(PlaylistSet& playlists) {
+    if (!isOpen()) {
+        return impl_->fail("no database");
+    }
+
+    std::vector<PlaylistEntry> entries;
+    std::optional<TrackId>     current;
+    if (!impl_->readEntries(entries, current)) {
+        return false;
+    }
+
+    std::vector<PlaylistSet::Stored>            lists;
+    std::unordered_map<std::int64_t, std::size_t> listAt;
+    {
+        sql::Statement query{impl_->database,
+                             "SELECT id, name FROM playlist ORDER BY position;"};
+        if (!query.valid()) {
+            return impl_->fail("cannot read the playlists");
+        }
+        while (query.step()) {
+            listAt.emplace(query.columnInt(0), lists.size());
+            lists.push_back({query.columnInt(0), query.columnText(1), {}});
+        }
+    }
+    if (lists.empty()) {
+        listAt.emplace(PlaylistSet::kFirstId, 0);
+        lists.push_back({PlaylistSet::kFirstId, {}, {}});
+    }
+
+    std::unordered_map<std::int64_t, std::int64_t> owner;
+    {
+        sql::Statement query{impl_->database, "SELECT id, playlist_id FROM playlist_entry;"};
+        if (!query.valid()) {
+            return impl_->fail("cannot read which playlist entries are in");
+        }
+        while (query.step()) {
+            owner.emplace(query.columnInt(0), query.columnInt(1));
+        }
+    }
+
+    // Queue numbers run across the playlists, shuffle numbers within one.
+    std::vector<std::pair<std::int32_t, TrackId>> queued;
+    std::vector<std::vector<std::pair<std::int64_t, TrackId>>> shuffled(lists.size());
+    for (PlaylistEntry& entry : entries) {
+        const auto stored = owner.find(static_cast<std::int64_t>(entry.id));
+        const auto found  = (stored != owner.end()) ? listAt.find(stored->second) : listAt.end();
+        // An entry naming a playlist the file no longer has goes to the first
+        // rather than vanishing.
+        const std::size_t at = (found != listAt.end()) ? found->second : 0;
+
+        if (entry.queuePosition >= 0) {
+            queued.emplace_back(entry.queuePosition, entry.id);
+        }
+        if (entry.shuffleIndex >= 0) {
+            shuffled[at].emplace_back(entry.shuffleIndex, entry.id);
+        }
+        if (current && *current == entry.id) {
+            lists[at].state.current = current;
+        }
+        lists[at].state.entries.push_back(std::move(entry));
+    }
+
+    std::sort(queued.begin(), queued.end());
+    std::vector<TrackId> queue;
+    queue.reserve(queued.size());
+    for (const auto& [position, id] : queued) {
+        static_cast<void>(position);
+        queue.push_back(id);
+    }
+
+    RepeatMode  repeat  = RepeatMode::All;
+    ShuffleMode shuffle = ShuffleMode::Off;
+    {
+        sql::Statement modes{impl_->database,
+                             "SELECT repeat, shuffle FROM playlist_state WHERE id = 1;"};
+        if (modes.step()) {
+            repeat  = static_cast<RepeatMode>(modes.columnInt(0));
+            shuffle = static_cast<ShuffleMode>(modes.columnInt(1));
+        }
+    }
+    for (std::size_t i = 0; i < lists.size(); ++i) {
+        std::sort(shuffled[i].begin(), shuffled[i].end());
+        for (const auto& [position, id] : shuffled[i]) {
+            static_cast<void>(position);
+            lists[i].state.shuffleOrder.push_back(id);
+        }
+        lists[i].state.repeat  = repeat;
+        lists[i].state.shuffle = shuffle;
+    }
+
+    playlists.restore(std::move(lists), std::move(queue));
+    impl_->error.clear();
+    return true;
+}
+
 bool Library::saveEntry(const PlaylistEntry& entry) {
     if (!isOpen()) {
         return impl_->fail("no database");
@@ -1084,13 +1238,16 @@ bool Library::saveEntry(const PlaylistEntry& entry) {
 
     // The row has to keep its place, and the caller does not know it. Reading it
     // back is cheaper than making every caller thread a position through.
-    std::int64_t position = 0;
+    std::int64_t position   = 0;
+    std::int64_t playlistId = PlaylistSet::kFirstId;
     {
         sql::Statement query{impl_->database,
-                             "SELECT position FROM playlist_entry WHERE id = ?;"};
+                             "SELECT position, playlist_id FROM playlist_entry "
+                             "WHERE id = ?;"};
         query.bind(1, static_cast<std::int64_t>(entry.id));
         if (query.step()) {
-            position = query.columnInt(0);
+            position   = query.columnInt(0);
+            playlistId = query.columnInt(1);
         } else {
             sql::Statement last{impl_->database,
                                 "SELECT COALESCE(MAX(position) + 1, 0) FROM "
@@ -1108,7 +1265,7 @@ bool Library::saveEntry(const PlaylistEntry& entry) {
     }
     // Unconditionally, tags and all: a caller saving one entry by hand is saying
     // it changed, and there is no cost worth avoiding in a single row.
-    if (!impl_->writeEntry(writer, entry, position, hashTags(entry.metadata),
+    if (!impl_->writeEntry(writer, entry, playlistId, position, hashTags(entry.metadata),
                            /*tagsChanged=*/true)) {
         return false;
     }

@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <random>
 #include <unordered_map>
@@ -67,7 +68,19 @@ public:
         std::size_t destination = 0;  ///< Moved only
     };
 
+    /// What the playlists of one PlaylistSet have in common: ids, because the
+    /// store keys every entry in one table, and the queue, because Cog's is one
+    /// for every playlist. A Playlist on its own has a Shared to itself.
+    struct Shared {
+        TrackId              nextId = 1;
+        std::vector<TrackId> queue;
+        bool                 grouped = false;
+        /// The queue changed. Set by PlaylistSet, which renumbers every member.
+        std::function<void()> queueChanged;
+    };
+
     Playlist();
+    explicit Playlist(std::shared_ptr<Shared> shared);
 
     /// Fixes the shuffle order for a test. Without this the generator is seeded
     /// from std::random_device, as Cog seeds srandom() from time().
@@ -168,14 +181,24 @@ public:
     /// read-ahead cursor back to the audible track, and nextForPlayback() would
     /// then answer the same track it answered last time: the engine opens it a
     /// second time and it plays twice.
-    void setAudible(TrackId id);
+    void setAudible(std::optional<TrackId> id);
 
     // --- queue ----------------------------------------------------------
 
-    [[nodiscard]] const std::vector<TrackId>& queue() const noexcept { return queue_; }
+    /// Across every playlist in the set, so it can name entries not in this one.
+    [[nodiscard]] const std::vector<TrackId>& queue() const noexcept { return shared_->queue; }
     void enqueue(TrackId id);
     void dequeue(TrackId id);
     void clearQueue();
+
+    /// Brings the entries' queue numbers back into line after the queue changed
+    /// through another playlist, and says so. PlaylistSet's to call.
+    void syncQueue();
+
+    /// Where nextForPlayback() measures from, for when the queue crosses from
+    /// one playlist to another. PlaylistSet's to call.
+    void forgetCursor() noexcept { playbackCursor_.reset(); }
+    void adoptCursor(TrackId id) noexcept { playbackCursor_ = id; }
 
     // --- traversal ------------------------------------------------------
 
@@ -283,14 +306,14 @@ private:
 
     void reindex();
     void renumberQueue();
+    void queueEdited();
     void notify(Change change) const { changed_.publish(change); }
 
     std::vector<PlaylistEntry>                 entries_;
     std::unordered_map<TrackId, std::size_t>   index_;
-    TrackId                                    nextId_ = 1;
+    std::shared_ptr<Shared>                    shared_;
 
     std::vector<TrackId> shuffleList_;
-    std::vector<TrackId> queue_;
 
     std::optional<TrackId> current_;
 

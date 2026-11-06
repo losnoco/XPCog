@@ -158,6 +158,11 @@ XPCOG_SETTING(SelectionFollowsPlayback, bool, "selectionFollowsPlayback", false)
 /// remembered.
 XPCOG_SETTING(ResumePlaybackOnStartup, bool, "resumePlaybackOnStartup", false)
 
+/// Which playlist was on screen, by its id in the library. Cog's key. Not a
+/// preference: it is written as the listener changes tabs. Zero is "not known",
+/// and the playing one is shown.
+XPCOG_SETTING(ShownPlaylist, int, "shownPlaylist", 0)
+
 /// How playback was last left: 0 stopped, 1 playing, 2 paused.
 ///
 /// Cog's key and Cog's vocabulary (CogStatusStopped and friends). Not a

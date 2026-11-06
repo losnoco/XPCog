@@ -28,6 +28,7 @@
 
 #include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/library/PlaylistEntry.hpp"
+#include "xpcog/core/library/PlaylistSet.hpp"
 
 #include <cstddef>
 #include <vector>
@@ -52,6 +53,10 @@ public:
     /// `library` may be null: a build or a session without one still edits a
     /// playlist, it just has nowhere to put a play count.
     AppCommands(Playlist& playlist, UndoStack& undo, Library* library);
+
+    /// Edits whichever playlist is on screen, which is what a selection and a
+    /// row number mean. The queue reaches across all of them.
+    AppCommands(PlaylistSet& playlists, UndoStack& undo, Library* library);
 
     /// The library arrives after this does. MainFrame opens it in its
     /// constructor's body -- reporting the failure needs a frame to report it on
@@ -111,8 +116,12 @@ public:
     void redo();
 
 private:
-    Playlist&  playlist_;
-    UndoStack& undo_;
+    [[nodiscard]] Playlist& list() const;
+    [[nodiscard]] Playlist* ownerOf(TrackId id) const;
+
+    Playlist*    lone_ = nullptr;
+    PlaylistSet* set_  = nullptr;
+    UndoStack&   undo_;
     Library*   library_ = nullptr;
 };
 

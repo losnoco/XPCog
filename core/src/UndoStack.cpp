@@ -1,5 +1,7 @@
 #include "xpcog/core/UndoStack.hpp"
 
+#include <utility>
+
 namespace xpcog {
 
 void UndoStack::push(std::unique_ptr<UndoCommand> command) {
@@ -42,6 +44,12 @@ void UndoStack::redo() {
 void UndoStack::clear() {
     commands_.clear();
     index_ = 0;
+    changed.publish();
+}
+
+void UndoStack::exchange(Contents& contents) {
+    commands_.swap(contents.commands);
+    std::swap(index_, contents.index);
     changed.publish();
 }
 

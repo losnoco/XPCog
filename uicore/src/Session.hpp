@@ -43,6 +43,7 @@
 #include "xpcog/core/audio/WaveformProvider.hpp"
 #include "xpcog/core/library/Library.hpp"
 #include "xpcog/core/library/Playlist.hpp"
+#include "xpcog/core/library/PlaylistSet.hpp"
 #include "xpcog/core/library/PlaylistView.hpp"
 #include "xpcog/core/library/PluginCache.hpp"
 #include "xpcog/core/library/ScanTask.hpp"
@@ -62,6 +63,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace xpcog::app {
@@ -136,6 +138,29 @@ public:
     /// the files do not. Through the same queue, and for the same reason.
     void reloadTracks(const std::vector<TrackId>& ids);
 
+    // --- playlists ------------------------------------------------------------
+
+    /// A new playlist holding copies of `tracks`, shown at once. The name is
+    /// the next free "Playlist N".
+    PlaylistSet::Id newPlaylist(const std::vector<TrackId>& tracks = {});
+
+    /// Stops playback first when `id` is what is playing, as Cog's does, and
+    /// does nothing to the last one left. Not undoable, so the frontend asks
+    /// before calling this on a playlist with tracks in it.
+    void deletePlaylist(PlaylistSet::Id id);
+
+    /// Copies of `tracks` at the end of `target`.
+    void addToPlaylist(const std::vector<TrackId>& tracks, PlaylistSet::Id target);
+
+    /// Shows the next or previous playlist, wrapping.
+    void showPlaylistOffset(int offset);
+
+    /// Brings the playing playlist on screen, for Select Currently Playing.
+    void showPlayingPlaylist();
+
+    /// What to call `id`: its name, or the word for one that has none.
+    [[nodiscard]] std::string playlistTitle(PlaylistSet::Id id) const;
+
     /// Abandons the running scan and everything queued behind it.
     void cancelScans();
 
@@ -192,8 +217,11 @@ public:
 
     [[nodiscard]] const PluginRegistry& registry() const noexcept { return registry_; }
     [[nodiscard]] Settings&             settings() noexcept { return settings_; }
-    [[nodiscard]] Playlist&             playlist() noexcept { return playlist_; }
-    [[nodiscard]] const Playlist&       playlist() const noexcept { return playlist_; }
+    /// The one on screen, which is what a selection and a row number mean.
+    [[nodiscard]] Playlist&             playlist() noexcept { return playlists_.shown(); }
+    [[nodiscard]] const Playlist&       playlist() const noexcept { return playlists_.shown(); }
+    [[nodiscard]] PlaylistSet&          playlists() noexcept { return playlists_; }
+    [[nodiscard]] const PlaylistSet&    playlists() const noexcept { return playlists_; }
     [[nodiscard]] PlaylistView&         view() noexcept { return view_; }
     [[nodiscard]] UndoStack&            undo() noexcept { return undo_; }
     [[nodiscard]] AppCommands&          commands() noexcept { return commands_; }
@@ -229,6 +257,10 @@ public:
     /// zero means the expansion pass is still counting and a busy indicator is
     /// the truthful display. Then it ended, whether it finished or was
     /// cancelled.
+    /// The set of playlists changed shape: added, removed, moved, renamed, or
+    /// another one came on screen or started playing.
+    Signal<> playlistsChanged;
+
     Signal<>         scanStarted;
     Signal<int, int> scanProgress;
     Signal<>         scanFinished;
@@ -295,10 +327,16 @@ private:
         /// reported back through GET /jobs/{id}. Empty for a scan the window
         /// started, which has the progress bar instead.
         std::string jobId;
+
+        /// Where the results go: what was on screen when the scan was asked
+        /// for, because the listener may change tabs while it runs.
+        PlaylistSet::Id playlist = PlaylistSet::kFirstId;
     };
 
     void pumpScanQueue();
-    void addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled);
+    void addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled,
+                           PlaylistSet::Id target);
+    void onPlaylistsChanged(const PlaylistSet::Change& change);
     void applyReloadedEntries(std::vector<PlaylistEntry> entries);
 
     /// Begins a scan on behalf of the API and answers the job id to follow.
@@ -375,7 +413,7 @@ private:
     /// Where the library and the scrobble queues live; see Options.
     std::filesystem::path dataDirectory_;
 
-    Playlist                 playlist_;
+    PlaylistSet              playlists_;
     PluginCache              cache_;
     std::unique_ptr<Library> library_;
 
@@ -386,6 +424,12 @@ private:
     PlaylistView view_;
     UndoStack    undo_;
     AppCommands  commands_;
+
+    /// Each playlist keeps its own undo history; this holds the ones not on
+    /// screen. `undoOwner_` is whose history undo_ holds now.
+    std::unordered_map<PlaylistSet::Id, UndoStack::Contents> parkedUndo_;
+    PlaylistSet::Id                                          undoOwner_ = PlaylistSet::kFirstId;
+    Subscription                                             playlistsWatch_;
 
     std::unique_ptr<PlaybackController> playback_;
 

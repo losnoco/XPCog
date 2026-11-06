@@ -41,6 +41,8 @@ namespace {
 /// holds a copy of this" -- and it is meant to be made deliberately, in a review,
 /// rather than by a setting quietly not matching any branch.
 constexpr std::array kNothingToDo = {
+    // Written as the listener changes tabs, and read once at launch.
+    "shownPlaylist",
     // Read when the engine opens a device or a track.
     "resampling", "halveDSDVolume", "outputDSDAsDoP", "suspendOutputOnPause",
     "volumeScaling",

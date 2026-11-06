@@ -76,6 +76,10 @@ public:
 
     explicit PlaylistView(Playlist& playlist);
 
+    /// Shows another playlist. The filter and the sort stay as they are, and
+    /// `rebuilt` fires.
+    void setPlaylist(Playlist& playlist);
+
     // --- what is shown -----------------------------------------------------
 
     [[nodiscard]] std::size_t rowCount() const noexcept { return visible_.size(); }
@@ -160,7 +164,7 @@ private:
     /// Orders two playlist indices by the current sort column.
     [[nodiscard]] bool less(std::size_t leftIndex, std::size_t rightIndex) const;
 
-    Playlist&    playlist_;
+    Playlist*    playlist_;
     Subscription subscription_;
 
     /// Playlist indices, in display order. The whole of what this class is.

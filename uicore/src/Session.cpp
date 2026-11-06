@@ -71,11 +71,13 @@ Session::Session(const PluginRegistry& registry, Settings& settings, Dispatcher 
     : registry_(registry),
       settings_(settings),
       dispatch_(std::move(dispatch)),
-      view_(playlist_),
-      commands_(playlist_, undo_, nullptr) {
-    playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
-    playlist_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
-    playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
+      view_(playlists_.shown()),
+      commands_(playlists_, undo_, nullptr) {
+    playlists_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
+    playlists_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
+    playlists_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
+    playlistsWatch_ = playlists_.observe(
+        [this](const PlaylistSet::Change& change) { onPlaylistsChanged(change); });
 
     // pathFromUtf8, not the std::filesystem::path constructor: that one reads a
     // std::string through the active code page on Windows, so a listener whose
@@ -105,7 +107,7 @@ Session::Session(const PluginRegistry& registry, Settings& settings, Dispatcher 
     }
     commands_.setLibrary(library_.get());
 
-    playback_ = std::make_unique<PlaybackController>(registry_, playlist_, settings_,
+    playback_ = std::make_unique<PlaybackController>(registry_, playlists_, settings_,
                                                      dispatch_, std::move(options.makeOutput));
 
     wireScrobbling();
@@ -125,7 +127,7 @@ Session::Session(const PluginRegistry& registry, Settings& settings, Dispatcher 
     observe(playback_->playbackStateChanged,
             [this](bool playing, bool paused) { onPlaybackStateChanged(playing, paused); });
     observe(playback_->startPending, [this](TrackId id) {
-        const PlaylistEntry* entry = playlist_.find(id);
+        const PlaylistEntry* entry = playlists_.find(id);
         setStatus(entry != nullptr ? trf("Connecting to %s...", entry->title())
                                    : tr("Connecting..."));
     });
@@ -206,7 +208,11 @@ void Session::attachDesktop(void* nativeWindow) {
 }
 
 void Session::start() {
-    if (library_ && library_->loadPlaylist(playlist_)) {
+    if (library_ && library_->loadPlaylists(playlists_)) {
+        const PlaylistSet::Id shown = settings_.ShownPlaylist();
+        if (shown > 0 && playlists_.indexOf(shown)) {
+            playlists_.show(shown);
+        }
         setStatus(statusSummary());
         restorePlayback();
     }
@@ -233,7 +239,7 @@ void Session::save() {
     // the current one, and loadPlaylist restores it.
     settings_.setRawValue("xpcog.playback.position", std::to_string(playback_->position()));
 
-    if (library_ && !library_->savePlaylist(playlist_)) {
+    if (library_ && !library_->savePlaylists(playlists_)) {
         // Worth saying, but not worth refusing to close over.
         setStatus(trf("Could not save the playlist: %s", library_->lastError()));
     }
@@ -246,12 +252,114 @@ void Session::setStatus(std::string text) {
     status.publish(lastStatus_);
 }
 
+void Session::onPlaylistsChanged(const PlaylistSet::Change& change) {
+    using Kind = PlaylistSet::Change::Kind;
+
+    if (change.kind == Kind::Removed) {
+        parkedUndo_.erase(change.id);
+    }
+
+    if (change.kind == Kind::Shown) {
+        view_.setPlaylist(playlists_.shown());
+        if (change.id != undoOwner_) {
+            UndoStack::Contents incoming;
+            if (const auto parked = parkedUndo_.find(change.id); parked != parkedUndo_.end()) {
+                incoming = std::move(parked->second);
+                parkedUndo_.erase(parked);
+            }
+            undo_.exchange(incoming);
+            parkedUndo_[undoOwner_] = std::move(incoming);
+            undoOwner_              = change.id;
+        }
+        settings_.setShownPlaylist(static_cast<int>(change.id));
+        setStatus(statusSummary());
+    }
+
+    playlistsChanged.publish();
+}
+
+PlaylistSet::Id Session::newPlaylist(const std::vector<TrackId>& tracks) {
+    // The lowest number no playlist is using, as a person would pick.
+    std::size_t number = playlists_.size() + 1;
+    const auto  taken  = [this](const std::string& name) {
+        for (std::size_t i = 0; i < playlists_.size(); ++i) {
+            if (playlists_.at(i).name == name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    std::string name = trf("Playlist %zu", number);
+    while (taken(name)) {
+        name = trf("Playlist %zu", ++number);
+    }
+
+    const PlaylistSet::Id id = playlists_.add(std::move(name));
+    addToPlaylist(tracks, id);
+    playlists_.show(id);
+    return id;
+}
+
+void Session::deletePlaylist(PlaylistSet::Id id) {
+    if (playlists_.size() <= 1 || !playlists_.indexOf(id)) {
+        return;
+    }
+    if (id == playlists_.playingId()) {
+        playback_->stop();
+    }
+    static_cast<void>(playlists_.remove(id));
+}
+
+void Session::addToPlaylist(const std::vector<TrackId>& tracks, PlaylistSet::Id target) {
+    Playlist* destination = playlists_.playlist(target);
+    if (destination == nullptr) {
+        return;
+    }
+    std::vector<PlaylistEntry> copies;
+    copies.reserve(tracks.size());
+    for (const TrackId id : tracks) {
+        if (const PlaylistEntry* entry = playlists_.find(id); entry != nullptr) {
+            PlaylistEntry copy   = *entry;
+            copy.queuePosition   = -1;
+            copy.shuffleIndex    = -1;
+            copy.stopAfter       = false;
+            copy.currentPosition = 0.0;
+            copies.push_back(std::move(copy));
+        }
+    }
+    if (!copies.empty()) {
+        destination->insert(destination->size(), std::move(copies));
+    }
+}
+
+void Session::showPlaylistOffset(int offset) {
+    const auto here = playlists_.indexOf(playlists_.shownId());
+    if (!here) {
+        return;
+    }
+    const auto count = static_cast<int>(playlists_.size());
+    const int  next  = ((static_cast<int>(*here) + offset) % count + count) % count;
+    playlists_.show(playlists_.at(static_cast<std::size_t>(next)).id);
+}
+
+void Session::showPlayingPlaylist() { playlists_.show(playlists_.playingId()); }
+
+std::string Session::playlistTitle(PlaylistSet::Id id) const {
+    if (const auto index = playlists_.indexOf(id)) {
+        const std::string& name = playlists_.at(*index).name;
+        if (!name.empty()) {
+            return name;
+        }
+    }
+    return tr("Playlist");
+}
+
 std::string Session::statusSummary() const {
     double total = 0.0;
-    for (const PlaylistEntry& entry : playlist_.entries()) {
+    for (const PlaylistEntry& entry : playlists_.shown().entries()) {
         total += entry.duration();
     }
-    const std::size_t count = playlist_.size();
+    const std::size_t count = playlists_.shown().size();
     return fmt(trn("%zu track \xE2\x80\x94 %s", "%zu tracks \xE2\x80\x94 %s", count), count,
                formatClock(total));
 }
@@ -266,14 +374,14 @@ void Session::addUrls(const std::vector<Url>& urls, int atRow) {
     if (urls.empty()) {
         return;
     }
-    pendingScans_.push_back(ScanRequest{urls, atRow, /*reload=*/false, {}});
+    pendingScans_.push_back(ScanRequest{urls, atRow, /*reload=*/false, {}, playlists_.shownId()});
     pumpScanQueue();
 }
 
 void Session::reloadTracks(const std::vector<TrackId>& ids) {
     std::vector<Url> urls;
     for (const TrackId id : ids) {
-        if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
+        if (const PlaylistEntry* entry = playlists_.find(id); entry != nullptr) {
             urls.push_back(entry->url);
         }
     }
@@ -284,7 +392,8 @@ void Session::reloadTracks(const std::vector<TrackId>& ids) {
     // incidental: the scans share one PluginCache, which is not synchronised, so
     // a reload starting while a folder scan runs is the race the queue exists to
     // prevent.
-    pendingScans_.push_back(ScanRequest{std::move(urls), -1, /*reload=*/true, {}});
+    pendingScans_.push_back(
+        ScanRequest{std::move(urls), -1, /*reload=*/true, {}, playlists_.shownId()});
     pumpScanQueue();
 }
 
@@ -346,9 +455,10 @@ void Session::pumpScanQueue() {
     }));
 
     const int  atRow  = request.atRow;
+    const PlaylistSet::Id target = request.playlist;
     const bool reload = request.reload;
     subscriptions_.push_back(scan_->finished.connect(
-        [this, atRow, reload](const std::vector<PlaylistEntry>& entries, bool cancelled) {
+        [this, atRow, reload, target](const std::vector<PlaylistEntry>& entries, bool cancelled) {
             // The task owns the thread it is still returning from, so it cannot
             // be destroyed from inside its own callback. Handing it to the event
             // loop to drop is what deleteLater() was doing.
@@ -375,7 +485,7 @@ void Session::pumpScanQueue() {
             if (reload) {
                 applyReloadedEntries(entries);
             } else {
-                addScannedEntries(entries, atRow, cancelled);
+                addScannedEntries(entries, atRow, cancelled, target);
             }
             pumpScanQueue();
         }));
@@ -384,7 +494,8 @@ void Session::pumpScanQueue() {
     scan_->start();
 }
 
-void Session::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled) {
+void Session::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled,
+                                PlaylistSet::Id target) {
     if (entries.empty()) {
         setStatus(cancelled ? tr("Nothing was added.") : tr("Nothing playable was found."));
         return;
@@ -423,9 +534,21 @@ void Session::addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, b
     // The row a drop targeted may no longer exist: the scan took time and the
     // user could have edited the playlist meanwhile. insert() clamps, so this
     // lands at the end rather than nowhere.
-    const std::size_t where = (atRow >= 0) ? static_cast<std::size_t>(atRow) : playlist_.size();
+    // Deleted while the scan ran, in which case what is on screen takes them.
+    Playlist* destination = playlists_.playlist(target);
+    if (destination == nullptr) {
+        destination = &playlists_.shown();
+        target      = playlists_.shownId();
+    }
+    const std::size_t where =
+        (atRow >= 0) ? static_cast<std::size_t>(atRow) : destination->size();
 
-    commands_.insert(std::move(entries), where);
+    if (target == playlists_.shownId()) {
+        commands_.insert(std::move(entries), where);
+    } else {
+        // Undo lives with what is on screen, and this is not.
+        destination->insert(where, std::move(entries));
+    }
 
     setStatus(statusSummary());
 }
@@ -437,9 +560,10 @@ void Session::applyReloadedEntries(std::vector<PlaylistEntry> entries) {
     }
 
     std::unordered_map<std::string, TrackId> byUrl;
-    byUrl.reserve(playlist_.size());
-    for (const PlaylistEntry& entry : playlist_.entries()) {
-        byUrl.emplace(entry.url.toString(), entry.id);
+    for (std::size_t list = 0; list < playlists_.size(); ++list) {
+        for (const PlaylistEntry& entry : playlists_.at(list).playlist->entries()) {
+            byUrl.emplace(entry.url.toString(), entry.id);
+        }
     }
 
     std::size_t updated = 0;
@@ -456,7 +580,7 @@ void Session::applyReloadedEntries(std::vector<PlaylistEntry> entries) {
             static_cast<void>(library_->adoptArtwork(fresh));
         }
 
-        playlist_.update(found->second, [&fresh](PlaylistEntry& entry) {
+        playlists_.update(found->second, [&fresh](PlaylistEntry& entry) {
             // Everything a file can answer for is replaced; everything the
             // playlist knows and the file does not is kept. Getting this
             // backwards is not visible -- a reload that reset the play count and
@@ -479,7 +603,7 @@ void Session::applyReloadedEntries(std::vector<PlaylistEntry> entries) {
         });
 
         if (library_) {
-            if (const PlaylistEntry* entry = playlist_.find(found->second); entry != nullptr) {
+            if (const PlaylistEntry* entry = playlists_.find(found->second); entry != nullptr) {
                 static_cast<void>(library_->saveEntry(*entry));
             }
         }
@@ -513,6 +637,7 @@ std::string Session::startRemoteScan(std::vector<std::string>   urls,
     request.inputs = std::move(inputs);
     request.atRow  = at ? static_cast<int>(*at) : -1;
     request.jobId  = jobId;
+    request.playlist = playlists_.shownId();
     pendingScans_.push_back(std::move(request));
     pumpScanQueue();
 
@@ -525,14 +650,14 @@ bool Session::savePlaylist(const std::filesystem::path& path, const std::vector<
     // What is written, decided before anything else. Either way the order is
     // the view's rather than the playlist's -- the sort the listener applied,
     // and only the rows the filter leaves. Sorting is display-only and never
-    // reaches Playlist, so playlist_.entries() is still in the order the
+    // reaches Playlist, so the playlist's entries are still in the order the
     // tracks were added; a listener who sorts by album and saves wants the
     // file in album order.
     std::vector<PlaylistEntry> entries;
     if (selection != nullptr) {
         entries.reserve(selection->size());
         for (const TrackId id : *selection) {
-            if (const PlaylistEntry* entry = playlist_.find(id); entry != nullptr) {
+            if (const PlaylistEntry* entry = playlists_.find(id); entry != nullptr) {
                 entries.push_back(*entry);
             }
         }
@@ -561,7 +686,7 @@ bool Session::savePlaylist(const std::filesystem::path& path, const std::vector<
         written.emplace(entries[i].id, i);
     }
     std::vector<std::size_t> queuePositions;
-    for (const TrackId id : playlist_.queue()) {
+    for (const TrackId id : playlists_.shown().queue()) {
         if (const auto found = written.find(id); found != written.end()) {
             queuePositions.push_back(found->second);
         }
@@ -583,7 +708,7 @@ bool Session::savePlaylist(const std::filesystem::path& path, const std::vector<
     // left tracks out: writing what is shown is the point of the ordering
     // above, but it is also the one way this command can quietly write fewer
     // tracks than the listener thinks it has.
-    const std::size_t total = playlist_.size();
+    const std::size_t total = playlists_.shown().size();
     if (selection != nullptr) {
         setStatus(fmt(trn("Playlist saved: %zu selected track.", "Playlist saved: %zu selected tracks.",
                           entries.size()),
@@ -602,7 +727,7 @@ void Session::trashTracks(const std::vector<TrackId>& ids) {
     trashed.reserve(ids.size());
     std::size_t failed = 0;
     for (const TrackId id : ids) {
-        const PlaylistEntry* entry = playlist_.find(id);
+        const PlaylistEntry* entry = playlists_.find(id);
         if (entry == nullptr) {
             continue;
         }
@@ -635,7 +760,7 @@ void Session::revealInFileManager(const std::vector<TrackId>& ids) {
     // multiple selection means a file manager window per folder, which is not
     // what anybody means by "show me where this is".
     for (const TrackId id : ids) {
-        const PlaylistEntry* entry = playlist_.find(id);
+        const PlaylistEntry* entry = playlists_.find(id);
         if (entry == nullptr) {
             continue;
         }
@@ -707,7 +832,7 @@ void Session::settingChanged(std::string_view key) {
                 // toggle is to act on it now.
                 lastGenreTrack_ = kInvalidTrackId;
                 lastGenre_.clear();
-                applyGenreEqualizer(playlist_.find(currentTrack_));
+                applyGenreEqualizer(playlists_.find(currentTrack_));
             }
             break;
 
@@ -724,9 +849,9 @@ void Session::settingChanged(std::string_view key) {
             // until this branch existed, nothing ever seeded them again -- so
             // "Stop after every track" in Preferences did nothing at all until
             // the next launch, and silently.
-            playlist_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
-            playlist_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
-            playlist_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
+            playlists_.setRepeat(static_cast<RepeatMode>(settings_.RepeatMode()));
+            playlists_.setShuffle(static_cast<ShuffleMode>(settings_.ShuffleMode()));
+            playlists_.setStopAfterCurrent(settings_.AlwaysStopAfterCurrent());
             break;
 
         case Effect::Volume: {
@@ -849,7 +974,7 @@ void Session::wireScrobbling() {
         if (!library_ || currentTrack_ == kInvalidTrackId) {
             return;
         }
-        const PlaylistEntry* entry = playlist_.find(currentTrack_);
+        const PlaylistEntry* entry = playlists_.find(currentTrack_);
         if (entry == nullptr) {
             return;
         }
@@ -868,8 +993,8 @@ void Session::wireScrobbling() {
             count = record->count;
         }
 
-        playlist_.update(id, [count](PlaylistEntry& target) { target.playCount = count; });
-        if (const PlaylistEntry* updated = playlist_.find(id)) {
+        playlists_.update(id, [count](PlaylistEntry& target) { target.playCount = count; });
+        if (const PlaylistEntry* updated = playlists_.find(id)) {
             static_cast<void>(library_->saveEntry(*updated));
         }
         tracksUpdated.publish();
@@ -912,7 +1037,7 @@ void Session::wireLyrics() {
 }
 
 void Session::beginScrobbleTrack(TrackId id, bool looping) {
-    const PlaylistEntry* entry = (id == kInvalidTrackId) ? nullptr : playlist_.find(id);
+    const PlaylistEntry* entry = (id == kInvalidTrackId) ? nullptr : playlists_.find(id);
     if (entry == nullptr) {
         monitor_.clear();
         pendingScrobble_ = ScrobbleTrack{};
@@ -977,7 +1102,7 @@ void Session::onCurrentTrackChanged(TrackId id, ListenChange change) {
     // the start is requested, and this is the moment it stopped being true.
     setStatus(statusSummary());
 
-    const PlaylistEntry* entry = playlist_.find(id);
+    const PlaylistEntry* entry = playlists_.find(id);
     publishNowPlaying(id);
     notifyTrack(entry);
     applyGenreEqualizer(entry);
@@ -1041,7 +1166,7 @@ void Session::publishNowPlaying(TrackId id) {
         return;
     }
 
-    const PlaylistEntry* entry = playlist_.find(id);
+    const PlaylistEntry* entry = playlists_.find(id);
     if (entry == nullptr) {
         media_->clear();
         return;
@@ -1173,7 +1298,7 @@ void Session::restorePlayback() {
         return;
     }
 
-    const auto current = playlist_.current();
+    const auto current = playlists_.playing().current();
     if (!current) {
         return;
     }
@@ -1208,7 +1333,7 @@ void Session::requestWaveform(TrackId id) {
     // track's shape over this one.
     waveformUpdated.publish(nullptr);
 
-    const PlaylistEntry* entry = playlist_.find(id);
+    const PlaylistEntry* entry = playlists_.find(id);
     if (!settings_.WaveformSeekBar() || entry == nullptr) {
         waveforms_->cancel();
         return;
@@ -1230,8 +1355,8 @@ void Session::onWaveformUpdated(const Url&                                    ur
     // queue may change, a shuffle may draw differently -- and a wrong one costs
     // a spare analysis that ends up in the cache anyway.
     if (summary && summary->complete()) {
-        if (const std::optional<TrackId> next = playlist_.peekNextForPlayback()) {
-            if (const PlaylistEntry* entry = playlist_.find(*next);
+        if (const std::optional<TrackId> next = playlists_.peekNextForPlayback()) {
+            if (const PlaylistEntry* entry = playlists_.find(*next);
                 entry != nullptr && entry->url.toString() != url.toString()) {
                 waveforms_->prefetch(entry->url);
             }
@@ -1240,7 +1365,7 @@ void Session::onWaveformUpdated(const Url&                                    ur
 }
 
 std::optional<Url> Session::currentTrackUrl() const {
-    const PlaylistEntry* entry = playlist_.find(currentTrack_);
+    const PlaylistEntry* entry = playlists_.find(currentTrack_);
     return entry != nullptr ? std::optional{entry->url} : std::nullopt;
 }
 
@@ -1276,7 +1401,7 @@ void Session::applyRemoteSettings() {
 
     if (!remoteControl_) {
         remoteControl_ = std::make_unique<AppPlayerControl>(
-            *playback_, playlist_, view_, commands_, settings_, remoteJobs_, library_.get(),
+            *playback_, playlists_, view_, commands_, settings_, remoteJobs_, library_.get(),
             [this](std::vector<std::string> urls, std::optional<std::size_t> at) {
                 return startRemoteScan(std::move(urls), at);
             });

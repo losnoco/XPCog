@@ -19,6 +19,7 @@
 #pragma once
 
 #include "xpcog/core/library/Playlist.hpp"
+#include "xpcog/core/library/PlaylistSet.hpp"
 #include "xpcog/core/lyrics/LyricsStore.hpp"
 
 #include <cstdint>
@@ -81,6 +82,13 @@ public:
     /// Loads the stored playlist, replacing whatever `playlist` holds. Restores
     /// the queue, the shuffle order and the playing entry.
     [[nodiscard]] bool loadPlaylist(Playlist& playlist);
+
+    /// savePlaylist() for every playlist there is, in one transaction.
+    [[nodiscard]] bool savePlaylists(const PlaylistSet& playlists);
+
+    /// loadPlaylist() for every playlist there is, replacing what `playlists`
+    /// holds. A store from before there were several reads as one playlist.
+    [[nodiscard]] bool loadPlaylists(PlaylistSet& playlists);
 
     /// Writes one entry's columns and tags. Used by the scanner as metadata
     /// arrives, so a long scan is not one transaction that can lose everything.
@@ -171,6 +179,8 @@ public:
     [[nodiscard]] bool storeCachedLyrics(std::string_view key, const StoredLyrics& record);
 
 private:
+    [[nodiscard]] bool saveStored(std::vector<PlaylistSet::Stored> lists);
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

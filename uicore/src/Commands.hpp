@@ -129,6 +129,15 @@ enum CommandId : int {
     PlaylistReveal,
     PlaylistTrash,
 
+    // The playlists themselves, as Cog's File menu has them, and getting from
+    // one to the next.
+    FileNewPlaylist,
+    FileNewPlaylistFromSelection,
+    FileRenamePlaylist,
+    FileDeletePlaylist,
+    ViewNextPlaylist,
+    ViewPreviousPlaylist,
+
     /// Not a command: the first id a widget in this application may use for
     /// itself, so nothing invents one that collides with the list above.
     FirstWidgetId,

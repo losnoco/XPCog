@@ -744,7 +744,7 @@ std::vector<TrackId> MainWindow::selectedTracks() const {
 
 bool MainWindow::selectionHasFiles() const {
     for (const TrackId id : selectedTracks()) {
-        const PlaylistEntry* entry = session_.playlist().find(id);
+        const PlaylistEntry* entry = session_.playlists().find(id);
         if (entry != nullptr && entry->url.localPath().has_value()) {
             return true;
         }
@@ -944,7 +944,7 @@ void MainWindow::onCommand(app::CommandId id) {
             // the first selected row decides what to look for.
             const std::vector<TrackId> selected = selectedTracks();
             const PlaylistEntry*       entry =
-                selected.empty() ? nullptr : session_.playlist().find(selected.front());
+                selected.empty() ? nullptr : session_.playlists().find(selected.front());
             if (entry != nullptr) {
                 playlist_->setFilter(id == CommandId::PlaylistSearchAlbum ? entry->album.str()
                                                                            : entry->artist.str());
@@ -1132,7 +1132,7 @@ void MainWindow::refreshPanels() {
         return;
     }
     const TrackId        id    = panelTrackId();
-    const PlaylistEntry* entry = session_.playlist().find(id);
+    const PlaylistEntry* entry = session_.playlists().find(id);
     if (panelPage_ == "lyrics") {
         lyrics_->showEntry(entry, id != kInvalidTrackId && id == session_.currentTrack() &&
                                       session_.playback().playing());
@@ -1418,7 +1418,7 @@ winrt::fire_and_forget MainWindow::openUrl() {
 winrt::fire_and_forget MainWindow::trashSelected() {
     std::vector<TrackId> ids;
     for (const TrackId id : selectedTracks()) {
-        const PlaylistEntry* entry = session_.playlist().find(id);
+        const PlaylistEntry* entry = session_.playlists().find(id);
         if (entry != nullptr && entry->url.localPath().has_value()) {
             ids.push_back(id);
         }

@@ -27,7 +27,9 @@ namespace {
 
 }  // namespace
 
-Playlist::Playlist() {
+Playlist::Playlist() : Playlist(std::make_shared<Shared>()) {}
+
+Playlist::Playlist(std::shared_ptr<Shared> shared) : shared_(std::move(shared)) {
     std::random_device device;
     rng_.seed((static_cast<std::uint64_t>(device()) << 32) ^ device());
 }
@@ -72,7 +74,7 @@ std::vector<TrackId> Playlist::insert(std::size_t index,
     std::vector<TrackId> ids;
     ids.reserve(entries.size());
     for (auto& entry : entries) {
-        entry.id = nextId_++;
+        entry.id = shared_->nextId++;
         ids.push_back(entry.id);
     }
 
@@ -99,12 +101,12 @@ void Playlist::reinsert(std::size_t index, std::vector<PlaylistEntry> entries) {
     for (PlaylistEntry& entry : entries) {
         // Keep the counter ahead of anything restored, or a later add() would
         // hand out an id that is already in the list.
-        nextId_ = std::max(nextId_, entry.id + 1);
+        shared_->nextId = std::max(shared_->nextId, entry.id + 1);
 
         // Neither the queue nor the shuffle order is restored here, so an entry
         // must not come back claiming a place in either. Leaving the stale
         // values on would make queued() true for an entry that is not in
-        // queue_, and enqueue() refuses to re-add something already queued --
+        // the queue, and enqueue() refuses to re-add something already queued --
         // so restoring the queue afterwards would silently do nothing.
         entry.queuePosition = -1;
         entry.shuffleIndex  = -1;
@@ -188,15 +190,16 @@ void Playlist::removeAt(std::size_t index, std::size_t count) {
     };
     drop(shuffleList_);
 
-    const std::size_t queueBefore = queue_.size();
-    drop(queue_);
-    if (queue_.size() != queueBefore) {
+    const std::size_t queueBefore = shared_->queue.size();
+    drop(shared_->queue);
+    const bool queueChanged = shared_->queue.size() != queueBefore;
+    if (queueChanged) {
         renumberQueue();
     }
 
     notify({Change::Kind::Removed, index, count, 0});
-    if (queue_.size() != queueBefore) {
-        notify({Change::Kind::Queue, 0, 0, 0});
+    if (queueChanged) {
+        queueEdited();
     }
 }
 
@@ -216,15 +219,22 @@ void Playlist::remove(const std::vector<TrackId>& ids) {
 }
 
 void Playlist::clear() {
+    // Only what was queued from here: the queue may reach into other playlists.
+    const std::size_t queueBefore = shared_->queue.size();
+    std::erase_if(shared_->queue, [this](TrackId id) { return index_.contains(id); });
+    const bool queueChanged = shared_->queue.size() != queueBefore;
+
     entries_.clear();
     index_.clear();
     shuffleList_.clear();
-    queue_.clear();
     current_.reset();
     currentRemoved_ = false;
     resumeAt_.reset();
     playbackCursor_.reset();
     notify({Change::Kind::Reset, 0, 0, 0});
+    if (queueChanged && shared_->queueChanged) {
+        shared_->queueChanged();
+    }
 }
 
 void Playlist::move(std::size_t index, std::size_t count, std::size_t destination) {
@@ -272,16 +282,27 @@ void Playlist::randomize() {
 // --- persistence --------------------------------------------------------
 
 Playlist::Snapshot Playlist::snapshot() const {
-    return Snapshot{entries_, queue_, shuffleList_, current_, repeat_, shuffle_};
+    std::vector<TrackId> queued;
+    for (const TrackId id : shared_->queue) {
+        if (index_.contains(id)) {
+            queued.push_back(id);
+        }
+    }
+    return Snapshot{entries_, std::move(queued), shuffleList_, current_, repeat_, shuffle_};
 }
 
 void Playlist::restore(Snapshot state) {
+    std::erase_if(shared_->queue, [this](TrackId id) { return index_.contains(id); });
+
     entries_ = std::move(state.entries);
     reindex();
 
-    nextId_ = 1;
+    // Alone, the ids start again. In a set the others are still using theirs.
+    if (!shared_->grouped) {
+        shared_->nextId = 1;
+    }
     for (const auto& entry : entries_) {
-        nextId_ = std::max(nextId_, entry.id + 1);
+        shared_->nextId = std::max(shared_->nextId, entry.id + 1);
     }
 
     // Ids that no longer exist would otherwise sit in the queue and the shuffle
@@ -290,8 +311,8 @@ void Playlist::restore(Snapshot state) {
     const auto keepKnown = [this](std::vector<TrackId>& list) {
         std::erase_if(list, [this](TrackId id) { return !index_.contains(id); });
     };
-    queue_ = std::move(state.queue);
-    keepKnown(queue_);
+    keepKnown(state.queue);
+    shared_->queue.insert(shared_->queue.end(), state.queue.begin(), state.queue.end());
     shuffleList_ = std::move(state.shuffleOrder);
     keepKnown(shuffleList_);
 
@@ -344,7 +365,7 @@ void Playlist::setCurrent(std::optional<TrackId> id) {
     moveCurrent(id);
 }
 
-void Playlist::setAudible(TrackId id) {
+void Playlist::setAudible(std::optional<TrackId> id) {
     // An observation, and the cursor is deliberately left alone: it is ahead of
     // what is audible by design -- a buffer's worth -- and pulling it back to
     // here is what made a track get handed out, and played, twice.
@@ -374,11 +395,29 @@ void Playlist::moveCurrent(std::optional<TrackId> id) {
 // --- queue --------------------------------------------------------------
 
 void Playlist::renumberQueue() {
-    for (std::size_t i = 0; i < queue_.size(); ++i) {
-        if (const auto position = indexOf(queue_[i])) {
+    const std::vector<TrackId>& queue = shared_->queue;
+    for (std::size_t i = 0; i < queue.size(); ++i) {
+        if (const auto position = indexOf(queue[i])) {
             entries_[*position].queuePosition = static_cast<std::int32_t>(i);
         }
     }
+}
+
+void Playlist::queueEdited() {
+    if (shared_->queueChanged) {
+        shared_->queueChanged();
+        return;
+    }
+    renumberQueue();
+    notify({Change::Kind::Queue, 0, 0, 0});
+}
+
+void Playlist::syncQueue() {
+    for (PlaylistEntry& entry : entries_) {
+        entry.queuePosition = -1;
+    }
+    renumberQueue();
+    notify({Change::Kind::Queue, 0, 0, 0});
 }
 
 void Playlist::enqueue(TrackId id) {
@@ -386,36 +425,39 @@ void Playlist::enqueue(TrackId id) {
     if (!position || entries_[*position].queued()) {
         return;
     }
-    queue_.push_back(id);
-    renumberQueue();
-    notify({Change::Kind::Queue, 0, 0, 0});
+    shared_->queue.push_back(id);
+    queueEdited();
     notify({Change::Kind::Updated, *position, 1, 0});
 }
 
 void Playlist::dequeue(TrackId id) {
-    const auto it = std::find(queue_.begin(), queue_.end(), id);
-    if (it == queue_.end()) {
+    std::vector<TrackId>& queue = shared_->queue;
+    const auto            it    = std::find(queue.begin(), queue.end(), id);
+    if (it == queue.end()) {
         return;
     }
-    queue_.erase(it);
+    queue.erase(it);
     if (const auto position = indexOf(id)) {
         entries_[*position].queuePosition = -1;
     }
-    renumberQueue();
-    notify({Change::Kind::Queue, 0, 0, 0});
+    queueEdited();
 }
 
 void Playlist::clearQueue() {
-    if (queue_.empty()) {
+    if (shared_->queue.empty()) {
         return;
     }
-    for (const TrackId id : queue_) {
+    for (const TrackId id : shared_->queue) {
         if (const auto position = indexOf(id)) {
             entries_[*position].queuePosition = -1;
         }
     }
-    queue_.clear();
-    notify({Change::Kind::Queue, 0, 0, 0});
+    shared_->queue.clear();
+    if (shared_->queueChanged) {
+        shared_->queueChanged();
+    } else {
+        notify({Change::Kind::Queue, 0, 0, 0});
+    }
 }
 
 // --- shuffle ------------------------------------------------------------
@@ -615,14 +657,13 @@ std::optional<TrackId> Playlist::nextEntry(TrackId from, bool ignoreRepeatOne) {
 
     // The queue outranks every ordering mode: it is the user saying "this one
     // next", and it survives a shuffle or a sort.
-    if (!queue_.empty()) {
-        const TrackId id = queue_.front();
-        queue_.erase(queue_.begin());
+    if (!shared_->queue.empty()) {
+        const TrackId id = shared_->queue.front();
+        shared_->queue.erase(shared_->queue.begin());
         if (const auto position = indexOf(id)) {
             entries_[*position].queuePosition = -1;
         }
-        renumberQueue();
-        notify({Change::Kind::Queue, 0, 0, 0});
+        queueEdited();
         return id;
     }
 
@@ -774,8 +815,8 @@ std::optional<TrackId> Playlist::peekNextForPlayback() const {
         return from;
     }
 
-    if (!queue_.empty()) {
-        return queue_.front();
+    if (!shared_->queue.empty()) {
+        return shared_->queue.front();
     }
 
     if (shuffle_ != ShuffleMode::Off) {
