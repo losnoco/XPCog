@@ -26,6 +26,8 @@ set(XPCOG_GTK_SOURCES
     src/Localization.hpp
     src/MainWindow.cpp
     src/MainWindow.hpp
+    src/PlaylistTabs.cpp
+    src/PlaylistTabs.hpp
     src/Menus.cpp
     src/Menus.hpp
     src/MiniWindow.cpp

@@ -31,6 +31,7 @@
 #include "Sc55View.hpp"
 #endif
 #include "PlaylistPane.hpp"
+#include "PlaylistTabs.hpp"
 #include "PreferencesDialog.hpp"
 #include "Session.hpp"
 
@@ -93,6 +94,13 @@ private:
     /// Switches between the full window and the mini player. A mode, as in
     /// Cog: one is shown and the other hidden, never both.
     void setMiniMode(bool mini);
+
+    /// The tabs, the Add to Playlist submenu and what can be done about them.
+    void refreshPlaylists();
+
+    /// Deletes `id`, asking first when there are tracks in it.
+    void confirmDeletePlaylist(PlaylistSet::Id id);
+    void renameShownPlaylist();
 
     /// Pops the playlist's context menu at list coordinates.
     void showPlaylistMenu(double x, double y);
@@ -163,6 +171,12 @@ private:
     std::unique_ptr<Actions>      actions_;
     std::unique_ptr<SeekBar>      seekBar_;
     std::unique_ptr<PlaylistPane> playlist_;
+    std::unique_ptr<PlaylistTabs> tabs_;
+
+    /// Holds the Add to Playlist submenu while there is somewhere to add to.
+    GObjectPtr<GMenu>             addToSection_;
+    GObjectPtr<GSimpleAction>     addToAction_;
+    Connection                    addToActivated_;
     std::unique_ptr<FileTreePane> fileTree_;
     std::unique_ptr<InfoPane>      info_;
     std::unique_ptr<LyricsPane>    lyrics_;

@@ -71,6 +71,10 @@ Shortcut parseShortcut(std::string_view text) {
             out.key = static_cast<VirtualKey>(0xBE);  // VK_OEM_PERIOD
         } else if (part == "Del" || part == "Delete") {
             out.key = VirtualKey::Delete;
+        } else if (part == "PageDown") {
+            out.key = VirtualKey::PageDown;
+        } else if (part == "PageUp") {
+            out.key = VirtualKey::PageUp;
         } else if (part == "Left") {
             out.key = VirtualKey::Left;
         } else if (part == "Right") {

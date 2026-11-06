@@ -26,6 +26,7 @@ namespace xpcog::gtk {
 [[nodiscard]] GObjectPtr<GMenu> buildPrimaryMenu();
 
 /// The playlist's context menu, in Cog's order, plus the edit commands.
-[[nodiscard]] GObjectPtr<GMenu> buildPlaylistMenu();
+[[nodiscard]] GObjectPtr<GMenu> buildPlaylistTabMenu();
+GObjectPtr<GMenu> buildPlaylistMenu();
 
 }  // namespace xpcog::gtk

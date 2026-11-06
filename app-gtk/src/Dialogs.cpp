@@ -144,6 +144,59 @@ void showOpenUrlDialog(GtkWindow* parent, Settings& settings, std::function<void
     gtk_widget_grab_focus(state->entry);
 }
 
+// --- Small questions ----------------------------------------------------------------
+
+namespace {
+
+struct Question {
+    GtkWidget*                        entry = nullptr;
+    std::function<void(std::string)>  done;
+};
+
+void ask(GtkWidget* parent, AdwDialog* dialog, const std::string& accept,
+         AdwResponseAppearance appearance, Question* question) {
+    AdwAlertDialog* alert = ADW_ALERT_DIALOG(dialog);
+    adw_alert_dialog_add_responses(alert, "cancel", tr("Cancel").c_str(), "accept",
+                                   accept.c_str(), nullptr);
+    adw_alert_dialog_set_response_appearance(alert, "accept", appearance);
+    adw_alert_dialog_set_default_response(alert, "accept");
+    adw_alert_dialog_set_close_response(alert, "cancel");
+    adw_alert_dialog_choose(
+        alert, parent, nullptr,
+        [](GObject* source, GAsyncResult* result, gpointer data) {
+            std::unique_ptr<Question> owned{static_cast<Question*>(data)};
+            const char* response =
+                adw_alert_dialog_choose_finish(ADW_ALERT_DIALOG(source), result);
+            if (std::string_view{response} != "accept") {
+                return;
+            }
+            owned->done(owned->entry != nullptr
+                            ? std::string{gtk_editable_get_text(GTK_EDITABLE(owned->entry))}
+                            : std::string{});
+        },
+        question);
+}
+
+}  // namespace
+
+void showTextPrompt(GtkWidget* parent, const std::string& heading, const std::string& initial,
+                    const std::string& accept, std::function<void(std::string)> done) {
+    AdwDialog* dialog = adw_alert_dialog_new(heading.c_str(), nullptr);
+    GtkWidget* entry  = gtk_entry_new();
+    gtk_editable_set_text(GTK_EDITABLE(entry), initial.c_str());
+    gtk_entry_set_activates_default(GTK_ENTRY(entry), TRUE);
+    adw_alert_dialog_set_extra_child(ADW_ALERT_DIALOG(dialog), entry);
+    ask(parent, dialog, accept, ADW_RESPONSE_SUGGESTED, new Question{entry, std::move(done)});
+    gtk_widget_grab_focus(entry);
+}
+
+void showConfirmation(GtkWidget* parent, const std::string& heading, const std::string& body,
+                      const std::string& accept, std::function<void()> done) {
+    AdwDialog* dialog = adw_alert_dialog_new(heading.c_str(), body.c_str());
+    ask(parent, dialog, accept, ADW_RESPONSE_DESTRUCTIVE,
+        new Question{nullptr, [done = std::move(done)](std::string) { done(); }});
+}
+
 // --- Save Playlist ------------------------------------------------------------------
 
 namespace {

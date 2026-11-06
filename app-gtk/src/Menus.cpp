@@ -113,6 +113,15 @@ GObjectPtr<GMenu> buildPrimaryMenu() {
     appendCommand(playlist.get(), CommandId::FileSavePlaylist);
     g_menu_append_section(menu.get(), nullptr, G_MENU_MODEL(playlist.get()));
 
+    auto playlists = GObjectPtr<GMenu>::adopt(g_menu_new());
+    appendCommand(playlists.get(), CommandId::FileNewPlaylist);
+    appendCommand(playlists.get(), CommandId::FileNewPlaylistFromSelection);
+    appendCommand(playlists.get(), CommandId::FileRenamePlaylist);
+    appendCommand(playlists.get(), CommandId::FileDeletePlaylist);
+    appendCommand(playlists.get(), CommandId::ViewNextPlaylist);
+    appendCommand(playlists.get(), CommandId::ViewPreviousPlaylist);
+    g_menu_append_section(menu.get(), nullptr, G_MENU_MODEL(playlists.get()));
+
     // The Order menu, as two submenus: the table's separator is where repeat
     // ends and shuffle begins.
     auto order   = GObjectPtr<GMenu>::adopt(g_menu_new());
@@ -138,7 +147,8 @@ GObjectPtr<GMenu> buildPrimaryMenu() {
     auto panels = GObjectPtr<GMenu>::adopt(g_menu_new());
     std::vector<const MenuItem*> paneRows;
     for (const MenuItem* row : rowsOfMenu("&View")) {
-        if (row->id != CommandId::ViewMiniPlayer) {
+        if (row->id != CommandId::ViewMiniPlayer && row->id != CommandId::ViewNextPlaylist &&
+            row->id != CommandId::ViewPreviousPlaylist) {
             paneRows.push_back(row);
         }
     }
@@ -156,6 +166,18 @@ GObjectPtr<GMenu> buildPrimaryMenu() {
     appendCommand(tail.get(), CommandId::HelpAbout);
     g_menu_append_section(menu.get(), nullptr, G_MENU_MODEL(tail.get()));
 
+    return menu;
+}
+
+GObjectPtr<GMenu> buildPlaylistTabMenu() {
+    auto menu    = GObjectPtr<GMenu>::adopt(g_menu_new());
+    auto section = GObjectPtr<GMenu>::adopt(g_menu_new());
+    appendCommand(section.get(), CommandId::FileRenamePlaylist);
+    appendCommand(section.get(), CommandId::FileDeletePlaylist);
+    g_menu_append_section(menu.get(), nullptr, G_MENU_MODEL(section.get()));
+    auto add = GObjectPtr<GMenu>::adopt(g_menu_new());
+    appendCommand(add.get(), CommandId::FileNewPlaylist);
+    g_menu_append_section(menu.get(), nullptr, G_MENU_MODEL(add.get()));
     return menu;
 }
 

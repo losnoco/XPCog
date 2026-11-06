@@ -42,6 +42,10 @@ std::string gtkAccelerator(std::string_view spelling) {
         // as itself, lower-cased, since GTK matches the unshifted key.
         if (part == "Del") {
             key = "Delete";
+        } else if (part == "PageDown") {
+            key = "Page_Down";
+        } else if (part == "PageUp") {
+            key = "Page_Up";
         } else if (part == ",") {
             key = "comma";
         } else if (part == ".") {

@@ -27,6 +27,7 @@
 #include "SeekBar.hpp"
 #include "Session.hpp"
 #include "Translations.hpp"
+#include "PlaylistTabs.hpp"
 #include "Visualizers.hpp"
 #ifdef XPCOG_HAVE_SC55_PANEL
 #include "Sc55View.hpp"
@@ -39,6 +40,7 @@
 #include "xpcog/core/audio/Waveform.hpp"
 #include "xpcog/core/library/Library.hpp"
 #include "xpcog/core/library/Playlist.hpp"
+#include "xpcog/core/library/PlaylistSet.hpp"
 #include "xpcog/core/library/PlaylistView.hpp"
 
 // glib-compile-resources writes a C header with no G_BEGIN_DECLS in it.
@@ -966,6 +968,60 @@ TEST_CASE("the SC-55 panel explains itself with nothing to show", "[gtk][sc55]")
     CHECK(toolkitComplaints().empty());
 }
 #endif
+
+TEST_CASE("the playlist tabs follow the set and tell it what the listener did",
+          "[gtk][playlist]") {
+    if (!toolkit()) {
+        SKIP("no display: GTK could not initialise");
+    }
+    xpcog::PlaylistSet set;
+    std::vector<xpcog::PlaylistSet::Id> closeRequests;
+    auto menu = xpcog::gtk::GObjectPtr<GMenu>::adopt(g_menu_new());
+
+    xpcog::gtk::PlaylistTabs tabs(
+        set, [](xpcog::PlaylistSet::Id id) { return "List " + std::to_string(id); },
+        [&closeRequests](xpcog::PlaylistSet::Id id) { closeRequests.push_back(id); },
+        G_MENU_MODEL(menu.get()));
+    TestWindow window(tabs.widget(), 600, 120);
+    settle(5);
+
+    GtkWidget* bar  = gtk_widget_get_first_child(tabs.widget());
+    GtkWidget* view = gtk_widget_get_next_sibling(bar);
+    REQUIRE(ADW_IS_TAB_BAR(bar));
+    AdwTabView* tabView = ADW_TAB_VIEW(view);
+    CHECK(adw_tab_view_get_n_pages(tabView) == 1);
+
+    const xpcog::PlaylistSet::Id second = set.add("second");
+    const xpcog::PlaylistSet::Id third  = set.add("third");
+    set.show(second);
+    tabs.refresh();
+    settle(5);
+    REQUIRE(adw_tab_view_get_n_pages(tabView) == 3);
+    CHECK(std::string(adw_tab_page_get_title(adw_tab_view_get_selected_page(tabView))) ==
+          "List " + std::to_string(second));
+    capture(GTK_WIDGET(window.window()), "playlist-tabs");
+
+    // Choosing a tab is showing a playlist.
+    adw_tab_view_set_selected_page(tabView, adw_tab_view_get_nth_page(tabView, 2));
+    CHECK(set.shownId() == third);
+
+    // Dragging one is moving it.
+    adw_tab_view_reorder_page(tabView, adw_tab_view_get_nth_page(tabView, 2), 0);
+    CHECK(set.at(0).id == third);
+
+    // Closing one only asks: it goes when the set says so.
+    adw_tab_view_close_page(tabView, adw_tab_view_get_nth_page(tabView, 0));
+    settle(5);
+    REQUIRE(closeRequests.size() == 1);
+    CHECK(closeRequests.front() == third);
+    CHECK(adw_tab_view_get_n_pages(tabView) == 3);
+
+    REQUIRE(set.remove(third));
+    tabs.refresh();
+    settle(5);
+    CHECK(adw_tab_view_get_n_pages(tabView) == 2);
+    CHECK(set.shownId() != third);
+}
 
 TEST_CASE("the playlist pane lays out its columns and keeps a selection across a sort",
           "[gtk][playlist]") {

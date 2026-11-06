@@ -132,7 +132,19 @@ void MainWindow::buildUi(AdwApplication* application) {
 
     // The playlist, in the middle, and the folder browser beside it.
     playlist_ = std::make_unique<PlaylistPane>(session_.view(), session_.settings());
-    adw_bin_set_child(contentBin_, playlist_->widget());
+    {
+        auto tabMenu = buildPlaylistTabMenu();
+        tabs_        = std::make_unique<PlaylistTabs>(
+            session_.playlists(),
+            [this](PlaylistSet::Id id) { return session_.playlistTitle(id); },
+            [this](PlaylistSet::Id id) { confirmDeletePlaylist(id); },
+            G_MENU_MODEL(tabMenu.get()));
+    }
+    GtkWidget* playlistColumn = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_append(GTK_BOX(playlistColumn), tabs_->widget());
+    gtk_widget_set_vexpand(playlist_->widget(), TRUE);
+    gtk_box_append(GTK_BOX(playlistColumn), playlist_->widget());
+    adw_bin_set_child(contentBin_, playlistColumn);
     fileTree_ = std::make_unique<FileTreePane>(session_.registry(), window_);
     adw_bin_set_child(fileTreeBin_, fileTree_->widget());
 
@@ -174,7 +186,17 @@ void MainWindow::buildUi(AdwApplication* application) {
     adw_bin_set_child(toolsBin_, tools_->widget());
 
     // Its context menu, parented to the list so it can point at a row.
-    playlistMenu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(buildPlaylistMenu().get()));
+    GObjectPtr<GMenu> rowMenu = buildPlaylistMenu();
+    addToSection_             = GObjectPtr<GMenu>::adopt(g_menu_new());
+    g_menu_append_section(rowMenu.get(), nullptr, G_MENU_MODEL(addToSection_.get()));
+    addToAction_ = GObjectPtr<GSimpleAction>::adopt(
+        g_simple_action_new("add-to-playlist", G_VARIANT_TYPE_INT64));
+    addToActivated_ = Connection::to<void(GSimpleAction*, GVariant*)>(
+        addToAction_.get(), "activate", [this](GSimpleAction*, GVariant* target) {
+            session_.addToPlaylist(playlist_->selectedTracks(), g_variant_get_int64(target));
+        });
+    g_action_map_add_action(G_ACTION_MAP(window_), G_ACTION(addToAction_.get()));
+    playlistMenu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(rowMenu.get()));
     gtk_popover_set_has_arrow(GTK_POPOVER(playlistMenu_), FALSE);
     gtk_widget_set_halign(playlistMenu_, GTK_ALIGN_START);
     gtk_widget_set_parent(playlistMenu_, playlist_->listWidget());
@@ -236,6 +258,7 @@ void MainWindow::wireUp() {
         }
     });
     observe(session_.undo().changed, [this] { refreshActionState(); });
+    observe(session_.playlistsChanged, [this] { refreshPlaylists(); });
     observe(session_.revealRequested, [this](TrackId id) { playlist_->revealTrack(id); });
     observe(session_.announceTrack,
             [this](const std::string& title, const std::string& body,
@@ -441,6 +464,25 @@ void MainWindow::onCommand(CommandId id) {
             session_.playback().previous();
             break;
 
+        case CommandId::FileNewPlaylist:
+            session_.newPlaylist();
+            break;
+        case CommandId::FileNewPlaylistFromSelection:
+            session_.newPlaylist(playlist_->selectedTracks());
+            break;
+        case CommandId::FileRenamePlaylist:
+            renameShownPlaylist();
+            break;
+        case CommandId::FileDeletePlaylist:
+            confirmDeletePlaylist(session_.playlists().shownId());
+            break;
+        case CommandId::ViewNextPlaylist:
+            session_.showPlaylistOffset(1);
+            break;
+        case CommandId::ViewPreviousPlaylist:
+            session_.showPlaylistOffset(-1);
+            break;
+
         case CommandId::EditUndo:
             session_.undo().undo();
             break;
@@ -454,6 +496,7 @@ void MainWindow::onCommand(CommandId id) {
             // Enabled whenever something is playing, which is not the same as
             // something being *visible*: a filter in the box can hide the
             // playing track, and then this has nothing to scroll to.
+            session_.showPlayingPlaylist();
             if (!playlist_->revealTrack(session_.currentTrack())) {
                 setStatusText(app::tr("The playing track is hidden by the filter"));
             }
@@ -480,7 +523,7 @@ void MainWindow::onCommand(CommandId id) {
             // that window, so this fills it in, from the first selected row.
             const std::vector<TrackId> selected = playlist_->selectedTracks();
             const PlaylistEntry*       entry =
-                selected.empty() ? nullptr : session_.playlist().find(selected.front());
+                selected.empty() ? nullptr : session_.playlists().find(selected.front());
             if (entry != nullptr) {
                 const std::string& text =
                     id == CommandId::PlaylistSearchAlbum ? entry->album.str() : entry->artist.str();
@@ -610,13 +653,18 @@ void MainWindow::refreshActionState() {
     actions_->setEnabled(CommandId::EditScrollToCurrent,
                          session_.currentTrack() != kInvalidTrackId);
 
+    const bool several = session_.playlists().size() > 1;
+    actions_->setEnabled(CommandId::FileDeletePlaylist, several);
+    actions_->setEnabled(CommandId::ViewNextPlaylist, several);
+    actions_->setEnabled(CommandId::ViewPreviousPlaylist, several);
+
     // Every command that acts on the selection, off while there is none --
     // and the two that need a file off for a selection of streams.
     const std::vector<TrackId> selected = playlist_->selectedTracks();
     const bool                 any      = !selected.empty();
     bool                       files    = false;
     for (const TrackId id : selected) {
-        const PlaylistEntry* entry = session_.playlist().find(id);
+        const PlaylistEntry* entry = session_.playlists().find(id);
         files = files || (entry != nullptr && entry->url.localPath().has_value());
     }
     for (const CommandId id : {CommandId::EditRemove, CommandId::PlaybackEnqueue,
@@ -849,7 +897,7 @@ void MainWindow::setMiniMode(bool mini) {
         mini_->setWaveformStyle(SeekBar::styleFrom(session_.settings()));
         mini_->setWaveformMode(session_.settings().WaveformSeekBar());
         mini_->setWaveform(seekBar_->waveform());
-        const PlaylistEntry* entry = session_.playlist().find(session_.currentTrack());
+        const PlaylistEntry* entry = session_.playlists().find(session_.currentTrack());
         mini_->setNowPlaying(entry != nullptr ? entry->title() : std::string{},
                              entry != nullptr ? entry->artist.str() : std::string{});
         mini_->setVolume(session_.settings().Volume());
@@ -934,7 +982,7 @@ void MainWindow::refreshPanels() {
         return;
     }
     const TrackId        id      = panelTrackId();
-    const PlaylistEntry* entry   = session_.playlist().find(id);
+    const PlaylistEntry* entry   = session_.playlists().find(id);
     const char* const    current = adw_view_stack_get_visible_child_name(panelsStack_);
     if (g_strcmp0(current, "lyrics") == 0) {
         // Timed lyrics are followed only for the track that is playing; for
@@ -958,6 +1006,60 @@ void MainWindow::refreshPaneState() {
     actions_->setChecked(CommandId::ViewSc55Panel, tools_->shown("sc55"));
 }
 
+void MainWindow::refreshPlaylists() {
+    tabs_->refresh();
+
+    g_menu_remove_all(addToSection_.get());
+    PlaylistSet&      playlists = session_.playlists();
+    GObjectPtr<GMenu> targets   = GObjectPtr<GMenu>::adopt(g_menu_new());
+    for (std::size_t i = 0; i < playlists.size(); ++i) {
+        const PlaylistSet::Id id = playlists.at(i).id;
+        if (id == playlists.shownId()) {
+            continue;
+        }
+        GMenuItem* item = g_menu_item_new(session_.playlistTitle(id).c_str(), nullptr);
+        g_menu_item_set_action_and_target_value(item, "win.add-to-playlist",
+                                                g_variant_new_int64(id));
+        g_menu_append_item(targets.get(), item);
+        g_object_unref(item);
+    }
+    if (g_menu_model_get_n_items(G_MENU_MODEL(targets.get())) > 0) {
+        g_menu_append_submenu(addToSection_.get(), app::tr("Add to Playlist").c_str(),
+                              G_MENU_MODEL(targets.get()));
+    }
+
+    refreshActionState();
+}
+
+void MainWindow::confirmDeletePlaylist(PlaylistSet::Id id) {
+    PlaylistSet& playlists = session_.playlists();
+    Playlist*    list      = playlists.playlist(id);
+    if (list == nullptr || playlists.size() <= 1) {
+        return;
+    }
+    if (list->empty()) {
+        session_.deletePlaylist(id);
+        return;
+    }
+    showConfirmation(
+        GTK_WIDGET(window_), app::trf("Delete \xE2\x80\x9C%s\xE2\x80\x9D?", session_.playlistTitle(id)),
+        app::fmt(app::trn("Its %zu track is removed from the playlist. This cannot be undone.",
+                          "Its %zu tracks are removed from the playlist. This cannot be undone.",
+                          list->size()),
+                 list->size()),
+        app::tr("Delete"), [this, id] { session_.deletePlaylist(id); });
+}
+
+void MainWindow::renameShownPlaylist() {
+    const PlaylistSet::Id id = session_.playlists().shownId();
+    showTextPrompt(GTK_WIDGET(window_), app::tr("Rename Playlist"), session_.playlistTitle(id),
+                   app::tr("Rename"), [this, id](std::string name) {
+                       if (!name.empty()) {
+                           static_cast<void>(session_.playlists().rename(id, std::move(name)));
+                       }
+                   });
+}
+
 void MainWindow::showPlaylistMenu(double x, double y) {
     const GdkRectangle at = {static_cast<int>(x), static_cast<int>(y), 1, 1};
     gtk_popover_set_pointing_to(GTK_POPOVER(playlistMenu_), &at);
@@ -967,7 +1069,7 @@ void MainWindow::showPlaylistMenu(double x, double y) {
 void MainWindow::trashSelected() {
     std::vector<TrackId> ids;
     for (const TrackId id : playlist_->selectedTracks()) {
-        const PlaylistEntry* entry = session_.playlist().find(id);
+        const PlaylistEntry* entry = session_.playlists().find(id);
         if (entry != nullptr && entry->url.localPath().has_value()) {
             ids.push_back(id);
         }

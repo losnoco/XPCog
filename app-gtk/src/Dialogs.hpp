@@ -23,6 +23,15 @@ namespace xpcog::gtk {
 /// parsed. The history setting is updated on the way.
 void showOpenUrlDialog(GtkWindow* parent, Settings& settings, std::function<void(const Url&)> open);
 
+/// Asks for a line of text, starting from `initial`. `done` gets what was typed
+/// when the listener accepts, and is not called otherwise.
+void showTextPrompt(GtkWidget* parent, const std::string& heading, const std::string& initial,
+                    const std::string& accept, std::function<void(std::string)> done);
+
+/// Asks whether to go through with something that cannot be undone.
+void showConfirmation(GtkWidget* parent, const std::string& heading, const std::string& body,
+                      const std::string& accept, std::function<void()> done);
+
 /// Asks where to save the playlist, then writes it through the session. With
 /// `selection` non-empty, those tracks; otherwise what is on screen.
 void showSavePlaylistDialog(GtkWindow* parent, app::Session& session, std::vector<TrackId> selection);
