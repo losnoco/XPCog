@@ -3574,14 +3574,13 @@ belongs; this is the index, not the detail.
   its front pair: the tap keeps two channels.
 - **The Waveform pane is the envelope alone.** Cog's has an oscilloscope mode as
   well; here that would be the Oscilloscope pane a second time.
-- **A manual track change crossfades, but stays at the running rate.** Cog's does
-  too in shared mode. `switchTrack()` declines on a device held exclusively, whose
+- **A manual track change crossfades, but stays at the running rate.**
+  `switchTrack()` declines on a device held exclusively, whose
   rate should follow the track, and a track that will not open falls back to
   stopping and playing, where it fails as it always did.
 - **The remote control addresses the playlist on screen.** Its reads and edits go
   through the window's view and commands, so they follow the tab; the transport
-  follows what is playing. Cog's has one playlist's worth of API too, and neither
-  has routes for choosing one.
+  follows what is playing. There are no routes for choosing a playlist.
 
 All of these are also documented at the call site.
 
