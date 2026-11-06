@@ -7,6 +7,11 @@ made — including the ones that look arbitrary until you hit the thing they avo
 Upstream Cog is assumed to be checked out alongside for reference. File references
 like `Audio/Chain/ChunkList.m` are paths inside Cog's tree.
 
+**Last compared against Cog at `7d752900f` (2026-11-05).** `git log 7d752900f..` in
+a Cog checkout is what has happened since. Everything up to there was read; what
+was taken is below under *Deliberate differences*, and most of the rest is iOS,
+Quick Look, Sparkle, or macOS window fixes with nothing here to fix.
+
 > **2.0.0 (2026-09-30): Windows and Linux only.** The macOS port was removed, and
 > Linux builds the GTK4/libadwaita player in `app-gtk/` with no wx at all; wx is
 > the Windows toolkit and nothing else's. Everything below about macOS -- the
@@ -3559,6 +3564,25 @@ belongs; this is the index, not the detail.
 
 ## Deliberate differences from Cog
 
+- **The Signal Inspector says "Unchanged", not "Bit perfect".** Cog holds the
+  device in integer mode and can vouch for what reaches it. XPCog hands the system
+  float, and the system's mixer may do anything after that, so the verdict
+  (`uicore/src/SignalChain.hpp`) claims only that XPCog left the samples alone.
+- **The meters read the tap, not the output callback.** Cog meters in its
+  renderer, per channel. `LevelMeter` reads `AudioTap` on the interface thread,
+  so the real-time path gains nothing, and the cost is that surround is metered as
+  its front pair: the tap keeps two channels.
+- **The Waveform pane is the envelope alone.** Cog's has an oscilloscope mode as
+  well; here that would be the Oscilloscope pane a second time.
+- **A manual track change crossfades, but stays at the running rate.** Cog's does
+  too in shared mode. `switchTrack()` declines on a device held exclusively, whose
+  rate should follow the track, and a track that will not open falls back to
+  stopping and playing, where it fails as it always did.
+- **The remote control addresses the playlist on screen.** Its reads and edits go
+  through the window's view and commands, so they follow the tab; the transport
+  follows what is playing. Cog's has one playlist's worth of API too, and neither
+  has routes for choosing one.
+
 All of these are also documented at the call site.
 
 **Behaviour**
@@ -3771,7 +3795,7 @@ All of these are also documented at the call site.
   `core/include/xpcog/core/library/FolderArtwork.hpp`; `Scanner::Options::
   readFolderArtwork` switches it off.
 
-- **Scrobbling reaches ListenBrainz too; Cog's reaches Last.fm only.** The
+- **Scrobbling reaches ListenBrainz too.** Cog followed in 99876d026. The
   queue that makes scrobbling trustworthy -- `core/src/scrobble/Scrobbler.cpp`,
   the half Cog's `AudioScrobbler.swift` leaves as a TODO -- turned out to need
   four things of the service behind it: whether it is usable, an announcement,
@@ -3787,7 +3811,7 @@ All of these are also documented at the call site.
   the Last.fm session. `[listenbrainz]` pins the protocol against the scripted
   transport, including which statuses the queue waits out.
 
-- **The Lyrics pane can ask LRCLIB; Cog's window shows the tag or nothing.**
+- **The Lyrics pane can ask LRCLIB.** Cog followed in 55b3a0241.
   New work on the terms `docs/REST.md` set. `LrclibClient`
   (`core/include/xpcog/core/lyrics/`) speaks the service's one lookup call,
   `/api/get`, over `IHttpClient`, with the `Lrclib-Client` header the service
@@ -3807,7 +3831,8 @@ All of these are also documented at the call site.
   see the next entry. `[lrclib]` pins the protocol and the cache rules
   against the scripted transport and a clock that is a number.
 
-- **The Lyrics pane follows timed lyrics; Cog's window shows text.** New work.
+- **The Lyrics pane follows timed lyrics.** New work here; Cog followed in
+  358b5dd76.
   `parseLrc()` (`core/include/xpcog/core/lyrics/Lrc.hpp`) reads LRC as real
   files write it and also *decides* whether text is LRC, because a lyrics tag
   does not say: timed lines must outnumber untimed ones, which keeps plain
@@ -3824,7 +3849,7 @@ All of these are also documented at the call site.
   plain text instead and puts the tag back ahead of the `.lrc`. SYLT is not
   read. `[lrc]` covers the parser and the sidecar.
 
-- **The seek bar can draw the track's waveform; Cog's cannot.** Cog's position
+- **The seek bar can draw the track's waveform.** Cog followed in 80fa8d35d. Cog's position
   slider is a plain `NSSlider` with a time tooltip (`Window/PositionSlider.m`),
   so this is new work on the terms `docs/REST.md` set rather than a port. View →
   Show Waveform, behind the `waveformSeekBar` setting and off by default, makes

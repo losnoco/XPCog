@@ -245,6 +245,15 @@ let a track change land between them, and the id from the first answer would mis
 in the second. `GET /status` followed by `GET /playlist/{id}` still works and is
 what to use when you want the id for something else.
 
+### Several playlists
+
+The playlist routes address **the playlist on screen**, since they share the
+window's view and commands: a client sees and edits what the listener sees, and a
+change of tab bumps `playlistRevision`. The transport follows what is playing, which
+may be another playlist, so `GET /status` can name a track that `GET /playlist` does
+not list. `GET /playlist/{id}` finds a track in any of them. There are no routes for
+listing or choosing playlists yet.
+
 ### Finding the playing track in a long playlist
 
 `GET /api/v1/playlist` answers `currentRow` beside `total`: where the playing

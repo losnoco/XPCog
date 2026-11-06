@@ -78,6 +78,19 @@ duration or size check would miss. Adding a codec means adding a row to that tab
 `decode` output is byte-identical to `flac -d` with the WAV header stripped, which
 is how the decoder is regression-tested.
 
+## Playlists
+
+Several, as tabs over the one list; the strip hides itself while there is only one.
+New, New from Selection, Rename and Delete are in the File menu (`Ctrl+T` for a new
+one), Next and Previous Playlist in the View menu, and Add to Playlist on the rows.
+
+What is on screen and what is playing are independent: looking at another playlist
+never changes what plays next, and a playing row stays in its own tab. The queue is
+one across all of them, as Cog's is. A queued track from another playlist carries
+playback there, and when the queue empties it goes on after that track, in that
+playlist. Undo is per playlist, and deleting one is not undoable, so the player asks
+first when there are tracks in it. An existing library opens as a single playlist.
+
 ## Artwork
 
 A picture embedded in the file is the track's cover. A track that carries none
@@ -121,6 +134,14 @@ delay line — exactly the samples that meet the seam — are not lost.
 Matching rates bypass the resampler entirely, so a same-rate file is passed through
 bit-exactly rather than being needlessly recomputed.
 
+Consecutive tracks of a cue sheet share one decoder: the engine asks it to move
+rather than opening the file again, which on a network share is the difference
+between a seam and a pause.
+
+Choosing a track while another plays crossfades into it, the way a seek does, when
+fades are on. With fades off, on a device held exclusively, or while paused it stops
+and starts as before.
+
 ## HDCD
 
 HDCD codes are decoded when present, expanding the extra resolution the format
@@ -141,6 +162,20 @@ That is deliberately stricter than upstream Cog, whose callback
 `@autoreleasepool` on the real-time thread. `xpcog-cli play` reports underruns
 separately for playback and for the post-stream drain, so a genuine dropout is
 never confused with the expected tail.
+
+## Signal Inspector and meters
+
+View > Signal Inspector (`Ctrl+Alt+I`), or a click on the status line, opens a window
+walking the path from the decoder to the device: each stage with its settings, and
+whether it is changing the audio, passing it on, or not in use. Under that are the
+levels, the output latency, what is queued and the underruns so far. "Unchanged"
+means XPCog passed the decoded samples on as they were; it cannot speak for what the
+system's mixer does after that.
+
+The VU Meter pane is the same levels on their own, left over right: RMS solid, peak
+behind it, the peak held for a second and a half, and a lamp for clipping that a
+click clears. Scrolling Waveform shows the last four seconds as an envelope. Both
+read the audio being heard, and surround is metered as its front pair.
 
 ## Crash reporting
 
