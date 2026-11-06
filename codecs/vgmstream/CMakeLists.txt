@@ -1,4 +1,4 @@
-# vgmstream. An overlay port pinned to r2117 -- see ../../ports/vgmstream for what
+# vgmstream. An overlay port pinned to r2168-24 -- see ../../ports/vgmstream for what
 # it patches and which optional codecs it leaves off -- or the distribution's copy
 # where there is one. That copy ships no pkg-config file and no config package,
 # only /usr/include/vgmstream/ and libvgmstream.so, so the system branch is a

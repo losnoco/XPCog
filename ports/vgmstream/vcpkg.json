@@ -1,6 +1,6 @@
 {
   "name": "vgmstream",
-  "version": "2117",
+  "version": "2168.24",
   "description": "Library for playing streamed audio from video games",
   "homepage": "https://vgmstream.org",
   "license": "ISC",

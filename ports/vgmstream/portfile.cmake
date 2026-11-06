@@ -7,12 +7,13 @@
 # is on regardless of the triplet's preference, and static triplets are refused
 # rather than silently producing a package with no library in it.
 #
-# Every optional codec is off, for two separate reasons.
+# ATRAC9, G.719 and G.722.1 are on: since r2168 they are decoders inside the
+# tree, with nothing to fetch. Every other optional codec is off, for two
+# separate reasons.
 #
-# ATRAC9, CELT, Speex, G.719 and G.722.1 have no find_package path and are
-# *downloaded* at configure time. A port that fetches from the network mid-build
-# is not reproducible and fails outright in an offline or asset-cached
-# environment, which is most CI.
+# CELT and Speex have no find_package path and are *downloaded* at configure
+# time. A port that fetches from the network mid-build is not reproducible and
+# fails outright in an offline or asset-cached environment, which is most CI.
 #
 # MPEG and Vorbis are off despite vcpkg carrying both, and that one is worth
 # explaining. On MSVC, vgmstream does not link the libraries it finds: it
@@ -31,8 +32,8 @@ vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO vgmstream/vgmstream
-    REF r2117
-    SHA512 10cb8158f6d1d72217eae43990b7954ce74f93417ce1de3d6357519c3d4b2a060a0e17bc73d42404f54028e24accc8e1a5e7d288ac2b72b932c6d65eba29b08e
+    REF 7ac2263bbf2bc8c2207cbce653b7803690ba6ee4
+    SHA512 785e29d6dfa8bc507d6e0845f3418beb233be0a431e1a01cfde731365f15a693e2b04d645a523fb0f98a3d03d4eea0e5b9370bfd1d6573563fd205bb0c4eb422
     HEAD_REF master
     PATCHES
         # Upstream builds the static library and the shared one side by side, and
@@ -42,20 +43,6 @@ vcpkg_from_github(
         # on MSVC without this.
         fix-msvc-import-lib-clash.patch
 
-        # And the export macro is MSVC-only without saying so:
-        #
-        #   #if defined(LIBVGMSTREAM_EXPORT)
-        #       #define LIBVGMSTREAM_API __declspec(dllexport)
-        #
-        # with no _WIN32 guard, while the shared target defines
-        # LIBVGMSTREAM_EXPORT unconditionally. On GCC and Clang every API
-        # function therefore begins `__declspec(dllexport)`, which they parse as
-        # a K&R-style definition -- so the headers that follow are read as
-        # *parameter declarations* and the file ends with "expected '{' at end
-        # of input". Hundreds of errors inside /usr/include/stdio.h, none of
-        # them the cause. A shared build simply cannot compile off Windows
-        # without this.
-        fix-declspec-on-non-windows.patch
 )
 
 vcpkg_cmake_configure(
@@ -71,11 +58,11 @@ vcpkg_cmake_configure(
         -DUSE_FFMPEG=OFF
         -DUSE_MPEG=OFF
         -DUSE_VORBIS=OFF
-        -DUSE_ATRAC9=OFF
+        -DUSE_ATRAC9=ON
         -DUSE_CELT=OFF
         -DUSE_SPEEX=OFF
-        -DUSE_G7221=OFF
-        -DUSE_G719=OFF
+        -DUSE_G7221=ON
+        -DUSE_G719=ON
         -DUSE_JANSSON=OFF
 )
 

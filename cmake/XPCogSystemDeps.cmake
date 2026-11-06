@@ -318,11 +318,11 @@ _xpcog_system_dep(musepack "libmpcdec"
 # arrives on whatever day upstream merges it -- with the existence check alone,
 # on that day, the system copy would still be found, still be linked, and be
 # compiled against a header describing different functions. ports/vgmstream is
-# pinned to r2117 and cannot move underneath anyone; this can.
+# pinned to r2168-24 and cannot move underneath anyone; this can.
 #
 # What the two builds do not agree on is the optional codec set, and the
 # direction it differs in is the harmless one. ports/vgmstream turns all of them
-# off -- ATRAC9, CELT, Speex, G.719 and G.722.1 are *downloaded* at configure
+# off bar the built-in ones -- CELT and Speex are *downloaded* at configure
 # time, and MPEG and Vorbis need a .def-file fix on MSVC; the portfile says why
 # in full -- while a distribution build has them on. So the system library
 # decodes a superset, says so through libvgmstream_get_extensions(), and the
@@ -344,7 +344,7 @@ _xpcog_system_dep(vgmstream "vgmstream"
 #
 # What it does have is a soname, and upstream sets it by hand:
 #
-#     set_target_properties(spessasynth PROPERTIES VERSION 4.3.17 SOVERSION 10)
+#     set_target_properties(spessasynth PROPERTIES VERSION 4.3.22 SOVERSION 11)
 #
 # which is the whole floor. Commit 28a362a ("Widen so many variables to double")
 # changed member types float -> double across the *public* headers -- synth.h and
@@ -569,7 +569,7 @@ function(xpcog_probe_system_deps)
                         if(_link_real STREQUAL _abi_real)
                             set(_have_lib ON)
                             # Both point at the realname, which carries the
-                            # release -- libspessasynth.so.4.3.17 -- and that is
+                            # release -- libspessasynth.so.4.3.22 -- and that is
                             # a more useful thing to print than the ABI alone.
                             set(_abi_version "soname ${_sover}")
                             get_filename_component(_real_name "${_abi_real}" NAME)
