@@ -42,6 +42,40 @@ Label label(const char* msgid) {
     return out;
 }
 
+/// One run of the View menu: commands shown together, at the top level or in
+/// a submenu of their own.
+struct ViewGroup {
+    /// nullptr puts the commands in the menu itself.
+    const char*            submenu = nullptr;
+    std::vector<CommandId> ids;
+    bool                   separatorBefore = false;
+};
+
+/// The View menu as this player shows it. uicore's table keeps one flat order
+/// for both players; here the panes stay on the menu and their options and
+/// the visualisers go one level down, which is what a Windows menu of twenty
+/// items asks for. Labels, shortcuts and kinds still come from the table --
+/// this only says where each row goes, and a View row it does not name is
+/// added at the end rather than lost.
+///
+/// The two radio rows must stay next to each other: that is what makes them
+/// one group (fill()).
+const std::vector<ViewGroup>& viewMenu() {
+    static const std::vector<ViewGroup> groups = {
+        {nullptr, {CommandId::ViewFileTree, CommandId::ViewFileTreeRoot, CommandId::ViewInfo, CommandId::ViewLyrics}},
+        {XPCOG_TRANSLATE("Panel &Options"),
+         {CommandId::ViewTimedLyrics, CommandId::ViewFollowSelection, CommandId::ViewFollowPlayback}},
+        {XPCOG_TRANSLATE("Visuali&zations"),
+         {CommandId::ViewSpectrum, CommandId::ViewOscilloscope, CommandId::ViewEnvelope, CommandId::ViewVuMeter,
+          CommandId::ViewSignalInspector},
+         true},
+        {nullptr, {CommandId::ViewEqualizer, CommandId::ViewSpeed, CommandId::ViewSc55Panel}},
+        {nullptr, {CommandId::ViewWaveform, CommandId::ViewMiniPlayer, CommandId::ViewDockPanes}, true},
+        {nullptr, {CommandId::ViewNextPlaylist, CommandId::ViewPreviousPlaylist}, true},
+    };
+    return groups;
+}
+
 struct Shortcut {
     VirtualKey          key       = VirtualKey::None;
     VirtualKeyModifiers modifiers = VirtualKeyModifiers::None;
@@ -134,7 +168,11 @@ CommandMenus::CommandMenus(Hooks hooks) : hooks_(std::move(hooks)) {
         if (title.accessKey != 0) {
             menu.AccessKey(winrt::hstring(std::wstring(1, static_cast<wchar_t>(title.accessKey))));
         }
-        fill(menu.Items(), rows, start, i, /*withAccelerators=*/true);
+        if (rows[start].id == CommandId::ViewFileTree) {
+            fillView(menu.Items(), rows, start, i);
+        } else {
+            fill(menu.Items(), rows, start, i, /*withAccelerators=*/true);
+        }
         if (menu.Items().Size() > 0) {
             menuBar_.Items().Append(menu);
         }
@@ -181,6 +219,67 @@ void CommandMenus::fill(
         }
         items.Append(makeItem(row, withAccelerators, radioGroup));
     }
+}
+
+void CommandMenus::fillView(
+    const winrt::Windows::Foundation::Collections::IVector<mux::Controls::MenuFlyoutItemBase>& items,
+    const std::vector<app::MenuItem>& rows, std::size_t first, std::size_t last) {
+    std::vector<bool> placed(last - first, false);
+    // The table's rows for `ids`, in that order, with the table's own
+    // separators dropped: the grouping here is what separates them.
+    const auto take = [&](const std::vector<CommandId>& ids, bool separatorBefore) {
+        std::vector<app::MenuItem> out;
+        for (const CommandId id : ids) {
+            for (std::size_t i = first; i < last; ++i) {
+                if (rows[i].id == id && !placed[i - first]) {
+                    placed[i - first] = true;
+                    app::MenuItem row     = rows[i];
+                    row.separatorBefore   = out.empty() && separatorBefore;
+                    out.push_back(row);
+                    break;
+                }
+            }
+        }
+        return out;
+    };
+
+    for (const ViewGroup& group : viewMenu()) {
+        const std::vector<app::MenuItem> groupRows = take(group.ids, group.separatorBefore);
+        if (group.submenu == nullptr) {
+            fill(items, groupRows, 0, groupRows.size(), /*withAccelerators=*/true);
+            continue;
+        }
+        auto        sub   = mux::Controls::MenuFlyoutSubItem();
+        const Label title = label(group.submenu);
+        sub.Text(toH(title.text));
+        if (title.accessKey != 0) {
+            sub.AccessKey(winrt::hstring(std::wstring(1, static_cast<wchar_t>(title.accessKey))));
+        }
+        // The submenu's first row carries the group's separator, which belongs
+        // outside it, before the submenu itself.
+        std::vector<app::MenuItem> inside = groupRows;
+        if (!inside.empty()) {
+            inside.front().separatorBefore = false;
+        }
+        fill(sub.Items(), inside, 0, inside.size(), /*withAccelerators=*/true);
+        if (sub.Items().Size() == 0) {
+            continue;
+        }
+        if (group.separatorBefore && items.Size() > 0) {
+            items.Append(mux::Controls::MenuFlyoutSeparator());
+        }
+        items.Append(sub);
+    }
+
+    // Anything the table has gained since viewMenu() was written.
+    std::vector<CommandId> rest;
+    for (std::size_t i = first; i < last; ++i) {
+        if (!placed[i - first]) {
+            rest.push_back(rows[i].id);
+        }
+    }
+    const std::vector<app::MenuItem> restRows = take(rest, true);
+    fill(items, restRows, 0, restRows.size(), /*withAccelerators=*/true);
 }
 
 mux::Controls::MenuFlyoutItemBase CommandMenus::makeItem(const app::MenuItem& row,

@@ -1401,6 +1401,14 @@ msgstr ""
 msgid "Licences"
 msgstr ""
 
+#: app-winui/src/CommandMenus.cpp:66
+msgid "Panel &Options"
+msgstr ""
+
+#: app-winui/src/CommandMenus.cpp:68
+msgid "Visuali&zations"
+msgstr ""
+
 #: app-winui/src/FileTreePane.cpp:202 app-winui/src/FileTreePane.cpp:297 app-gtk/src/FileTreePane.cpp:72 app-gtk/src/FileTreePane.cpp:209 app-gtk/src/FileTreePane.cpp:248
 msgid "Choose the folder to browse"
 msgstr ""

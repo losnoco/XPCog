@@ -2708,3 +2708,11 @@ msgstr "Sin cambios"
 #: uicore/src/SignalChain.cpp
 msgid "Underruns: %zu"
 msgstr "Subejecuciones: %zu"
+
+#: app-winui/src/CommandMenus.cpp
+msgid "Panel &Options"
+msgstr "&Opciones de los paneles"
+
+#: app-winui/src/CommandMenus.cpp
+msgid "Visuali&zations"
+msgstr "&Visualizaciones"

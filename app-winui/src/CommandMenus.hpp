@@ -62,6 +62,9 @@ private:
     void fill(const winrt::Windows::Foundation::Collections::IVector<mux::Controls::MenuFlyoutItemBase>& items,
               const std::vector<app::MenuItem>& rows, std::size_t first, std::size_t last,
               bool withAccelerators);
+    /// The View menu's rows, arranged by viewMenu() into groups and submenus.
+    void fillView(const winrt::Windows::Foundation::Collections::IVector<mux::Controls::MenuFlyoutItemBase>& items,
+                  const std::vector<app::MenuItem>& rows, std::size_t first, std::size_t last);
     void apply(const mux::Controls::MenuFlyoutItemBase& item, app::CommandId id) const;
 
     Hooks                  hooks_;
