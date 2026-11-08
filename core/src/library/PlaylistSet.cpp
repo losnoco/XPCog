@@ -8,7 +8,17 @@ namespace xpcog {
 
 PlaylistSet::PlaylistSet() : shared_(std::make_shared<Playlist::Shared>()) {
     shared_->grouped      = true;
-    shared_->queueChanged = [this] { syncQueue(); };
+    shared_->queueChanged = [this] {
+        // From the feeder the queue is only noted as changed: renumbering
+        // rewrites rows the interface is drawing, and every playlist's
+        // observers would be called on the wrong thread. publishQueue() does
+        // both on the interface's.
+        if (feederAsking_) {
+            queuePending_ = true;
+        } else {
+            syncQueue();
+        }
+    };
     append(nextId_++, {}, std::nullopt);
 }
 
@@ -219,6 +229,14 @@ std::optional<TrackId> PlaylistSet::nextForPlayback() {
     const std::lock_guard lock(mutex_);
     Playlist&             from = *playlist(cursorOwner_);
 
+    // Taking a track off the queue edits it, and nothing of that may be
+    // published from here (see the header).
+    feederAsking_ = true;
+    struct Done {
+        bool& flag;
+        ~Done() { flag = false; }
+    } done{feederAsking_};
+
     // An empty playlist has nothing to ask, but the queue may still reach
     // somewhere else.
     std::optional<TrackId> id;
@@ -324,6 +342,15 @@ void PlaylistSet::setStopAfterCurrent(bool stop) {
     for (const auto& candidate : items_) {
         candidate->playlist->setStopAfterCurrent(stop);
     }
+}
+
+void PlaylistSet::publishQueue() {
+    const std::lock_guard lock(mutex_);
+    if (!queuePending_) {
+        return;
+    }
+    queuePending_ = false;
+    syncQueue();
 }
 
 void PlaylistSet::syncQueue() {

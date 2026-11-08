@@ -665,6 +665,9 @@ std::optional<Url> PlaybackController::nextTrack() {
     // undo stack on the interface's thread rather than being touched here. The
     // list of playlists does change under playback, and PlaylistSet locks for it.
     const auto id = playlists_.nextForPlayback();
+    // A queued track was taken off the queue without a word, because the queue
+    // column is a widget. It is said here, on the interface's thread.
+    dispatch_([this] { playlists_.publishQueue(); });
     if (!id) {
         return std::nullopt;
     }

@@ -143,6 +143,12 @@ public:
     /// noteAudible(): Next pressed in between means the track being heard.
     [[nodiscard]] std::optional<TrackId> nextForPlayback();
 
+    /// What nextForPlayback() did to the queue, renumbered and told to every
+    /// playlist's observers. On the interface's thread, after nextForPlayback()
+    /// on the feeder; it took the track off the queue and published nothing.
+    /// Does nothing if the queue was not touched.
+    void publishQueue();
+
     /// Playlist::peekNextForPlayback() on the playing one. Consumes nothing.
     [[nodiscard]] std::optional<TrackId> peekNextForPlayback() const;
 
@@ -190,6 +196,11 @@ private:
     Id cursorOwner_ = kFirstId;
 
     mutable std::recursive_mutex mutex_;
+
+    /// Under mutex_. Set while nextForPlayback() runs, so a queue edit it makes
+    /// is held for publishQueue() instead of published from the feeder.
+    bool feederAsking_ = false;
+    bool queuePending_ = false;
 
     RepeatMode  repeat_     = RepeatMode::All;
     ShuffleMode shuffle_    = ShuffleMode::Off;

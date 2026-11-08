@@ -437,8 +437,11 @@ void Playlist::dequeue(TrackId id) {
         return;
     }
     queue.erase(it);
-    if (const auto position = indexOf(id)) {
-        entries_[*position].queuePosition = -1;
+    // As in nextEntry(): shared, the hook renumbers, and this can be the feeder.
+    if (!shared_->queueChanged) {
+        if (const auto position = indexOf(id)) {
+            entries_[*position].queuePosition = -1;
+        }
     }
     queueEdited();
 }
@@ -660,8 +663,12 @@ std::optional<TrackId> Playlist::nextEntry(TrackId from, bool ignoreRepeatOne) {
     if (!shared_->queue.empty()) {
         const TrackId id = shared_->queue.front();
         shared_->queue.erase(shared_->queue.begin());
-        if (const auto position = indexOf(id)) {
-            entries_[*position].queuePosition = -1;
+        // Shared, the hook renumbers every row, and on the interface's thread:
+        // this runs on the feeder (PlaylistSet::nextForPlayback).
+        if (!shared_->queueChanged) {
+            if (const auto position = indexOf(id)) {
+                entries_[*position].queuePosition = -1;
+            }
         }
         queueEdited();
         return id;

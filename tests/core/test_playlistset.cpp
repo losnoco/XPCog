@@ -174,6 +174,32 @@ TEST_CASE("a queued track from another playlist carries playback across", "[play
         CHECK(list.current() == second[1]);
     }
 
+    SECTION("telling the playlists about the queue only when asked to") {
+        // What reached the WinUI table from the feeder and ended the process
+        // (RPC_E_WRONG_THREAD): the queue pop told every playlist's observers.
+        int told = 0;
+        const Subscription content =
+            set.observeContent([&told](PlaylistSet::Id, const Playlist::Change&) { ++told; });
+        PlaylistView view(set.playing());
+        int          rows = 0;
+        const Subscription row = view.rowChanged.connect([&rows](std::size_t) { ++rows; });
+
+        CHECK(set.nextForPlayback() == second[1]);
+        CHECK(told == 0);
+        CHECK(rows == 0);
+        CHECK(list.queue().empty());
+
+        set.publishQueue();
+        CHECK(told > 0);
+        CHECK(rows > 0);
+        CHECK(set.find(second[1])->queuePosition == -1);
+
+        // Once: a second call with nothing new says nothing.
+        told = 0;
+        set.publishQueue();
+        CHECK(told == 0);
+    }
+
     SECTION("and Next in that moment means the track being heard") {
         CHECK(set.nextForPlayback() == second[1]);
         REQUIRE(set.next());

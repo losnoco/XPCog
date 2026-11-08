@@ -572,6 +572,12 @@ void MainWindow::wireUp() {
         if (preferences_) {
             preferences_->close();
         }
+        // The Signal Inspector's window exists from the start, shown or not,
+        // and its close button only hides it: it really closes in its
+        // destructor. Left to the player's teardown, that would be never --
+        // the teardown waits for the loop to end, and the loop for this window
+        // to close (issue #2).
+        inspector_.reset();
         if (closed) {
             closed();
         }
