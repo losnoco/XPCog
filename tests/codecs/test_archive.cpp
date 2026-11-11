@@ -209,6 +209,31 @@ TEST_CASE("an archive offers only the members something can play", "[archive]") 
     CHECK(target->member == "01 Song.it");
 }
 
+TEST_CASE("an archive does not offer the playlists inside it", "[archive]") {
+    if (!haveArchive()) {
+        SKIP("archive codec not built");
+    }
+    if (!haveModules()) {
+        SKIP("no module decoder built, so nothing in the archive is playable");
+    }
+
+    // The HLS decoder claims m3u and m3u8, so without the exclusion these pass
+    // the playable-extension check and arrive as rows nothing can play.
+    const fs::path zip = writeZip("playlists.zip", {
+                                                       {"01 Song.it", payload(4096, 2)},
+                                                       {"album.m3u", "01 Song.it\n"},
+                                                       {"album.M3U8", "01 Song.it\n"},
+                                                       {"album.pls", "[playlist]\n"},
+                                                   });
+
+    const std::vector<Url> tracks = registry().expandContainer(Url::fromLocalPath(zip));
+    REQUIRE(tracks.size() == 1);
+
+    const auto target = codecs::parseUnpackUrl(tracks.front());
+    REQUIRE(target.has_value());
+    CHECK(target->member == "01 Song.it");
+}
+
 TEST_CASE("archive bookkeeping files are recognised as such", "[archive]") {
     CHECK(codecs::isArchiveJunk("__MACOSX/._Track.spc"));
     CHECK(codecs::isArchiveJunk("._Track.spc"));

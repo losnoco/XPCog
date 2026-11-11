@@ -31,6 +31,8 @@
 
 #include <archive_entry.h>
 
+#include <algorithm>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -49,6 +51,18 @@ constexpr std::string_view kArchiveExtensions[] = {"zip", "rar",   "7z",
 constexpr std::string_view kArchiveMimeTypes[] = {
     "application/zip", "application/x-gzip", "application/x-rar-compressed",
     "application/x-7z-compressed"};
+
+/// Playlists a decoder also claims -- the HLS decoder takes `m3u` and `m3u8` --
+/// and so would pass the playable-extension check below. Cog leaves them out of
+/// an archive's listing (Plugins/ArchiveSource, e8a03114c): the expansion is
+/// not run again over its own results, so one inside an archive becomes a row
+/// that never plays and shows a length of zero. A folder leaves them out too.
+constexpr std::string_view kPlaylistExtensions[] = {"m3u", "m3u8", "pls"};
+
+[[nodiscard]] bool isPlaylistExtension(std::string_view extension) {
+    return std::find(std::begin(kPlaylistExtensions), std::end(kPlaylistExtensions),
+                     extension) != std::end(kPlaylistExtensions);
+}
 
 class ArchiveSource final : public codecs::BlobSource {
 public:
@@ -126,7 +140,11 @@ std::vector<Url> expandArchive(const Url& url, ISource& /*source*/,
         }
 
         const Url member = codecs::makeUnpackUrl(*path, name);
-        if (member.empty() || !registry.isPlayableExtension(member.extension())) {
+        if (member.empty()) {
+            continue;
+        }
+        const std::string extension = member.extension();
+        if (isPlaylistExtension(extension) || !registry.isPlayableExtension(extension)) {
             continue;
         }
         members.push_back(member);
