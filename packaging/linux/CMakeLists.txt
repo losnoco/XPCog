@@ -34,7 +34,7 @@
 # itself comes from project(), per CLAUDE.md, but AppStream wants a date beside
 # it and CMake must not invent one -- configuring TODAY would make the installed
 # metadata differ between two builds of identical source.
-set(XPCOG_RELEASE_DATE "2026-08-30")
+set(XPCOG_RELEASE_DATE "2026-11-14")
 
 # ---------------------------------------------------------------------------
 # What this build can open, as MIME types.
