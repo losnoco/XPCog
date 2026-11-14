@@ -12,6 +12,6 @@ endif()
 xpcog_add_codec(
     NAME     taglib
     REGISTER xpcog_register_taglib
-    SOURCES  TagLibReader.cpp
+    SOURCES  TagLibReader.cpp TagLibWriter.cpp
     DEPS     TagLib::tag
 )

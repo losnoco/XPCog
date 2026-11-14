@@ -49,6 +49,7 @@ add_executable(xpcog-tests
     codecs/test_cuesheet.cpp
     codecs/test_gme_sidecar.cpp
     codecs/test_id3v2.cpp
+    codecs/test_taglib_writer.cpp
     core/test_equalizerpreset.cpp
     core/test_remote_server.cpp
     core/test_remote_token.cpp

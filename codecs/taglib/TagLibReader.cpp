@@ -107,6 +107,12 @@ MetadataMap readWithTagLib(const Url& url) {
 }
 
 }  // namespace
+
+/// The writer half of this codec lives in TagLibWriter.cpp; declared here
+/// because this is where the registrar that binds them is.
+MetadataCapabilities probeTagsWithTagLib(const Url& url);
+bool writeTagsWithTagLib(const Url& url, const MetadataMap& tags, MetadataWriteOptions& options);
+
 }  // namespace xpcog
 
 void xpcog_register_taglib(xpcog::PluginRegistry& r) {
@@ -115,6 +121,19 @@ void xpcog_register_taglib(xpcog::PluginRegistry& r) {
         .priority   = xpcog::kDefaultPriority,
         .extensions = {},  // format-agnostic: offered for everything
         .read       = &xpcog::readWithTagLib,
+        .available  = nullptr,
+    });
+
+    // Same format-agnostic stance as the reader: an empty extension list
+    // means "try this writer for anything and let the probe decide". The
+    // probe is what knows -- save-ability belongs to the container TagLib
+    // opens, not to the extension.
+    r.addMetadataWriter({
+        .name       = "TagLibWriter",
+        .priority   = xpcog::kDefaultPriority,
+        .extensions = {},
+        .write      = &xpcog::writeTagsWithTagLib,
+        .probe      = &xpcog::probeTagsWithTagLib,
         .available  = nullptr,
     });
 }
