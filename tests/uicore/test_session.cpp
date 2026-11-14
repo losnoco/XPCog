@@ -39,6 +39,7 @@
 
 using namespace xpcog;
 using xpcog::app::Session;
+using xpcog::app::TagEditorModel;
 
 namespace {
 
@@ -700,6 +701,59 @@ TEST_CASE("editing tags rewrites the file and reloads every copy of it",
     h.session.editTags({original}, again);
     CHECK(h.scansFinished == beforeReloads + 1);
     CHECK(h.statusLines.back() == h.session.statusSummary());
+}
+
+TEST_CASE("a merge write leaves the tags the payload does not mention",
+          "[uicore][session][playlist][tags]") {
+    if (!test::haveTool("flac")) {
+        SKIP("flac encoder not on PATH");
+    }
+    const auto one = makeFlac("merge-tags", 0.2, 440.0);
+    REQUIRE(one);
+
+    Harness h;
+    h.add({*one});
+    const TrackId id = h.session.playlist().entries().front().id;
+
+    // What the dialog would be handed: the file's own answer to a raw read,
+    // plus the probe's report of what it can hold.
+    const auto sources = h.session.tagEditorSources({id});
+    REQUIRE(sources.size() == 1);
+    CHECK(sources.front().caps.writable);
+    CHECK(sources.front().fileTags.first("artist") == "Session Test");
+
+    // One row added, one cleared: the whole edit is two keys, and the batch
+    // path writes only those two.
+    TagEditorModel model(sources);
+    model.setJoined(TagEditorModel::Field::Genre, "Ambient");
+    model.setJoined(TagEditorModel::Field::Album, "");
+    const MetadataMap changes = model.buildChanges();
+    REQUIRE(changes.size() == 2);
+
+    const int before = h.scansFinished;
+    h.session.editTags({id}, changes, Session::TagEditMode::merge);
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+
+    // The names the payload never mentioned survived a merge write -- the
+    // difference from the replace case above, where the map is the whole
+    // truth and the strip takes everything else away.
+    const MetadataMap onDisk = h.session.registry().readMetadata(Url::fromLocalPath(*one));
+    CHECK(onDisk.first("genre") == "Ambient");
+    CHECK(onDisk.first("artist") == "Session Test");
+    CHECK(onDisk.first("title") == "merge-tags");
+
+    // A cleared row arrives as an empty value list, which the writer reads as
+    // "delete this key" rather than as a tag holding one empty string.
+    CHECK_FALSE(onDisk.contains("album"));
+    CHECK(h.session.playlists().find(id)->album.view().empty());
+    CHECK(h.session.playlists().find(id)->genre.view() == "Ambient");
+
+    // The same edit again changes nothing, so it writes nothing and starts no
+    // scan: the dirty check has to apply the payload to know that.
+    h.session.editTags({id}, changes, Session::TagEditMode::merge);
+    CHECK(h.scansFinished == before + 1);
 }
 
 TEST_CASE("an edit behind a parked undo history drops it", "[uicore][session][playlist]") {

@@ -898,6 +898,20 @@ XPCOG_SETTING(RemoteAllowWrite, bool, "remoteAllowWrite", true)
 /// the token.
 XPCOG_SETTING(RemoteLoopbackNoToken, bool, "remoteLoopbackNoToken", false)
 
+// --- tags -------------------------------------------------------------------
+
+/// The major ID3v2 version used when saving tags to the containers that carry
+/// it: MP3, AIFF and WAV. **No Cog counterpart**; Cog always took TagLib's
+/// default of 3.
+///
+/// 4 separates the values inside a multi-value text frame with NUL, which is
+/// what repeated tags -- several ARTIST lines -- need to survive a save; 3
+/// joins them into one frame with "/", and a reader that splits on "/" mangles
+/// any value containing one. TagLib's writer is asked for this version on
+/// every tag save; the containers with structured comments (FLAC, Opus, the
+/// Ogg family, APEv2) ignore it.
+XPCOG_SETTING(Id3v2Version, int, "id3v2Version", 4)
+
 // --- bookkeeping ----------------------------------------------------------
 
 /// Bumped by SettingsMigration; see Settings::applyMigrations().

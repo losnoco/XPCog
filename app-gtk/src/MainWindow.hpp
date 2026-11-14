@@ -26,6 +26,7 @@
 #include "Panes.hpp"
 #include "Presence.hpp"
 #include "SeekBar.hpp"
+#include "TagEditorDialog.hpp"
 #include "Visualizers.hpp"
 #ifdef XPCOG_HAVE_SC55_PANEL
 #include "Sc55View.hpp"
@@ -40,6 +41,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace xpcog::gtk {
@@ -134,6 +136,14 @@ private:
     /// playlist. Asks first, once, unless the listener has said not to.
     void trashSelected();
 
+    /// Whether the Edit Tags item applies: every selected row is a local file
+    /// with no URL fragment whose format some writer claims. Probes the files
+    /// it has not seen and remembers what they answered, because the probe
+    /// may open the file while the selection changes on every click; what was
+    /// remembered is dropped when the undo history or a scan says the files
+    /// themselves moved.
+    bool canEditTags(const std::vector<TrackId>& ids);
+
     /// Remembers the window's size and whether it is maximised, and the
     /// column widths, under this frontend's own keys.
     void persistState();
@@ -217,6 +227,12 @@ private:
     /// Set while shutting down, so the close handler knows this is a real
     /// quit rather than a close to be intercepted.
     bool quitting_ = false;
+
+    /// What the write probe answered, per URL string, for the Edit Tags
+    /// sensitivity. Cleared when the undo history moves or a scan updates
+    /// tracks: files on disk can change underneath us, and the probe is
+    /// cheap enough to redo per selection but not per click.
+    std::unordered_map<std::string, MetadataCapabilities> tagCaps_;
 
     std::vector<Connection>   connections_;
     std::vector<Subscription> subscriptions_;

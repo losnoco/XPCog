@@ -19,6 +19,7 @@
 #include "Tray.hpp"
 #include "WinRT.hpp"
 
+#include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Signal.hpp"
 #include "xpcog/core/library/PlaylistEntry.hpp"
 
@@ -26,6 +27,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace xpcog::app {
@@ -80,6 +82,10 @@ private:
     /// The selected rows' tracks, top to bottom.
     [[nodiscard]] std::vector<TrackId> selectedTracks() const;
     [[nodiscard]] bool                 selectionHasFiles() const;
+    /// Whether the tag editor would find anything to write: every selected
+    /// row a local, fragment-free file the probe answers writable. The
+    /// probes are cached in tagCaps_.
+    [[nodiscard]] bool canEditTags(const std::vector<TrackId>& ids) const;
 
     void showPlaylistMenu(const mux::UIElement& target,
                           std::optional<winrt::Windows::Foundation::Point> at);
@@ -122,6 +128,7 @@ private:
     winrt::fire_and_forget openUrl();
     winrt::fire_and_forget savePlaylist(bool selectionOnly);
     winrt::fire_and_forget trashSelected();
+    winrt::fire_and_forget editTags();
     winrt::fire_and_forget renameShownPlaylist();
     /// Deletes `id`, asking first when there are tracks in it.
     winrt::fire_and_forget confirmDeletePlaylist(PlaylistSet::Id id);
@@ -213,6 +220,10 @@ private:
     /// A dialog is open. ContentDialog allows one at a time per window, and a
     /// second ShowAsync throws.
     bool dialogOpen_ = false;
+    /// Per-URL MetadataCapabilities probes, so the Edit Tags menu item does
+    /// not re-read a file header on every selection change. Cleared when a
+    /// scan finishes or the undo history moves, like the GTK frame's.
+    mutable std::unordered_map<std::string, MetadataCapabilities> tagCaps_;
 
     std::vector<Subscription> subscriptions_;
 };

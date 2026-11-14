@@ -3,6 +3,7 @@
 #include "AboutDialog.hpp"
 
 #include "Session.hpp"
+#include "TagEditorModel.hpp"
 #include "TrackText.hpp"
 #include "Translations.hpp"
 
@@ -10,6 +11,7 @@
 #include "xpcog/platform/CrashReporter.hpp"
 
 #include <winrt/Microsoft.Windows.Storage.Pickers.h>
+#include <winrt/Windows.Storage.Streams.h>
 
 #include <microsoft.ui.xaml.window.h>
 #include <shlobj.h>
@@ -17,8 +19,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 
 namespace xpcog::winui {
 
@@ -43,6 +47,38 @@ constexpr const wchar_t* kXmlns = L"xmlns='http://schemas.microsoft.com/winfx/20
 template <typename T>
 T load(const std::wstring& xaml) {
     return mux::Markup::XamlReader::Load(xaml).as<T>();
+}
+
+std::string joinTagValues(const std::vector<std::string>& values) {
+    std::string out;
+    for (const std::string& value : values) {
+        if (!out.empty()) {
+            out += ", ";
+        }
+        out += value;
+    }
+    return out;
+}
+
+/// The counterpart of joinTagValues for the one-line editors: "a, b" is two
+/// values, a lone empty entry is none. A value with a comma and a space in
+/// it cannot survive this -- promoted rows get a real multi-value editor
+/// eventually, and free rows are the coarse path. Same rule the GTK dialog
+/// applies.
+std::vector<std::string> splitTagValues(const std::string& text) {
+    std::vector<std::string> out;
+    std::string_view         rest{text};
+    while (true) {
+        const std::size_t comma = rest.find(", ");
+        if (std::string part{rest.substr(0, comma)}; !part.empty()) {
+            out.push_back(std::move(part));
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        rest.remove_prefix(comma + 2);
+    }
+    return out;
 }
 
 }  // namespace
@@ -674,7 +710,12 @@ void MainWindow::wireUp() {
         };
     subscriptions_.push_back(session_.view().rebuilt.connect([this] { refreshCommands(); }));
     observe(session_.tracksUpdated, [this] { refreshCommands(); });
-    observe(session_.scanFinished, [this] { refreshCommands(); });
+    observe(session_.scanFinished, [this] {
+        // A rescan answers the file as the last write left it, so the menu's
+        // capability cache has to go with the old answers.
+        tagCaps_.clear();
+        refreshCommands();
+    });
     observe(session_.playlistsChanged, [this] { refreshPlaylists(); });
     observe(session_.playbackStateChanged,
             [this](bool playing, bool) { tabs_->setPlaybackActive(playing); });
@@ -683,7 +724,11 @@ void MainWindow::wireUp() {
     inspector_ = std::make_unique<SignalInspector>(session_);
     inspector_->visibilityChanged = [this] { refreshCommands(); };
     status_.Tapped([this](auto&&, auto&&) { inspector_->toggle(); });
-    observe(session_.undo().changed, [this] { refreshCommands(); });
+    observe(session_.undo().changed, [this] {
+        // A tag edit can make a file writable again (or a revert undo it).
+        tagCaps_.clear();
+        refreshCommands();
+    });
 
     // Which shortcuts a text box should have to itself: see setTextFocus().
     window_.Content().as<mux::UIElement>().GotFocus([this](auto&&, mux::RoutedEventArgs const& args) {
@@ -794,6 +839,37 @@ bool MainWindow::selectionHasFiles() const {
     return false;
 }
 
+bool MainWindow::canEditTags(const std::vector<TrackId>& ids) const {
+    if (ids.empty()) {
+        return false;
+    }
+    // The same gate Session::editTags applies, so the item is grey exactly
+    // when the dialog would have nothing to write. It is all, not any: one
+    // uneditable row in the selection and the menu item would promise an
+    // edit that silently skips part of what was selected. The GTK frame's
+    // rule, and its probe cache: enabled() runs on every selection change,
+    // and reading a file header for each row each time is not the price to
+    // pay for a menu item.
+    for (const TrackId id : ids) {
+        const PlaylistEntry* entry = session_.playlists().find(id);
+        if (entry == nullptr || !entry->url.localPath().has_value() ||
+            !entry->url.fragment().empty()) {
+            return false;
+        }
+        const std::string   url = entry->url.toString();
+        const auto          cap = tagCaps_.find(url);
+        const MetadataCapabilities& caps =
+            cap != tagCaps_.end()
+                ? cap->second
+                : tagCaps_.emplace(url, session_.registry().metadataCapabilities(entry->url))
+                      .first->second;
+        if (!caps.writable) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool MainWindow::offered(app::CommandId id) {
     using app::CommandId;
     switch (id) {
@@ -850,6 +926,8 @@ bool MainWindow::enabled(app::CommandId id) const {
         case CommandId::PlaylistReveal:
         case CommandId::PlaylistTrash:
             return selectionHasFiles();
+        case CommandId::PlaylistEditTags:
+            return canEditTags(selectedTracks());
         default:
             return true;
     }
@@ -1038,6 +1116,9 @@ void MainWindow::onCommand(app::CommandId id) {
             break;
         case CommandId::PlaylistTrash:
             trashSelected();
+            break;
+        case CommandId::PlaylistEditTags:
+            editTags();
             break;
 
         case CommandId::OrderRepeatNone:
@@ -1423,6 +1504,7 @@ mux::Controls::ContentDialog MainWindow::dialog(const std::string& title) const 
 }
 
 namespace pickers = winrt::Microsoft::Windows::Storage::Pickers;
+namespace streams = winrt::Windows::Storage::Streams;
 
 winrt::fire_and_forget MainWindow::openFiles() {
     try {
@@ -1629,6 +1711,357 @@ winrt::fire_and_forget MainWindow::trashSelected() {
         }
     }
     session_.trashTracks(ids);
+}
+
+winrt::fire_and_forget MainWindow::editTags() {
+    const std::vector<TrackId> ids = selectedTracks();
+    if (ids.empty() || dialogOpen_) {
+        co_return;
+    }
+    std::vector<app::TagEditorSource> sources = session_.tagEditorSources(ids);
+    if (sources.empty()) {
+        co_return;
+    }
+
+    dialogOpen_ = true;
+
+    // The dialog's whole world: the model it shows and the widgets that
+    // answer to it. Held by shared_ptr because every handler captures it,
+    // and it has to outlive the co_await below the last widget's last event.
+    struct State {
+        app::Session&       session;
+        std::vector<TrackId> ids;
+        app::TagEditorModel model;
+
+        mux::Controls::ContentDialog box = nullptr;
+        /// The dialog's own Save button, spelled from the property's own type:
+        /// it is what the gating below turns on and off.
+        decltype(box.PrimaryButton()) save = nullptr;
+        /// The free rows' container: its trailing children are the rows, in
+        /// order, and it is rebuilt wholesale whenever their number moves.
+        mux::Controls::StackPanel freeContainer = nullptr;
+        std::size_t               freeHeadChildren = 0;
+        /// The rebuild, once its widgets exist. A member, not a captured
+        /// local: the rows' own handlers call it, and a lambda cannot name
+        /// itself into its own capture.
+        std::function<void()> rebuildFreeRows;
+        mux::Controls::TextBlock artStatus = nullptr;
+        mux::Controls::Button    artRemove = nullptr;
+        mux::Controls::Button    artKeep   = nullptr;
+
+        State(app::Session& session_, std::vector<TrackId> ids_,
+              std::vector<app::TagEditorSource> sources_)
+            : session(session_), ids(std::move(ids_)), model(std::move(sources_)) {}
+
+        void refreshSave() {
+            // Guarded: the first handlers can fire before the dialog's
+            // buttons exist, and a null here means nothing is up to gate.
+            if (save) {
+                save.IsEnabled(model.changed());
+            }
+        }
+
+        /// The note that annotates a promoted row: the batch's disagreement
+        /// first, the format's folding note after. Empty hides the label.
+        void setFieldNote(mux::Controls::TextBlock note, app::TagEditorModel::Field field) {
+            std::string text;
+            if (model.differs(field)) {
+                text = app::tr("The selected files disagree here; what you type replaces "
+                               "it in all of them.");
+            }
+            if (const std::string fold = model.fieldNote(field); !fold.empty()) {
+                text = text.empty() ? fold : text + " " + fold;
+            }
+            note.Text(toH(text));
+            note.Visibility(text.empty() ? mux::Visibility::Collapsed : mux::Visibility::Visible);
+        }
+
+        void refreshFreeNote(mux::Controls::TextBlock note, std::size_t index) {
+            const std::vector<app::TagEditorModel::FreeRow>& rows = model.freeRows();
+            const std::string text =
+                index < rows.size() ? model.freeRowNote(rows[index]) : std::string{};
+            note.Text(toH(text));
+            note.Visibility(text.empty() ? mux::Visibility::Collapsed : mux::Visibility::Visible);
+        }
+
+        void updateArt() {
+            using ArtAction = app::TagEditorModel::ArtAction;
+            switch (model.artAction()) {
+                case ArtAction::Keep:
+                    artStatus.Text(toH(!model.embeddedArt().empty()
+                                           ? app::tr("The file carries its own cover image.")
+                                           : (model.artFromFolder()
+                                                  ? app::tr("This album's picture comes from a "
+                                                           "file in its folder; it is not stored "
+                                                           "in this file.")
+                                                  : app::tr("The file carries no cover image."))));
+                    break;
+                case ArtAction::Remove:
+                    artStatus.Text(toH(app::tr("The cover will be removed when you save.")));
+                    break;
+                case ArtAction::Replace:
+                    artStatus.Text(toH(app::tr("The chosen image will replace the file's cover.")));
+                    break;
+            }
+            artRemove.IsEnabled(model.artAction() == ArtAction::Keep &&
+                                !model.embeddedArt().empty());
+            artKeep.Visibility(model.artAction() != ArtAction::Keep
+                                   ? mux::Visibility::Visible
+                                   : mux::Visibility::Collapsed);
+            refreshSave();
+        }
+
+        void submit() {
+            if (model.batch()) {
+                session.editTags(ids, model.buildChanges(), app::Session::TagEditMode::merge);
+            } else {
+                session.editTags(ids, model.build(), app::Session::TagEditMode::replace);
+            }
+        }
+    };
+    auto state = std::make_shared<State>(session_, ids, std::move(sources));
+    auto&      model = state->model;
+
+    auto box = state->box = dialog(app::tr("Edit Tags"));
+    box.MaxWidth(560);
+
+    auto scroller = mux::Controls::ScrollViewer();
+    // The content is taller than the dialog template allows; without this
+    // the bottom groups would be unreachable.
+    scroller.MaxHeight(520);
+    auto page = mux::Controls::StackPanel();
+    page.Spacing(18);
+    scroller.Content(page);
+    box.Content(scroller);
+
+    // What the dialog is about: one file's name, or how many the batch edits.
+    {
+        auto intro = mux::Controls::TextBlock();
+        intro.TextWrapping(mux::TextWrapping::Wrap);
+        intro.Text(toH(model.batch()
+                           ? app::fmt(app::trn("Editing %zu file. Fields you change here are "
+                                              "written to every one of them; the rest stays as "
+                                              "it is.",
+                                              "Editing %zu files. Fields you change here are "
+                                              "written to every one of them; the rest stays as "
+                                              "it is.",
+                                              model.sources().size()),
+                                      model.sources().size())
+                           : model.sources().front().entry.filename()));
+        page.Children().Append(intro);
+    }
+
+    // --- the promoted fields ----------------------------------------------------
+
+    for (const app::TagEditorModel::Field field : app::TagEditorModel::kFields) {
+        auto label = mux::Controls::TextBlock();
+        label.Text(toH(app::TagEditorModel::label(field)));
+        page.Children().Append(label);
+
+        auto entry = mux::Controls::TextBox();
+        entry.Text(toH(model.joined(field)));
+        page.Children().Append(entry);
+
+        auto note = mux::Controls::TextBlock();
+        note.TextWrapping(mux::TextWrapping::Wrap);
+        note.Foreground(themeBrush(L"TextFillColorSecondaryBrush"));
+        note.Visibility(mux::Visibility::Collapsed);
+        page.Children().Append(note);
+
+        // Text is set before connecting, so seeding does not count as an
+        // edit: the row stays untouched until the listener types in it.
+        entry.TextChanged([state, entry, field, note](auto&&, auto&&) {
+            state->model.setJoined(field, toUtf8(entry.Text()));
+            state->setFieldNote(note, field);
+            state->refreshSave();
+        });
+        state->setFieldNote(note, field);
+    }
+
+    // --- the file's other tags: single file only -------------------------------
+
+    if (model.supportsFreeRows()) {
+        auto free = mux::Controls::StackPanel();
+        free.Spacing(8);
+        page.Children().Append(free);
+        state->freeContainer = free;
+
+        auto title = mux::Controls::TextBlock();
+        title.Text(toH(app::tr("Other tags")));
+        auto add = mux::Controls::Button();
+        add.Content(winrt::box_value(toH(app::tr("Add another tag"))));
+        free.Children().Append(title);
+        free.Children().Append(add);
+        state->freeHeadChildren = free.Children().Size();
+
+        // Rebuilds every row from the model: the handlers capture index i,
+        // not anything inside the model, and adding or removing a row
+        // shifts the indices of everything after it. Same wholesale rebuild
+        // the GTK dialog does.
+        state->rebuildFreeRows = [state] {
+            auto& panel = state->freeContainer;
+            auto  rows  = panel.Children();
+            while (rows.Size() > state->freeHeadChildren) {
+                rows.RemoveAtEnd();
+            }
+            std::size_t index = 0;
+            for (const app::TagEditorModel::FreeRow& row : state->model.freeRows()) {
+                auto rowBox = mux::Controls::StackPanel();
+                rowBox.Spacing(6);
+                auto line = mux::Controls::StackPanel();
+                line.Orientation(mux::Controls::Orientation::Horizontal);
+                line.Spacing(6);
+
+                auto key = mux::Controls::TextBox();
+                key.Text(toH(row.key));
+                key.PlaceholderText(toH(app::tr("Name")));
+                auto value = mux::Controls::TextBox();
+                value.Text(toH(joinTagValues(row.values)));
+                value.PlaceholderText(toH(app::tr("Values, separated by commas")));
+                auto remove = mux::Controls::Button();
+                // "\uE74D" is Segoe MDL2's delete glyph.
+                remove.Content(winrt::box_value(std::wstring{L"\uE74D"}));
+                mux::Controls::ToolTipService::SetToolTip(
+                    remove, winrt::box_value(toH(app::tr("Remove this tag"))));
+                line.Children().Append(key);
+                line.Children().Append(value);
+                line.Children().Append(remove);
+
+                auto note = mux::Controls::TextBlock();
+                note.TextWrapping(mux::TextWrapping::Wrap);
+                note.Foreground(themeBrush(L"TextFillColorSecondaryBrush"));
+                note.Visibility(mux::Visibility::Collapsed);
+                rowBox.Children().Append(line);
+                rowBox.Children().Append(note);
+                rows.Append(rowBox);
+
+                // Text is set before connecting, so seeding a row does not
+                // count as editing it. The index is captured, not a pointer
+                // into the model's vector: this row is rebuilt from scratch
+                // whenever the set of rows moves.
+                const std::size_t i = index++;
+                key.TextChanged([state, key, i, note](auto&&, auto&&) {
+                    state->model.setFreeKey(i, toUtf8(key.Text()));
+                    state->refreshFreeNote(note, i);
+                    state->refreshSave();
+                });
+                value.TextChanged([state, value, i, note](auto&&, auto&&) {
+                    state->model.setFreeValues(
+                        i, splitTagValues(toUtf8(value.Text())));
+                    state->refreshFreeNote(note, i);
+                    state->refreshSave();
+                });
+                remove.Click([state, i](auto&&, auto&&) {
+                    state->model.removeFreeRow(i);
+                    state->rebuildFreeRows();
+                    state->refreshSave();
+                });
+
+                state->refreshFreeNote(note, i);
+            }
+        };
+        add.Click([state](auto&&, auto&&) {
+            state->model.addFreeRow();
+            state->rebuildFreeRows();
+            state->refreshSave();
+        });
+        state->rebuildFreeRows();
+    }
+
+    // --- the cover: single file, on formats that keep pictures ------------------
+
+    if (model.supportsArt()) {
+        auto cover = mux::Controls::StackPanel();
+        cover.Spacing(8);
+        page.Children().Append(cover);
+
+        auto title = mux::Controls::TextBlock();
+        title.Text(toH(app::tr("Cover")));
+        cover.Children().Append(title);
+
+        auto status = state->artStatus = mux::Controls::TextBlock();
+        status.TextWrapping(mux::TextWrapping::Wrap);
+        cover.Children().Append(status);
+
+        auto line = mux::Controls::StackPanel();
+        line.Orientation(mux::Controls::Orientation::Horizontal);
+        line.Spacing(6);
+        state->artRemove = mux::Controls::Button();
+        state->artRemove.Content(winrt::box_value(toH(app::tr("Remove"))));
+        state->artKeep = mux::Controls::Button();
+        state->artKeep.Content(winrt::box_value(toH(app::tr("Keep"))));
+        auto replace = mux::Controls::Button();
+        replace.Content(winrt::box_value(toH(app::tr("Replace..."))));
+        line.Children().Append(state->artRemove);
+        line.Children().Append(state->artKeep);
+        line.Children().Append(replace);
+        cover.Children().Append(line);
+
+        state->artRemove.Click([state](auto&&, auto&&) {
+            state->model.removeArt();
+            state->updateArt();
+        });
+        state->artKeep.Click([state](auto&&, auto&&) {
+            state->model.keepArt();
+            state->updateArt();
+        });
+
+        // The picker belongs to the window, not to the dialog: the editor
+        // stays up underneath it, and this handler's own coroutine answers
+        // when the listener does. A ContentDialog has one await and it is
+        // ShowAsync, so the answer cannot come back to the dialog's
+        // coroutine -- it is enqueued onto the UI thread instead, where the
+        // model and the widgets live.
+        replace.Click([state, queue = window_.DispatcherQueue(),
+                       windowId = window_.AppWindow().Id()](auto&&, auto&&) -> winrt::fire_and_forget {
+            try {
+                pickers::FileOpenPicker picker(windowId);
+                picker.FileTypeChoices().Insert(
+                    toH(app::tr("Images")),
+                    winrt::single_threaded_vector<winrt::hstring>({L".png", L".jpg", L".jpeg"}));
+                picker.FileTypeChoices().Insert(
+                    toH(app::tr("All Files")),
+                    winrt::single_threaded_vector<winrt::hstring>({L"*"}));
+                const auto chosen = co_await picker.PickSingleFileAsync();
+                if (!chosen) {
+                    co_return;
+                }
+                const auto buffer =
+                    co_await winrt::Windows::Storage::FileIO::ReadBufferAsync(chosen.Path());
+                streams::DataWriter reader;
+                reader.Attach(buffer);
+                const auto bytes = reader.ReadBytes(static_cast<uint32_t>(buffer.Length()));
+                std::vector<std::byte> owned;
+                owned.reserve(bytes.size());
+                for (const uint8_t byte : bytes) {
+                    owned.push_back(static_cast<std::byte>(byte));
+                }
+                queue.TryEnqueue([state, owned = std::move(owned)]() mutable {
+                    state->model.replaceArt(std::move(owned));
+                    state->updateArt();
+                });
+            } catch (const winrt::hresult_error&) {
+                // Cancelled, or the file could not be read: the cover is
+                // simply still the file's own.
+            }
+        });
+
+        state->updateArt();
+    }
+
+    box.PrimaryButtonText(toH(app::tr("Save")));
+    box.CloseButtonText(toH(app::tr("Cancel")));
+    // Save says what the model can do: no edit, no write.
+    state->save = box.PrimaryButton();
+    state->save.IsEnabled(false);
+
+    const auto result = co_await box.ShowAsync();
+    dialogOpen_ = false;
+    // Checked again here, not only by the button: the write goes with a Save
+    // answer and something to write, and nothing else.
+    if (result == mux::Controls::ContentDialogResult::Primary && state->model.changed()) {
+        state->submit();
+    }
 }
 
 winrt::fire_and_forget MainWindow::showAbout() {

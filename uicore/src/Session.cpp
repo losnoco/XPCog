@@ -22,6 +22,7 @@
 #include <exception>
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace xpcog::app {
@@ -762,7 +763,39 @@ void Session::trashTracks(const std::vector<TrackId>& ids) {
     }
 }
 
-void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags) {
+std::vector<TagEditorSource> Session::tagEditorSources(const std::vector<TrackId>& ids) const {
+    // The same gate editTags applies, run ahead of the dialog: a row whose
+    // file the registry will not write has no editor to show. Deduplicated by
+    // URL string for the same reason editTags groups by it -- one file, one
+    // set of rows.
+    std::vector<TagEditorSource> sources;
+    std::unordered_set<std::string> seen;
+    for (const TrackId id : ids) {
+        const PlaylistEntry* entry = playlists_.find(id);
+        if (entry == nullptr || !entry->url.localPath() || !entry->url.fragment().empty()) {
+            continue;
+        }
+        if (!seen.insert(entry->url.toString()).second) {
+            continue;
+        }
+        const MetadataCapabilities caps = registry_.metadataCapabilities(entry->url);
+        if (!caps.writable) {
+            continue;
+        }
+        // A raw read, deliberately: the entry's own metadata may carry art
+        // Scanner injected from a folder cover, and the model tells embedded
+        // art from folder art precisely by asking what the file itself says.
+        sources.push_back(TagEditorSource{
+            .entry    = *entry,
+            .fileTags = registry_.readMetadata(entry->url),
+            .caps     = caps,
+        });
+    }
+    return sources;
+}
+
+void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
+                       TagEditMode mode) {
     // A batch of rows sharing one file -- the same track in two playlists --
     // is one save. Left ungrouped, the second row's dirty check would compare
     // against the pre-edit entry, re-write a file the first row already wrote,
@@ -785,12 +818,32 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags)
             ++skipped;
             continue;
         }
-        if (entry->fullTagMap().sameContentAs(tags)) {
-            // Already the tags asked for. Skipping it is not just the speed:
-            // a rewrite through a lossy container folds what only just fit,
-            // and an unchanged row would pay for that every time the dialog
-            // is opened and closed.
-            continue;
+        const MetadataMap current = entry->fullTagMap();
+        if (mode == TagEditMode::replace) {
+            if (current.sameContentAs(tags)) {
+                // Already the tags asked for. Skipping it is not just the speed:
+                // a rewrite through a lossy container folds what only just fit,
+                // and an unchanged row would pay for that every time the dialog
+                // is opened and closed.
+                continue;
+            }
+        } else {
+            // A merge's payload is an edit, not the whole truth: the file is
+            // unchanged when applying it changes nothing.
+            MetadataMap merged = current;
+            merged.mergeFrom(tags);
+            // The writer reads an empty value list as "delete this key", and
+            // fullTagMap never carries one; dropping them here is what stops
+            // clearing an already-absent field from counting as a change.
+            for (const MetadataMap::Entry& held : tags) {
+                if (const auto* list = std::get_if<std::vector<std::string>>(&held.value);
+                    list != nullptr && list->empty()) {
+                    merged.remove(held.key);
+                }
+            }
+            if (merged.sameContentAs(current)) {
+                continue;
+            }
         }
         if (!registry_.metadataCapabilities(entry->url).writable) {
             ++skipped;
@@ -815,12 +868,23 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags)
         }
 
         MetadataWriteOptions options;
-        // settings.def grows a [tags] key with the editor dialog that will
-        // expose these; until then the contract's defaults -- strip to the
-        // map, ID3v2.4 -- are what the codec tests proved out.
+        // The [tags] settings key carries the ID3v2 version; replace is the
+        // single-file dialog's whole-map truth, merge the batch's edit.
+        options.stripExisting = (mode == TagEditMode::replace);
+        options.id3v2Version  = settings_.Id3v2Version();
+
+        // What the entry should hold in memory afterwards. A replace write
+        // takes the map as given; a merge write lands it on the entry's own
+        // map, which is what the file will answer on the read-back too.
+        MetadataMap applied = tags;
+        if (mode == TagEditMode::merge) {
+            applied = entry->fullTagMap();
+            applied.mergeFrom(tags);
+        }
+
         if (registry_.writeMetadata(entry->url, tags, options)) {
             for (const TrackId id : group.ids) {
-                playlists_.update(id, [&tags](PlaylistEntry& e) { e.applyMetadata(tags); });
+                playlists_.update(id, [&applied](PlaylistEntry& e) { e.applyMetadata(applied); });
                 if (library_) {
                     if (const PlaylistEntry* updated = playlists_.find(id); updated != nullptr) {
                         static_cast<void>(library_->saveEntry(*updated));

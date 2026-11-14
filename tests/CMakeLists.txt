@@ -454,6 +454,7 @@ if(XPCOG_BUILD_APP)
         uicore/test_session.cpp
         uicore/test_signalchain.cpp
         uicore/test_settingeffect.cpp
+        uicore/test_tageditor.cpp
         uicore/test_translations.cpp
     )
     # codecs as well as uicore, and that keeps the rule rather than bending it:

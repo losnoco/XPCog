@@ -33,6 +33,7 @@
 #include "PlaybackController.hpp"
 #include "RemoteJobs.hpp"
 #include "SettingEffect.hpp"
+#include "TagEditorModel.hpp"
 
 #include "xpcog/core/Dispatcher.hpp"
 #include "xpcog/core/PlayMonitor.hpp"
@@ -178,6 +179,14 @@ public:
     /// question; this does not ask.
     void trashTracks(const std::vector<TrackId>& ids);
 
+    /// How editTags treats tags the payload does not mention. Replace means
+    /// the map is the file's whole truth: names it drops are deleted. Merge
+    /// means the payload is an edit against each file's own tags: untouched
+    /// names, byte entries and covers ride on. A one-file dialog builds the
+    /// whole map and asks for replace; a batch editor hands over only the
+    /// fields it touched and asks for merge.
+    enum class TagEditMode { replace, merge };
+
     /// Writes `tags` back to the files behind `ids`, one write per distinct
     /// file however many rows share it. Rows whose current tags already match,
     /// whose URL has a fragment, or whose format the registry cannot write are
@@ -186,7 +195,17 @@ public:
     /// answers rather than what the caller asked for: a Vorbis comment keeps
     /// everything, an MP3 folds, and the difference is in the file, not in a
     /// translation the session would have to repeat.
-    void editTags(const std::vector<TrackId>& ids, const MetadataMap& tags);
+    void editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
+                  TagEditMode mode = TagEditMode::replace);
+
+    /// The files a tag editor dialog should open on for `ids`: one source per
+    /// distinct URL, with the file's own tags from a raw registry read and the
+    /// probe's answer beside them. Rows that cannot be edited -- streams, cue
+    /// fragments, formats no writer claims -- are left out, so a non-empty
+    /// result is a promise that the dialog can do something for all of it.
+    /// Does I/O (one read and one probe per file); call it when the dialog
+    /// opens, not to decide whether a menu item is sensitive.
+    [[nodiscard]] std::vector<TagEditorSource> tagEditorSources(const std::vector<TrackId>& ids) const;
 
     /// Shows the first of `ids` that is a local file in the desktop's file
     /// manager.

@@ -68,6 +68,8 @@ constexpr std::array kNothingToDo = {
     "language", "widgetStyle", "closeToTray",
     // Read when a notification is about to be posted.
     "notifications.enable", "notifications.show-album-art",
+    // Asked by the session at the moment a tag save picks its ID3v2 version.
+    "id3v2Version",
 };
 
 bool listed(std::string_view key) {

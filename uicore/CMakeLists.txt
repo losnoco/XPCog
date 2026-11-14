@@ -98,6 +98,8 @@ add_library(xpcog-uicore STATIC
     src/SignalChain.cpp
     src/SignalChain.hpp
     src/SpeedCurve.hpp
+    src/TagEditorModel.cpp
+    src/TagEditorModel.hpp
     src/TrackText.cpp
     src/TrackText.hpp
     src/TrayMenu.cpp

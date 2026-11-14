@@ -96,7 +96,7 @@ msgstr ""
 msgid "&New Playlist"
 msgstr ""
 
-#: uicore/src/Commands.cpp:60 uicore/src/Commands.cpp:220
+#: uicore/src/Commands.cpp:60 uicore/src/Commands.cpp:222
 msgid "New Playlist from Se&lection"
 msgstr ""
 
@@ -128,7 +128,7 @@ msgstr ""
 msgid "Choose &Root Folder..."
 msgstr ""
 
-#: uicore/src/Commands.cpp:72 uicore/src/Commands.cpp:221
+#: uicore/src/Commands.cpp:72 uicore/src/Commands.cpp:223
 msgid "&Info"
 msgstr ""
 
@@ -220,103 +220,107 @@ msgstr ""
 msgid "Select Currently &Playing"
 msgstr ""
 
-#: uicore/src/Commands.cpp:153 uicore/src/Commands.cpp:216
+#: uicore/src/Commands.cpp:153 uicore/src/Commands.cpp:218
 msgid "&Remove from Playlist"
 msgstr ""
 
-#: uicore/src/Commands.cpp:154
+#: uicore/src/Commands.cpp:154 uicore/src/Commands.cpp:217
+msgid "&Edit Tags..."
+msgstr ""
+
+#: uicore/src/Commands.cpp:155
 msgid "Randomi&ze Playlist"
 msgstr ""
 
-#: uicore/src/Commands.cpp:156
+#: uicore/src/Commands.cpp:157
 msgid "&Playback"
 msgstr ""
 
-#: uicore/src/Commands.cpp:156
+#: uicore/src/Commands.cpp:157
 msgid "&Play/Pause"
 msgstr ""
 
-#: uicore/src/Commands.cpp:157
+#: uicore/src/Commands.cpp:158
 msgid "&Stop"
 msgstr ""
 
-#: uicore/src/Commands.cpp:158
+#: uicore/src/Commands.cpp:159
 msgid "Pre&vious"
 msgstr ""
 
-#: uicore/src/Commands.cpp:159
+#: uicore/src/Commands.cpp:160
 msgid "&Next"
 msgstr ""
 
-#: uicore/src/Commands.cpp:160 uicore/src/Commands.cpp:204
+#: uicore/src/Commands.cpp:161 uicore/src/Commands.cpp:205
 msgid "Add to &Queue"
 msgstr ""
 
-#: uicore/src/Commands.cpp:169
+#: uicore/src/Commands.cpp:170
 msgid "&Order"
 msgstr ""
 
-#: uicore/src/Commands.cpp:169
+#: uicore/src/Commands.cpp:170
 msgid "Repeat: &Off"
 msgstr ""
 
-#: uicore/src/Commands.cpp:170
+#: uicore/src/Commands.cpp:171
 msgid "Repeat: &One"
 msgstr ""
 
-#: uicore/src/Commands.cpp:171
+#: uicore/src/Commands.cpp:172
 msgid "Repeat: &Album"
 msgstr ""
 
-#: uicore/src/Commands.cpp:172
+#: uicore/src/Commands.cpp:173
 msgid "Repeat: A&ll"
 msgstr ""
 
-#: uicore/src/Commands.cpp:173
+#: uicore/src/Commands.cpp:174
 msgid "Shuffle: O&ff"
 msgstr ""
 
-#: uicore/src/Commands.cpp:174
+#: uicore/src/Commands.cpp:175
 msgid "Shuffle: Al&bums"
 msgstr ""
 
-#: uicore/src/Commands.cpp:175
+#: uicore/src/Commands.cpp:176
 msgid "Shuffle: A&ll Tracks"
 msgstr ""
 
-#: uicore/src/Commands.cpp:179
+#: uicore/src/Commands.cpp:180
 msgid "&Help"
 msgstr ""
 
-#: uicore/src/Commands.cpp:179
+#: uicore/src/Commands.cpp:180
 msgid "&About XPCog"
 msgstr ""
 
-#: uicore/src/Commands.cpp:205
+#: uicore/src/Commands.cpp:206
 msgid "Stop after &Selection"
 msgstr ""
 
-#: uicore/src/Commands.cpp:206
+#: uicore/src/Commands.cpp:207
 msgid "Save Selection as &Playlist..."
 msgstr ""
 
-#: uicore/src/Commands.cpp:208
+#: uicore/src/Commands.cpp:209
 msgid "Search for &Artist"
 msgstr ""
 
-#: uicore/src/Commands.cpp:210
+#: uicore/src/Commands.cpp:211
 msgid "Search for Al&bum"
 msgstr ""
 
-#: uicore/src/Commands.cpp:211
+#: uicore/src/Commands.cpp:212
 msgid "Re&load Info"
 msgstr ""
 
-#: uicore/src/Commands.cpp:213
+#: uicore/src/Commands.cpp:214
 msgid "Reset Play &Count"
 msgstr ""
 
-#: uicore/src/Commands.cpp:214
+#: uicore/src/Commands.cpp:215
 msgid "Remove Ra&ting"
 msgstr ""
 
@@ -739,127 +743,147 @@ msgstr ""
 msgid "No playable track found"
 msgstr ""
 
-#: uicore/src/Session.cpp:54
+#: uicore/src/Session.cpp:55
 msgid "Looking for files…"
 msgstr ""
 
-#: uicore/src/Session.cpp:56
+#: uicore/src/Session.cpp:57
 msgid "Looking for files in %s…"
 msgstr ""
 
-#: uicore/src/Session.cpp:60
+#: uicore/src/Session.cpp:61
 msgid "Reading %s — %d of %d"
 msgstr ""
 
-#: uicore/src/Session.cpp:62
+#: uicore/src/Session.cpp:63
 msgid "Reading %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:100
+#: uicore/src/Session.cpp:101
 msgid "Library unavailable: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:131
+#: uicore/src/Session.cpp:132
 msgid "Connecting to %s..."
 msgstr ""
 
-#: uicore/src/Session.cpp:132
+#: uicore/src/Session.cpp:133
 msgid "Connecting..."
 msgstr ""
 
-#: uicore/src/Session.cpp:245
+#: uicore/src/Session.cpp:246
 msgid "Could not save the playlist: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:293 uicore/src/Session.cpp:295
+#: uicore/src/Session.cpp:294 uicore/src/Session.cpp:296
 msgid "Playlist %zu"
 msgstr ""
 
-#: uicore/src/Session.cpp:356 app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:642
+#: uicore/src/Session.cpp:357 app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:642
 msgid "Playlist"
 msgstr ""
 
-#: uicore/src/Session.cpp:365
+#: uicore/src/Session.cpp:366
 msgid "%zu track — %s"
 msgid_plural "%zu tracks — %s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:502
+#: uicore/src/Session.cpp:503
 msgid "Nothing was added."
 msgstr ""
 
-#: uicore/src/Session.cpp:502
+#: uicore/src/Session.cpp:503
 msgid "Nothing playable was found."
 msgstr ""
 
-#: uicore/src/Session.cpp:562
+#: uicore/src/Session.cpp:563
 msgid "Nothing could be read."
 msgstr ""
 
-#: uicore/src/Session.cpp:621
+#: uicore/src/Session.cpp:622
 msgid "Re-read %zu track."
 msgid_plural "Re-read %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:720
+#: uicore/src/Session.cpp:721
 msgid "Playlist saved: %zu selected track."
 msgid_plural "Playlist saved: %zu selected tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:724
+#: uicore/src/Session.cpp:725
 msgid "Playlist saved: %zu of %zu tracks, the rest hidden by the filter."
 msgstr ""
 
-#: uicore/src/Session.cpp:727
+#: uicore/src/Session.cpp:728
 msgid "Playlist saved."
 msgstr ""
 
-#: uicore/src/Session.cpp:757
+#: uicore/src/Session.cpp:758
 msgid "%zu file could not be moved to the trash."
 msgid_plural "%zu files could not be moved to the trash."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:776
+#: uicore/src/Session.cpp:911
+msgid "the file could not be written"
+msgstr ""
+
+#: uicore/src/Session.cpp:913
+msgid "%zu file could not have its tags saved: %s"
+msgid_plural "%zu files could not have their tags saved: %s"
+msgstr[0] ""
+msgstr[1] ""
+
+#: uicore/src/Session.cpp:917
+msgid "Saved tags for %zu file."
+msgid_plural "Saved tags for %zu files."
+msgstr[0] ""
+msgstr[1] ""
+
+#: uicore/src/Session.cpp:920
+msgid "No writable files in the selection."
+msgstr ""
+
+#: uicore/src/Session.cpp:937
 msgid "Could not show the file."
 msgstr ""
 
-#: uicore/src/Session.cpp:786
+#: uicore/src/Session.cpp:947
 msgid "Play count reset for %zu track."
 msgid_plural "Play count reset for %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:800
+#: uicore/src/Session.cpp:961
 msgid "Rating removed from %zu track."
 msgid_plural "Rating removed from %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:958
+#: uicore/src/Session.cpp:1119
 msgid "Last.fm access was withdrawn. Reconnect in Preferences."
 msgstr ""
 
-#: uicore/src/Session.cpp:973
+#: uicore/src/Session.cpp:1134
 msgid "ListenBrainz rejected the token. Reconnect in Preferences."
 msgstr ""
 
-#: uicore/src/Session.cpp:1251
+#: uicore/src/Session.cpp:1412
 msgid "Now Playing"
 msgstr ""
 
-#: uicore/src/Session.cpp:1404
+#: uicore/src/Session.cpp:1565
 msgid "The remote control could not create an access token."
 msgstr ""
 
-#: uicore/src/Session.cpp:1438
+#: uicore/src/Session.cpp:1599
 msgid "Remote control unavailable: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:1443
+#: uicore/src/Session.cpp:1604
 msgid "Remote control listening on http://%s:%d"
 msgstr ""
 
@@ -1133,7 +1157,7 @@ msgstr ""
 msgid "Off or flat"
 msgstr ""
 
-#: uicore/src/SignalChain.cpp:118 uicore/src/SignalChain.cpp:120 app-winui/src/MainWindow.cpp:204 app-winui/src/MiniPlayer.cpp:153 app-gtk/ui/window.blp:102
+#: uicore/src/SignalChain.cpp:118 uicore/src/SignalChain.cpp:120 app-winui/src/MainWindow.cpp:240 app-winui/src/MiniPlayer.cpp:153 app-gtk/ui/window.blp:102
 msgid "Volume"
 msgstr ""
 
@@ -1173,6 +1197,63 @@ msgstr ""
 msgid "Underruns: %zu"
 msgstr ""
 
+#: uicore/src/TagEditorModel.cpp:178 uicore/src/TrackText.cpp:166
+msgid "Album"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:179
+msgid "Album artist"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:180 uicore/src/TrackText.cpp:165
+msgid "Artist"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:181 uicore/src/TrackText.cpp:167
+msgid "Title"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:182 uicore/src/TrackText.cpp:169
+msgid "Genre"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:183 uicore/src/TrackText.cpp:166
+msgid "Composer"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:184 uicore/src/TrackText.cpp:168
+msgid "Date"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:185 uicore/src/TrackText.cpp:167
+msgid "Track"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:186
+msgid "Disc"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:187 uicore/src/TrackText.cpp:174
+msgid "Comment"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:188 app-winui/src/PreferencesGeneral.cpp:67 app-gtk/src/PreferencesDialog.cpp:915 app-gtk/ui/window.blp:159
+msgid "Lyrics"
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:206 uicore/src/TagEditorModel.cpp:272
+msgid "This format keeps only the first value."
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:264
+msgid "The field above already covers this name; it will not be written."
+msgstr ""
+
+#: uicore/src/TagEditorModel.cpp:266
+msgid ""
+"This format has no field for this name; it will be stored generically."
+msgstr ""
+
 #: uicore/src/TrackText.cpp:75
 msgid "Album Gain: %s"
 msgstr ""
@@ -1209,36 +1290,8 @@ msgstr ""
 msgid "Album Artist"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:165
-msgid "Artist"
-msgstr ""
-
-#: uicore/src/TrackText.cpp:166
-msgid "Composer"
-msgstr ""
-
-#: uicore/src/TrackText.cpp:166
-msgid "Album"
-msgstr ""
-
-#: uicore/src/TrackText.cpp:167
-msgid "Title"
-msgstr ""
-
-#: uicore/src/TrackText.cpp:167
-msgid "Track"
-msgstr ""
-
 #: uicore/src/TrackText.cpp:168
 msgid "Length"
-msgstr ""
-
-#: uicore/src/TrackText.cpp:168
-msgid "Date"
-msgstr ""
-
-#: uicore/src/TrackText.cpp:169
-msgid "Genre"
 msgstr ""
 
 #: uicore/src/TrackText.cpp:169
@@ -1277,10 +1330,6 @@ msgstr ""
 msgid "Play Count"
 msgstr ""
 
-#: uicore/src/TrackText.cpp:174
-msgid "Comment"
-msgstr ""
-
 #: uicore/src/TrackText.cpp:216
 msgid "yes"
 msgstr ""
@@ -1297,19 +1346,19 @@ msgstr ""
 msgid "Pause"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:62 app-winui/src/MainWindow.cpp:164 app-winui/src/MiniPlayer.cpp:74
+#: uicore/src/TrayMenu.cpp:62 app-winui/src/MainWindow.cpp:200 app-winui/src/MiniPlayer.cpp:74
 msgid "Play"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:64 app-winui/src/MainWindow.cpp:167 app-winui/src/MiniPlayer.cpp:77 app-gtk/ui/window.blp:50
+#: uicore/src/TrayMenu.cpp:64 app-winui/src/MainWindow.cpp:203 app-winui/src/MiniPlayer.cpp:77 app-gtk/ui/window.blp:50
 msgid "Stop"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:66 app-winui/src/MainWindow.cpp:162 app-winui/src/MiniPlayer.cpp:72 app-gtk/ui/window.blp:40
+#: uicore/src/TrayMenu.cpp:66 app-winui/src/MainWindow.cpp:198 app-winui/src/MiniPlayer.cpp:72 app-gtk/ui/window.blp:40
 msgid "Previous"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:67 app-winui/src/MainWindow.cpp:169 app-winui/src/MiniPlayer.cpp:79 app-gtk/ui/window.blp:55
+#: uicore/src/TrayMenu.cpp:67 app-winui/src/MainWindow.cpp:205 app-winui/src/MiniPlayer.cpp:79 app-gtk/ui/window.blp:55
 msgid "Next"
 msgstr ""
 
@@ -1417,125 +1466,207 @@ msgstr ""
 msgid "&Add to Playlist"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:547 app-gtk/src/MainWindow.cpp:404
+#: app-winui/src/MainWindow.cpp:583 app-gtk/src/MainWindow.cpp:411
 msgid "XPCog is still running"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:548 app-gtk/src/MainWindow.cpp:405
+#: app-winui/src/MainWindow.cpp:584 app-gtk/src/MainWindow.cpp:412
 msgid ""
 "Playback continues. Use the tray icon to bring the window back or to quit."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:993 app-gtk/src/MainWindow.cpp:524
+#: app-winui/src/MainWindow.cpp:1071 app-gtk/src/MainWindow.cpp:531
 msgid "The playing track is hidden by the filter"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1131 app-gtk/src/MainWindow.cpp:1064
+#: app-winui/src/MainWindow.cpp:1212 app-gtk/src/MainWindow.cpp:1075
 msgid "Add to Playlist"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1434 app-gtk/src/MainWindow.cpp:838
+#: app-winui/src/MainWindow.cpp:1516 app-gtk/src/MainWindow.cpp:849
 msgid "Audio Files"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1435 app-gtk/src/MainWindow.cpp:843 app-gtk/src/PreferencesDialog.cpp:268
+#: app-winui/src/MainWindow.cpp:1517 app-winui/src/MainWindow.cpp:2023 app-gtk/src/MainWindow.cpp:854 app-gtk/src/PreferencesDialog.cpp:268 app-gtk/src/TagEditorDialog.cpp:377
 msgid "All Files"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1477
+#: app-winui/src/MainWindow.cpp:1559
 msgid "M3U Playlist (*.m3u8)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1479
+#: app-winui/src/MainWindow.cpp:1561
 msgid "PLS Playlist (*.pls)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1481
+#: app-winui/src/MainWindow.cpp:1563
 msgid "XSPF Playlist (*.xspf)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1490 app-gtk/src/Dialogs.cpp:250
+#: app-winui/src/MainWindow.cpp:1572 app-gtk/src/Dialogs.cpp:250
 msgid "Could not write the playlist."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1503 app-gtk/src/Dialogs.cpp:76
+#: app-winui/src/MainWindow.cpp:1585 app-gtk/src/Dialogs.cpp:76
 msgid "Open URL"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1508 app-gtk/src/Dialogs.cpp:120
+#: app-winui/src/MainWindow.cpp:1590 app-gtk/src/Dialogs.cpp:120
 msgid "Open"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1509 app-winui/src/MainWindow.cpp:1544 app-winui/src/MainWindow.cpp:1575 app-winui/src/MainWindow.cpp:1618 app-winui/src/PreferencesServices.cpp:90 app-winui/src/PreferencesServices.cpp:461 app-gtk/src/Dialogs.cpp:119 app-gtk/src/Dialogs.cpp:159 app-gtk/src/MainWindow.cpp:1134 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/ui/window.blp:200
+#: app-winui/src/MainWindow.cpp:1591 app-winui/src/MainWindow.cpp:1626 app-winui/src/MainWindow.cpp:1657 app-winui/src/MainWindow.cpp:1700 app-winui/src/MainWindow.cpp:2053 app-winui/src/PreferencesServices.cpp:90 app-winui/src/PreferencesServices.cpp:461 app-gtk/src/Dialogs.cpp:119 app-gtk/src/Dialogs.cpp:159 app-gtk/src/MainWindow.cpp:1173 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/src/TagEditorDialog.cpp:246 app-gtk/ui/window.blp:200
 msgid "Cancel"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1538 app-gtk/src/MainWindow.cpp:1092
+#: app-winui/src/MainWindow.cpp:1620 app-gtk/src/MainWindow.cpp:1103
 msgid "Rename Playlist"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1543 app-gtk/src/MainWindow.cpp:1093
+#: app-winui/src/MainWindow.cpp:1625 app-gtk/src/MainWindow.cpp:1104
 msgid "Rename"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1568 app-gtk/src/MainWindow.cpp:1082
+#: app-winui/src/MainWindow.cpp:1650 app-gtk/src/MainWindow.cpp:1093
 msgid "Delete “%s”?"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1570 app-gtk/src/MainWindow.cpp:1083
+#: app-winui/src/MainWindow.cpp:1652 app-gtk/src/MainWindow.cpp:1094
 msgid "Its %zu track is removed from the playlist. This cannot be undone."
 msgid_plural ""
 "Its %zu tracks are removed from the playlist. This cannot be undone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/MainWindow.cpp:1574 app-gtk/src/MainWindow.cpp:1087
+#: app-winui/src/MainWindow.cpp:1656 app-gtk/src/MainWindow.cpp:1098
 msgid "Delete"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1600 app-gtk/src/MainWindow.cpp:1127
+#: app-winui/src/MainWindow.cpp:1682 app-gtk/src/MainWindow.cpp:1166
 msgid "Move %u file to the trash?"
 msgid_plural "Move %u files to the trash?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/MainWindow.cpp:1610 app-gtk/src/MainWindow.cpp:1131
+#: app-winui/src/MainWindow.cpp:1692 app-gtk/src/MainWindow.cpp:1170
 msgid ""
 "Undo puts the rows back in the playlist. It does not bring the files back -- restore those from the trash itself."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1613 app-gtk/src/MainWindow.cpp:1141
+#: app-winui/src/MainWindow.cpp:1695 app-gtk/src/MainWindow.cpp:1180
 msgid "Do not ask again"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1639
+#: app-winui/src/MainWindow.cpp:1769 app-gtk/src/TagEditorDialog.cpp:91
+msgid ""
+"The selected files disagree here; what you type replaces it in all of them."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1792 app-gtk/src/TagEditorDialog.cpp:194
+msgid "The file carries its own cover image."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1794 app-gtk/src/TagEditorDialog.cpp:196
+msgid ""
+"This album's picture comes from a file in its folder; it is not stored in this file."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1797 app-gtk/src/TagEditorDialog.cpp:199
+msgid "The file carries no cover image."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1800 app-gtk/src/TagEditorDialog.cpp:203
+msgid "The cover will be removed when you save."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1803 app-gtk/src/TagEditorDialog.cpp:207
+msgid "The chosen image will replace the file's cover."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1825 app-gtk/src/TagEditorDialog.cpp:239
+msgid "Edit Tags"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1842 app-gtk/src/TagEditorDialog.cpp:263
+msgid ""
+"Editing %zu file. Fields you change here are written to every one of them; the rest stays as it is."
+msgid_plural ""
+"Editing %zu files. Fields you change here are written to every one of them; the rest stays as it is."
+msgstr[0] ""
+msgstr[1] ""
+
+#: app-winui/src/MainWindow.cpp:1890 app-gtk/src/TagEditorDialog.cpp:318
+msgid "Other tags"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1892 app-gtk/src/TagEditorDialog.cpp:319
+msgid "Add another tag"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1917 app-gtk/src/TagEditorDialog.cpp:135
+msgid "Name"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1920 app-gtk/src/TagEditorDialog.cpp:139
+msgid "Values, separated by commas"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1925 app-gtk/src/TagEditorDialog.cpp:143
+msgid "Remove this tag"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1979 app-gtk/src/TagEditorDialog.cpp:335
+msgid "Cover"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1990 app-winui/src/PreferencesServices.cpp:111 app-gtk/src/PreferencesDialog.cpp:972 app-gtk/src/TagEditorDialog.cpp:344
+msgid "Remove"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1992 app-gtk/src/TagEditorDialog.cpp:345
+msgid "Keep"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:1994 app-gtk/src/TagEditorDialog.cpp:346
+msgid "Replace..."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2020 app-gtk/src/TagEditorDialog.cpp:372
+msgid "Images"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2052 app-gtk/src/TagEditorDialog.cpp:247
+msgid "Save"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2072
 msgid "About XPCog"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1641 app-winui/src/Panes.cpp:835 app-winui/src/PlaylistTable.cpp:393
+#: app-winui/src/MainWindow.cpp:2074 app-winui/src/Panes.cpp:835 app-winui/src/PlaylistTable.cpp:393
 msgid "Close"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1661 app-gtk/src/MainWindow.cpp:1183
+#: app-winui/src/MainWindow.cpp:2094 app-gtk/src/MainWindow.cpp:1222
 msgid "Crash reporting"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1666 app-gtk/src/MainWindow.cpp:1184
+#: app-winui/src/MainWindow.cpp:2099 app-gtk/src/MainWindow.cpp:1223
 msgid ""
 "Would you like to allow Sentry to submit crash reports?\n"
 "\n"
 "You may turn this off again in Preferences. We won't ask you again."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1669 app-winui/src/PreferencesGeneral.cpp:61 app-gtk/src/MainWindow.cpp:1195 app-gtk/src/PreferencesDialog.cpp:909
+#: app-winui/src/MainWindow.cpp:2102 app-winui/src/PreferencesGeneral.cpp:61 app-gtk/src/MainWindow.cpp:1234 app-gtk/src/PreferencesDialog.cpp:909
 msgid "Privacy policy"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1675 app-gtk/src/MainWindow.cpp:1188
+#: app-winui/src/MainWindow.cpp:2108 app-gtk/src/MainWindow.cpp:1227
 msgid "Yes"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1676 app-gtk/src/MainWindow.cpp:1187
+#: app-winui/src/MainWindow.cpp:2109 app-gtk/src/MainWindow.cpp:1226
 msgid "No"
 msgstr ""
 
@@ -1715,10 +1846,6 @@ msgstr ""
 
 #: app-winui/src/PreferencesGeneral.cpp:64 app-gtk/src/PreferencesDialog.cpp:912
 msgid "Crash reporting is not included in this build."
-msgstr ""
-
-#: app-winui/src/PreferencesGeneral.cpp:67 app-gtk/src/PreferencesDialog.cpp:915 app-gtk/ui/window.blp:159
-msgid "Lyrics"
 msgstr ""
 
 #: app-winui/src/PreferencesGeneral.cpp:72 app-gtk/src/PreferencesDialog.cpp:920
@@ -2005,10 +2132,6 @@ msgstr ""
 
 #: app-winui/src/PreferencesServices.cpp:110 app-gtk/src/PreferencesDialog.cpp:971
 msgid "Use this key"
-msgstr ""
-
-#: app-winui/src/PreferencesServices.cpp:111 app-gtk/src/PreferencesDialog.cpp:972
-msgid "Remove"
 msgstr ""
 
 #: app-winui/src/PreferencesServices.cpp:113 app-gtk/src/PreferencesDialog.cpp:974
@@ -2461,15 +2584,15 @@ msgstr ""
 msgid "Ported from Cog"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:831
+#: app-gtk/src/MainWindow.cpp:842
 msgid "Open Files"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:869
+#: app-gtk/src/MainWindow.cpp:880
 msgid "Open Folder"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:1135
+#: app-gtk/src/MainWindow.cpp:1174
 msgid "Move to Trash"
 msgstr ""
 
@@ -2491,6 +2614,10 @@ msgstr ""
 
 #: app-gtk/src/PreferencesDialog.cpp:438
 msgid "No Results Found"
+msgstr ""
+
+#: app-gtk/src/TagEditorDialog.cpp:370
+msgid "Choose a cover image"
 msgstr ""
 
 #: app-gtk/ui/mini.blp:31

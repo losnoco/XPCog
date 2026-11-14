@@ -264,6 +264,8 @@ void MainWindow::wireUp() {
     });
     observe(session_.scanFinished, [this] {
         gtk_widget_set_visible(scanBox_, FALSE);
+        // New and re-read files need their capabilities asked again.
+        tagCaps_.clear();
         refreshActionState();
     });
     observe(session_.raiseRequested, [this] { present(); });
@@ -276,7 +278,12 @@ void MainWindow::wireUp() {
             mini_->setVolume(gain);
         }
     });
-    observe(session_.undo().changed, [this] { refreshActionState(); });
+    observe(session_.undo().changed, [this] {
+        // An undo of a tag write moves the file back underneath the entry, so
+        // the capabilities remembered for it go too.
+        tagCaps_.clear();
+        refreshActionState();
+    });
     observe(session_.playlistsChanged, [this] { refreshPlaylists(); });
     observe(session_.playbackStateChanged,
             [this](bool playing, bool) { tabs_->setPlaybackActive(playing); });
@@ -569,6 +576,9 @@ void MainWindow::onCommand(CommandId id) {
         case CommandId::PlaylistTrash:
             trashSelected();
             break;
+        case CommandId::PlaylistEditTags:
+            showTagEditorDialog(window_, session_, playlist_->selectedTracks());
+            break;
 
         case CommandId::OrderRepeatNone:
         case CommandId::OrderRepeatOne:
@@ -708,6 +718,7 @@ void MainWindow::refreshActionState() {
     }
     actions_->setEnabled(CommandId::PlaylistReveal, files);
     actions_->setEnabled(CommandId::PlaylistTrash, files);
+    actions_->setEnabled(CommandId::PlaylistEditTags, canEditTags(selected));
     actions_->setEnabled(CommandId::PlaylistRemoveRating, any && session_.library() != nullptr);
     actions_->setEnabled(CommandId::EditRandomize, anything);
     actions_->setEnabled(CommandId::EditSelectAll, anything);
@@ -1102,8 +1113,36 @@ void MainWindow::showPlaylistMenu(double x, double y) {
     gtk_popover_set_pointing_to(GTK_POPOVER(playlistMenu_), &at);
     gtk_popover_popup(GTK_POPOVER(playlistMenu_));
 }
+bool MainWindow::canEditTags(const std::vector<TrackId>& ids) {
+    if (ids.empty()) {
+        return false;
+    }
+    // The same gate Session::editTags applies, so the item is grey exactly
+    // when the dialog would have nothing to write. It is all, not any: one
+    // uneditable row in the selection and the menu item would promise an
+    // edit that silently skips part of what was selected.
+    for (const TrackId id : ids) {
+        const PlaylistEntry* entry = session_.playlists().find(id);
+        if (entry == nullptr || !entry->url.localPath().has_value() ||
+            !entry->url.fragment().empty()) {
+            return false;
+        }
+        const std::string   url = entry->url.toString();
+        const auto          cap = tagCaps_.find(url);
+        const MetadataCapabilities& caps =
+            cap != tagCaps_.end()
+                ? cap->second
+                : tagCaps_.emplace(url, session_.registry().metadataCapabilities(entry->url))
+                      .first->second;
+        if (!caps.writable) {
+            return false;
+        }
+    }
+    return true;
+}
 
 void MainWindow::trashSelected() {
+
     std::vector<TrackId> ids;
     for (const TrackId id : playlist_->selectedTracks()) {
         const PlaylistEntry* entry = session_.playlists().find(id);

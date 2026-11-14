@@ -46,6 +46,8 @@ set(XPCOG_GTK_SOURCES
     src/Presence.hpp
     src/SeekBar.cpp
     src/SeekBar.hpp
+    src/TagEditorDialog.cpp
+    src/TagEditorDialog.hpp
     src/Painting.hpp
     src/Visualizers.cpp
     src/Visualizers.hpp
