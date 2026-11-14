@@ -5,6 +5,27 @@
 # the wild is what a Cog library has been listened to through. Vendored rather
 # than taken from vcpkg because there is no vcpkg port, and because a
 # header-only decoder with no upstream releases is exactly what vendor/ is for.
+#
+# ---------------------------------------------------------------------------
+# Local changes to the vendored sources
+# ---------------------------------------------------------------------------
+# Listed here so a re-vendor does not silently drop them; each is marked in
+# place with an "XPCog local change" comment.
+#
+#   minimp3.h  Two `static const f4 g_scale = { c, c, c, c }` became
+#              `const f4 g_scale = VSET(c)`, in mp3d_synth and in
+#              mp3dec_f32_to_s16. Both are the SIMD path with MINIMP3_FLOAT_OUTPUT
+#              on, which is the configuration this target builds. Upstream has
+#              only ever compiled the NEON side with gcc/clang, whose
+#              float32x4_t takes element initializers; MSVC's is an opaque
+#              `__n128` that takes none, and cl.exe calls the braces C2078 "too
+#              many initializers". VSET is the header's own broadcast macro --
+#              every SIMD flavour defines it, and the NEON blocks beside these
+#              already use it -- and both constants are broadcasts of one value,
+#              so the arithmetic is unchanged. `static` goes because an intrinsic
+#              call is not a constant initializer. The SSE spellings are left
+#              alone: cl.exe accepts them, and it is the only compiler here.
+
 add_library(vendor-minimp3 STATIC minimp3.c)
 
 target_include_directories(vendor-minimp3 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")

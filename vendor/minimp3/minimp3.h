@@ -1566,7 +1566,14 @@ static void mp3d_synth(float *xl, mp3d_sample_t *dstl, int nch, float *lins)
 
 #else /* MINIMP3_FLOAT_OUTPUT */
 
-            static const f4 g_scale = { 1.0f/32768.0f, 1.0f/32768.0f, 1.0f/32768.0f, 1.0f/32768.0f };
+            // XPCog local change: was `static const f4 g_scale = { c, c, c, c }`.
+            // That is valid for __m128 and for gcc/clang's float32x4_t, but MSVC's
+            // arm64 float32x4_t is its opaque __n128, which takes no element
+            // initializers at all -- cl.exe says "too many initializers". It is a
+            // broadcast of one value, so VSET, which every flavour here already
+            // defines for exactly that; and no `static`, because no flavour can
+            // have it as a constant initializer.
+            const f4 g_scale = VSET(1.0f/32768.0f);
             a = VMUL(a, g_scale);
             b = VMUL(b, g_scale);
 #if HAVE_SSE
@@ -1830,7 +1837,8 @@ void mp3dec_f32_to_s16(const float *in, int16_t *out, int num_samples)
     int aligned_count = num_samples & ~7;
     for(; i < aligned_count; i += 8)
     {
-        static const f4 g_scale = { 32768.0f, 32768.0f, 32768.0f, 32768.0f };
+        // XPCog local change: same shape as the one in mp3d_synth above.
+        const f4 g_scale = VSET(32768.0f);
         f4 a = VMUL(VLD(&in[i  ]), g_scale);
         f4 b = VMUL(VLD(&in[i+4]), g_scale);
 #if HAVE_SSE
