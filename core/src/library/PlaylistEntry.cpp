@@ -102,6 +102,41 @@ void PlaylistEntry::applyMetadata(const MetadataMap& tags) {
     metadataLoaded = true;
 }
 
+MetadataMap PlaylistEntry::fullTagMap() const {
+    // Canonical spellings: the first alias of each applyMetadata chain, in
+    // that order, so the map reads like a hand-tagged file rather than like
+    // whichever tool wrote it first.
+    MetadataMap tags;
+    auto        promote = [this, &tags](std::string_view name, const SharedString& value) {
+        if (!value.empty()) {
+            tags.set(name, value.str());
+        }
+    };
+    promote("album", album);
+    promote("albumartist", albumArtist);
+    promote("artist", artist);
+    if (!rawTitle.empty()) {
+        tags.set("title", rawTitle);
+    }
+    promote("genre", genre);
+    promote("composer", composer);
+    promote("date", date);
+    promote("comment", comment);
+    promote("unsyncedlyrics", unsyncedLyrics);
+    if (track != 0) {
+        tags.set("tracknumber", std::to_string(track));
+    }
+    if (disc != 0) {
+        tags.set("discnumber", std::to_string(disc));
+    }
+
+    // applyMetadata strips kPromoted from metadata, so these two halves
+    // should not overlap; the merge is the guard for entries built by other
+    // paths (a hand-edited map from the tag editor rides through verbatim).
+    tags.mergeFrom(metadata);
+    return tags;
+}
+
 std::string PlaylistEntry::title() const {
     if (!rawTitle.empty()) {
         return rawTitle;

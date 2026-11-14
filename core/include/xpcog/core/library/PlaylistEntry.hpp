@@ -99,6 +99,26 @@ struct PlaylistEntry {
     /// Promotes the well-known tag names into columns and keeps the rest in
     /// `metadata`. Port of Cog's -setMetadata:, minus the property keys.
     void applyMetadata(const MetadataMap& tags);
+
+    /// The inverse of applyMetadata(): the columns re-derived under their
+    /// canonical tag spellings (the first alias of each applyMetadata chain),
+    /// with `metadata` merged on top. Feeding the result to a metadata writer
+    /// is the round-trip kPromoted's comment promises. Saving through here
+    /// normalizes aliases away: `album artist`, `recording_date`, `tracknum`
+    /// and friends come back as `albumartist`, `date`, `tracknumber` -- the
+    /// loser of each applyMetadata alias chain was already dropped there.
+    ///
+    /// Known losses, both inherent to promotion rather than to this function:
+    /// a promoted tag that held several values sits in its column joined, and
+    /// comes back as one; `track` and `disc` are parsed ints, so "3/12" comes
+    /// back as "3". `year` is not emitted -- it is derived from `date`, whose
+    /// own alias chain already covers it.
+    ///
+    /// `albumart` rides through in `metadata` verbatim, whether the file
+    /// carried it or Scanner's attachFolderArtwork injected a folder cover --
+    /// nothing here can tell the two apart, so callers that write files must
+    /// not offer this map wholesale without thinking about that.
+    [[nodiscard]] MetadataMap fullTagMap() const;
 };
 
 }  // namespace xpcog

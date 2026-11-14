@@ -764,3 +764,58 @@ TEST_CASE("peeking after the cursor's entry was removed resumes where it will",
     CHECK(playlist.peekNextForPlayback() == ids[3]);
     CHECK(playlist.nextForPlayback() == ids[3]);
 }
+
+TEST_CASE("fullTagMap collapses tag aliases to canonical spellings", "[tags][playlist]") {
+    MetadataMap tags;
+    tags.set("album artist", "Defending My Art");
+    tags.set("recording_date", "1977");
+    tags.set("tracknum", "3/12");
+    tags.set("discnum", "1");
+    tags.set("artist", "Pink Floyd");
+    tags.set("title", "Dogs");
+
+    PlaylistEntry entry;
+    entry.applyMetadata(tags);
+
+    const MetadataMap out = entry.fullTagMap();
+    CHECK(out.joined("albumartist") == "Defending My Art");
+    CHECK(out.joined("date") == "1977");
+    CHECK(out.joined("tracknumber") == "3");  // the column is the parsed int
+    CHECK(out.joined("discnumber") == "1");
+    CHECK(out.joined("artist") == "Pink Floyd");
+    CHECK(out.joined("title") == "Dogs");
+    // The aliases and the derived year must not ride along beside their
+    // canonical spellings -- that is the double-emit kPromoted exists to stop.
+    for (std::string_view alias : {"album artist", "recording_date", "tracknum",
+                                   "discnum", "year"}) {
+        CHECK_FALSE(out.contains(alias));
+    }
+}
+
+TEST_CASE("fullTagMap keeps unpromoted entries and art bytes intact", "[tags][playlist]") {
+    MetadataMap tags;
+    tags.set("artist", "Kate Bush");
+    tags.set("genre", std::vector<std::string>{"art rock", "prog"});  // joined by promotion
+    tags.set("bpm", "109");
+    tags.set("mood", std::vector<std::string>{"bright", "strange"});  // stays a list
+    tags.setBytes("albumart", std::vector<std::byte>{std::byte{0x89}, std::byte{0x50}});
+
+    PlaylistEntry entry;
+    entry.applyMetadata(tags);
+
+    const MetadataMap out = entry.fullTagMap();
+    CHECK(out.joined("artist") == "Kate Bush");
+    CHECK(out.joined("genre") == "art rock, prog");
+    CHECK(out.joined("bpm") == "109");
+    CHECK(out.joined("mood", "; ") == "bright; strange");
+    REQUIRE(out.bytes("albumart") != nullptr);
+    CHECK(*out.bytes("albumart") ==
+          std::vector<std::byte>{std::byte{0x89}, std::byte{0x50}});
+}
+
+TEST_CASE("fullTagMap stays empty for an entry with no tags", "[tags][playlist]") {
+    PlaylistEntry entry;
+    // title() falls back to the file name, but the map re-derives from the
+    // column, not the fallback: nothing was ever tagged, nothing is emitted.
+    CHECK(entry.fullTagMap().empty());
+}
