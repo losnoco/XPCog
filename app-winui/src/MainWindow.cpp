@@ -1734,9 +1734,6 @@ winrt::fire_and_forget MainWindow::editTags() {
         app::TagEditorModel model;
 
         mux::Controls::ContentDialog box = nullptr;
-        /// The dialog's own Save button, spelled from the property's own type:
-        /// it is what the gating below turns on and off.
-        decltype(box.PrimaryButton()) save = nullptr;
         /// The free rows' container: its trailing children are the rows, in
         /// order, and it is rebuilt wholesale whenever their number moves.
         mux::Controls::StackPanel freeContainer = nullptr;
@@ -1753,11 +1750,14 @@ winrt::fire_and_forget MainWindow::editTags() {
               std::vector<app::TagEditorSource> sources_)
             : session(session_), ids(std::move(ids_)), model(std::move(sources_)) {}
 
+        /// The dialog gates its own Save button through the dialog: a
+        /// ContentDialog hands out no button to hold on to, so this is the
+        /// one property that says whether the answer is available.
         void refreshSave() {
-            // Guarded: the first handlers can fire before the dialog's
-            // buttons exist, and a null here means nothing is up to gate.
-            if (save) {
-                save.IsEnabled(model.changed());
+            // Guarded: the first handlers can fire before the dialog is put
+            // up, and a null box here means nothing is up to gate.
+            if (box) {
+                box.IsPrimaryButtonEnabled(model.changed());
             }
         }
 
@@ -2028,9 +2028,11 @@ winrt::fire_and_forget MainWindow::editTags() {
                 }
                 const auto buffer =
                     co_await winrt::Windows::Storage::FileIO::ReadBufferAsync(chosen.Path());
-                streams::DataWriter reader;
-                reader.Attach(buffer);
-                const auto bytes = reader.ReadBytes(static_cast<uint32_t>(buffer.Length()));
+                // DataReader, not DataWriter: this reads the file back. The
+                // static wraps the buffer the picker's read handed over, and
+                // ReadBytes is how a cppwinrt reader gives up a byte array.
+                const auto reader = streams::DataReader::FromBuffer(buffer);
+                const auto bytes  = reader.ReadBytes(static_cast<uint32_t>(buffer.Length()));
                 std::vector<std::byte> owned;
                 owned.reserve(bytes.size());
                 for (const uint8_t byte : bytes) {
@@ -2052,8 +2054,7 @@ winrt::fire_and_forget MainWindow::editTags() {
     box.PrimaryButtonText(toH(app::tr("Save")));
     box.CloseButtonText(toH(app::tr("Cancel")));
     // Save says what the model can do: no edit, no write.
-    state->save = box.PrimaryButton();
-    state->save.IsEnabled(false);
+    state->refreshSave();
 
     const auto result = co_await box.ShowAsync();
     dialogOpen_ = false;

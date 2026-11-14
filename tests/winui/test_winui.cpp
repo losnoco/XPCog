@@ -35,6 +35,7 @@
 
 #include "Commands.hpp"
 #include "Session.hpp"
+#include "Translations.hpp"
 
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
@@ -493,16 +494,20 @@ TEST_CASE("The tag editor opens on a real file and seeds its rows", "[winui][tag
             return out;
         }
         out.dialog     = found;
-        out.title      = winrt::to_string(found.Title());
-        out.saveEnabled = found.PrimaryButton().IsEnabled();
+        // hstring, not std::string: winrt::to_string answers UTF-8 for a wide
+        // one, and what is collected here is XAML text.
+        out.title      = std::wstring(found.Title());
+        // A ContentDialog hands out no button to hold on to; the dialog itself
+        // says whether the answer is available.
+        out.saveEnabled = found.IsPrimaryButtonEnabled();
         // Declared empty and assigned after: the lambda names walk itself, and
         // a capture in the initializer would name an object not yet built.
         std::function<void(const mux::DependencyObject&)> walk;
         walk = [&out, &walk](const mux::DependencyObject& node) {
             if (const auto text = node.try_as<mux::Controls::TextBlock>()) {
-                out.texts.push_back(text.Text());
+                out.texts.push_back(std::wstring(text.Text()));
             } else if (const auto box = node.try_as<mux::Controls::TextBox>()) {
-                out.texts.push_back(box.Text());
+                out.texts.push_back(std::wstring(box.Text()));
             }
             if (const auto panel = node.try_as<mux::Controls::Panel>()) {
                 for (const auto& child : panel.Children()) {
@@ -514,13 +519,13 @@ TEST_CASE("The tag editor opens on a real file and seeds its rows", "[winui][tag
         return out;
     });
     REQUIRE(opened.dialog != nullptr);
-    CHECK(opened.title == winrt::to_string(toH(xpcog::app::tr("Edit Tags"))));
+    CHECK(opened.title == std::wstring(toH(xpcog::app::tr("Edit Tags"))));
     REQUIRE(!opened.texts.empty());
     // Save says what the model can do: nothing has been edited, so nothing is
     // written.
     CHECK_FALSE(opened.saveEnabled);
 
-    const bool hasText = [&](std::wstring_view needle) {
+    const auto hasText = [&](std::wstring_view needle) {
         return std::find(opened.texts.begin(), opened.texts.end(), needle) != opened.texts.end();
     };
     // The promoted rows carry the file's own values, and the fields the file
