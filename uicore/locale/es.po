@@ -29,18 +29,8 @@ msgstr "#"
 
 #. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
 #: wxWidgets/src/common/stockitem.cpp
-msgid "&Close"
-msgstr "&Cerrar"
-
-#. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
-#: wxWidgets/src/common/stockitem.cpp
 msgid "Close"
 msgstr "Cerrar"
-
-#. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
-#: wxWidgets/src/common/stockitem.cpp
-msgid "&OK"
-msgstr "&Aceptar"
 
 #. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
 #: wxWidgets/src/common/stockitem.cpp
@@ -49,23 +39,8 @@ msgstr "Aceptar"
 
 #. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
 #: wxWidgets/src/common/stockitem.cpp
-msgid "&Cancel"
-msgstr "&Cancelar"
-
-#. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
-#: wxWidgets/src/common/stockitem.cpp
-msgid "&Yes"
-msgstr "&Sí"
-
-#. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
-#: wxWidgets/src/common/stockitem.cpp
 msgid "Yes"
 msgstr "Sí"
-
-#. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
-#: wxWidgets/src/common/stockitem.cpp
-msgid "&No"
-msgstr "&No"
 
 #. A wxWidgets stock label. See STOCK in tools/extract-messages.py.
 #: wxWidgets/src/common/stockitem.cpp
@@ -119,14 +94,6 @@ msgstr "decodificación HDCD"
 #: app/src/AboutDialog.cpp:53
 msgid "gapless edges"
 msgstr "bordes sin silencios"
-
-#: app/src/AboutDialog.cpp:54
-msgid "drawing the interface icons"
-msgstr "dibujo de los iconos de la interfaz"
-
-#: app/src/AboutDialog.cpp:55
-msgid "the interface icons themselves"
-msgstr "los iconos de la interfaz"
 
 #: app/src/AboutDialog.cpp:56
 msgid "opt-in crash reporting"
@@ -744,10 +711,6 @@ msgstr "Reproducciones"
 msgid "Comment"
 msgstr "Comentario"
 
-#: app/src/InfoPanel.cpp:268
-msgid "&Copy"
-msgstr "&Copiar"
-
 #: app/src/InfoPanel.cpp:379
 msgid "yes"
 msgstr "sí"
@@ -869,10 +832,6 @@ msgstr "Política de privacidad"
 msgid "Library unavailable: %s"
 msgstr "Biblioteca no disponible: %s"
 
-#: app/src/MainFrame.cpp:549
-msgid "Stop reading files"
-msgstr "Dejar de leer archivos"
-
 #: app/src/MainFrame.cpp:640 app/src/MiniFrame.cpp:90
 msgid "Volume"
 msgstr "Volumen"
@@ -918,30 +877,6 @@ msgstr "Reproducir"
 #: app/src/MainFrame.cpp:1531
 msgid "Randomize"
 msgstr "Ordenar al azar"
-
-#: app/src/MainFrame.cpp:1648
-msgid "&Undo %s"
-msgstr "&Deshacer: %s"
-
-#: app/src/MainFrame.cpp:1655
-msgid "&Redo %s"
-msgstr "&Rehacer: %s"
-
-#: app/src/MainFrame.cpp:1675
-msgid "&Pause"
-msgstr "&Pausar"
-
-#: app/src/MainFrame.cpp:1675
-msgid "&Play"
-msgstr "&Reproducir"
-
-#: app/src/MainFrame.cpp:1774
-msgid "Remove from &Queue"
-msgstr "Quitar de la &cola"
-
-#: app/src/MainFrame.cpp:1776
-msgid "&Toggle Queued"
-msgstr "Alternar en la &cola"
 
 #: app/src/MainFrame.cpp:1819
 msgid "Open Files"
@@ -1135,10 +1070,6 @@ msgstr "Información"
 #: app/src/MainFrame.cpp:2926
 msgid "Lyrics"
 msgstr "Letras"
-
-#: app/src/MainFrame.cpp:2928
-msgid "SC-55 Panel"
-msgstr "Panel del SC-55"
 
 #: app/src/MainFrame.cpp:3063
 msgid "Could not save the playlist: %s"
@@ -1692,17 +1623,9 @@ msgstr "Sintetizador"
 msgid "SoundFont"
 msgstr "SoundFont"
 
-#: app/src/PreferencesDialog.cpp:1308
-msgid "SoundFont banks"
-msgstr "Bancos SoundFont"
-
 #: app/src/PreferencesDialog.cpp:1310
 msgid "SC-55 ROMs"
 msgstr "ROM del SC-55"
-
-#: app/src/PreferencesDialog.cpp:1311
-msgid "Archives"
-msgstr "Archivos comprimidos"
 
 #: app/src/PreferencesDialog.cpp:1317
 msgid "Sample rate (Hz)"
@@ -2038,47 +1961,6 @@ msgstr "Salir"
 msgid "(paused)"
 msgstr "(en pausa)"
 
-#: app/src/XPCogApp.cpp:42
-msgid "offer XPCog for the audio file types this build understands"
-msgstr ""
-"ofrecer XPCog para los tipos de archivo de audio que entiende esta compilación"
-
-#: app/src/XPCogApp.cpp:44
-msgid "undo --register"
-msgstr "deshacer --register"
-
-#: app/src/XPCogApp.cpp:46
-msgid "file"
-msgstr "archivo"
-
-#: app/src/XPCogApp.cpp:305
-msgid ""
-"File associations are handled by the package on this platform, not by the application."
-msgstr ""
-"En esta plataforma, las asociaciones de archivos las gestiona el paquete, no la aplicación."
-
-#: app/src/XPCogApp.cpp:313
-msgid "Could not remove the file associations: %s"
-msgstr "No se pudieron quitar las asociaciones de archivos: %s"
-
-#: app/src/XPCogApp.cpp:317
-msgid "XPCog is no longer offered for audio files."
-msgstr "XPCog ya no se ofrece para los archivos de audio."
-
-#: app/src/XPCogApp.cpp:331
-msgid "Could not register the file associations: %s"
-msgstr "No se pudieron registrar las asociaciones de archivos: %s"
-
-#: app/src/XPCogApp.cpp:341
-msgid ""
-"XPCog is now offered for %zu audio file types.\n"
-"\n"
-"Windows does not let an application make itself the default. To open these files by double-clicking, choose Open with → Choose another app → XPCog, and tick \"Always use this app\"."
-msgstr ""
-"XPCog ya se ofrece para %zu tipos de archivo de audio.\n"
-"\n"
-"Windows no permite que una aplicación se convierta a sí misma en la predeterminada. Para abrir estos archivos con doble clic, elige Abrir con → Elegir otra aplicación → XPCog y marca «Usar siempre esta aplicación»."
-
 #: app/src/AppCommands.cpp:26
 msgid "%s (remote)"
 msgstr "%s (remoto)"
@@ -2410,10 +2292,6 @@ msgid "AES, under melonDS"
 msgstr "AES, bajo melonDS"
 
 #: uicore/src/Credits.cpp
-msgid "JPEG images, under wxWidgets"
-msgstr "imágenes JPEG, bajo wxWidgets"
-
-#: uicore/src/Credits.cpp
 msgid "LZ4 archives, under libarchive"
 msgstr "archivos LZ4, bajo libarchive"
 
@@ -2426,24 +2304,8 @@ msgid "OPL MIDI playback, under Nuked OPL3"
 msgstr "reproducción MIDI por OPL, bajo Nuked OPL3"
 
 #: uicore/src/Credits.cpp
-msgid "PNG images, under wxWidgets"
-msgstr "imágenes PNG, bajo wxWidgets"
-
-#: uicore/src/Credits.cpp
 msgid "SHA-1, under melonDS"
 msgstr "SHA-1, bajo melonDS"
-
-#: uicore/src/Credits.cpp
-msgid "TIFF images, under wxWidgets"
-msgstr "imágenes TIFF, bajo wxWidgets"
-
-#: uicore/src/Credits.cpp
-msgid "WebP images, under wxWidgets"
-msgstr "imágenes WebP, bajo wxWidgets"
-
-#: uicore/src/Credits.cpp
-msgid "XML, under wxWidgets"
-msgstr "XML, bajo wxWidgets"
 
 #: uicore/src/Credits.cpp
 msgid "XZ and LZMA archives, under libarchive"
@@ -2476,10 +2338,6 @@ msgstr "listado de carpetas para los núcleos PSF"
 #: uicore/src/Credits.cpp
 msgid "hashing, under melonDS"
 msgstr "hashing, bajo melonDS"
-
-#: uicore/src/Credits.cpp
-msgid "regular expressions, under wxWidgets"
-msgstr "expresiones regulares, bajo wxWidgets"
 
 #: uicore/src/Credits.cpp
 msgid "resampling, under Rubber Band"
@@ -2716,3 +2574,157 @@ msgstr "&Opciones de los paneles"
 #: app-winui/src/CommandMenus.cpp
 msgid "Visuali&zations"
 msgstr "&Visualizaciones"
+
+# The label sits in the Edit menu and in the playlist's context menu, so the
+# accelerator has to be unique in both. E is free in each: the Edit menu's rows
+# take D, R, t, p, Q and l, the context menu's c, D, G, a, b, R, n, v, M, p, Q,
+# s and I.
+#: uicore/src/Commands.cpp
+msgid "&Edit Tags..."
+msgstr "&Editar etiquetas…"
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Edit Tags"
+msgstr "Editar etiquetas"
+
+# The one explanatory line the batch dialog carries, under its title. English
+# leaves it without a finite verb, which Spanish cannot do, so the note says
+# what the dialog does to the files. The two forms differ in that verb alone.
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid ""
+"Editing %zu file. Fields you change here are written to every one of them; the rest stays as it is."
+msgid_plural ""
+"Editing %zu files. Fields you change here are written to every one of them; the rest stays as it is."
+msgstr[0] ""
+"Se edita %zu archivo. Los campos que cambies aquí se escriben en todos ellos; lo demás se queda como está."
+msgstr[1] ""
+"Se editan %zu archivos. Los campos que cambies aquí se escriben en todos ellos; lo demás se queda como está."
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Save"
+msgstr "Guardar"
+
+# The same words the Info pane already answers "Album Artist" with.
+#: uicore/src/TagEditorModel.cpp
+msgid "Album artist"
+msgstr "Artista del álbum"
+
+# Beside Track, and meaning the disc of a multi-disc set, not the disc as a
+# carrier.
+#: uicore/src/TagEditorModel.cpp
+msgid "Disc"
+msgstr "Disco"
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid ""
+"The selected files disagree here; what you type replaces it in all of them."
+msgstr ""
+"Los archivos seleccionados no coinciden aquí; lo que escribas lo sustituirá en todos ellos."
+
+#: uicore/src/TagEditorModel.cpp
+msgid "This format keeps only the first value."
+msgstr "Este formato solo guarda el primer valor."
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Other tags"
+msgstr "Otras etiquetas"
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Add another tag"
+msgstr "Añadir otra etiqueta"
+
+# Placeholder in an empty row of the free-tag table: the name the tag is stored
+# under.
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Name"
+msgstr "Nombre"
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Values, separated by commas"
+msgstr "Valores, separados por comas"
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Remove this tag"
+msgstr "Quitar esta etiqueta"
+
+#: uicore/src/TagEditorModel.cpp
+msgid "The field above already covers this name; it will not be written."
+msgstr "El campo de más arriba ya cubre este nombre; no se escribirá."
+
+#: uicore/src/TagEditorModel.cpp
+msgid ""
+"This format has no field for this name; it will be stored generically."
+msgstr ""
+"Este formato no tiene un campo para este nombre; se guardará de forma genérica."
+
+# Portada rather than the Carátula of the artwork pane: English switches from
+# artwork to cover here, and the picture embedded in a file is la portada in
+# the players this screen is imitating.
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Cover"
+msgstr "Portada"
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "The file carries its own cover image."
+msgstr "El archivo lleva su propia imagen de portada."
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid ""
+"This album's picture comes from a file in its folder; it is not stored in this file."
+msgstr ""
+"La imagen de este álbum viene de un archivo de su carpeta; no está guardada en este archivo."
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "The file carries no cover image."
+msgstr "El archivo no lleva imagen de portada."
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "The cover will be removed when you save."
+msgstr "La portada se quitará al guardar."
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "The chosen image will replace the file's cover."
+msgstr "La imagen elegida sustituirá la portada del archivo."
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Keep"
+msgstr "Mantener"
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Replace..."
+msgstr "Sustituir…"
+
+#: app-gtk/src/TagEditorDialog.cpp
+msgid "Choose a cover image"
+msgstr "Elegir una imagen de portada"
+
+#: app-winui/src/MainWindow.cpp app-gtk/src/TagEditorDialog.cpp
+msgid "Images"
+msgstr "Imágenes"
+
+#: uicore/src/Session.cpp
+msgid "Saved tags for %zu file."
+msgid_plural "Saved tags for %zu files."
+msgstr[0] "Se guardaron las etiquetas de %zu archivo."
+msgstr[1] "Se guardaron las etiquetas de %zu archivos."
+
+# Spanish agrees the verb with las etiquetas, the thing that failed, so both
+# forms take the plural verb and only the noun after the number changes. What
+# follows the colon is either the writer's own words or the fragment below.
+#: uicore/src/Session.cpp
+msgid "%zu file could not have its tags saved: %s"
+msgid_plural "%zu files could not have their tags saved: %s"
+msgstr[0] "No se pudieron guardar las etiquetas de %zu archivo: %s"
+msgstr[1] "No se pudieron guardar las etiquetas de %zu archivos: %s"
+
+# A fragment, not a sentence: it is the reason at the end of the line above
+# when the writer had nothing to say. It has to read after the colon.
+#: uicore/src/Session.cpp
+msgid "the file could not be written"
+msgstr "no se pudo escribir el archivo"
+
+# Counted when every row in the selection is a stream, a cue sheet's track, or
+# a format this build has no writer for.
+#: uicore/src/Session.cpp
+msgid "No writable files in the selection."
+msgstr "Ninguno de los archivos seleccionados admite guardar etiquetas."

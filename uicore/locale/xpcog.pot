@@ -1487,7 +1487,7 @@ msgstr ""
 msgid "Audio Files"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1517 app-winui/src/MainWindow.cpp:2023 app-gtk/src/MainWindow.cpp:854 app-gtk/src/PreferencesDialog.cpp:268 app-gtk/src/TagEditorDialog.cpp:377
+#: app-winui/src/MainWindow.cpp:1517 app-winui/src/MainWindow.cpp:2023 app-gtk/src/MainWindow.cpp:854 app-gtk/src/PreferencesDialog.cpp:268 app-gtk/src/TagEditorDialog.cpp:387
 msgid "All Files"
 msgstr ""
 
@@ -1515,7 +1515,7 @@ msgstr ""
 msgid "Open"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1591 app-winui/src/MainWindow.cpp:1626 app-winui/src/MainWindow.cpp:1657 app-winui/src/MainWindow.cpp:1700 app-winui/src/MainWindow.cpp:2053 app-winui/src/PreferencesServices.cpp:90 app-winui/src/PreferencesServices.cpp:461 app-gtk/src/Dialogs.cpp:119 app-gtk/src/Dialogs.cpp:159 app-gtk/src/MainWindow.cpp:1173 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/src/TagEditorDialog.cpp:246 app-gtk/ui/window.blp:200
+#: app-winui/src/MainWindow.cpp:1591 app-winui/src/MainWindow.cpp:1626 app-winui/src/MainWindow.cpp:1657 app-winui/src/MainWindow.cpp:1700 app-winui/src/MainWindow.cpp:2053 app-winui/src/PreferencesServices.cpp:90 app-winui/src/PreferencesServices.cpp:461 app-gtk/src/Dialogs.cpp:119 app-gtk/src/Dialogs.cpp:159 app-gtk/src/MainWindow.cpp:1173 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/src/TagEditorDialog.cpp:251 app-gtk/ui/window.blp:200
 msgid "Cancel"
 msgstr ""
 
@@ -1557,37 +1557,37 @@ msgstr ""
 msgid "Do not ask again"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1769 app-gtk/src/TagEditorDialog.cpp:91
+#: app-winui/src/MainWindow.cpp:1769 app-gtk/src/TagEditorDialog.cpp:95
 msgid ""
 "The selected files disagree here; what you type replaces it in all of them."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1792 app-gtk/src/TagEditorDialog.cpp:194
+#: app-winui/src/MainWindow.cpp:1792 app-gtk/src/TagEditorDialog.cpp:198
 msgid "The file carries its own cover image."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1794 app-gtk/src/TagEditorDialog.cpp:196
+#: app-winui/src/MainWindow.cpp:1794 app-gtk/src/TagEditorDialog.cpp:200
 msgid ""
 "This album's picture comes from a file in its folder; it is not stored in this file."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1797 app-gtk/src/TagEditorDialog.cpp:199
+#: app-winui/src/MainWindow.cpp:1797 app-gtk/src/TagEditorDialog.cpp:203
 msgid "The file carries no cover image."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1800 app-gtk/src/TagEditorDialog.cpp:203
+#: app-winui/src/MainWindow.cpp:1800 app-gtk/src/TagEditorDialog.cpp:207
 msgid "The cover will be removed when you save."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1803 app-gtk/src/TagEditorDialog.cpp:207
+#: app-winui/src/MainWindow.cpp:1803 app-gtk/src/TagEditorDialog.cpp:211
 msgid "The chosen image will replace the file's cover."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1825 app-gtk/src/TagEditorDialog.cpp:239
+#: app-winui/src/MainWindow.cpp:1825 app-gtk/src/TagEditorDialog.cpp:243
 msgid "Edit Tags"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1842 app-gtk/src/TagEditorDialog.cpp:263
+#: app-winui/src/MainWindow.cpp:1842 app-gtk/src/TagEditorDialog.cpp:268
 msgid ""
 "Editing %zu file. Fields you change here are written to every one of them; the rest stays as it is."
 msgid_plural ""
@@ -1595,47 +1595,47 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/MainWindow.cpp:1890 app-gtk/src/TagEditorDialog.cpp:318
+#: app-winui/src/MainWindow.cpp:1890 app-gtk/src/TagEditorDialog.cpp:322
 msgid "Other tags"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1892 app-gtk/src/TagEditorDialog.cpp:319
+#: app-winui/src/MainWindow.cpp:1892 app-gtk/src/TagEditorDialog.cpp:329
 msgid "Add another tag"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1917 app-gtk/src/TagEditorDialog.cpp:135
+#: app-winui/src/MainWindow.cpp:1917 app-gtk/src/TagEditorDialog.cpp:139
 msgid "Name"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1920 app-gtk/src/TagEditorDialog.cpp:139
+#: app-winui/src/MainWindow.cpp:1920 app-gtk/src/TagEditorDialog.cpp:143
 msgid "Values, separated by commas"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1925 app-gtk/src/TagEditorDialog.cpp:143
+#: app-winui/src/MainWindow.cpp:1925 app-gtk/src/TagEditorDialog.cpp:147
 msgid "Remove this tag"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1979 app-gtk/src/TagEditorDialog.cpp:335
+#: app-winui/src/MainWindow.cpp:1979 app-gtk/src/TagEditorDialog.cpp:345
 msgid "Cover"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1990 app-winui/src/PreferencesServices.cpp:111 app-gtk/src/PreferencesDialog.cpp:972 app-gtk/src/TagEditorDialog.cpp:344
+#: app-winui/src/MainWindow.cpp:1990 app-winui/src/PreferencesServices.cpp:111 app-gtk/src/PreferencesDialog.cpp:972 app-gtk/src/TagEditorDialog.cpp:354
 msgid "Remove"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1992 app-gtk/src/TagEditorDialog.cpp:345
+#: app-winui/src/MainWindow.cpp:1992 app-gtk/src/TagEditorDialog.cpp:355
 msgid "Keep"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1994 app-gtk/src/TagEditorDialog.cpp:346
+#: app-winui/src/MainWindow.cpp:1994 app-gtk/src/TagEditorDialog.cpp:356
 msgid "Replace..."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2020 app-gtk/src/TagEditorDialog.cpp:372
+#: app-winui/src/MainWindow.cpp:2020 app-gtk/src/TagEditorDialog.cpp:382
 msgid "Images"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2052 app-gtk/src/TagEditorDialog.cpp:247
+#: app-winui/src/MainWindow.cpp:2052 app-gtk/src/TagEditorDialog.cpp:252
 msgid "Save"
 msgstr ""
 
@@ -2616,7 +2616,7 @@ msgstr ""
 msgid "No Results Found"
 msgstr ""
 
-#: app-gtk/src/TagEditorDialog.cpp:370
+#: app-gtk/src/TagEditorDialog.cpp:380
 msgid "Choose a cover image"
 msgstr ""
 
