@@ -68,13 +68,15 @@ INLINE static void do_mulf(usf_state_t * state, short* VD, short* VS, short* VT)
         VACC_M[i] = (SEMIFRAC << 1) >> 16;
     for (i = 0; i < N; i++)
         VACC_H[i] = -((VACC_M[i] < 0) & (VS[i] != VT[i])); /* -32768 * -32768 */
-#if !defined ARCH_MIN_SSE2
-    vector_copy(VD, VACC_M);
-    for (i = 0; i < N; i++)
-        VD[i] -= (VACC_M[i] < 0) & (VS[i] == VT[i]); /* ACC b 31 set, min*min */
-#else
+    /*
+     * XPCog local change: use the accumulator clamp on every path.  The
+     * plain-C body this replaces copied VACC_M into VD and only then tested
+     * VS[i] == VT[i], so when VD aliased VS (legal in a real instruction
+     * stream) it compared against values it had just overwritten.  Exhaustive
+     * probing with distinct registers showed the two bodies are numerically
+     * equal, so this only removes the aliasing hazard.
+     */
     SIGNED_CLAMP_AM(state, VD);
-#endif
     return;
 #endif
 }

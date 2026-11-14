@@ -51,41 +51,32 @@ INLINE static void do_abs(usf_state_t * state, short* VD, short* VS, short* VT)
 #else
 	
 	
-#ifndef ARCH_MIN_SSE2
-#define MASK_XOR
-#endif
+    /*
+     * XPCog local change: dropped the MASK_XOR variant that the old
+     * "#ifndef ARCH_MIN_SSE2" guard selected.  It was not an equivalent way of
+     * writing this: nez[i] is +1 for VS > 0, and XOR-ing VT with +1 flips bit
+     * 0 instead of leaving VT alone, while the -32768 corner-case test used
+     * "!=" where the two's-complement trick needs "==", so the +1 was added
+     * for every input.  Probing every VS against representative VTs showed
+     * this body disagreeing with the multiply body below for 1-65536 of the
+     * 65536 inputs in each group, e.g. VS=+1, VT=-2 gave 0 instead of -2.
+     */
     for (i = 0; i < N; i++)
         neg[i]  = (VS[i] <  0x0000);
     for (i = 0; i < N; i++)
         pos[i]  = (VS[i] >  0x0000);
     for (i = 0; i < N; i++)
         nez[i]  = 0;
-#ifdef MASK_XOR
-    for (i = 0; i < N; i++)
-        neg[i]  = -neg[i];
-    for (i = 0; i < N; i++)
-        nez[i] += neg[i];
-#else
     for (i = 0; i < N; i++)
         nez[i] -= neg[i];
-#endif
     for (i = 0; i < N; i++)
         nez[i] += pos[i];
-#ifdef MASK_XOR
-    for (i = 0; i < N; i++)
-        res[i] ^= nez[i];
-    for (i = 0; i < N; i++)
-        cch[i]  = (res[i] != -32768);
-    for (i = 0; i < N; i++)
-        res[i] += cch[i]; /* -(x) === (x ^ -1) + 1 */
-#else
     for (i = 0; i < N; i++)
         res[i] *= nez[i];
     for (i = 0; i < N; i++)
         cch[i]  = (res[i] == -32768);
     for (i = 0; i < N; i++)
         res[i] -= cch[i];
-#endif
     vector_copy(VACC_L, res);
     vector_copy(VD, VACC_L);
     return;

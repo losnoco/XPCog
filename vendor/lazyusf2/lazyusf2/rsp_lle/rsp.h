@@ -26,9 +26,21 @@
 
 /*
  * Streaming SIMD Extensions version import management
+ *
+ * XPCog local change: MSVC on ARM64 takes neither branch. cl.exe's
+ * <emmintrin.h> is a hard #error there -- its SSE2 intrinsics exist on ARM64
+ * only as software emulation behind USE_SOFT_INTRINSICS -- and the NEON code
+ * in vu/ is written for gcc/clang's arm_neon.h, which cl.exe rejects outright
+ * (its vector types are an opaque __n128 and the neon_* spellings are gcc's).
+ * So on _M_ARM64 no ARCH_MIN_* macro is set, which leaves the plain-C body
+ * that every vu/ header keeps beside its SIMD ones. Upstream has only ever
+ * built this on x86/x64 or with gcc on AArch64, so that path is untested
+ * there: same arithmetic, a slower RSP VU interpreter.
  */
-#ifdef __aarch64__
+#if defined __aarch64__
 #define ARCH_MIN_ARM_NEON 1
+#elif defined _M_ARM64 || defined _M_ARM64EC
+/* no SIMD, see above */
 #else
 #define ARCH_MIN_SSE2 1
 #endif

@@ -41,6 +41,32 @@
 #                __control87_2 only for 32-bit x86, so an x64 link fails on it.
 #                Cog builds this for macOS alone, where the whole MSVC branch is
 #                compiled out, so upstream has never linked it on Windows.
+#
+#   rsp_lle/rsp.h  Added an ARM64 case to the ARCH_MIN_* selection. MSVC on
+#                ARM64 took neither branch upstream: <emmintrin.h> is a hard
+#                #error there, and the NEON bodies in rsp_lle/vu/ are written
+#                for gcc/clang's arm_neon.h, which cl.exe rejects outright. It
+#                now selects no SIMD on _M_ARM64, leaving each vu/ header's
+#                plain-C body, which is the same arithmetic in a slower RSP VU
+#                interpreter. __aarch64__ keeps selecting NEON, so gcc on
+#                AArch64 is untouched.
+#
+#   rsp_lle/vu/vmulf.h, rsp_lle/vu/vabs.h  Two plain-C bodies that ARM64 now
+#                reaches disagreed with the SSE2 bodies they stand beside, so
+#                they are corrected rather than left as an arm64-only variant.
+#                Exhaustive probing of every VS against representative VTs,
+#                against headers built both with and without SSE2, is what
+#                found them: vmulf.h's body wrote VD before testing VS[i] ==
+#                VT[i] and so compared against values it had just overwritten
+#                whenever VD aliased VS, a legal encoding; vabs.h's MASK_XOR
+#                variant was never equivalent -- nez[i] is +1 for VS > 0, and
+#                XOR-ing VT with +1 flips bit 0 -- so it was dropped. Neither
+#                is reachable on x64, where SSE2 covers both. The NEON bodies
+#                beside these were left alone: they cannot be built or probed
+#                with the compilers here, and vabs.h's looks wrong the same way
+#                (vcgeq_s16(resi, 0x8000) on signed values is always true), so
+#                treat that as an upstream bug to report, not something to
+#                change untested.
 
 # zlib, and not transitively. `r4300/interpreter_tlb.def` -- included into both
 # cached_interp.c and pure_interp.c -- checksums each TLB-mapped code page with
