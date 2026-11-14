@@ -95,6 +95,93 @@ struct MetadataReaderDescriptor {
     bool (*available)()                         = nullptr;
 };
 
+/// What writing tags back to a format can actually preserve.
+///
+/// This exists so a tag editor can promise what the file will keep instead of
+/// finding out by trying. A Vorbis-comment container round-trips everything a
+/// MetadataMap can hold, arbitrary names and repeated values included; ID3v2
+/// folds names it does not know into TXX frames; MP4 has a closed set of
+/// fields that free-form names do not fit into. Those differences are per
+/// format, and the UI has to say them out loud row by row rather than
+/// discover them in a failed save.
+///
+/// Nothing here blocks a save. `writable` gates whether editing is offered at
+/// all; the rest annotate rows -- "this name will be stored as TXX", "this
+/// format keeps only the first value" -- so a user who wants the folding can
+/// still have it.
+struct MetadataCapabilities {
+    /// Tags can be replaced in this file at all. The rest only matters when true.
+    bool writable = false;
+    /// Names the format has no field for survive by themselves, rather than
+    /// being folded into a generic frame or dropped.
+    bool arbitraryKeys = false;
+    /// Two or more values under one key survive. Formats where only certain
+    /// fields repeat (ID3v2's TXXX) report false and let the writer fold.
+    bool multiValue = false;
+    /// Embedded cover art can be added and replaced.
+    bool pictures = false;
+    /// Some part of the write will lose fidelity even though the file is
+    /// writable -- key folding, joined values, renamed fields.
+    bool lossyRepresentation = false;
+};
+
+/// Per-write policy, supplied by the caller (a Session, from settings) and
+/// passed down the call, rather than the writer reaching for a Settings of its
+/// own. `error` is the writer's channel back: on failure it carries one
+/// human-readable sentence naming the reason. The app layer localizes around
+/// that sentence, never inside it -- the same discipline the reader's
+/// SilentDebugListener keeps TagLib's stderr chatter from a user's eyes.
+struct MetadataWriteOptions {
+    /// Treat the map as the whole truth: tags the file carries that the map
+    /// does not are removed.
+    ///
+    /// True by default because the map an editor hands over came from a scan
+    /// of that same file, so anything missing was deliberately deleted. A
+    /// per-field batch edit still replaces: it starts from each file's full
+    /// map, edits the fields it was given, and writes the result back. False
+    /// is for writers that only add -- a future ReplayGain pass that drops a
+    /// handful of names onto the existing tags and touches nothing else.
+    bool stripExisting = true;
+
+    /// Major ID3v2 version for the containers that carry it (MP3, AIFF, WAV).
+    /// 4 separates values inside a multi-value text frame with NUL, which is
+    /// what `multiValue` wants; TagLib's own default is 3.
+    int id3v2Version = 4;
+
+    /// Out-parameter. Set by the writer when write() returns false.
+    std::string error;
+};
+
+using MetadataWriteFn = bool (*)(const Url& url, const MetadataMap& tags,
+                                 MetadataWriteOptions& options);
+
+/// Reports whether `url`'s format can be written, and how faithfully. May open
+/// the file -- TagLib picks its parser from the extension and then asks the
+/// concrete File what it saves -- but must not create, modify, or delete
+/// anything.
+using MetadataProbeFn = MetadataCapabilities (*)(const Url& url);
+
+/// Writes tags back to a file. The write-side counterpart of
+/// MetadataReaderDescriptor, and deliberately not its mirror: where reading
+/// merges across every claimant, writing picks one (see writeMetadata).
+struct MetadataWriterDescriptor {
+    std::string_view                  name;
+    Priority                          priority = kDefaultPriority;
+    /// Empty means "try this writer for anything and let the probe decide",
+    /// which is what a format-agnostic library like TagLib wants. The
+    /// extension list only narrows candidates; the probe is what knows,
+    /// because save-ability is a property of the concrete container TagLib
+    /// opens, not of the extension -- the same .wma family differs, and a
+    /// Shorten file opens in TagLib for reading and refuses to save.
+    std::span<const std::string_view> extensions;
+    MetadataWriteFn                   write = nullptr;
+    /// Optional. Says whether the format writes, and how lossily, without
+    /// trying. A writer without a probe can never answer the capability
+    /// question, and writeMetadata falls back to trying it blind.
+    MetadataProbeFn                   probe = nullptr;
+    bool (*available)()               = nullptr;
+};
+
 struct SourceDescriptor {
     std::string_view name;
     Priority         priority = kDefaultPriority;
@@ -156,6 +243,7 @@ public:
     void addDecoder(DecoderDescriptor);
     void addContainer(ContainerDescriptor);
     void addMetadataReader(MetadataReaderDescriptor);
+    void addMetadataWriter(MetadataWriterDescriptor);
 
     /// Builds the extension/MIME lookup buckets and sorts each by descending
     /// priority. Must be called once after registration; mutators assert afterwards.
@@ -219,6 +307,34 @@ public:
     /// format-specific reader can supplement TagLib rather than replace it.
     [[nodiscard]] MetadataMap readMetadata(const Url& url) const;
 
+    /// Writes `tags` to `url` and reports whether the file now carries them.
+    ///
+    /// Deliberately unlike readMetadata: writing does not merge across every
+    /// claimant. Several readers describing one file is additive; several
+    /// writers rewriting one file's tags in sequence is a fight where the last
+    /// one silently wins after the others did work nobody asked for. So this
+    /// walks claimants in descending priority -- the order candidates are
+    /// actually offered in -- and the first that probes writable and reports
+    /// success ends the search.
+    ///
+    /// URLs with a fragment (a cue sheet's `album.cue#3`) are rejected here,
+    /// before any writer runs. A writer reaching for `localPath()` on one gets
+    /// the .cue text file itself and would replace its track listing with
+    /// ID3 frames. Rejecting at the registry keeps every codec from having to
+    /// remember the rule; see the reader-side comment in TagLibReader.cpp.
+    ///
+    /// `options.error` carries one human-readable sentence when this returns
+    /// false, set by the writer that tried last and failed.
+    [[nodiscard]] bool writeMetadata(const Url& url, const MetadataMap& tags,
+                                     MetadataWriteOptions& options) const;
+
+    /// What writing `url`'s tags would preserve, from the highest-priority
+    /// claimant that has a probe. All-false when nothing claims the URL, no
+    /// claimant probes, or none reports the file writable -- which is also the
+    /// answer for a URL a write would reject outright, such as a fragment.
+    /// Does I/O; callers cache the answer per file.
+    [[nodiscard]] MetadataCapabilities metadataCapabilities(const Url& url) const;
+
     /// Every registered decoder, in the order candidates are tried.
     ///
     /// Valid only after freeze(), which is what drops the ones that declined to
@@ -252,6 +368,7 @@ private:
     std::vector<DecoderDescriptor>   decoders_;
     std::vector<ContainerDescriptor>      containers_;
     std::vector<MetadataReaderDescriptor> metadataReaders_;
+    std::vector<MetadataWriterDescriptor> metadataWriters_;
     std::vector<std::string>              allExtensions_;
     bool                                  frozen_ = false;
 };

@@ -39,6 +39,12 @@ void PluginRegistry::addMetadataReader(MetadataReaderDescriptor d) {
     metadataReaders_.push_back(d);
 }
 
+void PluginRegistry::addMetadataWriter(MetadataWriterDescriptor d) {
+    assert(!frozen_ && "PluginRegistry::addMetadataWriter after freeze()");
+    assert(d.write && "metadata writer descriptor needs a write function");
+    metadataWriters_.push_back(d);
+}
+
 void PluginRegistry::freeze() {
     assert(!frozen_ && "PluginRegistry::freeze() called twice");
 
@@ -50,6 +56,7 @@ void PluginRegistry::freeze() {
     std::erase_if(decoders_, unavailable);
     std::erase_if(containers_, unavailable);
     std::erase_if(metadataReaders_, unavailable);
+    std::erase_if(metadataWriters_, unavailable);
 
     // Stable sort by descending priority preserves registration order within a
     // priority band, matching the ordering Cog's PluginController relies on.
@@ -59,6 +66,7 @@ void PluginRegistry::freeze() {
     std::stable_sort(decoders_.begin(), decoders_.end(), byPriority);
     std::stable_sort(containers_.begin(), containers_.end(), byPriority);
     std::stable_sort(metadataReaders_.begin(), metadataReaders_.end(), byPriority);
+    std::stable_sort(metadataWriters_.begin(), metadataWriters_.end(), byPriority);
 
     allExtensions_.clear();
     for (const auto& d : decoders_) {
@@ -95,6 +103,66 @@ MetadataMap PluginRegistry::readMetadata(const Url& url) const {
         }
     }
     return merged;
+}
+
+namespace {
+
+bool claimsExtension(const MetadataWriterDescriptor& writer, std::string_view extension) {
+    return writer.extensions.empty() ||
+           std::any_of(writer.extensions.begin(), writer.extensions.end(),
+                       [extension](std::string_view claimed) { return claimed == extension; });
+}
+
+}  // namespace
+
+bool PluginRegistry::writeMetadata(const Url& url, const MetadataMap& tags,
+                                   MetadataWriteOptions& options) const {
+    if (!url.fragment().empty()) {
+        options.error = "this URL refers to part of a file, not a whole file";
+        return false;
+    }
+
+    const std::string extension = url.extension();
+    for (const auto& writer : metadataWriters_) {
+        if (!claimsExtension(writer, extension)) {
+            continue;
+        }
+        // A claimant that vouches for the file moves to the front of the
+        // queue; one without a probe cannot say, so it stays where priority
+        // put it and gets tried blind.
+        if (writer.probe && !writer.probe(url).writable) {
+            continue;
+        }
+        if (writer.write(url, tags, options)) {
+            return true;
+        }
+        if (options.error.empty()) {
+            options.error = "the tag writer for this file reported failure without a reason";
+        }
+    }
+    if (options.error.empty()) {
+        options.error = "no tag writer claims this file";
+    }
+    return false;
+}
+
+MetadataCapabilities PluginRegistry::metadataCapabilities(const Url& url) const {
+    if (!url.fragment().empty()) {
+        return {};
+    }
+
+    const std::string extension = url.extension();
+    for (const auto& writer : metadataWriters_) {
+        if (!claimsExtension(writer, extension) || writer.probe == nullptr) {
+            continue;
+        }
+        // The highest-priority claimant answers for the format even when it
+        // says unwritable, the same claimant writeMetadata would reach first.
+        // Falling through would report the opinion of a writer that would
+        // never have gotten the file.
+        return writer.probe(url);
+    }
+    return {};
 }
 
 bool PluginRegistry::isContainer(const Url& url) const {
