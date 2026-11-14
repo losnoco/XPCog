@@ -123,8 +123,13 @@ public:
 };
 
 [[nodiscard]] TagLib::ByteVector toByteVector(const std::vector<std::byte>& bytes) {
+    // TagLib's (data, length) constructor spells the count unsigned int. The
+    // standard only makes a signed-to-unsigned conversion in a braced list a
+    // narrowing one when the value is a constant that will not fit, so GCC and
+    // Clang pass the wider type and MSVC does not. Artwork blobs are nowhere
+    // near 4 GiB, so the count arrives unchanged either way.
     return {reinterpret_cast<const char*>(bytes.data()),
-            static_cast<TagLib::offset_t>(bytes.size())};
+            static_cast<unsigned int>(bytes.size())};
 }
 
 /// Magic-number sniff for the mime label that goes into the picture block.
