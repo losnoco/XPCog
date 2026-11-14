@@ -128,6 +128,7 @@ enum CommandId : int {
     PlaylistRemoveRating,
     PlaylistReveal,
     PlaylistTrash,
+    PlaylistEditTags,
 
     // The playlists themselves, as Cog's File menu has them, and getting from
     // one to the next.

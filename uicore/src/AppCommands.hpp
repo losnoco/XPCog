@@ -23,6 +23,12 @@
 // undo, it is what the window already does -- none of those four is undoable
 // from the menu either. Matching the window is the rule here; "everything is
 // undoable" would be a behaviour change smuggled in under a refactor.
+//
+// Tag saving (Session::editTags) is a third thing: it edits the file, not the
+// playlist. It is deliberately not undoable either. Undo would have to rewrite
+// the old tags to disk, which is a lie the moment another program has touched
+// the file since -- and the entry is reloaded from the file afterwards, so
+// even the in-memory half would not come back as it was.
 
 #pragma once
 

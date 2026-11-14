@@ -659,6 +659,49 @@ TEST_CASE("reloading a track reaches every copy of it", "[uicore][session][playl
     CHECK(first.find(original)->year != 1);
 }
 
+TEST_CASE("editing tags rewrites the file and reloads every copy of it",
+          "[uicore][session][playlist][tags]") {
+    if (!test::haveTool("flac")) {
+        SKIP("flac encoder not on PATH");
+    }
+    const auto one = makeFlac("edit-tags", 0.2, 440.0);
+    REQUIRE(one);
+
+    Harness h;
+    h.add({*one});
+    const TrackId original = h.session.playlist().entries().front().id;
+    h.session.newPlaylist({original});
+    const TrackId copy = h.session.playlist().entries().front().id;
+
+    // One save per file: both rows are the same file, and two writes of the
+    // same bytes would leave the mtime+size cache key with nothing new for
+    // the reload to notice. Searches go through playlists(), not playlist():
+    // the shown tab is the copy's, and the original lives on the first.
+    MetadataMap tags = h.session.playlists().find(original)->fullTagMap();
+    tags.set("genre", "Synthwave");
+    const int beforeReloads = h.scansFinished;
+    h.session.editTags({original, copy}, tags);
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > beforeReloads && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+
+    CHECK(h.session.playlists().find(original)->genre.view() == "Synthwave");
+    CHECK(h.session.playlists().find(copy)->genre.view() == "Synthwave");
+
+    // What the file answers is what the row keeps: a tag written straight to
+    // the file, with no session or PlaylistEntry in the way.
+    const MetadataMap onDisk = h.session.registry().readMetadata(
+        Url::fromLocalPath(*one));
+    CHECK(onDisk.first("genre") == "Synthwave");
+
+    // Unchanged by then, so the same map again writes nothing and starts no
+    // scan. The dirty check is what makes the command safe to run twice.
+    MetadataMap again = h.session.playlists().find(original)->fullTagMap();
+    h.session.editTags({original}, again);
+    CHECK(h.scansFinished == beforeReloads + 1);
+    CHECK(h.statusLines.back() == h.session.statusSummary());
+}
+
 TEST_CASE("an edit behind a parked undo history drops it", "[uicore][session][playlist]") {
     Harness h;
     PlaylistEntry one;

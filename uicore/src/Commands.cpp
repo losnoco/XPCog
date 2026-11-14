@@ -151,6 +151,7 @@ const std::vector<MenuItem>& layout() {
         // use for jumping to the playing track, and nothing here claims it.
         {nullptr, EditScrollToCurrent, XPCOG_TRANSLATE("Select Currently &Playing"), "Ctrl+J"},
         {nullptr, EditRemove, XPCOG_TRANSLATE("&Remove from Playlist"), "Del"},
+        {nullptr, PlaylistEditTags, XPCOG_TRANSLATE("&Edit Tags..."), ""},
         {nullptr, EditRandomize, XPCOG_TRANSLATE("Randomi&ze Playlist"), "", ItemKind::Normal, true},
 
         {XPCOG_TRANSLATE("&Playback"), PlaybackPlayPause, XPCOG_TRANSLATE("&Play/Pause"), ""},
@@ -213,6 +214,7 @@ const std::vector<MenuItem>& playlistLayout() {
         {nullptr, PlaylistResetPlayCount, XPCOG_TRANSLATE("Reset Play &Count"), ""},
         {nullptr, PlaylistRemoveRating, XPCOG_TRANSLATE("Remove Ra&ting"), ""},
         {nullptr, PlaylistReveal, kRevealLabel, ""},
+        {nullptr, PlaylistEditTags, XPCOG_TRANSLATE("&Edit Tags..."), ""},
         {nullptr, EditRemove, XPCOG_TRANSLATE("&Remove from Playlist"), "Del",
          ItemKind::Normal, true},
         {nullptr, PlaylistTrash, kTrashLabel, ""},
@@ -362,7 +364,7 @@ const std::vector<CommandId>& allCommands() {
         ViewFollowPlayback, ViewSc55Panel,       ViewDockPanes,        ViewMiniPlayer,
         PlaylistToggleQueued, PlaylistStopAfter, PlaylistSaveSelection, PlaylistSearchArtist,
         PlaylistSearchAlbum, PlaylistReloadInfo, PlaylistResetPlayCount, PlaylistRemoveRating,
-        PlaylistReveal,    PlaylistTrash,
+        PlaylistReveal,    PlaylistTrash,        PlaylistEditTags,
         FileNewPlaylist,   FileNewPlaylistFromSelection, FileRenamePlaylist, FileDeletePlaylist,
         ViewNextPlaylist,  ViewPreviousPlaylist, ViewVuMeter, ViewEnvelope, ViewSignalInspector,
     };
@@ -429,6 +431,7 @@ CommandAction commandAction(CommandId id) {
         case PlaylistRemoveRating:  return {"remove-rating", nullptr};
         case PlaylistReveal:        return {"reveal", nullptr};
         case PlaylistTrash:         return {"trash", nullptr};
+        case PlaylistEditTags:      return {"edit-tags", nullptr};
 
         case FileNewPlaylist:       return {"new-playlist", nullptr};
         case FileNewPlaylistFromSelection: return {"new-playlist-from-selection", nullptr};

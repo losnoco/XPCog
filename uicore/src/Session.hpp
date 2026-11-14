@@ -178,6 +178,16 @@ public:
     /// question; this does not ask.
     void trashTracks(const std::vector<TrackId>& ids);
 
+    /// Writes `tags` back to the files behind `ids`, one write per distinct
+    /// file however many rows share it. Rows whose current tags already match,
+    /// whose URL has a fragment, or whose format the registry cannot write are
+    /// skipped; the status line counts what was written and names what failed.
+    /// Then reloads the saved ones, so the playlist shows what the file now
+    /// answers rather than what the caller asked for: a Vorbis comment keeps
+    /// everything, an MP3 folds, and the difference is in the file, not in a
+    /// translation the session would have to repeat.
+    void editTags(const std::vector<TrackId>& ids, const MetadataMap& tags);
+
     /// Shows the first of `ids` that is a local file in the desktop's file
     /// manager.
     void revealInFileManager(const std::vector<TrackId>& ids);

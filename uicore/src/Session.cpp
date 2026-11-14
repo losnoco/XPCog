@@ -762,6 +762,103 @@ void Session::trashTracks(const std::vector<TrackId>& ids) {
     }
 }
 
+void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags) {
+    // A batch of rows sharing one file -- the same track in two playlists --
+    // is one save. Left ungrouped, the second row's dirty check would compare
+    // against the pre-edit entry, re-write a file the first row already wrote,
+    // and the status would count the same file twice.
+    struct SaveGroup {
+        std::vector<TrackId> ids;
+    };
+    std::unordered_map<std::string, SaveGroup> saves;
+    std::vector<std::string>                   order;
+
+    std::size_t skipped = 0;
+    for (const TrackId id : ids) {
+        const PlaylistEntry* entry = playlists_.find(id);
+        if (entry == nullptr || !entry->url.localPath() || !entry->url.fragment().empty()) {
+            // A stream, or a cue sheet's track: localPath() on `album.cue#3`
+            // is the .cue text file, and writing it would replace a track
+            // listing with ID3 frames. The registry refuses one too; refusing
+            // here first is what keeps the failed-write count meaning only
+            // files that were really tried.
+            ++skipped;
+            continue;
+        }
+        if (entry->fullTagMap().sameContentAs(tags)) {
+            // Already the tags asked for. Skipping it is not just the speed:
+            // a rewrite through a lossy container folds what only just fit,
+            // and an unchanged row would pay for that every time the dialog
+            // is opened and closed.
+            continue;
+        }
+        if (!registry_.metadataCapabilities(entry->url).writable) {
+            ++skipped;
+            continue;
+        }
+
+        const std::string key = entry->url.toString();
+        if (saves.find(key) == saves.end()) {
+            order.push_back(key);
+        }
+        saves[key].ids.push_back(id);
+    }
+
+    std::vector<TrackId> saved;
+    std::size_t          failed = 0;
+    std::string          lastError;
+    for (const std::string& key : order) {
+        SaveGroup&                 group = saves[key];
+        const PlaylistEntry* const entry = playlists_.find(group.ids.front());
+        if (entry == nullptr) {
+            continue;
+        }
+
+        MetadataWriteOptions options;
+        // settings.def grows a [tags] key with the editor dialog that will
+        // expose these; until then the contract's defaults -- strip to the
+        // map, ID3v2.4 -- are what the codec tests proved out.
+        if (registry_.writeMetadata(entry->url, tags, options)) {
+            for (const TrackId id : group.ids) {
+                playlists_.update(id, [&tags](PlaylistEntry& e) { e.applyMetadata(tags); });
+                if (library_) {
+                    if (const PlaylistEntry* updated = playlists_.find(id); updated != nullptr) {
+                        static_cast<void>(library_->saveEntry(*updated));
+                    }
+                }
+                saved.push_back(id);
+            }
+        } else {
+            ++failed;
+            lastError = options.error;
+        }
+    }
+
+    if (!saved.empty()) {
+        // The write is the file's truth now, and a read-back is cheaper than
+        // the session duplicating each container's folding rules to keep in
+        // memory what the file kept. The PluginCache keys on mtime+size, so
+        // the reload sees the new bytes; copies in other playlists are
+        // reached by URL, and tracksUpdated fires on the way back.
+        reloadTracks(saved);
+    }
+
+    if (failed > 0) {
+        const std::string reason = lastError.empty() ? tr("the file could not be written")
+                                                     : lastError;
+        setStatus(fmt(trn("%zu file could not have its tags saved: %s",
+                          "%zu files could not have their tags saved: %s", failed),
+                      failed, reason));
+    } else if (!saved.empty()) {
+        setStatus(fmt(trn("Saved tags for %zu file.", "Saved tags for %zu files.", order.size()),
+                      order.size()));
+    } else if (skipped > 0) {
+        setStatus(tr("No writable files in the selection."));
+    } else {
+        setStatus(statusSummary());
+    }
+}
+
 void Session::revealInFileManager(const std::vector<TrackId>& ids) {
     // The first one, as Cog does (PlaylistController.m:1849). Revealing a
     // multiple selection means a file manager window per folder, which is not
