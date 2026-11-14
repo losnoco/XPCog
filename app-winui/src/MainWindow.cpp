@@ -2026,8 +2026,10 @@ winrt::fire_and_forget MainWindow::editTags() {
                 if (!chosen) {
                     co_return;
                 }
+                // The file itself, not its path: FileIO answers for a picked
+                // storage item, and the picker's answer already is one.
                 const auto buffer =
-                    co_await winrt::Windows::Storage::FileIO::ReadBufferAsync(chosen.Path());
+                    co_await winrt::Windows::Storage::FileIO::ReadBufferAsync(chosen);
                 // DataReader, not DataWriter: this reads the file back. The
                 // static wraps the buffer the picker's read handed over, and
                 // ReadBytes is how a cppwinrt reader gives up a byte array.
