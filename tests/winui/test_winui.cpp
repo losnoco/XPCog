@@ -444,8 +444,15 @@ TEST_CASE("The tag editor opens on a real file and seeds its rows", "[winui][tag
     PlaylistEntry entry;
     entry.url      = Url::fromLocalPath(flac);
     entry.rawTitle = flac.filename().string();
-    p.session->playlist().insert(0, {std::move(entry)});
-    const TrackId id = p.session->playlist().entries().front().id;
+    // The insert goes through to the interface thread, unlike the fixture above
+    // it: the playlist's change notification reaches the table, which rebuilds
+    // its XAML there and then, and XAML answers only to the thread its window
+    // was made on. From the runner's thread the notification comes back as
+    // RPC_E_WRONG_THREAD.
+    const TrackId id = ui([&] {
+        const std::vector<TrackId> inserted = p.session->playlist().insert(0, {std::move(entry)});
+        return inserted.empty() ? kInvalidTrackId : inserted.front();
+    });
     settle();  // the table reloads from the interface thread
 
     // The row has to be selected, because that is where the command finds its
@@ -494,14 +501,23 @@ TEST_CASE("The tag editor opens on a real file and seeds its rows", "[winui][tag
             return out;
         }
         out.dialog     = found;
-        // hstring, not std::string: winrt::to_string answers UTF-8 for a wide
-        // one, and what is collected here is XAML text.
-        out.title      = std::wstring(found.Title());
+        // Title is a property of the base ContentDialog, so the projection hands
+        // it back as an IInspectable and it has to be unboxed before it can be
+        // read. unbox_value_or rather than unbox_value: a Title of some other
+        // type should fail the CHECK below, not throw out of the ui() hop.
+        out.title      = std::wstring(winrt::unbox_value_or<winrt::hstring>(
+            found.Title(), winrt::hstring{}));
         // A ContentDialog hands out no button to hold on to; the dialog itself
         // says whether the answer is available.
         out.saveEnabled = found.IsPrimaryButtonEnabled();
         // Declared empty and assigned after: the lambda names walk itself, and
         // a capture in the initializer would name an object not yet built.
+        // Down the visual tree rather than the logical one: the dialog's content
+        // is a ScrollViewer (see MainWindow::editTags), which is none of the
+        // logical containers this walk would recognise, so a logical walk stops
+        // at the root and finds nothing. What a case wants here is the text as
+        // the user sees it -- labels, notes and the boxes' contents -- whatever
+        // controls the dialog happens to be built out of.
         std::function<void(const mux::DependencyObject&)> walk;
         walk = [&out, &walk](const mux::DependencyObject& node) {
             if (const auto text = node.try_as<mux::Controls::TextBlock>()) {
@@ -509,13 +525,14 @@ TEST_CASE("The tag editor opens on a real file and seeds its rows", "[winui][tag
             } else if (const auto box = node.try_as<mux::Controls::TextBox>()) {
                 out.texts.push_back(std::wstring(box.Text()));
             }
-            if (const auto panel = node.try_as<mux::Controls::Panel>()) {
-                for (const auto& child : panel.Children()) {
-                    walk(child);
-                }
+            // WinUI 3's VisualTreeHelper has no GetChildren; it hands out
+            // children by index.
+            const int32_t count = mux::Media::VisualTreeHelper::GetChildrenCount(node);
+            for (int32_t child = 0; child < count; ++child) {
+                walk(mux::Media::VisualTreeHelper::GetChild(node, child));
             }
         };
-        walk(found.Content().as<mux::UIElement>());
+        walk(found);
         return out;
     });
     REQUIRE(opened.dialog != nullptr);
