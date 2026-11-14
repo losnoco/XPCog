@@ -26,6 +26,7 @@
 #include "PreferencesDialog.hpp"
 #include "SeekBar.hpp"
 #include "Session.hpp"
+#include "TagEditorDialog.hpp"
 #include "Translations.hpp"
 #include "Meters.hpp"
 #include "PlaylistTabs.hpp"
@@ -36,6 +37,7 @@
 
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
+#include "xpcog/core/Url.hpp"
 #include "xpcog/core/audio/AudioTap.hpp"
 #include "xpcog/core/audio/OfflineOutput.hpp"
 #include "xpcog/core/audio/Waveform.hpp"
@@ -43,6 +45,8 @@
 #include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/library/PlaylistSet.hpp"
 #include "xpcog/core/library/PlaylistView.hpp"
+
+#include "../TestShell.hpp"
 
 // glib-compile-resources writes a C header with no G_BEGIN_DECLS in it.
 extern "C" {
@@ -55,11 +59,14 @@ extern "C" {
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace {
@@ -97,10 +104,17 @@ const bool kEnvironment = [] {
 /// minimum ("attempt to underallocate"), a missing builder object, a
 /// property that does not exist. Printed on the console as well, where they
 /// went before, so a failing case still reads.
+///
+/// Stored up to a limit, and that is not a memory optimisation: a widget bug
+/// that complains every frame -- a container that cannot remove its own
+/// child, say -- makes an endless stream out of them, and the first few are
+/// the ones that name the bug.
 std::vector<std::string>& complaints() {
     static std::vector<std::string> list;
     return list;
 }
+
+constexpr std::size_t kMaxComplaints = 200;
 
 std::vector<std::string> toolkitComplaints() {
     std::vector<std::string> taken;
@@ -112,7 +126,12 @@ GLogWriterOutput logWriter(GLogLevelFlags level, const GLogField* fields, gsize 
     if ((level & (G_LOG_LEVEL_WARNING | G_LOG_LEVEL_CRITICAL)) != 0) {
         for (gsize i = 0; i < count; ++i) {
             if (g_strcmp0(fields[i].key, "MESSAGE") == 0 && fields[i].value != nullptr) {
-                complaints().emplace_back(static_cast<const char*>(fields[i].value));
+                std::vector<std::string>& list = complaints();
+                if (list.size() < kMaxComplaints) {
+                    list.emplace_back(static_cast<const char*>(fields[i].value));
+                } else if (list.size() == kMaxComplaints) {
+                    list.emplace_back("further complaints suppressed by the log writer's limit");
+                }
             }
         }
     }
@@ -705,6 +724,192 @@ TEST_CASE("the About dialog credits what XPCog is built from", "[gtk][about]") {
     adw_dialog_force_close(ADW_DIALOG(about));
     settle();
     CHECK(toolkitComplaints().empty());
+}
+
+namespace {
+
+/// A scratch directory for tag fixtures, wiped per case.
+std::filesystem::path freshTagDir(const std::string& name) {
+    const std::filesystem::path dir
+        = std::filesystem::temp_directory_path() / "xpcog-gtk-tests" / ("tags-" + name);
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+    std::filesystem::create_directories(dir);
+    return dir;
+}
+
+/// One second of silent 16-bit stereo flac, the same shape the codec tests
+/// write: the dialog's sources have to be real files a probe will vouch for.
+bool makeTaggedFlac(const std::filesystem::path& target, const std::vector<std::string>& tags) {
+    if (!xpcog::test::haveTool("flac")) {
+        return false;
+    }
+    const std::filesystem::path wav = target.parent_path() / "source.wav";
+    {
+        constexpr int   kFrames = 44100;
+        std::ofstream   out{wav, std::ios::binary};
+        const auto write32 = [&out](std::uint32_t value) {
+            const char bytes[4] = {static_cast<char>(value & 0xFF),
+                                   static_cast<char>((value >> 8) & 0xFF),
+                                   static_cast<char>((value >> 16) & 0xFF),
+                                   static_cast<char>((value >> 24) & 0xFF)};
+            out.write(bytes, 4);
+        };
+        const auto write16 = [&out](std::uint16_t value) {
+            const char bytes[2] = {static_cast<char>(value & 0xFF),
+                                   static_cast<char>((value >> 8) & 0xFF)};
+            out.write(bytes, 2);
+        };
+        const std::uint32_t dataBytes = kFrames * 4;
+        out.write("RIFF", 4);
+        write32(36 + dataBytes);
+        out.write("WAVEfmt ", 8);
+        write32(16);
+        write16(1);
+        write16(2);
+        write32(44100);
+        write32(44100 * 4);
+        write16(4);
+        write16(16);
+        out.write("data", 4);
+        write32(dataBytes);
+        for (int i = 0; i < kFrames; ++i) {
+            write32(0);
+        }
+    }
+    std::string command = "flac -s -f --totally-silent";
+    for (const std::string& tag : tags) {
+        command += " --tag=\"" + tag + "\"";
+    }
+    command += " -o \"" + target.string() + "\" \"" + wav.string() + "\""
+               + xpcog::test::kSilenceStderr;
+    const bool ok = std::system(command.c_str()) == 0;
+    std::error_code ignored;
+    std::filesystem::remove(wav, ignored);
+    return ok && std::filesystem::exists(target);
+}
+
+}  // namespace
+
+TEST_CASE("the tag editor opens on a real file and seeds its rows", "[gtk][tageditor]") {
+    // The whole point of the dialog is what it shows for a file the probe
+    // claims: promoted rows seeded from the file, the file's other names
+    // below them, a cover group where the format keeps pictures.
+    if (!toolkit()) {
+        SKIP("no display: GTK could not initialise");
+    }
+    const std::filesystem::path dir = freshTagDir("editor");
+    const std::filesystem::path flac = dir / "seeded.flac";
+    if (!makeTaggedFlac(flac, {"ARTIST=Test Artist", "TITLE=Test Title",
+                               "MUSICBRAINZ_ARTISTID=00000000-0000-0000-0000-000000000000",
+                               "XPCOG_CUSTOM=kept"})) {
+        SKIP("flac encoder not on PATH");
+    }
+    // The row is written by hand rather than scanned: the dialog only needs
+    // an entry whose URL is a real file, and this suite's session never
+    // starts a scan thread.
+    SessionHarness h;
+    {
+        xpcog::PlaylistEntry entry;
+        entry.url      = xpcog::Url::fromLocalPath(flac);
+        entry.rawTitle = flac.filename().string();
+        h.session.playlist().insert(0, {std::move(entry)});
+    }
+    const std::vector<xpcog::TrackId> ids{h.session.playlist().entries().front().id};
+
+    GtkWidget* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    TestWindow window(content, 900, 700);
+    xpcog::gtk::showTagEditorDialog(window.window(), h.session, ids);
+    settle(3);
+
+    std::vector<GtkWidget*> dialogs;
+    collect(GTK_WIDGET(window.window()), ADW_TYPE_DIALOG, dialogs);
+    REQUIRE(dialogs.size() == 1);
+    auto* editor = ADW_DIALOG(dialogs.front());
+    CHECK(g_strcmp0(adw_dialog_get_title(editor), xpcog::app::tr("Edit Tags").c_str()) == 0);
+
+    std::vector<GtkWidget*> groups;
+    collect(GTK_WIDGET(editor), ADW_TYPE_PREFERENCES_GROUP, groups);
+    // The line that says which file this is, the promoted fields, the file's
+    // other names, and the cover.
+    CHECK(groups.size() == 4);
+
+    std::vector<GtkWidget*> rows;
+    collect(GTK_WIDGET(editor), ADW_TYPE_ENTRY_ROW, rows);
+    // One per promoted field.
+    CHECK(rows.size() == 11);
+    const auto rowText = [](GtkWidget* row) {
+        return std::string{gtk_editable_get_text(GTK_EDITABLE(row))};
+    };
+    bool sawArtist = false;
+    bool sawTitle  = false;
+    for (GtkWidget* row : rows) {
+        const std::string title = adw_preferences_row_get_title(ADW_PREFERENCES_ROW(row));
+        if (title == xpcog::app::tr("Artist")) {
+            sawArtist = rowText(row) == "Test Artist";
+        }
+        if (title == xpcog::app::tr("Title")) {
+            sawTitle = rowText(row) == "Test Title";
+        }
+    }
+    CHECK(sawArtist);
+    CHECK(sawTitle);
+
+    // The file's other names ride in plain entries: key and value side by
+    // side. MetadataMap lowercases, so the names show that way.
+    std::vector<GtkWidget*> freeEntries;
+    collect(GTK_WIDGET(editor), GTK_TYPE_ENTRY, freeEntries);
+    std::vector<std::string> freeTexts;
+    for (GtkWidget* entry : freeEntries) {
+        freeTexts.push_back(gtk_editable_get_text(GTK_EDITABLE(entry)));
+    }
+    CHECK(freeTexts.size() == 4);
+    CHECK(std::find(freeTexts.begin(), freeTexts.end(), "xpcog_custom") != freeTexts.end());
+    CHECK(std::find(freeTexts.begin(), freeTexts.end(), "kept") != freeTexts.end());
+
+    // A file with no embedded picture still gets the cover section: the
+    // difference between "no cover" and "a folder's cover" is the point.
+    std::vector<GtkWidget*> buttons;
+    collect(GTK_WIDGET(editor), GTK_TYPE_BUTTON, buttons);
+    CHECK(!buttons.empty());
+    capture(GTK_WIDGET(window.window()), "tag-editor");
+    CHECK(toolkitComplaints().empty());
+
+    adw_dialog_force_close(editor);
+    settle();
+}
+
+TEST_CASE("the tag editor refuses a selection with no file to write", "[gtk][tageditor]") {
+    // MainWindow gates its menu item on canEditTags; the dialog itself is
+    // the guard for every other way in, and must stay silent on a
+    // selection it cannot write: nothing up, nothing announced.
+    if (!toolkit()) {
+        SKIP("no display: GTK could not initialise");
+    }
+    SessionHarness h;
+    std::vector<xpcog::PlaylistEntry> entries;
+    for (const char* url : {"file:///music/nowhere.flac", "https://example.invalid/a.flac"}) {
+        xpcog::PlaylistEntry entry;
+        entry.url      = *xpcog::Url::parse(url);
+        entry.rawTitle = url;
+        entries.push_back(std::move(entry));
+    }
+    h.session.playlist().insert(0, std::move(entries));
+    std::vector<xpcog::TrackId> ids;
+    for (const xpcog::PlaylistEntry& entry : h.session.playlist().entries()) {
+        ids.push_back(entry.id);
+    }
+
+    GtkWidget* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    TestWindow window(content, 900, 700);
+    xpcog::gtk::showTagEditorDialog(window.window(), h.session, ids);
+    xpcog::gtk::showTagEditorDialog(window.window(), h.session, {});
+    settle(3);
+
+    std::vector<GtkWidget*> dialogs;
+    collect(GTK_WIDGET(window.window()), ADW_TYPE_DIALOG, dialogs);
+    CHECK(dialogs.empty());
+    CHECK(h.session.playlist().size() == 2);
 }
 
 TEST_CASE("the equaliser's scales are not narrower than they need", "[gtk][equalizer]") {

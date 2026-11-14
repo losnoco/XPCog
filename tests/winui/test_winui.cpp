@@ -1,5 +1,5 @@
 // The WinUI player, opened: the main window, every pane the View menu shows,
-// Preferences page by page, the mini player and the About box.
+// Preferences page by page, the mini player, the About box and the tag editor.
 //
 // What it is for is the class of failure that has already reached a listener
 // twice in this frontend's short life -- XAML refused at run time, a property
@@ -27,6 +27,7 @@
 // ctest reports as a skip rather than a pass.
 
 #include "MainWindow.hpp"
+#include "PlaylistTable.hpp"
 #include "PreferencesWindow.hpp"
 #include "Runtime.hpp"
 #include "Win2D.hpp"
@@ -37,17 +38,24 @@
 
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Settings.hpp"
+#include "xpcog/core/Url.hpp"
+#include "xpcog/core/library/Playlist.hpp"
 #include "xpcog/core/audio/OfflineOutput.hpp"
+
+#include "../TestShell.hpp"
 
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <future>
 #include <memory>
@@ -65,6 +73,9 @@ namespace xpcog::winui {
 /// them that the player itself never needed to make public.
 struct TestAccess {
     static void run(MainWindow& window, app::CommandId id) { window.onCommand(id); }
+    /// The playlist's own selection, so a case can put a row under the
+    /// commands the same way a click does.
+    static PlaylistTable& playlist(MainWindow& window) { return *window.playlist_; }
     static bool miniShown(const MainWindow& window) { return window.miniShown(); }
     static mux::Window window(const MainWindow& window) { return window.window_; }
     static mux::Controls::TitleBar titleBar(const MainWindow& window) { return window.titleBar_; }
@@ -207,6 +218,69 @@ Player& thePlayer() {
     return *player;
 }
 
+/// A scratch directory under the temp path for one case's fixtures.
+std::filesystem::path freshTagDir(const std::string& name) {
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() /
+        ("xpcog-winui-tageditor-" + name + "-" + std::to_string(::GetCurrentProcessId()));
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+    std::filesystem::create_directories(dir);
+    return dir;
+}
+
+/// One second of silent 16-bit stereo flac, the shape the codec tests and the
+/// GTK widget tests both write: the editor's source has to be a real file the
+/// probe will vouch for.
+bool makeTaggedFlac(const std::filesystem::path& target, const std::vector<std::string>& tags) {
+    if (!xpcog::test::haveTool("flac")) {
+        return false;
+    }
+    const std::filesystem::path wav = target.parent_path() / "source.wav";
+    {
+        constexpr int   kFrames = 44100;
+        std::ofstream   out{wav, std::ios::binary};
+        const auto write32 = [&out](std::uint32_t value) {
+            const char bytes[4] = {static_cast<char>(value & 0xFF),
+                                   static_cast<char>((value >> 8) & 0xFF),
+                                   static_cast<char>((value >> 16) & 0xFF),
+                                   static_cast<char>((value >> 24) & 0xFF)};
+            out.write(bytes, 4);
+        };
+        const auto write16 = [&out](std::uint16_t value) {
+            const char bytes[2] = {static_cast<char>(value & 0xFF),
+                                   static_cast<char>((value >> 8) & 0xFF)};
+            out.write(bytes, 2);
+        };
+        const std::uint32_t dataBytes = kFrames * 4;
+        out.write("RIFF", 4);
+        write32(36 + dataBytes);
+        out.write("WAVEfmt ", 8);
+        write32(16);
+        write16(1);
+        write16(2);
+        write32(44100);
+        write32(44100 * 4);
+        write16(4);
+        write16(16);
+        out.write("data", 4);
+        write32(dataBytes);
+        for (int i = 0; i < kFrames; ++i) {
+            write32(0);
+        }
+    }
+    std::string command = "flac -s -f --totally-silent";
+    for (const std::string& tag : tags) {
+        command += " --tag=\"" + tag + "\"";
+    }
+    command += " -o \"" + target.string() + "\" \"" + wav.string() + "\""
+               + xpcog::test::kSilenceStderr;
+    const bool ok = std::system(command.c_str()) == 0;
+    std::error_code ignored;
+    std::filesystem::remove(wav, ignored);
+    return ok && std::filesystem::exists(target);
+}
+
 }  // namespace
 
 TEST_CASE("The main window opens and lays out", "[winui]") {
@@ -344,6 +418,125 @@ TEST_CASE("The About box opens", "[winui]") {
         return found;
     });
     CHECK(closed);
+    settle();
+    checkQuiet();
+}
+
+TEST_CASE("The tag editor opens on a real file and seeds its rows", "[winui][tageditor]") {
+    // The dialog is built in code, widget by widget, and the shapes it is made
+    // of are exactly the kind of thing that compiles, links, and then throws at
+    // run time the first time a listener opens it: a TextBox with no place in
+    // the template, a property the dialog's style does not define, a button
+    // that is not where the code thinks it is. So this case drives the real
+    // command over a hand-written row -- written by hand rather than scanned,
+    // as in the GTK suite, because the row only has to be an entry whose URL
+    // names a file the probe will vouch for.
+    const std::filesystem::path dir  = freshTagDir("editor");
+    const std::filesystem::path flac = dir / "seeded.flac";
+    if (!makeTaggedFlac(flac, {"ARTIST=Test Artist", "TITLE=Test Title",
+                               "MUSICBRAINZ_ARTISTID=00000000-0000-0000-0000-000000000000",
+                               "XPCOG_CUSTOM=kept"})) {
+        SKIP("flac is not installed");
+    }
+
+    Player& p = thePlayer();
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath(flac);
+    entry.rawTitle = flac.filename().string();
+    p.session->playlist().insert(0, {std::move(entry)});
+    const TrackId id = p.session->playlist().entries().front().id;
+    settle();  // the table reloads from the interface thread
+
+    // The row has to be selected, because that is where the command finds its
+    // subject. Selection only works on the interface thread, where the list's
+    // containers live.
+    ui([&] { TestAccess::playlist(*p.window).selectOnly(0); });
+    settle();
+    const std::vector<TrackId> selected = ui([&] {
+        std::vector<TrackId> ids;
+        for (const std::size_t row : TestAccess::playlist(*p.window).selectedRows()) {
+            if (const TrackId track = p.session->view().trackAt(row); track != kInvalidTrackId) {
+                ids.push_back(track);
+            }
+        }
+        return ids;
+    });
+    REQUIRE(selected.size() == 1);
+    CHECK(selected.front() == id);
+
+    ui([&] { p.run(CommandId::PlaylistEditTags); });
+    settle();
+    checkQuiet();
+
+    // Everything the dialog puts on screen: walk its content, whose text is
+    // what the file's tags were seeded into. Names of the promoted fields and
+    // of the file's other tags ride in the same list, so the checks below look
+    // for values rather than counts, and never assume how many widgets the
+    // layout happens to have.
+    struct Opened {
+        mux::Controls::ContentDialog dialog = nullptr;
+        std::wstring                 title;
+        std::vector<std::wstring>    texts;
+        bool                         saveEnabled = true;
+    };
+    const Opened opened = ui([&] {
+        Opened   out;
+        mux::Controls::ContentDialog found = nullptr;
+        for (const auto& popup :
+             mux::Media::VisualTreeHelper::GetOpenPopupsForXamlRoot(
+                 TestAccess::window(*p.window).Content().XamlRoot())) {
+            if (const auto box = popup.Child().try_as<mux::Controls::ContentDialog>()) {
+                found = box;
+            }
+        }
+        if (found == nullptr) {
+            return out;
+        }
+        out.dialog     = found;
+        out.title      = winrt::to_string(found.Title());
+        out.saveEnabled = found.PrimaryButton().IsEnabled();
+        // Declared empty and assigned after: the lambda names walk itself, and
+        // a capture in the initializer would name an object not yet built.
+        std::function<void(const mux::DependencyObject&)> walk;
+        walk = [&out, &walk](const mux::DependencyObject& node) {
+            if (const auto text = node.try_as<mux::Controls::TextBlock>()) {
+                out.texts.push_back(text.Text());
+            } else if (const auto box = node.try_as<mux::Controls::TextBox>()) {
+                out.texts.push_back(box.Text());
+            }
+            if (const auto panel = node.try_as<mux::Controls::Panel>()) {
+                for (const auto& child : panel.Children()) {
+                    walk(child);
+                }
+            }
+        };
+        walk(found.Content().as<mux::UIElement>());
+        return out;
+    });
+    REQUIRE(opened.dialog != nullptr);
+    CHECK(opened.title == winrt::to_string(toH(xpcog::app::tr("Edit Tags"))));
+    REQUIRE(!opened.texts.empty());
+    // Save says what the model can do: nothing has been edited, so nothing is
+    // written.
+    CHECK_FALSE(opened.saveEnabled);
+
+    const bool hasText = [&](std::wstring_view needle) {
+        return std::find(opened.texts.begin(), opened.texts.end(), needle) != opened.texts.end();
+    };
+    // The promoted rows carry the file's own values, and the fields the file
+    // says nothing about are empty rather than invented.
+    CHECK(hasText(L"Test Artist"));
+    CHECK(hasText(L"Test Title"));
+    CHECK(std::find(opened.texts.begin(), opened.texts.end(), std::wstring{}) !=
+          opened.texts.end());
+    // The file's other names ride below the promoted fields. MetadataMap
+    // lowercases keys, and the free rows' values are plain text.
+    CHECK(hasText(L"musicbrainz_artistid"));
+    CHECK(hasText(L"00000000-0000-0000-0000-000000000000"));
+    CHECK(hasText(L"xpcog_custom"));
+    CHECK(hasText(L"kept"));
+
+    ui([&] { opened.dialog.Hide(); });
     settle();
     checkQuiet();
 }

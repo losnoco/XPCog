@@ -305,6 +305,96 @@ the tag's own words go back ahead of a `.lrc` file, since timing was the only
 reason the file ranked above them.
 ID3's binary SYLT frame is not read. Cog shows no timed lyrics either.
 
+## Editing tags
+
+*Edit Tags...* — in the playlist's right-click menu and in the Edit menu — writes
+back to the file itself. FLAC, Ogg Vorbis, Opus and Speex, MP3, MP4 and ALAC,
+Wav, AIFF, TrueAudio, WavPack, Monkey's Audio, Musepack, Matroska and the ASF
+family it calls WMA: the list is long, and it is TagLib's, not ours. XPCog asks
+the file rather than a table of formats — the tag editor's probe opens it and
+asks TagLib whether this file can be saved — so a format TagLib supports is
+editable here the day it is supported at all, and a file the probe declines has
+no menu item to click. A cue sheet's track, an archive member, and a file that
+is not local are all declined for the same reason: there is no file to write.
+
+What the dialog shows is that file's tags, and its tags only. The fields every
+player has a column for — artist, album, title, and the rest — come first, then
+every other name the file carries, each on its own row with its value, then a
+place to add names it does not carry, then the cover. Nothing is invented: open
+a file with no tags and every row is blank.
+
+**Any name, and more than one value where the format keeps more.** A row whose
+name is not one of the standard ones is a row you can type any name into, so
+MusicBrainz's IDs, `MUSICBRAINZ_ALBUMARTISTID`, `REPLAYGAIN_ALBUM_GAIN` or a
+label's own catalogue code all work. Two or three names on one tag work too —
+several artists on one track is the common case — written as `A, B` in the box
+and stored as two values, which is what FLAC, Ogg, WavPack and Monkey's Audio
+hold, and what an MP3 rewrite keeps as well.
+
+Where a file cannot do something the box asks for, a dim line under that row
+says which: *This format keeps only the first value.* for a field with one
+slot, or *This format has no field for this name; it will be stored
+generically.* for a name it has no frame for, which ID3v2 parks in a text
+frame and MP4 in a vendor-namespaced atom, both spelled however TagLib likes.
+Those words are the probe's answer about this file rather than a fixed list of
+formats, and for a selection they describe what every file in it keeps. Writing
+two artists to a FLAC file, on the other hand, is what FLAC is for.
+
+**A selection, not only a file.** Select ten rows and the dialog edits all ten
+at once. A row comes filled in only when every selected file agrees on it;
+where they differ it starts blank and says so, because a box full of other
+people's albums is an accident waiting to be saved. What you type then replaces
+that field in every selected file, and the fields you never touched stay as
+each file had them — which is what makes a batch pass able to fix ten files'
+genre without flattening ten different albums. A save that reaches nothing —
+a stream, a cue sheet's track, a format the probe declined — says how many were
+skipped rather than pretending it wrote them.
+
+**What the file carries, the save keeps.** Saving rewrites the file's tag block,
+so a format that stores a field somewhere the reader does not look could quietly
+drop it — which is why the write is handed everything back. For one file that is
+literal: each name the file carries is a row, a row you never touched rides into
+the write as it came, and the things no row can show — a second picture block,
+bytes some reader found and named — pass through untouched instead of vanishing
+under the strip. The cover is kept unless the cover section was used. For a
+selection the writer merges instead, so a field you never touched is not written
+to at all.
+
+Spelling is the one thing that does not ride through unchanged. A field you edit
+is written under the name the editor uses, and the spellings that lost go with
+it, so an old `album artist` or `recording_date` is not left sitting beside the
+new value; a name nobody touched keeps the spelling the file had it in. Opening
+one file rewrites the whole block, so its standard fields come back spelled the
+editor's way however you edited them.
+
+The other thing worth knowing is that ID3v2 frames the reader never names are
+not collateral damage. A popularimeter or a private frame is outside the tag map,
+yet it survives both a single file's rewrite and a batch merge, because TagLib
+keeps the frames it parsed even when it has no property to put them in; a frame
+TagLib cannot parse at all is gone when it opens the file, not when it saves it.
+Which version of the block gets written is a setting — `id3v2Version`, 3 or 4,
+defaulting to 4, in the settings database rather than on the preferences pane —
+for anyone whose car or amplifier reads version 3 only.
+
+Lyrics are the one field with a catch outside the dialog. The lyrics row writes
+`unsyncedlyrics`, and lyrics display does not stop at the tag: the plain view
+shows the tag's own words, while the timed view falls back to a sidecar `.lrc`,
+and then to LRCLIB, when the tag carries no timestamps. Type timestamps into that
+row and the tag wins — a tag that parses as `.lrc` is read as timed lyrics from
+the file itself.
+
+Cover art comes from a file on disk: *Choose* replaces the picture, *Remove*
+takes it out. The dialog does not crop, resize or transcode; it stores what was
+chosen.
+
+A save is a write to disk, so the playlist re-reads what it wrote afterwards:
+what the columns show is what the file now holds, not what the dialog was
+told. If a file that appears twice in a playlist was written once, both rows
+change, because both are the same file.
+
+Cog never wrote tags at all, so none of this is port work. `docs/TAGEDITOR.md`
+has the design and the reasons behind the write semantics.
+
 ## Remote control
 
 A REST API over the transport, the playlist, the equaliser, the settings and the

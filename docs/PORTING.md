@@ -2556,6 +2556,94 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   clamps the frame count to what is left and then hands back zero-frame chunks
   for ever, which its engine happens to treat as an ending.
 
+- **Writing tags back to files**, on 2026-11-13 as 4.1.0 — the one entry in this
+  list that is not port work at all, because Cog never had it. `PluginController
+  -putMetadataInURL:` is a stubbed `return 0` and `TagEditorController` is
+  commented out whole; what Cog left half-drawn is why the design here starts
+  from the file rather than from a format list, because the commented-out
+  controller hard-codes its fields and the first question it never had to answer
+  is what to do with a name that is not on the list. `docs/TAGEDITOR.md` is the
+  plan, with the phase-by-phase detail; three decisions shaped the tree.
+
+  **The probe answers the format question, in the core, once.** A tag editor
+  that switches on extension is a switchboard that has to be edited every time a
+  codec lands, and gets it wrong anyway: save-ability is a property of the
+  concrete container TagLib opens, not of the extension. The same `.wma` family
+  differs within itself, and a Shorten file opens in TagLib for reading and
+  refuses to save. So the registry gained a write-side descriptor with an
+  optional probe — `MetadataCapabilities` says whether the file saves at all,
+  then whether arbitrary names survive on their own, whether repeated values do,
+  whether cover art does, and whether the result is a lossy representation of
+  what was typed. `app-gtk` and `app-winui` ask it per file and put its answers
+  on the individual rows, which is where a promise like "this format keeps only
+  the first value" belongs. It is a policy decision that nothing here blocks:
+  `writable` gates whether editing is offered, the rest only annotates. The
+  probe does I/O, so the frontends cache it per playlist row.
+
+  **Reading merges across claimants; writing picks one.** Deliberate asymmetry
+  with `readMetadata`. Several readers describing one file is additive; several
+  writers rewriting one file's tags in sequence is a fight where the last one
+  silently wins after the others did work nobody asked for, so `writeMetadata`
+  walks claimants in descending priority and the first that probes writable and
+  reports success ends it. URLs with a fragment are rejected there, before any
+  writer runs: one that reached for `localPath()` on `album.cue#3` would get the
+  `.cue` text file and replace its track listing with ID3 frames. Rules with that
+  shape live in the registry so no codec has to remember them.
+
+  **The editor's model is in `uicore`, the write policy is in the session.**
+  `TagEditorModel` is toolkit-free — promoted fields, alias chains, rows for the
+  names a file carries, rows for names it does not, and the per-row notes — and
+  both frontends are thin renderers over it. `Session::editTags` turns playlist
+  ids into files, deduplicated by URL, because the same file twice in a playlist
+  is one write; fills `MetadataWriteOptions` from settings (`stripExisting` *is*
+  the replace/merge choice, `id3v2Version` comes from a new `--- tags ---` group
+  in `settings.def`); and reloads what it wrote, so the columns show the file's
+  new contents rather than the dialog's intentions. `PlaylistEntry::fullTagMap()`
+  is what lets a save carry along every name the file has that the dialog never
+  showed.
+
+  **A save normalizes the standard fields' spelling, and that is the one thing
+  it does not carry along.** TagLib folds the frame IDs it owns and hands every
+  other name back verbatim, so a merge that only named `albumartist` would leave
+  the file's own `ALBUM ARTIST` beside it; and for a field the listener cleared
+  the stale alias is worse than a duplicate, because `applyMetadata` reads its
+  alias chains canonical-first — the retired spelling is what reads back next
+  time, and the clear never sticks. `buildChanges()` therefore names each touched
+  field's losing spellings as empty value lists, which the writer reads as
+  deletes: editing a field retires `album artist`, `recording_date`, `tracknum`
+  and the rest of its chain, while names nobody touched keep the spelling their
+  file had. A single file's write replaces the whole block, so it normalizes
+  whatever the listener did — including `unsyncedlyrics`, the name the lyrics row
+  writes, which the lyrics pane then puts ahead of a sidecar `.lrc` as soon as
+  what was typed parses as `.lrc`.
+
+  **What the writer knows, it knows from probing.** The semantics in
+  `codecs/taglib/TagLibWriter.cpp` were settled by running TagLib 2.3.2 against
+  real fixtures of every container it opens, not by reading its documentation,
+  and two of the findings are not guessable:
+
+  - `File::setProperties()` replaces the whole tag, so a merge write reads
+    `file.properties()` first and lays new values over it. That read is also
+    where the case-insensitivity bite is: TagLib hands names back **uppercased**,
+    so a merge that erases by exact key writes `GENRE` a second time beside
+    `genre` instead of replacing it. The idempotence of two merge passes is a
+    test case, not an assumption.
+  - MPEG, WAVE, DSDIFF and friends fuse the tag types they hold on read —
+    `properties()` returns ID3v2 merged with APE and ID3v1. A rewrite that
+    replaced only the ID3v2 block would read back the stale ID3v1 or APE as
+    though it were the new tag, so those families save with `StripOthers`;
+    MPEG's plain `save()` also mints an ID3v1 copy of the ID3v2 it just wrote,
+    which `DoNotDuplicate` stops. Cover art needs the same explicitness from the
+    other direction: `setProperties` alone leaves an existing picture block
+    untouched in either direction, so clearing it takes an empty `PICTURE` list
+    through `setComplexProperties()` — which is why an empty value list in the
+    map means "delete this" throughout the write path.
+
+  The tail — ReplayGain writing, `.lrc` sidecar saving, `xpcog-cli tag` — is
+  item 6 under "Where to pick up next". Writing to a cue sheet's span or an
+  archive member stays out for the reason the probe already gives: there is no
+  file to write.
+
 **Then:**
 
 - The rest of M6, itemised under "Where to pick up next" below — that is the
@@ -3015,6 +3103,37 @@ still standing:
   SMTC, MPRIS and MediaPlayer.framework already deliver through `platform/`. A
   pane of key bindings would be a second way to ask for something the OS is
   already sending.
+- **The tag editor's tail** — three things left standing after 4.1.0 shipped the
+  write path, all recorded in `docs/TAGEDITOR.md`, none of them architecture.
+
+  **ReplayGain writing.** Reading was item 1 of the survey's "not worth
+  porting" list, and it is the natural next thing here: the values a listener
+  wants written are the ones `ReplayGainCalculator` already computes, and the
+  reader already parses the tags, so this is a store-side feature with both
+  ends in the tree. It needs the same honesty the read side has about
+  `replayGainSource` — writing to the file and writing to the library are two
+  different claims about where the number came from, and only one of them is
+  true of a computed value.
+
+  **`.lrc` sidecar saving.** The lyrics pane reads three sources, and the sidecar
+  is the only one it can read that XPCog cannot write, which makes it the one
+  place where a listener can see a thing the player will not save. Saving it is
+  not a tag write: it is a file next to the file, with its own precedence rules —
+  see the Lyrics section of `docs/FEATURES.md` for which source wins when, and
+  why `lyricsSynced` changes that order.
+
+  **`xpcog-cli tag`.** `info` shows the tags, `codecs` shows the formats, and
+  there is no way to write one from the command line. That is worth having for
+  its own sake — a batch of files needs a loop, not a dialog — and it is worth
+  having as the writer's second caller, since a second caller with no toolkit in
+  sight is what keeps `tagwriter` honest about where the policy lives.
+
+  Both of the first two were ruled out of the first version's scope rather than
+  deferred by accident, and the reasons are in the plan. So was writing tags to
+  a cue sheet's span or an archive member: there is no file to write to, and the
+  probe says so rather than half-doing it. REST tag writes stay out for the
+  reason `docs/REST.md` already gives — a network peer does not get to write to
+  the filesystem.
 
 **7. The MIDI leftovers**, all recorded in `docs/MIDI.md`. Two of the three are
 now closed and the third is the only one left:
@@ -4057,7 +4176,11 @@ backends and not MIDI itself — the other three are portable and are staged in
 [MIDI.md](MIDI.md). Cog also does **not** write tags —
 `PluginController -putMetadataInURL:` is stubbed `return 0`, the facade has no
 callers and `TagEditorController` is fully commented out. Tag writing is therefore a
-new feature, not port work, and is deferred.
+new feature, not port work, and it has since been built: see "Writing tags back to
+files" in the M6 list above. What Cog left half-drawn is the reason the design here
+starts from the file rather than from a format table — the commented-out controller
+hard-codes a list of fields, and the first question it never had to answer is what to
+do with a name that is not on it.
 
 **Sentry, since ported.** It was on the not-ported list and has come off it. Cog's
 arrangement is a consent flag and an SDK started only when it is set, and both

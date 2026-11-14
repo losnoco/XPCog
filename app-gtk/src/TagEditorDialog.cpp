@@ -59,7 +59,11 @@ struct State {
 
     GtkWidget*              dialog     = nullptr;
     GtkWidget*              saveButton = nullptr;
-    GtkWidget*              freeGroup  = nullptr;  // rebuilt wholesale
+    /// The free rows' container, rebuilt wholesale. It is a GtkBox rather
+    /// than the group itself because AdwPreferencesGroup has no way to take
+    /// a row back out, and a box it cannot remove from is a loop that never
+    /// ends.
+    GtkWidget*              freeBox    = nullptr;
     GtkWidget*              artStatus  = nullptr;
     GtkWidget*              artRemove  = nullptr;
     GtkWidget*              artKeep    = nullptr;
@@ -113,11 +117,11 @@ struct State {
     // --- free-form rows: rebuilt whenever their number moves ------------------
 
     void rebuildFreeRows() {
-        if (freeGroup == nullptr) {
+        if (freeBox == nullptr) {
             return;
         }
-        while (GtkWidget* child = gtk_widget_get_first_child(freeGroup)) {
-            gtk_box_remove(GTK_BOX(freeGroup), child);
+        while (GtkWidget* child = gtk_widget_get_first_child(freeBox)) {
+            gtk_box_remove(GTK_BOX(freeBox), child);
         }
         freeNotes.clear();
         std::size_t index = 0;
@@ -153,7 +157,7 @@ struct State {
 
         gtk_box_append(GTK_BOX(box), line);
         gtk_box_append(GTK_BOX(box), note);
-        adw_preferences_group_add(ADW_PREFERENCES_GROUP(freeGroup), box);
+        gtk_box_append(GTK_BOX(freeBox), box);
         freeNotes.push_back(note);
 
         // Text is set before connecting, so seeding a row does not count as
@@ -238,6 +242,7 @@ void showTagEditorDialog(GtkWindow* parent, app::Session& session,
     state->dialog     = GTK_WIDGET(dialog);
     adw_dialog_set_title(dialog, tr("Edit Tags").c_str());
     adw_dialog_set_content_width(dialog, 560);
+    adw_dialog_set_content_height(dialog, 520);
 
     GtkWidget* view   = adw_toolbar_view_new();
     GtkWidget* header = adw_header_bar_new();
@@ -314,8 +319,13 @@ void showTagEditorDialog(GtkWindow* parent, app::Session& session,
 
     if (state->model.supportsFreeRows()) {
         GtkWidget* group = adw_preferences_group_new();
-        state->freeGroup = group;
         adw_preferences_group_set_title(ADW_PREFERENCES_GROUP(group), tr("Other tags").c_str());
+        // One box holding every row: the rows come and go as their number
+        // moves, and the group is the one child this dialog can add to but
+        // never take away.
+        GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+        state->freeBox = box;
+        adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), box);
         GtkWidget* add = gtk_button_new_with_label(tr("Add another tag").c_str());
         gtk_widget_set_valign(add, GTK_ALIGN_CENTER);
         adw_preferences_group_set_header_suffix(ADW_PREFERENCES_GROUP(group), add);
@@ -421,6 +431,10 @@ void showTagEditorDialog(GtkWindow* parent, app::Session& session,
         Connection::to<void(GtkButton*)>(save, "clicked", [state](GtkButton*) {
             state->submit();
         }));
+
+    // Set last: the dialog has one child, this toolbar view, and every group
+    // and row under it is built by the time it goes in.
+    adw_dialog_set_child(dialog, view);
 
     g_object_set_data_full(
         G_OBJECT(dialog), "xpcog-state", new std::shared_ptr<State>(state),
