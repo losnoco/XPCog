@@ -11,7 +11,6 @@
 #include "xpcog/platform/CrashReporter.hpp"
 
 #include <winrt/Microsoft.Windows.Storage.Pickers.h>
-#include <winrt/Windows.Storage.Streams.h>
 
 #include <microsoft.ui.xaml.window.h>
 #include <shlobj.h>
@@ -22,6 +21,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 
 namespace xpcog::winui {
@@ -1504,7 +1504,6 @@ mux::Controls::ContentDialog MainWindow::dialog(const std::string& title) const 
 }
 
 namespace pickers = winrt::Microsoft::Windows::Storage::Pickers;
-namespace streams = winrt::Windows::Storage::Streams;
 
 winrt::fire_and_forget MainWindow::openFiles() {
     try {
@@ -2026,19 +2025,25 @@ winrt::fire_and_forget MainWindow::editTags() {
                 if (!chosen) {
                     co_return;
                 }
-                // The file itself, not its path: FileIO answers for a picked
-                // storage item, and the picker's answer already is one.
-                const auto buffer =
-                    co_await winrt::Windows::Storage::FileIO::ReadBufferAsync(chosen);
-                // DataReader, not DataWriter: this reads the file back. The
-                // static wraps the buffer the picker's read handed over, and
-                // ReadBytes is how a cppwinrt reader gives up a byte array.
-                const auto reader = streams::DataReader::FromBuffer(buffer);
-                const auto bytes  = reader.ReadBytes(static_cast<uint32_t>(buffer.Length()));
+                // Read through the plain filesystem, as the scanner reads a
+                // folder's cover (Scanner.cpp): this is the Win32 picker, so
+                // its answer names a real file, and ifstream can have it.
+                // FileIO and DataReader were a second way to do what this
+                // does, and MSVC took the WinRT-object handoff apart at the
+                // seams -- one await, the picker's, is all this coroutine
+                // needs.
+                std::ifstream in{std::filesystem::path(std::wstring(chosen.Path())),
+                                 std::ios::binary | std::ios::ate};
+                const auto    size = in.tellg();
                 std::vector<std::byte> owned;
-                owned.reserve(bytes.size());
-                for (const uint8_t byte : bytes) {
-                    owned.push_back(static_cast<std::byte>(byte));
+                if (in && size > 0) {
+                    owned.resize(static_cast<std::size_t>(size));
+                    in.seekg(0);
+                    in.read(reinterpret_cast<char*>(owned.data()),
+                            static_cast<std::streamsize>(owned.size()));
+                    if (!in) {
+                        owned.clear();
+                    }
                 }
                 queue.TryEnqueue([state, owned = std::move(owned)]() mutable {
                     state->model.replaceArt(std::move(owned));
