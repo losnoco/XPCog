@@ -362,6 +362,22 @@ MetadataMap TagEditorModel::buildChanges() const {
         } else {
             out.set(canonicalOf(field), row.values);
         }
+        // The losing spellings of the name just written go with it, also as
+        // empty lists. A merge write starts from TagLib's properties(), and
+        // TagLib folds only the frame IDs it owns (ARTIST, TITLE): a file's
+        // "album artist" or "recording_date" comes back verbatim and would
+        // sit beside the canonical name this save writes. Worse for a cleared
+        // field: applyMetadata reads alias chains canonical-first, so with
+        // the canonical name gone the stale alias is what reads back, and
+        // the clear never sticks. Names of fields nobody touched are left
+        // spelled as the file had them.
+        const std::string_view canonical = canonicalOf(field);
+        for (const std::string_view alias : aliasesOf(field)) {
+            if (alias == canonical || out.find(alias) != nullptr) {
+                continue;
+            }
+            out.set(alias, std::vector<std::string>{});
+        }
     }
     return out;
 }

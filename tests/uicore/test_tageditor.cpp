@@ -245,6 +245,44 @@ TEST_CASE("buildChanges() is only what the listener touched", "[uicore][tagedito
     CHECK_FALSE(changes.contains("albumart"));
 }
 
+TEST_CASE("buildChanges() retires a touched field's losing spellings", "[uicore][tageditor]") {
+    // TagLib folds the frame IDs it owns and hands every other name back
+    // verbatim, so a merge that only names albumartist leaves the file's own
+    // "album artist" sitting beside it. Worse for a cleared field: the alias
+    // chains are read canonical-first, so with the canonical name gone the
+    // stale alias is what reads back next time, and the clear never sticks.
+    MetadataMap tags;
+    tags.set("album artist", std::vector<std::string>{"Ghost"});
+    tags.set("recording_date", std::vector<std::string>{"1972"});
+    tags.set("tracknum", std::vector<std::string>{"3/12"});
+    TagEditorModel model{{makeSource("alias.flac", tags, kVorbis)}};
+
+    // An alias seed lands on the canonical row, never on a free row.
+    CHECK(model.joined(Field::AlbumArtist) == "Ghost");
+    CHECK(model.joined(Field::Date) == "1972");
+
+    model.setJoined(Field::AlbumArtist, "Canonical Artist");
+    model.setJoined(Field::Date, "");
+
+    MetadataMap changes = model.buildChanges();
+    CHECK(valuesOf(changes, "albumartist") == std::vector<std::string>{"Canonical Artist"});
+    for (std::string_view alias : {"album artist", "album_artist"}) {
+        REQUIRE(changes.find(alias) != nullptr);
+        CHECK(std::get<std::vector<std::string>>(*changes.find(alias)).empty());
+    }
+    REQUIRE(changes.find("date") != nullptr);
+    CHECK(std::get<std::vector<std::string>>(*changes.find("date")).empty());
+    for (std::string_view alias : {"recording_date", "year"}) {
+        REQUIRE(changes.find(alias) != nullptr);
+        CHECK(std::get<std::vector<std::string>>(*changes.find(alias)).empty());
+    }
+
+    // A field nobody touched keeps whatever spelling the file had it in.
+    CHECK_FALSE(changes.contains("tracknum"));
+    CHECK_FALSE(changes.contains("tracknumber"));
+    CHECK_FALSE(changes.contains("track"));
+}
+
 TEST_CASE("the notes say what the format will do", "[uicore][tageditor]") {
     MetadataMap tags;
     tags.set("artist", std::vector<std::string>{"One", "Two"});

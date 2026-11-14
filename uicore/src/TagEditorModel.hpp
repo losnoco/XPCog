@@ -188,8 +188,9 @@ public:
 
     /// Only what the listener touched, for a merge write: touched promoted
     /// rows, a blank included as an empty value so the merge clears the
-    /// field instead of skipping it. Nothing else -- a batch leaves each
-    /// file's other tags, names, bytes and covers alone.
+    /// field instead of skipping it, plus the same fields' losing alias
+    /// spellings as empty values so the merge retires them. Nothing else --
+    /// a batch leaves each file's other tags, names, bytes and covers alone.
     [[nodiscard]] MetadataMap buildChanges() const;
 
 private:

@@ -310,6 +310,54 @@ TEST_CASE("an empty value list deletes the tag", "[tags][tagwriter]") {
     CHECK(sortedValues(back, "comment") == one("kept"));
 }
 
+TEST_CASE("a merge write retires the alias spellings of the names it writes", "[tags][tagwriter]") {
+    // TagLib folds the frame IDs it owns into the property map (ARTIST, TITLE)
+    // and hands every other name back verbatim, uppercased. So a batch save's
+    // merge base can carry "ALBUM ARTIST" beside the "albumartist" the editor
+    // wrote, and "RECORDING_DATE" beside a cleared "date" -- which reads back
+    // as the old value, since the promotion chains look for the canonical
+    // name first. The editor answers that by naming the aliases as deletes.
+    const fs::path dir = freshDir("flac-alias");
+    if (!makeTaggedFlac(dir / "track.flac",
+                        {"ALBUM ARTIST=Alias Artist", "RECORDING_DATE=1972", "TRACKNUM=3/12"})) {
+        SKIP("flac is not installed");
+    }
+
+    // What the alias-carrying file looks like before anything touches it: the
+    // spellings survive TagLib unchanged.
+    MetadataMap before = readBack(dir / "track.flac");
+    CHECK(sortedValues(before, "album artist") == one("Alias Artist"));
+    CHECK(valuesOf(before, "albumartist") == nullptr);
+    CHECK(sortedValues(before, "recording_date") == one("1972"));
+    CHECK(sortedValues(before, "tracknum") == one("3/12"));
+
+    MetadataMap tags;
+    tags.set("albumartist", std::vector<std::string>{"Canonical Artist"});
+    tags.set("album artist", std::vector<std::string>{});
+    tags.set("album_artist", std::vector<std::string>{});
+    tags.set("date", std::vector<std::string>{});
+    tags.set("recording_date", std::vector<std::string>{});
+    tags.set("year", std::vector<std::string>{});
+    MetadataWriteOptions options;
+    options.stripExisting = false;
+    REQUIRE(writeTags(dir / "track.flac", tags, options));
+
+    MetadataMap back = readBack(dir / "track.flac");
+    CHECK(sortedValues(back, "albumartist") == one("Canonical Artist"));
+    CHECK(valuesOf(back, "album artist") == nullptr);
+    CHECK(valuesOf(back, "date") == nullptr);
+    CHECK(valuesOf(back, "recording_date") == nullptr);
+    // A name no row touched is left spelled as the file had it.
+    CHECK(sortedValues(back, "tracknum") == one("3/12"));
+
+    // And idempotent: a second pass has nothing to fold and writes nothing
+    // back under the retired spellings.
+    REQUIRE(writeTags(dir / "track.flac", tags, options));
+    back = readBack(dir / "track.flac");
+    CHECK(sortedValues(back, "albumartist") == std::vector<std::string>{"Canonical Artist"});
+    CHECK(valuesOf(back, "album artist") == nullptr);
+}
+
 TEST_CASE("albumart bytes add and clear the cover", "[tags][tagwriter]") {
     const fs::path dir = freshDir("flac-art");
     const fs::path png = makePng(dir / "cover.png");
