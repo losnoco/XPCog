@@ -36,7 +36,9 @@ set(XPCOG_WINAPPSDK_RUNTIME_PATCH 1)
 # fetches on a machine that does not have the runtime yet -- 120 MB, which is
 # why it is fetched rather than carried -- and which CI installs before the
 # WinUI tests. Pinned and hashed together with the version above: a bump of one
-# is a bump of all three.
+# is a bump of all three. The x64 build of the installer, because the Windows
+# packaging that uses it is x64-only; an arm64 build needs the runtime's arm64
+# build installed by other means, and only CI and the installer call for it here.
 set(XPCOG_WINAPPSDK_RUNTIME_INSTALLER_URL
     "https://aka.ms/windowsappsdk/2.5/2.5.1/windowsappruntimeinstall-x64.exe")
 set(XPCOG_WINAPPSDK_RUNTIME_INSTALLER_SHA256
@@ -88,13 +90,45 @@ if(NOT XPCOG_CPPWINRT)
             "configure from a Visual Studio developer shell.")
 endif()
 
+# Which architecture's native binaries to take. The packages carry one copy of
+# each per architecture -- lib/native/x64, /arm64, /x86 and runtimes/win-x64,
+# win-arm64, win-x86 -- and reading the host's architecture rather than the
+# target's is what breaks a build whose compiler and machine disagree: the arm64
+# build cross-compiled from an x64 shell, or the x64 build on an arm64 host. The
+# triplet already knows the answer; MSVC's view of its own compiler is the
+# fallback for a configure without the vcpkg toolchain, and lower-cased it is
+# the packages' own spelling (MSVC writes ARM64 and X86 upper-case).
+set(_winappsdk_arch "${VCPKG_TARGET_ARCHITECTURE}")
+if(NOT _winappsdk_arch)
+    string(TOLOWER "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" _winappsdk_arch)
+endif()
+# arm64EC is deliberately not on the list: the foundation package has an
+# arm64EC bootstrapper, but Win2D has no win-arm64ec binaries, and an arm64EC
+# build would only fail later at the copy step.
+if(NOT _winappsdk_arch MATCHES "^(x64|x86|arm64)$")
+    message(FATAL_ERROR
+            "Cannot tell what architecture this WinUI build links for "
+            "(got '${_winappsdk_arch}'). The Windows App SDK packages this "
+            "build reads are built for x64, arm64 and x86.")
+endif()
+
+set(_winappsdk_bootstrap_lib
+    "${_winappsdk_foundation}/lib/native/${_winappsdk_arch}/Microsoft.WindowsAppRuntime.Bootstrap.lib")
+# Better to say so here than to leave the linker hunt for a file that an arch
+# the package was never built for cannot have.
+if(NOT EXISTS "${_winappsdk_bootstrap_lib}")
+    message(FATAL_ERROR
+            "The Windows App SDK foundation package carries no ${_winappsdk_arch} "
+            "bootstrapper at ${_winappsdk_bootstrap_lib}.")
+endif()
+
 file(GLOB _winappsdk_winmds
     "${_winappsdk_foundation}/metadata/*.winmd"
     "${_winappsdk_interactiveexperiences}/metadata/10.0.17763.0/*.winmd"
     "${_winappsdk_winui}/metadata/*.winmd"
     "${_winappsdk_webview2}/lib/*.winmd")
 list(APPEND _winappsdk_winmds "${_winappsdk_win2d}/lib/uap10.0/Microsoft.Graphics.Canvas.winmd")
-set(XPCOG_WIN2D_DLL "${_winappsdk_win2d}/runtimes/win-x64/native/Microsoft.Graphics.Canvas.dll")
+set(XPCOG_WIN2D_DLL "${_winappsdk_win2d}/runtimes/win-${_winappsdk_arch}/native/Microsoft.Graphics.Canvas.dll")
 
 # Regenerated only when the inputs or the generator change; it takes a while and
 # writes a few hundred headers.
@@ -131,7 +165,7 @@ target_include_directories(xpcog-winappsdk SYSTEM INTERFACE
     "${_winappsdk_interactiveexperiences}/include"
     "${_winappsdk_winui}/include")
 target_link_libraries(xpcog-winappsdk INTERFACE
-    "${_winappsdk_foundation}/lib/native/x64/Microsoft.WindowsAppRuntime.Bootstrap.lib"
+    "${_winappsdk_bootstrap_lib}"
     WindowsApp.lib)
 target_compile_definitions(xpcog-winappsdk INTERFACE
     XPCOG_WINAPPSDK_RUNTIME_MAJOR=${XPCOG_WINAPPSDK_RUNTIME_MAJOR}
@@ -142,4 +176,4 @@ target_compile_definitions(xpcog-winappsdk INTERFACE
 target_compile_options(xpcog-winappsdk INTERFACE /bigobj)
 
 set(XPCOG_WINAPPSDK_BOOTSTRAP_DLL
-    "${_winappsdk_foundation}/runtimes/win-x64/native/Microsoft.WindowsAppRuntime.Bootstrap.dll")
+    "${_winappsdk_foundation}/runtimes/win-${_winappsdk_arch}/native/Microsoft.WindowsAppRuntime.Bootstrap.dll")
