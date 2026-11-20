@@ -56,7 +56,9 @@ bool sayNo()  { gAvailableCalled = true; return false; }
 // Fake tag writers. The registry contract is plain function pointers, so the
 // fakes record what they saw in globals rather than carrying state.
 std::string gWritten;
+std::string gChaptersWritten;
 int         gProbeCalls    = 0;
+int         gReadChaptersCalls = 0;
 bool        gWritableProbe = true;
 
 bool writeAlpha(const Url& url, const MetadataMap& tags, MetadataWriteOptions& options) {
@@ -79,9 +81,42 @@ MetadataCapabilities probeBeta(const Url&) {
     return caps;
 }
 
+// Gamma writes both ways and records which; the chapter fakes record the
+// list's size, which is all the registry contract promises to pass through.
+bool writeGamma(const Url&, const MetadataMap&, MetadataWriteOptions&) {
+    gWritten = "gamma";
+    return true;
+}
+
+bool writeChaptersGamma(const Url&, const MetadataMap&, const ChapterList& chapters,
+                        MetadataWriteOptions&) {
+    gChaptersWritten = "gamma:" + std::to_string(chapters.size());
+    return true;
+}
+
+bool writeChaptersDelta(const Url&, const MetadataMap&, const ChapterList& chapters,
+                        MetadataWriteOptions&) {
+    gChaptersWritten = "delta:" + std::to_string(chapters.size());
+    return true;
+}
+
+MetadataMap readNothing(const Url&) { return {}; }
+
+ChapterList readChaptersAlpha(const Url&) {
+    ++gReadChaptersCalls;
+    return ChapterList{Chapter{.startMs = 1000, .title = "alpha"}};
+}
+
+ChapterList readChaptersBeta(const Url&) {
+    ++gReadChaptersCalls;
+    return ChapterList{Chapter{.startMs = 2000, .title = "beta"}};
+}
+
 void resetTagFakes() {
     gWritten = {};
+    gChaptersWritten = {};
     gProbeCalls = 0;
+    gReadChaptersCalls = 0;
     gWritableProbe = true;
 }
 
@@ -347,4 +382,162 @@ TEST_CASE("metadataCapabilities reports the highest-priority probing claimant",
     resetTagFakes();
     CHECK_FALSE(registry.metadataCapabilities(*Url::parse("file:///tmp/opencode/t.aaa#2")).writable);
     CHECK(gProbeCalls == 0);
+}
+
+TEST_CASE("a chapter write goes only to a writer that can save chapters",
+          "[registry][tags]") {
+    resetTagFakes();
+
+    PluginRegistry registry;
+    // Beta outranks Gamma but has no writeChapters: a chapter write must pass
+    // it by rather than drop the chapters, while a plain write still goes to
+    // it first.
+    registry.addMetadataWriter({.name       = "Beta",
+                                .priority   = 2.0F,
+                                .extensions = kExtA,
+                                .write      = &writeBeta});
+    registry.addMetadataWriter({.name          = "Gamma",
+                                .extensions    = kExtA,
+                                .write         = &writeGamma,
+                                .writeChapters = &writeChaptersGamma});
+    registry.freeze();
+
+    const Url url = *Url::parse("file:///tmp/opencode/tags.aaa");
+    MetadataWriteOptions options;
+    CHECK(registry.writeMetadata(url, {}, options));
+    CHECK(gWritten == "beta");
+    CHECK(gChaptersWritten.empty());
+
+    const ChapterList chapters{Chapter{.startMs = 0, .title = "One"},
+                               Chapter{.startMs = 500, .title = "Two"}};
+    CHECK(registry.writeMetadata(url, {}, chapters, options));
+    CHECK(gChaptersWritten == "gamma:2");
+    // Beta's plain write never ran for the chapter write.
+    CHECK(gWritten == "beta");
+}
+
+TEST_CASE("an empty chapter list reaches the writer as itself", "[registry][tags]") {
+    resetTagFakes();
+
+    PluginRegistry registry;
+    registry.addMetadataWriter({.name          = "Gamma",
+                                .extensions    = kExtA,
+                                .write         = &writeGamma,
+                                .writeChapters = &writeChaptersGamma});
+    registry.freeze();
+
+    // Removal is the writer's reading of an empty list; the registry's job is
+    // to pass it through untouched, not to turn it into "leave alone".
+    MetadataWriteOptions options;
+    CHECK(registry.writeMetadata(*Url::parse("file:///tmp/opencode/tags.aaa"), {},
+                                 ChapterList{}, options));
+    CHECK(gChaptersWritten == "gamma:0");
+}
+
+TEST_CASE("a chapter write honors the probe", "[registry][tags]") {
+    resetTagFakes();
+
+    PluginRegistry registry;
+    registry.addMetadataWriter({.name          = "Gamma",
+                                .priority      = 2.0F,
+                                .extensions    = kExtA,
+                                .write         = &writeGamma,
+                                .writeChapters = &writeChaptersGamma,
+                                .probe         = &probeBeta});
+    registry.addMetadataWriter({.name          = "Delta",
+                                .extensions    = kExtA,
+                                .write         = &writeGamma,
+                                .writeChapters = &writeChaptersDelta});
+    registry.freeze();
+
+    gWritableProbe = false;
+    MetadataWriteOptions options;
+    CHECK(registry.writeMetadata(*Url::parse("file:///tmp/opencode/tags.aaa"), {},
+                                 ChapterList{Chapter{}}, options));
+    CHECK(gProbeCalls == 1);
+    CHECK(gChaptersWritten == "delta:1");
+}
+
+TEST_CASE("a chapter write reports when no claimant can save chapters",
+          "[registry][tags]") {
+    resetTagFakes();
+
+    PluginRegistry registry;
+    registry.addMetadataWriter({.name       = "Beta",
+                                .extensions = kExtA,
+                                .write      = &writeBeta});
+    registry.freeze();
+
+    MetadataWriteOptions options;
+    CHECK_FALSE(registry.writeMetadata(*Url::parse("file:///tmp/opencode/tags.aaa"), {},
+                                       ChapterList{Chapter{}}, options));
+    // The plain write never ran: a writer without writeChapters is skipped,
+    // not tried with the chapters dropped.
+    CHECK(gWritten.empty());
+    CHECK(options.error == "no tag writer can save chapters to this file");
+}
+
+TEST_CASE("a chapter write rejects a URL with a fragment before any writer runs",
+          "[registry][tags]") {
+    resetTagFakes();
+
+    PluginRegistry registry;
+    registry.addMetadataWriter({.name          = "Gamma",
+                                .write         = &writeGamma,
+                                .writeChapters = &writeChaptersGamma});
+    registry.freeze();
+
+    MetadataWriteOptions options;
+    CHECK_FALSE(registry.writeMetadata(*Url::parse("file:///tmp/opencode/book.mp3#2"), {},
+                                       ChapterList{Chapter{}}, options));
+    CHECK(gChaptersWritten.empty());
+    CHECK_FALSE(options.error.empty());
+}
+
+TEST_CASE("readChapters answers from the highest-priority claimant that reads them",
+          "[registry][tags]") {
+    resetTagFakes();
+
+    PluginRegistry registry;
+    // The top claimant reads tags only; it must not block the chapter
+    // question, and of the two that read chapters the higher one answers
+    // alone -- no merge.
+    registry.addMetadataReader({.name       = "NoChapters",
+                                .priority   = 3.0F,
+                                .extensions = kExtA,
+                                .read       = &readNothing});
+    registry.addMetadataReader({.name         = "Alpha",
+                                .priority     = 2.0F,
+                                .extensions   = kExtA,
+                                .read         = &readNothing,
+                                .readChapters = &readChaptersAlpha});
+    registry.addMetadataReader({.name         = "Beta",
+                                .extensions   = kExtA,
+                                .read         = &readNothing,
+                                .readChapters = &readChaptersBeta});
+    registry.freeze();
+
+    const ChapterList chapters =
+        registry.readChapters(*Url::parse("file:///tmp/opencode/book.aaa"));
+    REQUIRE(chapters.size() == 1);
+    CHECK(chapters.front().title == "alpha");
+    CHECK(gReadChaptersCalls == 1);
+
+    // A fragment names a track, not a file: no reader runs for it.
+    resetTagFakes();
+    CHECK(registry.readChapters(*Url::parse("file:///tmp/opencode/book.aaa#2")).empty());
+    CHECK(gReadChaptersCalls == 0);
+}
+
+TEST_CASE("readChapters is empty when no claimant reads chapters", "[registry][tags]") {
+    resetTagFakes();
+
+    PluginRegistry registry;
+    registry.addMetadataReader({.name       = "NoChapters",
+                                .extensions = kExtA,
+                                .read       = &readNothing});
+    registry.freeze();
+
+    CHECK(registry.readChapters(*Url::parse("file:///tmp/opencode/book.aaa")).empty());
+    CHECK(gReadChaptersCalls == 0);
 }

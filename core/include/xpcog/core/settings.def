@@ -912,6 +912,11 @@ XPCOG_SETTING(RemoteLoopbackNoToken, bool, "remoteLoopbackNoToken", false)
 /// Ogg family, APEv2) ignore it.
 XPCOG_SETTING(Id3v2Version, int, "id3v2Version", 4)
 
+/// What to do with a file's playlist rows when a tag save changed its
+/// chapters: "ask", "rebuild" or "keep". Cog's key, kept identical. Read at
+/// the moment the save reports the change, so nothing holds a copy.
+XPCOG_SETTING(TagEditorChapterRows, std::string, "tagEditorChapterRows", "ask")
+
 // --- bookkeeping ----------------------------------------------------------
 
 /// Bumped by SettingsMigration; see Settings::applyMigrations().

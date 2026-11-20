@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "xpcog/core/Chapters.hpp"
 #include "xpcog/core/Plugin.hpp"
 
 #include <cstdint>
@@ -85,6 +86,13 @@ struct ContainerDescriptor {
 /// implementation behind it.
 using MetadataReadFn = MetadataMap (*)(const Url& url);
 
+/// Reads the file's chapters, for the tag editor's chapter section. Optional:
+/// only a reader whose library can see chapters answers (TagLib's CHAP/CTOC
+/// frames, Matroska editions, MP4 chapter lists). Unlike readMetadata this
+/// does not merge -- chapters are the file's structure, and one authority
+/// describes it (see PluginRegistry::readChapters).
+using MetadataReadChaptersFn = ChapterList (*)(const Url& url);
+
 struct MetadataReaderDescriptor {
     std::string_view                  name;
     Priority                          priority = kDefaultPriority;
@@ -92,6 +100,8 @@ struct MetadataReaderDescriptor {
     /// format-agnostic library like TagLib wants.
     std::span<const std::string_view> extensions;
     MetadataReadFn                    read      = nullptr;
+    /// Optional; null means this reader cannot see chapters.
+    MetadataReadChaptersFn            readChapters = nullptr;
     bool (*available)()                         = nullptr;
 };
 
@@ -123,6 +133,10 @@ struct MetadataCapabilities {
     /// Some part of the write will lose fidelity even though the file is
     /// writable -- key folding, joined values, renamed fields.
     bool lossyRepresentation = false;
+    /// The file's chapters can be read and replaced -- ID3v2 CHAP/CTOC,
+    /// Matroska editions, MP4's QuickTime and Nero lists. Formats with no
+    /// chapter mechanism report false and the editor hides the section.
+    bool chapters = false;
 };
 
 /// Per-write policy, supplied by the caller (a Session, from settings) and
@@ -155,6 +169,14 @@ struct MetadataWriteOptions {
 using MetadataWriteFn = bool (*)(const Url& url, const MetadataMap& tags,
                                  MetadataWriteOptions& options);
 
+/// Writes tags and chapters in one save. `chapters` is the whole truth about
+/// the file's chapters: an empty list removes them all. Only a writer with
+/// this function is offered a write that carries chapters; the plain
+/// MetadataWriteFn leaves the file's chapters alone.
+using MetadataWriteChaptersFn = bool (*)(const Url& url, const MetadataMap& tags,
+                                         const ChapterList& chapters,
+                                         MetadataWriteOptions& options);
+
 /// Reports whether `url`'s format can be written, and how faithfully. May open
 /// the file -- TagLib picks its parser from the extension and then asks the
 /// concrete File what it saves -- but must not create, modify, or delete
@@ -175,6 +197,9 @@ struct MetadataWriterDescriptor {
     /// Shorten file opens in TagLib for reading and refuses to save.
     std::span<const std::string_view> extensions;
     MetadataWriteFn                   write = nullptr;
+    /// Optional. Writes tags and chapters together, in one save. Null means
+    /// the writer cannot save chapters, and a write carrying them skips it.
+    MetadataWriteChaptersFn           writeChapters = nullptr;
     /// Optional. Says whether the format writes, and how lossily, without
     /// trying. A writer without a probe can never answer the capability
     /// question, and writeMetadata falls back to trying it blind.
@@ -307,6 +332,13 @@ public:
     /// format-specific reader can supplement TagLib rather than replace it.
     [[nodiscard]] MetadataMap readMetadata(const Url& url) const;
 
+    /// The file's chapters, from the highest-priority claimant that reads
+    /// them -- the metadataCapabilities rule, not readMetadata's merge: one
+    /// authority describes the file's structure. Empty when no claimant reads
+    /// chapters, and for a fragment URL, which names a track rather than a
+    /// file.
+    [[nodiscard]] ChapterList readChapters(const Url& url) const;
+
     /// Writes `tags` to `url` and reports whether the file now carries them.
     ///
     /// Deliberately unlike readMetadata: writing does not merge across every
@@ -326,6 +358,14 @@ public:
     /// `options.error` carries one human-readable sentence when this returns
     /// false, set by the writer that tried last and failed.
     [[nodiscard]] bool writeMetadata(const Url& url, const MetadataMap& tags,
+                                     MetadataWriteOptions& options) const;
+
+    /// The same write, carrying the file's chapters as well: one open, one
+    /// save, tags and chapters together. Only writers with writeChapters are
+    /// offered the file; `chapters` is the whole truth about them, an empty
+    /// list removing them all. The three-argument form leaves chapters alone.
+    [[nodiscard]] bool writeMetadata(const Url& url, const MetadataMap& tags,
+                                     const ChapterList& chapters,
                                      MetadataWriteOptions& options) const;
 
     /// What writing `url`'s tags would preserve, from the highest-priority
@@ -362,6 +402,12 @@ public:
     [[nodiscard]] bool isPlayableExtension(std::string_view extension) const noexcept;
 
 private:
+    /// Both writeMetadata forms land here; `chapters` null means "leave the
+    /// file's chapters alone".
+    [[nodiscard]] bool writeMetadataImpl(const Url& url, const MetadataMap& tags,
+                                         const ChapterList* chapters,
+                                         MetadataWriteOptions& options) const;
+
     const Settings*                  settings_ = nullptr;
     std::vector<SourceDescriptor>        sources_;
     std::vector<SourceWrapperDescriptor> sourceWrappers_;

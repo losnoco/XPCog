@@ -105,6 +105,29 @@ MetadataMap PluginRegistry::readMetadata(const Url& url) const {
     return merged;
 }
 
+ChapterList PluginRegistry::readChapters(const Url& url) const {
+    if (!url.fragment().empty()) {
+        return {};
+    }
+
+    const std::string extension = url.extension();
+    // Descending priority, and the first claimant that reads chapters answers
+    // alone -- the metadataCapabilities rule. Merging two readers' lists would
+    // interleave two descriptions of one file's structure.
+    for (const auto& reader : metadataReaders_) {
+        const bool claims =
+            reader.extensions.empty() ||
+            std::any_of(reader.extensions.begin(), reader.extensions.end(),
+                        [&extension](std::string_view claimed) {
+                            return claimed == extension;
+                        });
+        if (claims && reader.readChapters != nullptr) {
+            return reader.readChapters(url);
+        }
+    }
+    return {};
+}
+
 namespace {
 
 bool claimsExtension(const MetadataWriterDescriptor& writer, std::string_view extension) {
@@ -117,6 +140,18 @@ bool claimsExtension(const MetadataWriterDescriptor& writer, std::string_view ex
 
 bool PluginRegistry::writeMetadata(const Url& url, const MetadataMap& tags,
                                    MetadataWriteOptions& options) const {
+    return writeMetadataImpl(url, tags, nullptr, options);
+}
+
+bool PluginRegistry::writeMetadata(const Url& url, const MetadataMap& tags,
+                                   const ChapterList& chapters,
+                                   MetadataWriteOptions& options) const {
+    return writeMetadataImpl(url, tags, &chapters, options);
+}
+
+bool PluginRegistry::writeMetadataImpl(const Url& url, const MetadataMap& tags,
+                                       const ChapterList* chapters,
+                                       MetadataWriteOptions& options) const {
     if (!url.fragment().empty()) {
         options.error = "this URL refers to part of a file, not a whole file";
         return false;
@@ -127,13 +162,22 @@ bool PluginRegistry::writeMetadata(const Url& url, const MetadataMap& tags,
         if (!claimsExtension(writer, extension)) {
             continue;
         }
+        // A write carrying chapters needs a writer that saves them in the
+        // same save; one without the function is skipped, not tried blind
+        // with the chapters dropped.
+        if (chapters != nullptr && writer.writeChapters == nullptr) {
+            continue;
+        }
         // A claimant that vouches for the file moves to the front of the
         // queue; one without a probe cannot say, so it stays where priority
         // put it and gets tried blind.
         if (writer.probe && !writer.probe(url).writable) {
             continue;
         }
-        if (writer.write(url, tags, options)) {
+        const bool saved = chapters != nullptr
+                               ? writer.writeChapters(url, tags, *chapters, options)
+                               : writer.write(url, tags, options);
+        if (saved) {
             return true;
         }
         if (options.error.empty()) {
@@ -141,7 +185,8 @@ bool PluginRegistry::writeMetadata(const Url& url, const MetadataMap& tags,
         }
     }
     if (options.error.empty()) {
-        options.error = "no tag writer claims this file";
+        options.error = chapters != nullptr ? "no tag writer can save chapters to this file"
+                                            : "no tag writer claims this file";
     }
     return false;
 }

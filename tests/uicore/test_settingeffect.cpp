@@ -70,6 +70,8 @@ constexpr std::array kNothingToDo = {
     "notifications.enable", "notifications.show-album-art",
     // Asked by the session at the moment a tag save picks its ID3v2 version.
     "id3v2Version",
+    // Asked when a tag save reports that a file's chapters changed.
+    "tagEditorChapterRows",
 };
 
 bool listed(std::string_view key) {

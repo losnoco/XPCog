@@ -148,12 +148,13 @@ _xpcog_system_dep(rubberband "Rubber Band"
     FEATURE rubberband
     MODULES "rubberband >= 3.3")
 
-# codecs/taglib/TagLibReader.cpp includes <tvariant.h> and constructs a
-# TagLib::FileName. TagLib::Variant is new in 2.0, and FileName became a class in
-# the same release -- 1.13 has neither, which is what Ubuntu 24.04 ships.
+# codecs/taglib: TagLib::Variant and the TagLib::FileName class are 2.0; the
+# chapter APIs the tag editor saves through are newer -- Matroska chapters in
+# 2.2, MP4's QuickTime and Nero chapters in 2.3. The floor is 2.3 so one build
+# writes every kind; an older system copy falls back to the vcpkg port.
 _xpcog_system_dep(taglib "TagLib"
     FEATURE taglib
-    MODULES "taglib >= 2.0"
+    MODULES "taglib >= 2.3"
     TARGETS TagLib::tag)
 
 # libopenmpt's C++ interface, openmpt::module and get_supported_extensions().
