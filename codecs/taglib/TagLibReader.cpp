@@ -8,6 +8,8 @@
 // registered above it supplements rather than replaces, because the registry
 // merges in priority order.
 
+#include "TagLibChapters.hpp"
+
 #include "xpcog/core/PluginRegistry.hpp"
 
 #include <fileref.h>
@@ -20,6 +22,7 @@
 #include <cctype>
 #include <cstddef>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace xpcog {
@@ -85,6 +88,20 @@ MetadataMap readWithTagLib(const Url& url) {
         }
     }
 
+    // A file with chapters is an album of them -- an audiobook, say -- and
+    // its own title names the whole. Cog's reader makes the same
+    // substitution, so the chapter rows, whose titles come from the decoder,
+    // sit under one album name.
+    if (hasTagLibChapters(file.file())) {
+        if (const MetaValue* title = tags.find("title"); title != nullptr) {
+            if (const auto* values = std::get_if<std::vector<std::string>>(title);
+                values != nullptr) {
+                tags.set("album", *values);
+                tags.remove("title");
+            }
+        }
+    }
+
     // Cover art. Only the first picture is kept: Cog shows one image, and
     // carrying a booklet's worth of scans through the playlist would grow the
     // library by tens of megabytes for something nothing displays.
@@ -106,22 +123,42 @@ MetadataMap readWithTagLib(const Url& url) {
     return tags;
 }
 
+ChapterList readChaptersWithTagLib(const Url& url) {
+    silenceTagLibOnce();
+
+    const auto path = url.localPath();
+    if (!path) {
+        return {};
+    }
+
+    // With audio properties: the last MP4 chapter ends at the file's length.
+    TagLib::FileRef file{TagLib::FileName{path->c_str()}, /*readAudioProperties=*/true};
+    if (file.isNull() || file.file() == nullptr) {
+        return {};
+    }
+    return readTagLibChapters(file);
+}
+
 }  // namespace
 
 /// The writer half of this codec lives in TagLibWriter.cpp; declared here
 /// because this is where the registrar that binds them is.
 MetadataCapabilities probeTagsWithTagLib(const Url& url);
 bool writeTagsWithTagLib(const Url& url, const MetadataMap& tags, MetadataWriteOptions& options);
+bool writeTagsWithChaptersWithTagLib(const Url& url, const MetadataMap& tags,
+                                     const ChapterList& chapters,
+                                     MetadataWriteOptions& options);
 
 }  // namespace xpcog
 
 void xpcog_register_taglib(xpcog::PluginRegistry& r) {
     r.addMetadataReader({
-        .name       = "TagLibReader",
-        .priority   = xpcog::kDefaultPriority,
-        .extensions = {},  // format-agnostic: offered for everything
-        .read       = &xpcog::readWithTagLib,
-        .available  = nullptr,
+        .name         = "TagLibReader",
+        .priority     = xpcog::kDefaultPriority,
+        .extensions   = {},  // format-agnostic: offered for everything
+        .read         = &xpcog::readWithTagLib,
+        .readChapters = &xpcog::readChaptersWithTagLib,
+        .available    = nullptr,
     });
 
     // Same format-agnostic stance as the reader: an empty extension list
@@ -129,11 +166,12 @@ void xpcog_register_taglib(xpcog::PluginRegistry& r) {
     // probe is what knows -- save-ability belongs to the container TagLib
     // opens, not to the extension.
     r.addMetadataWriter({
-        .name       = "TagLibWriter",
-        .priority   = xpcog::kDefaultPriority,
-        .extensions = {},
-        .write      = &xpcog::writeTagsWithTagLib,
-        .probe      = &xpcog::probeTagsWithTagLib,
-        .available  = nullptr,
+        .name          = "TagLibWriter",
+        .priority      = xpcog::kDefaultPriority,
+        .extensions    = {},
+        .write         = &xpcog::writeTagsWithTagLib,
+        .writeChapters = &xpcog::writeTagsWithChaptersWithTagLib,
+        .probe         = &xpcog::probeTagsWithTagLib,
+        .available     = nullptr,
     });
 }

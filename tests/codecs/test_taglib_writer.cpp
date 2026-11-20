@@ -13,6 +13,12 @@
 
 #include "../TestShell.hpp"
 
+// For the one fact the registry read cannot show: MP4 chapters are written
+// in both kinds, and the reader prefers the QuickTime track over the Nero
+// list, so a Nero-only regression would read back clean.
+#include <fileref.h>
+#include <mp4file.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -208,6 +214,46 @@ MetadataMap readBack(const fs::path& path) {
 
 bool writeTags(const fs::path& path, const MetadataMap& tags, MetadataWriteOptions& options) {
     return registry().writeMetadata(Url::fromLocalPath(path), tags, options);
+}
+
+bool writeChapters(const fs::path& path, const MetadataMap& tags, const ChapterList& chapters,
+                   MetadataWriteOptions& options) {
+    return registry().writeMetadata(Url::fromLocalPath(path), tags, chapters, options);
+}
+
+ChapterList chaptersOf(const fs::path& path) {
+    return registry().readChapters(Url::fromLocalPath(path));
+}
+
+Chapter chapterAt(std::uint64_t startMs, std::string title) {
+    Chapter chapter;
+    chapter.startMs = startMs;
+    chapter.title   = std::move(title);
+    return chapter;
+}
+
+/// Three chapters handed over out of order, as an editor's rows can be; the
+/// writer sorts them. The fixture is one second: starts at 0, 300, 600 ms.
+ChapterList unorderedChapters() {
+    return ChapterList{chapterAt(600, "Third"), chapterAt(0, "First"),
+                       chapterAt(300, "Second")};
+}
+
+/// What every round trip must show: sorted starts, each chapter ending where
+/// the next begins, the last ending at the file's length. Lossy encoders
+/// round the one-second fixture's length, so the last end gets a band.
+void checkRoundTrip(const ChapterList& back) {
+    REQUIRE(back.size() == 3);
+    CHECK(back[0].startMs == 0);
+    CHECK(back[1].startMs == 300);
+    CHECK(back[2].startMs == 600);
+    CHECK(back[0].title == "First");
+    CHECK(back[1].title == "Second");
+    CHECK(back[2].title == "Third");
+    CHECK(back[0].endMs == 300);
+    CHECK(back[1].endMs == 600);
+    CHECK(back[2].endMs >= 900);
+    CHECK(back[2].endMs <= 1100);
 }
 
 }  // namespace
@@ -635,4 +681,246 @@ TEST_CASE("sources that are not files are refused before anything opens",
     CHECK_FALSE(registry().writeMetadata(*Url::parse("file:///tmp/opencode/album.cue#3"), {},
                                          fragment));
     CHECK_FALSE(fragment.error.empty());
+}
+
+TEST_CASE("chapters round-trip through MP3 in start order", "[tags][tagwriter][chapters]") {
+    const fs::path dir = freshDir("mp3-chapters");
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFromWav(wav, dir / "book.mp3", "-codec:a libmp3lame -b:a 32k")) {
+        SKIP("ffmpeg is not installed");
+    }
+    CHECK(registry().metadataCapabilities(Url::fromLocalPath(dir / "book.mp3")).chapters);
+
+    MetadataMap tags;
+    tags.set("artist", "Björk");
+    MetadataWriteOptions options;
+    REQUIRE(writeChapters(dir / "book.mp3", tags, unorderedChapters(), options));
+
+    const ChapterList back = chaptersOf(dir / "book.mp3");
+    checkRoundTrip(back);
+    // Element IDs were minted on write and survive the read.
+    for (const Chapter& chapter : back) {
+        CHECK_FALSE(chapter.id.empty());
+    }
+    CHECK(sortedValues(readBack(dir / "book.mp3"), "artist") == one("Björk"));
+}
+
+TEST_CASE("a renamed MP3 chapter keeps its identity and the file's tags",
+          "[tags][tagwriter][chapters]") {
+    const fs::path dir = freshDir("mp3-chapter-identity");
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFromWav(wav, dir / "book.mp3", "-codec:a libmp3lame -b:a 32k")) {
+        SKIP("ffmpeg is not installed");
+    }
+    const fs::path book = dir / "book.mp3";
+
+    MetadataMap tags;
+    tags.set("artist", "Pink Floyd");
+    MetadataWriteOptions options;
+    REQUIRE(writeTags(book, tags, options));
+    // Merge: a chapter write carrying no tags keeps the ones already there.
+    options.stripExisting = false;
+    REQUIRE(writeChapters(book, {}, unorderedChapters(), options));
+    const ChapterList first = chaptersOf(book);
+    REQUIRE(first.size() == 3);
+
+    // Rename the middle chapter, keeping every element ID; a merge write
+    // carrying only chapters must not touch the tags.
+    ChapterList renamed = first;
+    renamed[1].title = "A new name — Björk";
+    REQUIRE(writeChapters(book, {}, renamed, options));
+
+    const ChapterList back = chaptersOf(book);
+    REQUIRE(back.size() == 3);
+    for (std::size_t i = 0; i < 3; ++i) {
+        CHECK(back[i].id == first[i].id);
+        CHECK(back[i].startMs == first[i].startMs);
+    }
+    CHECK(back[1].title == "A new name — Björk");
+    CHECK(sortedValues(readBack(book), "artist") == one("Pink Floyd"));
+}
+
+TEST_CASE("chapters round-trip through M4A in both kinds", "[tags][tagwriter][chapters]") {
+    const fs::path dir = freshDir("m4a-chapters");
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFromWav(wav, dir / "book.m4a")) {
+        SKIP("ffmpeg is not installed");
+    }
+    const fs::path book = dir / "book.m4a";
+    CHECK(registry().metadataCapabilities(Url::fromLocalPath(book)).chapters);
+
+    MetadataWriteOptions options;
+    REQUIRE(writeChapters(book, {}, unorderedChapters(), options));
+    checkRoundTrip(chaptersOf(book));
+
+    // Both kinds from one list: Apple's players read the chapter track,
+    // everyone else the Nero chpl.
+    {
+        TagLib::MP4::File mp4{TagLib::FileName{book.c_str()}};
+        REQUIRE(mp4.isValid());
+        CHECK(mp4.qtChapters().size() == 3);
+        CHECK(mp4.neroChapters().size() == 3);
+    }
+
+    // An empty list removes both.
+    options.stripExisting = false;
+    REQUIRE(writeChapters(book, {}, ChapterList{}, options));
+    CHECK(chaptersOf(book).empty());
+    {
+        TagLib::MP4::File mp4{TagLib::FileName{book.c_str()}};
+        REQUIRE(mp4.isValid());
+        CHECK(mp4.qtChapters().isEmpty());
+        CHECK(mp4.neroChapters().isEmpty());
+    }
+}
+
+TEST_CASE("chapters round-trip through Matroska, UIDs kept across a rename",
+          "[tags][tagwriter][chapters]") {
+    const fs::path dir = freshDir("mka-chapters");
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFromWav(wav, dir / "book.mka")) {
+        SKIP("ffmpeg is not installed");
+    }
+    const fs::path book = dir / "book.mka";
+    CHECK(registry().metadataCapabilities(Url::fromLocalPath(book)).chapters);
+
+    MetadataMap tags;
+    tags.set("artist", "Pink Floyd");
+    MetadataWriteOptions options;
+    REQUIRE(writeChapters(book, tags, unorderedChapters(), options));
+    const ChapterList first = chaptersOf(book);
+    checkRoundTrip(first);
+    for (const Chapter& chapter : first) {
+        CHECK_FALSE(chapter.id.empty());
+    }
+
+    ChapterList renamed = first;
+    renamed[1].title = "Í miðjunni";
+    options.stripExisting = false;
+    REQUIRE(writeChapters(book, {}, renamed, options));
+
+    const ChapterList back = chaptersOf(book);
+    REQUIRE(back.size() == 3);
+    for (std::size_t i = 0; i < 3; ++i) {
+        CHECK(back[i].id == first[i].id);
+    }
+    CHECK(back[1].title == "Í miðjunni");
+    CHECK(sortedValues(readBack(book), "artist") == one("Pink Floyd"));
+
+    REQUIRE(writeChapters(book, {}, ChapterList{}, options));
+    CHECK(chaptersOf(book).empty());
+}
+
+TEST_CASE("chapters round-trip through the other ID3v2 containers",
+          "[tags][tagwriter][chapters]") {
+    const fs::path dir = freshDir("id3v2-chapters");
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    MetadataWriteOptions options;
+
+    // WAV needs no encoder, and its length is exact.
+    writeSilentWav(dir / "book.wav");
+    REQUIRE(writeChapters(dir / "book.wav", {}, unorderedChapters(), options));
+    const ChapterList wavBack = chaptersOf(dir / "book.wav");
+    checkRoundTrip(wavBack);
+    CHECK(wavBack[2].endMs == 1000);
+
+    if (makeFromWav(wav, dir / "book.aiff", "-codec:a pcm_s16be")) {
+        REQUIRE(writeChapters(dir / "book.aiff", {}, unorderedChapters(), options));
+        checkRoundTrip(chaptersOf(dir / "book.aiff"));
+    }
+    if (makeFromWav(wav, dir / "book.tta", "-codec:a tta")) {
+        REQUIRE(writeChapters(dir / "book.tta", {}, unorderedChapters(), options));
+        checkRoundTrip(chaptersOf(dir / "book.tta"));
+    }
+}
+
+TEST_CASE("an empty chapter list removes them; a plain write leaves them",
+          "[tags][tagwriter][chapters]") {
+    const fs::path dir = freshDir("mp3-chapter-removal");
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFromWav(wav, dir / "book.mp3", "-codec:a libmp3lame -b:a 32k")) {
+        SKIP("ffmpeg is not installed");
+    }
+    const fs::path book = dir / "book.mp3";
+
+    MetadataWriteOptions options;
+    REQUIRE(writeChapters(book, {}, unorderedChapters(), options));
+    REQUIRE(chaptersOf(book).size() == 3);
+
+    // A replace write carrying no chapters leaves them alone.
+    MetadataMap tags;
+    tags.set("artist", "Someone");
+    REQUIRE(writeTags(book, tags, options));
+    CHECK(chaptersOf(book).size() == 3);
+
+    // An empty list is removal, not "leave alone".
+    options.stripExisting = false;
+    REQUIRE(writeChapters(book, {}, ChapterList{}, options));
+    CHECK(chaptersOf(book).empty());
+}
+
+TEST_CASE("probes report chapter support per container", "[tags][tagwriter][chapters]") {
+    const fs::path dir = freshDir("chapter-caps");
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+
+    const auto chapters = [&](const fs::path& path) {
+        return registry().metadataCapabilities(Url::fromLocalPath(path)).chapters;
+    };
+
+    writeSilentWav(dir / "book.wav");
+    CHECK(chapters(dir / "book.wav"));
+
+    if (makeTaggedFlac(dir / "track.flac", {"TITLE=Dogs"})) {
+        CHECK_FALSE(chapters(dir / "track.flac"));
+    }
+    if (makeFromWav(wav, dir / "book.mp3", "-codec:a libmp3lame -b:a 32k")) {
+        CHECK(chapters(dir / "book.mp3"));
+    }
+    if (makeFromWav(wav, dir / "book.m4a")) {
+        CHECK(chapters(dir / "book.m4a"));
+    }
+    if (makeFromWav(wav, dir / "book.mka")) {
+        CHECK(chapters(dir / "book.mka"));
+    }
+    if (makeFromWav(wav, dir / "track.opus")) {
+        CHECK_FALSE(chapters(dir / "track.opus"));
+    }
+    if (makeWv(wav, dir / "track.wv")) {
+        CHECK_FALSE(chapters(dir / "track.wv"));
+    }
+}
+
+TEST_CASE("a chaptered file's title reads as its album", "[tags][tagwriter][chapters]") {
+    const fs::path dir = freshDir("chapter-retitle");
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFromWav(wav, dir / "book.mp3", "-codec:a libmp3lame -b:a 32k")) {
+        SKIP("ffmpeg is not installed");
+    }
+
+    MetadataMap tags;
+    tags.set("title", "The Book");
+    tags.set("artist", "The Author");
+    MetadataWriteOptions options;
+    REQUIRE(writeChapters(dir / "book.mp3", tags, unorderedChapters(), options));
+
+    const MetadataMap back = readBack(dir / "book.mp3");
+    CHECK(sortedValues(back, "album") == one("The Book"));
+    CHECK(valuesOf(back, "title") == nullptr);
+    CHECK(sortedValues(back, "artist") == one("The Author"));
+
+    // The Matroska branch of the same rule.
+    if (makeFromWav(wav, dir / "book.mka")) {
+        REQUIRE(writeChapters(dir / "book.mka", tags, unorderedChapters(), options));
+        const MetadataMap mka = readBack(dir / "book.mka");
+        CHECK(sortedValues(mka, "album") == one("The Book"));
+        CHECK(valuesOf(mka, "title") == nullptr);
+    }
 }

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace xpcog;
@@ -102,14 +103,21 @@ bool writeChaptersDelta(const Url&, const MetadataMap&, const ChapterList& chapt
 
 MetadataMap readNothing(const Url&) { return {}; }
 
+Chapter chapterAt(std::uint64_t startMs, std::string title) {
+    Chapter chapter;
+    chapter.startMs = startMs;
+    chapter.title   = std::move(title);
+    return chapter;
+}
+
 ChapterList readChaptersAlpha(const Url&) {
     ++gReadChaptersCalls;
-    return ChapterList{Chapter{.startMs = 1000, .title = "alpha"}};
+    return ChapterList{chapterAt(1000, "alpha")};
 }
 
 ChapterList readChaptersBeta(const Url&) {
     ++gReadChaptersCalls;
-    return ChapterList{Chapter{.startMs = 2000, .title = "beta"}};
+    return ChapterList{chapterAt(2000, "beta")};
 }
 
 void resetTagFakes() {
@@ -408,8 +416,7 @@ TEST_CASE("a chapter write goes only to a writer that can save chapters",
     CHECK(gWritten == "beta");
     CHECK(gChaptersWritten.empty());
 
-    const ChapterList chapters{Chapter{.startMs = 0, .title = "One"},
-                               Chapter{.startMs = 500, .title = "Two"}};
+    const ChapterList chapters{chapterAt(0, "One"), chapterAt(500, "Two")};
     CHECK(registry.writeMetadata(url, {}, chapters, options));
     CHECK(gChaptersWritten == "gamma:2");
     // Beta's plain write never ran for the chapter write.

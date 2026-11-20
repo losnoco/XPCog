@@ -28,10 +28,13 @@
 //   * TagLib advertises save() on Shorten and on the module formats but their
 //     own headers say saving tags is not supported; both report unwritable.
 
+#include "TagLibChapters.hpp"
+
 #include "xpcog/core/PluginRegistry.hpp"
 
 #include <aifffile.h>
 #include <apefile.h>
+#include <audioproperties.h>
 #include <dsdifffile.h>
 #include <dsffile.h>
 #include <fileref.h>
@@ -297,24 +300,11 @@ void eraseCaseInsensitively(TagLib::PropertyMap& properties, const std::string& 
     }
 }
 
-}  // namespace
-
-MetadataCapabilities probeTagsWithTagLib(const Url& url) {
-    const auto path = url.localPath();
-    if (!path) {
-        return {};
-    }
-
-    DebugListenerScope silence{silentListener()};
-
-    TagLib::FileRef file{TagLib::FileName{path->c_str()}, /*readAudioProperties=*/false};
-    if (file.isNull() || file.file() == nullptr) {
-        return {};
-    }
-    return capabilitiesFor(familyOf(file));
-}
-
-bool writeTagsWithTagLib(const Url& url, const MetadataMap& tags, MetadataWriteOptions& options) {
+/// The one write body, behind both descriptor entry points. `chapters` null
+/// leaves the file's chapters alone; a list replaces them in the same save,
+/// and an empty one removes them.
+bool writeTagsImpl(const Url& url, const MetadataMap& tags, const ChapterList* chapters,
+                   MetadataWriteOptions& options) {
     const auto path = url.localPath();
     if (!path) {
         // Same stance as the reader: TagLib opens and rewrites the container
@@ -326,7 +316,10 @@ bool writeTagsWithTagLib(const Url& url, const MetadataMap& tags, MetadataWriteO
     RecordingDebugListener recorder;
     DebugListenerScope       scope{recorder};
 
-    TagLib::FileRef file{TagLib::FileName{path->c_str()}, /*readAudioProperties=*/false};
+    // Audio properties only when chapters are written: the last chapter ends
+    // where the file does, and the length is what says where that is.
+    TagLib::FileRef file{TagLib::FileName{path->c_str()},
+                         /*readAudioProperties=*/chapters != nullptr};
     if (file.isNull() || file.file() == nullptr) {
         options.error = "the file could not be opened for writing";
         return false;
@@ -413,12 +406,51 @@ bool writeTagsWithTagLib(const Url& url, const MetadataMap& tags, MetadataWriteO
     // beyond letting the tags that did land land.
     file.setProperties(properties);
 
+    if (chapters != nullptr) {
+        const std::uint64_t lengthMs =
+            file.audioProperties() != nullptr
+                ? static_cast<std::uint64_t>(file.audioProperties()->lengthInMilliseconds())
+                : 0;
+        writeTagLibChapters(file.file(), *chapters, lengthMs);
+    }
+
     if (!saveFile(file, options)) {
         options.error =
             recorder.collected.empty() ? "the file could not be saved" : "the file could not be saved: " + recorder.collected;
         return false;
     }
     return true;
+}
+
+}  // namespace
+
+MetadataCapabilities probeTagsWithTagLib(const Url& url) {
+    const auto path = url.localPath();
+    if (!path) {
+        return {};
+    }
+
+    DebugListenerScope silence{silentListener()};
+
+    TagLib::FileRef file{TagLib::FileName{path->c_str()}, /*readAudioProperties=*/false};
+    if (file.isNull() || file.file() == nullptr) {
+        return {};
+    }
+    MetadataCapabilities caps = capabilitiesFor(familyOf(file));
+    // Chapters are their own question: Matroska and TrueAudio stay
+    // conservative for tag promises but hold chapters like the rest.
+    caps.chapters = tagLibSupportsChapters(file.file());
+    return caps;
+}
+
+bool writeTagsWithTagLib(const Url& url, const MetadataMap& tags, MetadataWriteOptions& options) {
+    return writeTagsImpl(url, tags, nullptr, options);
+}
+
+bool writeTagsWithChaptersWithTagLib(const Url& url, const MetadataMap& tags,
+                                     const ChapterList& chapters,
+                                     MetadataWriteOptions& options) {
+    return writeTagsImpl(url, tags, &chapters, options);
 }
 
 }  // namespace xpcog
