@@ -75,6 +75,13 @@ public:
         if (source_ == nullptr) {
             return false;
         }
+        // "file.mp3#2" is a chapter FFMPEGContainer listed, which only FFmpeg
+        // knows how to play; refusing it passes it to FFmpeg's decoder, next
+        // in priority. (A cue sheet's tracks open their file without a
+        // fragment.)
+        if (!source_->url().fragment().empty()) {
+            return false;
+        }
         seekable_ = source_->seekable();
 
         output_.resize(MINIMP3_MAX_SAMPLES_PER_FRAME);

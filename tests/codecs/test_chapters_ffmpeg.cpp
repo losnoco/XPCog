@@ -168,6 +168,31 @@ TEST_CASE("FFmpeg lists an MP3's chapters as the editor wrote them",
     checkExpansionAgreement(dir / "book.mp3");
 }
 
+TEST_CASE("an MP3 chapter row plays its span, and the whole file still plays",
+          "[tags][chapters][ffmpeg]") {
+    const fs::path dir = freshDir("mp3-playback");
+    if (!haveTool("ffmpeg")) {
+        SKIP("ffmpeg is not installed");
+    }
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFromWav(wav, dir / "book.mp3", "-codec:a libmp3lame -b:a 32k")) {
+        SKIP("libmp3lame is not available");
+    }
+    // minimp3 refuses the fragment, so FFmpeg takes the chapter row; the
+    // span and title prove it, since minimp3 would play the whole file.
+    checkChapterPlayback(dir / "book.mp3");
+
+    // The whole file still goes to minimp3, which names itself "MP3" where
+    // FFmpeg reports the codec's long name.
+    const auto whole = registry().open(Url::fromLocalPath(dir / "book.mp3"));
+    REQUIRE(whole);
+    CHECK(whole.decoder->properties().codec == "MP3");
+    const double seconds = whole.decoder->properties().duration();
+    CHECK(seconds >= 0.9);
+    CHECK(seconds <= 1.1);
+}
+
 TEST_CASE("FFmpeg lists an M4A's chapters as the editor wrote them",
           "[tags][chapters][ffmpeg]") {
     const fs::path dir = freshDir("m4a");
