@@ -3,8 +3,13 @@
 #include "Translations.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <limits>
 #include <span>
 #include <string_view>
+#include <utility>
 
 namespace xpcog::app {
 namespace {
@@ -86,14 +91,21 @@ TagEditorModel::TagEditorModel(std::vector<TagEditorSource> sources)
     // notes promise is what every file the write reaches keeps. Defaults and
     // start here disagree on purpose -- the struct's defaults say "no", the
     // merge's identity has to say "yes" or the AND never lets anything in.
-    caps_.writable = caps_.arbitraryKeys = caps_.multiValue = caps_.pictures = !sources_.empty();
+    caps_.writable = caps_.arbitraryKeys = caps_.multiValue = caps_.pictures =
+        caps_.chapters = !sources_.empty();
     caps_.lossyRepresentation                              = false;
     for (const TagEditorSource& source : sources_) {
         caps_.writable            = caps_.writable && source.caps.writable;
         caps_.arbitraryKeys       = caps_.arbitraryKeys && source.caps.arbitraryKeys;
         caps_.multiValue          = caps_.multiValue && source.caps.multiValue;
         caps_.pictures            = caps_.pictures && source.caps.pictures;
+        caps_.chapters            = caps_.chapters && source.caps.chapters;
         caps_.lossyRepresentation = caps_.lossyRepresentation || source.caps.lossyRepresentation;
+    }
+
+    if (supportsChapters()) {
+        chapters_         = sources_.front().fileChapters;
+        originalChapters_ = chapters_;
     }
 
     for (const Field field : kFields) {
@@ -113,8 +125,12 @@ TagEditorModel::TagEditorModel(std::vector<TagEditorSource> sources)
                 }
             }
             // No tag under any alias: the entry's own column, which is what
-            // the row would show in the playlist anyway.
-            if (values.empty()) {
+            // the row would show in the playlist anyway. Not for a chaptered
+            // file: its title names the whole and reads as the album, and a
+            // chapter row's own title must not seed the file's Title field --
+            // saving would write one chapter's name over the book's.
+            const bool chaptered = source.chapterIndex >= 0 || !source.fileChapters.empty();
+            if (values.empty() && !chaptered) {
                 const PlaylistEntry& entry = source.entry;
                 std::string          one;
                 switch (field) {
@@ -274,13 +290,169 @@ std::string TagEditorModel::freeRowNote(const FreeRow& row) const {
     return note;
 }
 
+void TagEditorModel::setChapterStart(std::size_t row, std::uint64_t startMs) {
+    if (row < chapters_.size()) {
+        chapters_[row].startMs = startMs;
+    }
+}
+
+void TagEditorModel::setChapterTitle(std::size_t row, std::string title) {
+    if (row < chapters_.size()) {
+        chapters_[row].title = std::move(title);
+    }
+}
+
+void TagEditorModel::addChapter() {
+    std::uint64_t start = 0;
+    for (const Chapter& chapter : chapters_) {
+        start = std::max(start, chapter.startMs + 1000);
+    }
+    Chapter added;
+    added.startMs = start;
+    chapters_.push_back(std::move(added));
+}
+
+void TagEditorModel::removeChapter(std::size_t row) {
+    if (row < chapters_.size()) {
+        chapters_.erase(chapters_.begin() + static_cast<std::ptrdiff_t>(row));
+    }
+}
+
+int TagEditorModel::highlightedChapter() const noexcept {
+    if (!supportsChapters()) {
+        return -1;
+    }
+    const int index = sources_.front().chapterIndex;
+    return index >= 0 && static_cast<std::size_t>(index) < chapters_.size() ? index : -1;
+}
+
+std::optional<ChapterList> TagEditorModel::buildChapters() const {
+    if (!supportsChapters() || chapters_ == originalChapters_) {
+        return std::nullopt;
+    }
+    return chapters_;
+}
+
+std::string TagEditorModel::timeText(std::uint64_t milliseconds) {
+    const std::uint64_t hours   = milliseconds / 3600000;
+    const std::uint64_t minutes = milliseconds / 60000 % 60;
+    const std::uint64_t seconds = milliseconds / 1000 % 60;
+    const std::uint64_t rest    = milliseconds % 1000;
+    char                buffer[40];
+    if (hours > 0) {
+        std::snprintf(buffer, sizeof buffer, "%llu:%02llu:%02llu.%03llu",
+                      static_cast<unsigned long long>(hours),
+                      static_cast<unsigned long long>(minutes),
+                      static_cast<unsigned long long>(seconds),
+                      static_cast<unsigned long long>(rest));
+    } else {
+        std::snprintf(buffer, sizeof buffer, "%llu:%02llu.%03llu",
+                      static_cast<unsigned long long>(minutes),
+                      static_cast<unsigned long long>(seconds),
+                      static_cast<unsigned long long>(rest));
+    }
+    return buffer;
+}
+
+std::optional<std::uint64_t> TagEditorModel::millisecondsFrom(std::string_view text) {
+    const auto isSpace = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
+    while (!text.empty() && isSpace(text.front())) {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && isSpace(text.back())) {
+        text.remove_suffix(1);
+    }
+
+    // Split on ':' keeping empty parts, so "1::2" is a rejection rather than
+    // a silently shortened time.
+    std::vector<std::string_view> parts;
+    for (std::size_t start = 0;;) {
+        const std::size_t colon = text.find(':', start);
+        parts.push_back(text.substr(start, colon == std::string_view::npos
+                                             ? std::string_view::npos
+                                             : colon - start));
+        if (colon == std::string_view::npos) {
+            break;
+        }
+        start = colon + 1;
+    }
+    if (parts.empty() || parts.size() > 3) {
+        return std::nullopt;
+    }
+
+    // The last part is seconds, fraction allowed; the ones before it are
+    // whole minutes and hours.
+    const auto secondsOf = [](std::string_view part) -> std::optional<double> {
+        if (part.empty()) {
+            return std::nullopt;
+        }
+        double      value = 0.0;
+        std::size_t i     = 0;
+        bool        digits = false;
+        while (i < part.size() && std::isdigit(static_cast<unsigned char>(part[i]))) {
+            value = value * 10.0 + (part[i] - '0');
+            ++i;
+            digits = true;
+        }
+        if (i < part.size() && part[i] == '.') {
+            ++i;
+            double scale = 0.1;
+            bool   any   = false;
+            while (i < part.size() && std::isdigit(static_cast<unsigned char>(part[i]))) {
+                value += (part[i] - '0') * scale;
+                scale /= 10.0;
+                ++i;
+                any = true;
+            }
+            if (!any) {
+                return std::nullopt;
+            }
+            digits = true;
+        }
+        if (i != part.size() || !digits) {
+            return std::nullopt;
+        }
+        return value;
+    };
+    const std::optional<double> last = secondsOf(parts.back());
+    if (!last || *last < 0.0) {
+        return std::nullopt;
+    }
+    double total = *last;
+    double scale = 60.0;
+    for (std::size_t i = parts.size() - 1; i > 0; --i) {
+        const std::string_view part = parts[i - 1];
+        if (part.empty()) {
+            return std::nullopt;
+        }
+        std::uint64_t value = 0;
+        for (const char c : part) {
+            if (!std::isdigit(static_cast<unsigned char>(c))) {
+                return std::nullopt;
+            }
+            value = value * 10 + static_cast<std::uint64_t>(c - '0');
+            if (value > 1000000000ULL) {
+                return std::nullopt;
+            }
+        }
+        total += static_cast<double>(value) * scale;
+        scale *= 60.0;
+    }
+    const double milliseconds = total * 1000.0;
+    if (!std::isfinite(milliseconds) ||
+        milliseconds > static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint64_t>(std::llround(milliseconds));
+}
+
 bool TagEditorModel::changed() const {
     for (const Field field : kFields) {
         if (row(field).touched) {
             return true;
         }
     }
-    return freeDirty_ || artAction_ != ArtAction::Keep;
+    return freeDirty_ || artAction_ != ArtAction::Keep || chapters_ != originalChapters_;
 }
 
 MetadataMap TagEditorModel::build() const {

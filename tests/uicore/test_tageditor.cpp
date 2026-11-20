@@ -46,6 +46,23 @@ TagEditorSource makeSource(std::string name, MetadataMap fileTags, MetadataCapab
     return source;
 }
 
+Chapter chapterAt(std::uint64_t startMs, std::string title) {
+    Chapter chapter;
+    chapter.startMs = startMs;
+    chapter.title   = std::move(title);
+    return chapter;
+}
+
+/// An MP3-ish file that holds chapters, as an audiobook does.
+TagEditorSource makeChapterSource(std::string name, ChapterList chapters, int chapterIndex = -1) {
+    MetadataCapabilities caps = kId3;
+    caps.chapters             = true;
+    TagEditorSource source    = makeSource(std::move(name), {}, caps);
+    source.fileChapters       = std::move(chapters);
+    source.chapterIndex       = chapterIndex;
+    return source;
+}
+
 std::vector<std::string> valuesOf(const MetadataMap& map, std::string_view key) {
     const MetaValue* held = map.find(key);
     REQUIRE(held != nullptr);
@@ -334,4 +351,134 @@ TEST_CASE("an embedded cover and a folder cover tell each other apart", "[uicore
     TagEditorModel none{{std::move(audio)}};
     CHECK_FALSE(none.supportsArt());
     CHECK_FALSE(none.caps().writable);
+}
+
+TEST_CASE("chapter times read and write the forms the field accepts", "[uicore][tageditor]") {
+    using Model = TagEditorModel;
+    CHECK(Model::timeText(0) == "0:00.000");
+    CHECK(Model::timeText(65432) == "1:05.432");
+    CHECK(Model::timeText(3600000) == "1:00:00.000");
+    CHECK(Model::timeText(3723456) == "1:02:03.456");
+
+    CHECK(Model::millisecondsFrom("1:05.432") == 65432);
+    CHECK(Model::millisecondsFrom("0:00") == 0);
+    CHECK(Model::millisecondsFrom("3.5") == 3500);
+    CHECK(Model::millisecondsFrom("1:02:03.456") == 3723456);
+    CHECK(Model::millisecondsFrom("  1:05  ") == 65000);
+    CHECK(Model::millisecondsFrom("90") == 90000);
+
+    CHECK_FALSE(Model::millisecondsFrom("").has_value());
+    CHECK_FALSE(Model::millisecondsFrom("abc").has_value());
+    CHECK_FALSE(Model::millisecondsFrom("1:2:3:4").has_value());
+    CHECK_FALSE(Model::millisecondsFrom("-5").has_value());
+    CHECK_FALSE(Model::millisecondsFrom("1::2").has_value());
+    CHECK_FALSE(Model::millisecondsFrom("1:2.5:3").has_value());
+
+    // What the field shows is what it reads back.
+    for (const std::uint64_t ms : {0ULL, 999ULL, 65432ULL, 3723456ULL, 86399999ULL}) {
+        CHECK(Model::millisecondsFrom(Model::timeText(ms)) == ms);
+    }
+}
+
+TEST_CASE("chapter rows seed from the file and gate Save on their edits",
+          "[uicore][tageditor]") {
+    const ChapterList book{chapterAt(0, "One"), chapterAt(300000, "Two")};
+    TagEditorModel model{{makeChapterSource("book.mp3", book)}};
+
+    CHECK(model.supportsChapters());
+    CHECK(model.chapters() == book);
+    CHECK_FALSE(model.changed());
+    CHECK_FALSE(model.buildChapters().has_value());
+
+    model.setChapterTitle(1, "A new name");
+    CHECK(model.changed());
+    const std::optional<ChapterList> payload = model.buildChapters();
+    REQUIRE(payload.has_value());
+    CHECK((*payload)[1].title == "A new name");
+    // The identity rides along untouched: the writer keeps it.
+    CHECK((*payload)[1].id == book[1].id);
+
+    // Typed and then undone: Save goes grey again, and no chapter write rides
+    // out with a tag-only save.
+    model.setChapterTitle(1, "Two");
+    CHECK_FALSE(model.changed());
+    CHECK_FALSE(model.buildChapters().has_value());
+
+    model.setChapterStart(0, 1000);
+    CHECK(model.changed());
+    model.removeChapter(0);
+    REQUIRE(model.buildChapters().has_value());
+    CHECK(model.buildChapters()->size() == 1);
+}
+
+TEST_CASE("a new chapter lands a second past the last start", "[uicore][tageditor]") {
+    TagEditorModel empty{{makeChapterSource("fresh.mp3", {})}};
+    CHECK(empty.supportsChapters());
+    empty.addChapter();
+    REQUIRE(empty.chapters().size() == 1);
+    CHECK(empty.chapters().front().startMs == 0);
+    CHECK(empty.changed());
+
+    TagEditorModel model{{makeChapterSource("book.mp3", {chapterAt(0, "One"),
+                                                        chapterAt(5000, "Two")})}};
+    model.addChapter();
+    REQUIRE(model.chapters().size() == 3);
+    CHECK(model.chapters()[2].startMs == 6000);
+    CHECK(model.chapters()[2].title.empty());
+}
+
+TEST_CASE("chapters stay single-file, and the merge promises what every file holds",
+          "[uicore][tageditor]") {
+    const ChapterList book{chapterAt(0, "One")};
+    TagEditorModel batch{{makeChapterSource("one.mp3", book),
+                          makeChapterSource("two.mp3", book)}};
+    CHECK(batch.batch());
+    CHECK_FALSE(batch.supportsChapters());
+    CHECK(batch.chapters().empty());
+    CHECK_FALSE(batch.buildChapters().has_value());
+    CHECK(batch.highlightedChapter() == -1);
+
+    // One file holds chapters, the other does not: the merged probe says no,
+    // and the section stays hidden rather than half-working.
+    MetadataCapabilities plain = kId3;
+    TagEditorModel mixed{{makeChapterSource("one.mp3", book),
+                          makeSource("two.mp3", {}, plain)}};
+    CHECK_FALSE(mixed.caps().chapters);
+    CHECK_FALSE(mixed.supportsChapters());
+}
+
+TEST_CASE("the opened chapter row is the one highlighted", "[uicore][tageditor]") {
+    const ChapterList book{chapterAt(0, "One"), chapterAt(1000, "Two"),
+                           chapterAt(2000, "Three")};
+    TagEditorModel model{{makeChapterSource("book.mp3", book, 1)}};
+    CHECK(model.highlightedChapter() == 1);
+
+    // A fragment past the last chapter highlights nothing.
+    TagEditorModel past{{makeChapterSource("book.mp3", book, 7)}};
+    CHECK(past.highlightedChapter() == -1);
+}
+
+TEST_CASE("a chaptered file's rows do not seed from the chapter's own title",
+          "[uicore][tageditor]") {
+    // The file's title names the whole and reads as its album; the chapter
+    // row's rawTitle is one chapter's name. Seeding Title from it would write
+    // that chapter's name over the book's on the next save.
+    TagEditorSource source = makeChapterSource("book.mp3#1", {chapterAt(0, "One")}, 1);
+    source.entry.rawTitle  = "One";
+    source.fileTags.set("album", "The Book");
+    TagEditorModel model{{std::move(source)}};
+    CHECK(model.joined(TagEditorModel::Field::Title).empty());
+    CHECK(model.joined(TagEditorModel::Field::Album) == "The Book");
+
+    // A whole-file row of a chaptered file: same rule, the title is the
+    // album's now.
+    TagEditorSource whole = makeChapterSource("book.mp3", {chapterAt(0, "One")});
+    whole.entry.rawTitle  = "book.mp3";
+    whole.fileTags.set("album", "The Book");
+    TagEditorModel wholeModel{{std::move(whole)}};
+    CHECK(wholeModel.joined(TagEditorModel::Field::Title).empty());
+
+    // An ordinary file keeps the entry-column fallback it always had.
+    TagEditorModel plain{{makeSource("plain.mp3", {}, kId3)}};
+    CHECK(plain.joined(TagEditorModel::Field::Title) == "plain.mp3");
 }

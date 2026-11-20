@@ -125,6 +125,65 @@ PluginRegistry& registry() {
     return instance;
 }
 
+/// A second of silent MP3, for the chapter cases: TagLib writes its
+/// chapters, FFmpeg expands and plays them. nullopt without ffmpeg or lame.
+std::optional<std::filesystem::path> makeMp3(const std::string& name) {
+    if (!test::haveTool("ffmpeg")) {
+        return std::nullopt;
+    }
+    const auto wav = fixtureDir() / (name + ".wav");
+    const auto mp3 = fixtureDir() / (name + ".mp3");
+
+    constexpr int kFrames = 44100;
+    std::FILE*    f       = std::fopen(wav.string().c_str(), "wb");
+    if (f == nullptr) {
+        return std::nullopt;
+    }
+    const auto u32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, f); };
+    const auto u16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, f); };
+    const std::uint32_t dataBytes = kFrames * 4;
+    std::fwrite("RIFF", 1, 4, f);
+    u32(36 + dataBytes);
+    std::fwrite("WAVEfmt ", 1, 8, f);
+    u32(16);
+    u16(1);
+    u16(2);
+    u32(static_cast<std::uint32_t>(kSampleRate));
+    u32(static_cast<std::uint32_t>(kSampleRate) * 4);
+    u16(4);
+    u16(16);
+    std::fwrite("data", 1, 4, f);
+    u32(dataBytes);
+    const std::vector<std::int16_t> silence(static_cast<std::size_t>(kFrames) * 2, 0);
+    std::fwrite(silence.data(), 1, dataBytes, f);
+    std::fclose(f);
+
+    const std::string command = "ffmpeg -loglevel error -y -i \"" + wav.string() +
+                                "\" -codec:a libmp3lame -b:a 32k \"" + mp3.string() + "\"" +
+                                test::kSilenceStderr;
+    if (std::system(command.c_str()) != 0 || !std::filesystem::exists(mp3)) {
+        return std::nullopt;
+    }
+    return mp3;
+}
+
+Chapter chapterAt(std::uint64_t startMs, std::string title) {
+    Chapter chapter;
+    chapter.startMs = startMs;
+    chapter.title   = std::move(title);
+    return chapter;
+}
+
+ChapterList threeChapters() {
+    return ChapterList{chapterAt(0, "One"), chapterAt(300, "Two"), chapterAt(600, "Three")};
+}
+
+bool putChapters(const std::filesystem::path& file, const ChapterList& chapters) {
+    MetadataWriteOptions options;
+    options.stripExisting = false;
+    return registry().writeMetadata(Url::fromLocalPath(file), {}, chapters, options);
+}
+
 /// The interface thread, as the session sees it: a queue drained here.
 class Loop {
 public:
@@ -773,4 +832,251 @@ TEST_CASE("an edit behind a parked undo history drops it", "[uicore][session][pl
     h.session.playlists().show(PlaylistSet::kFirstId);
     CHECK_FALSE(h.session.undo().canUndo());
     CHECK(h.session.playlist().size() == 3);
+}
+
+TEST_CASE("a chapter row opens the editor on its file; a cue track does not",
+          "[uicore][session][tags][chapters]") {
+    const auto book = makeMp3("chapter-gate");
+    if (!book) {
+        SKIP("ffmpeg or libmp3lame not on PATH");
+    }
+    REQUIRE(putChapters(*book, threeChapters()));
+
+    Harness h;
+    h.add({*book});
+    REQUIRE(h.session.playlist().size() == 3);
+    const TrackId second = h.session.playlist().at(1).id;
+    const TrackId third  = h.session.playlist().at(2).id;
+
+    const auto sources = h.session.tagEditorSources({second});
+    REQUIRE(sources.size() == 1);
+    CHECK(sources.front().entry.url.fragment() == "1");
+    CHECK(sources.front().chapterIndex == 1);
+    CHECK(sources.front().caps.chapters);
+    CHECK(sources.front().fileChapters.size() == 3);
+
+    // Several chapters of one book are one file's editor, not a batch.
+    CHECK(h.session.tagEditorSources({second, third}).size() == 1);
+
+    // A cue sheet's tracks -- a .cue's, or an embedded sheet's .flac#NN --
+    // have no file of their own to write.
+    PlaylistEntry cue;
+    cue.url = *Url::parse("file:///music/album.cue#3");
+    PlaylistEntry flacCue;
+    flacCue.url = *Url::parse("file:///music/album.flac#01");
+    h.session.commands().insert({cue, flacCue}, 0);
+    const TrackId cueId   = h.session.playlist().at(0).id;
+    const TrackId flacId  = h.session.playlist().at(1).id;
+    CHECK(h.session.tagEditorSources({cueId, flacId}).empty());
+    CHECK_FALSE(app::Session::tagFileUrl(cue.url).has_value());
+    CHECK_FALSE(app::Session::tagFileUrl(flacCue.url).has_value());
+    CHECK(app::Session::tagFileUrl(h.session.playlist().at(2).url)->fragment().empty());
+}
+
+TEST_CASE("a chapter save reports the row change, and rebuild replaces the rows",
+          "[uicore][session][playlist][tags][chapters]") {
+    const auto book = makeMp3("chapter-save");
+    if (!book) {
+        SKIP("ffmpeg or libmp3lame not on PATH");
+    }
+
+    Harness h;
+    h.add({*book});  // no chapters yet: one whole-file row
+    REQUIRE(h.session.playlist().size() == 1);
+    const TrackId whole = h.session.playlist().at(0).id;
+
+    std::vector<std::vector<Url>> reported;
+    h.subscriptions.push_back(h.session.chaptersChanged.connect(
+        [&reported](const std::vector<Url>& files) { reported.push_back(files); }));
+
+    const ChapterList chapters = threeChapters();
+    const MetadataMap tags     = h.session.playlists().find(whole)->fullTagMap();
+    const int         before   = h.scansFinished;
+    h.session.editTags({whole}, tags, Session::TagEditMode::replace, &chapters);
+    REQUIRE(reported.size() == 1);
+    CHECK(reported.front() == std::vector<Url>{Url::fromLocalPath(*book)});
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+    // The reload matches rows by exact URL: the row set is still the old one.
+    CHECK(h.session.playlist().size() == 1);
+
+    h.session.rebuildChapterRows(reported.front());
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before + 1 && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+    REQUIRE(h.session.playlist().size() == 3);
+    CHECK(h.session.playlist().at(0).url.fragment() == "0");
+    CHECK(h.session.playlist().at(1).url.fragment() == "1");
+    CHECK(h.session.playlist().at(2).url.fragment() == "2");
+    // The chapter's own title, which the decoder answers for its span.
+    CHECK(h.session.playlist().at(1).title() == "Two");
+}
+
+TEST_CASE("a rebuild reaches every playlist at the first old row's position",
+          "[uicore][session][playlist][tags][chapters]") {
+    const auto book = makeMp3("chapter-rebuild-copies");
+    if (!book) {
+        SKIP("ffmpeg or libmp3lame not on PATH");
+    }
+
+    Harness h;
+    h.add({*book});
+    const TrackId whole = h.session.playlist().at(0).id;
+    PlaylistEntry neighbor;
+    neighbor.url = Url::fromLocalPath("/music/neighbor.flac");
+    h.session.commands().insert({neighbor}, 1);
+    h.session.newPlaylist({whole});  // the copy's playlist is now shown
+
+    std::vector<std::vector<Url>> reported;
+    h.subscriptions.push_back(h.session.chaptersChanged.connect(
+        [&reported](const std::vector<Url>& files) { reported.push_back(files); }));
+
+    const ChapterList chapters = threeChapters();
+    const MetadataMap tags     = h.session.playlists().find(whole)->fullTagMap();
+    const int         before   = h.scansFinished;
+    h.session.editTags({whole}, tags, Session::TagEditMode::replace, &chapters);
+    REQUIRE(reported.size() == 1);
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+
+    h.session.rebuildChapterRows(reported.front());
+    // One reload scan, then one rebuild per playlist holding the file.
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before + 2 && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+
+    Playlist& first = *h.session.playlists().playlist(PlaylistSet::kFirstId);
+    REQUIRE(first.size() == 4);
+    CHECK(first.at(0).url.fragment() == "0");
+    CHECK(first.at(1).url.fragment() == "1");
+    CHECK(first.at(2).url.fragment() == "2");
+    CHECK(first.at(3).url == neighbor.url);
+    REQUIRE(h.session.playlist().size() == 3);
+    CHECK(h.session.playlist().at(0).url.fragment() == "0");
+}
+
+TEST_CASE("removing chapters rebuilds the file back to one row",
+          "[uicore][session][playlist][tags][chapters]") {
+    const auto book = makeMp3("chapter-removal");
+    if (!book) {
+        SKIP("ffmpeg or libmp3lame not on PATH");
+    }
+    REQUIRE(putChapters(*book, threeChapters()));
+
+    Harness h;
+    h.add({*book});
+    REQUIRE(h.session.playlist().size() == 3);
+
+    std::vector<std::vector<Url>> reported;
+    h.subscriptions.push_back(h.session.chaptersChanged.connect(
+        [&reported](const std::vector<Url>& files) { reported.push_back(files); }));
+
+    const ChapterList none;  // empty: removal, not "leave alone"
+    const MetadataMap tags;
+    const int         before = h.scansFinished;
+    h.session.editTags({h.session.playlist().at(0).id}, tags, Session::TagEditMode::replace,
+                       &none);
+    REQUIRE(reported.size() == 1);
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+
+    h.session.rebuildChapterRows(reported.front());
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before + 1 && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+    REQUIRE(h.session.playlist().size() == 1);
+    CHECK(h.session.playlist().at(0).url.fragment().empty());
+    CHECK(registry().readChapters(Url::fromLocalPath(*book)).empty());
+}
+
+TEST_CASE("an unchanged chapter payload writes nothing",
+          "[uicore][session][playlist][tags][chapters]") {
+    const auto book = makeMp3("chapter-unchanged");
+    if (!book) {
+        SKIP("ffmpeg or libmp3lame not on PATH");
+    }
+    // One chapter: the container does not expand a single one, so the row
+    // is the whole file and its map is the file's own.
+    REQUIRE(putChapters(*book, ChapterList{chapterAt(0, "Only")}));
+
+    Harness h;
+    h.add({*book});
+    REQUIRE(h.session.playlist().size() == 1);
+    const TrackId whole = h.session.playlist().at(0).id;
+
+    std::vector<std::vector<Url>> reported;
+    h.subscriptions.push_back(h.session.chaptersChanged.connect(
+        [&reported](const std::vector<Url>& files) { reported.push_back(files); }));
+
+    const MetadataMap tags = h.session.playlists().find(whole)->fullTagMap();
+    const ChapterList same = registry().readChapters(Url::fromLocalPath(*book));
+    const int         before = h.scansFinished;
+    h.session.editTags({whole}, tags, Session::TagEditMode::replace, &same);
+    CHECK(h.scansFinished == before);
+    CHECK(reported.empty());
+
+    // A renamed chapter is a change even with the tags untouched -- the
+    // write and its reload happen. The row set does not change (one chapter
+    // is still one whole-file row), so there is nothing to report.
+    ChapterList renamed = same;
+    renamed[0].title    = "A new name";
+    h.session.editTags({whole}, tags, Session::TagEditMode::replace, &renamed);
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+    CHECK(reported.empty());
+    CHECK(registry().readChapters(Url::fromLocalPath(*book)).front().title == "A new name");
+}
+
+TEST_CASE("rebuilding under the playing row keeps the playlist's removal semantics",
+          "[uicore][session][playlist][tags][chapters]") {
+    const auto book = makeMp3("chapter-playing");
+    if (!book) {
+        SKIP("ffmpeg or libmp3lame not on PATH");
+    }
+
+    Harness h;
+    h.add({*book});
+    const TrackId whole = h.session.playlist().at(0).id;
+    h.session.playback().playTrack(whole);
+    REQUIRE(h.loop.waitFor(h.session, [&] { return h.session.playback().playing(); },
+                           std::chrono::seconds(5)));
+
+    std::vector<std::vector<Url>> reported;
+    h.subscriptions.push_back(h.session.chaptersChanged.connect(
+        [&reported](const std::vector<Url>& files) { reported.push_back(files); }));
+
+    const ChapterList chapters = threeChapters();
+    const MetadataMap tags     = h.session.playlists().find(whole)->fullTagMap();
+    const int         before   = h.scansFinished;
+    h.session.editTags({whole}, tags, Session::TagEditMode::replace, &chapters);
+    REQUIRE(reported.size() == 1);
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+
+    h.session.rebuildChapterRows(reported.front());
+    REQUIRE(h.loop.waitFor(
+        h.session, [&] { return h.scansFinished > before + 1 && !h.session.scanning(); },
+        std::chrono::seconds(20)));
+    REQUIRE(h.session.playlist().size() == 3);
+    CHECK(h.session.playlists().find(whole) == nullptr);
+
+    // Repeat is All by default, as Cog's is: the engine finishes the span it
+    // already holds and carries on into one of the file's new rows rather
+    // than stopping on the removed one -- the resume rule a listener removing
+    // the playing row gets, applied to a rebuild.
+    CHECK(h.loop.waitFor(
+        h.session,
+        [&] {
+            const TrackId now = h.session.currentTrack();
+            return now != whole && now != kInvalidTrackId && h.session.playback().playing();
+        },
+        std::chrono::seconds(10)));
+    CHECK(h.session.playlist().find(h.session.currentTrack()) != nullptr);
+    CHECK(h.session.playlist().size() == 3);
+    h.session.playback().stop();
 }

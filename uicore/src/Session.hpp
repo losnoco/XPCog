@@ -187,25 +187,51 @@ public:
     /// fields it touched and asks for merge.
     enum class TagEditMode { replace, merge };
 
+    /// The file a row's tags belong to: the row's own URL, or for a chapter
+    /// row ("book.mp3#2") the file it names a span of. Nullopt for a stream,
+    /// and for a cue sheet's track -- a .cue's fragment or an embedded
+    /// sheet's .flac#NN -- whose tags live in the sheet, not a file of their
+    /// own. The one definition of the gate, shared with the frontends' menu
+    /// sensitivity so the three cannot drift.
+    [[nodiscard]] static std::optional<Url> tagFileUrl(const Url& url);
+
     /// Writes `tags` back to the files behind `ids`, one write per distinct
-    /// file however many rows share it. Rows whose current tags already match,
-    /// whose URL has a fragment, or whose format the registry cannot write are
-    /// skipped; the status line counts what was written and names what failed.
-    /// Then reloads the saved ones, so the playlist shows what the file now
-    /// answers rather than what the caller asked for: a Vorbis comment keeps
-    /// everything, an MP3 folds, and the difference is in the file, not in a
-    /// translation the session would have to repeat.
+    /// file however many rows share it; a chapter row writes its file. Rows
+    /// whose current tags already match, whose URL names no writable file, or
+    /// whose format the registry cannot write are skipped; the status line
+    /// counts what was written and names what failed. Then reloads the saved
+    /// ones, so the playlist shows what the file now answers rather than what
+    /// the caller asked for: a Vorbis comment keeps everything, an MP3 folds,
+    /// and the difference is in the file, not in a translation the session
+    /// would have to repeat.
+    ///
+    /// `chapters`, when given, is the file's whole chapter truth, written in
+    /// the same save (an empty list removes them); null leaves them alone.
+    /// A save that carried chapters and changed the file's expansion publishes
+    /// chaptersChanged afterwards, for the frontend to ask, rebuild or keep
+    /// per the tagEditorChapterRows setting.
     void editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
-                  TagEditMode mode = TagEditMode::replace);
+                  TagEditMode mode = TagEditMode::replace,
+                  const ChapterList* chapters = nullptr);
 
     /// The files a tag editor dialog should open on for `ids`: one source per
-    /// distinct URL, with the file's own tags from a raw registry read and the
-    /// probe's answer beside them. Rows that cannot be edited -- streams, cue
-    /// fragments, formats no writer claims -- are left out, so a non-empty
-    /// result is a promise that the dialog can do something for all of it.
-    /// Does I/O (one read and one probe per file); call it when the dialog
-    /// opens, not to decide whether a menu item is sensitive.
+    /// distinct file, with the file's own tags from a raw registry read, the
+    /// probe's answer beside them, and its chapters when it holds them. Rows
+    /// that cannot be edited -- streams, cue tracks, formats no writer claims
+    /// -- are left out, so a non-empty result is a promise that the dialog can
+    /// do something for all of it. Does I/O (one read and one probe per file);
+    /// call it when the dialog opens, not to decide whether a menu item is
+    /// sensitive.
     [[nodiscard]] std::vector<TagEditorSource> tagEditorSources(const std::vector<TrackId>& ids) const;
+
+    /// Replaces each file's rows -- the whole-file row or its "#N" chapter
+    /// rows -- in every playlist that holds them, with what the file expands
+    /// to now, where the first of them was. Through the scan queue, so the
+    /// expansion and its metadata reads share the PluginCache serialization
+    /// and the row positions are computed when the results land, not when
+    /// they were asked for. The frontend calls this after a chapter-changing
+    /// save, per the setting or the listener's answer.
+    void rebuildChapterRows(const std::vector<Url>& files);
 
     /// Shows the first of `ids` that is a local file in the desktop's file
     /// manager.
@@ -337,6 +363,13 @@ public:
     /// should redraw for: a play count ticked over, tags were re-read.
     Signal<> tracksUpdated;
 
+    /// A tag save changed these files' chapters, and the rows the playlists
+    /// hold for them no longer match what the files expand to. The frontend
+    /// answers per tagEditorChapterRows: rebuild now, keep the stale rows, or
+    /// ask -- and the answer's "do this every time" writes the setting.
+    /// Published after the save's reload is queued, on the calling thread.
+    Signal<std::vector<Url>> chaptersChanged;
+
 private:
     /// One scan at a time: the PluginCache the scans share is not synchronised.
     /// Requests arriving while one runs wait their turn, which also keeps a
@@ -360,11 +393,20 @@ private:
         /// Where the results go: what was on screen when the scan was asked
         /// for, because the listener may change tabs while it runs.
         PlaylistSet::Id playlist = PlaylistSet::kFirstId;
+
+        /// A chapter rebuild: inputs is one file, and the results replace the
+        /// rows that file holds in `playlist`, at the first of their positions
+        /// -- computed when the scan lands, since other rebuilds may have
+        /// moved them by then. Last, so the positional initializers above
+        /// keep their meaning.
+        bool rebuild = false;
     };
 
     void pumpScanQueue();
     void addScannedEntries(std::vector<PlaylistEntry> entries, int atRow, bool cancelled,
                            PlaylistSet::Id target);
+    void rebuildRows(std::vector<PlaylistEntry> entries, const Url& file, bool cancelled,
+                     PlaylistSet::Id target);
     void onPlaylistsChanged(const PlaylistSet::Change& change);
     void applyReloadedEntries(std::vector<PlaylistEntry> entries);
 

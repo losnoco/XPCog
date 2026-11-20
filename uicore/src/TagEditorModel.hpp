@@ -27,7 +27,10 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace xpcog::app {
@@ -40,6 +43,12 @@ struct TagEditorSource {
     PlaylistEntry        entry;
     MetadataMap          fileTags;
     MetadataCapabilities caps;
+    /// The file's chapters, read fresh when the probe says it holds them.
+    /// Never part of fileTags: chapters are the file's structure, not tags.
+    ChapterList          fileChapters;
+    /// The row this editor opened on, when it is a chapter of the file
+    /// ("book.mp3#2"): the chapter to highlight, -1 for a whole-file row.
+    int                  chapterIndex = -1;
 };
 
 class TagEditorModel {
@@ -175,6 +184,35 @@ public:
         artAction_  = ArtAction::Replace;
     }
 
+    // --- chapters: single file, on formats that hold them ----------------------
+
+    [[nodiscard]] bool supportsChapters() const noexcept { return !batch() && caps_.chapters; }
+
+    /// The chapter rows, in the file's own order. Ends are not shown: each
+    /// chapter ends where the next begins, and the writer derives that.
+    [[nodiscard]] const ChapterList& chapters() const noexcept { return chapters_; }
+
+    void setChapterStart(std::size_t row, std::uint64_t startMs);
+    void setChapterTitle(std::size_t row, std::string title);
+    /// A new chapter a second past the last start, or at zero for an empty
+    /// file; its identity is minted on write.
+    void addChapter();
+    void removeChapter(std::size_t row);
+
+    /// The chapter the opened row plays, for highlighting; -1 when none.
+    [[nodiscard]] int highlightedChapter() const noexcept;
+
+    /// The chapters to save, when they changed: the whole list, which the
+    /// writer sorts and ends. Nullopt leaves the file's chapters alone --
+    /// an unchanged list included, so a tag-only save does not rewrite them.
+    [[nodiscard]] std::optional<ChapterList> buildChapters() const;
+
+    /// "m:ss.mmm", or "h:mm:ss.mmm" from an hour on.
+    [[nodiscard]] static std::string timeText(std::uint64_t milliseconds);
+    /// Reads "h:mm:ss.mmm", "m:ss", "ss.s" and so on; nullopt when it is not
+    /// a time. The dialog commits through this and reformats after.
+    [[nodiscard]] static std::optional<std::uint64_t> millisecondsFrom(std::string_view text);
+
     // --- what Save hands Session::editTags -------------------------------------
 
     /// Whether anything to write has been chosen: gates the Save button.
@@ -211,6 +249,11 @@ private:
     std::vector<std::byte> newArt_;
     bool                   folderArt_ = false;
     ArtAction              artAction_ = ArtAction::Keep;
+
+    ChapterList chapters_;
+    /// What the file answered, kept whole so an edit typed and then undone
+    /// leaves Save grey again -- compared, not flagged.
+    ChapterList originalChapters_;
 };
 
 }  // namespace xpcog::app

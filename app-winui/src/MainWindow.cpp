@@ -852,16 +852,21 @@ bool MainWindow::canEditTags(const std::vector<TrackId>& ids) const {
     // pay for a menu item.
     for (const TrackId id : ids) {
         const PlaylistEntry* entry = session_.playlists().find(id);
-        if (entry == nullptr || !entry->url.localPath().has_value() ||
-            !entry->url.fragment().empty()) {
+        if (entry == nullptr) {
             return false;
         }
-        const std::string   url = entry->url.toString();
+        // A chapter row is editable through its file; the probe is cached
+        // by the file's URL, so several chapters of one book cost one read.
+        const std::optional<Url> file = app::Session::tagFileUrl(entry->url);
+        if (!file) {
+            return false;
+        }
+        const std::string   url = file->toString();
         const auto          cap = tagCaps_.find(url);
         const MetadataCapabilities& caps =
             cap != tagCaps_.end()
                 ? cap->second
-                : tagCaps_.emplace(url, session_.registry().metadataCapabilities(entry->url))
+                : tagCaps_.emplace(url, session_.registry().metadataCapabilities(*file))
                       .first->second;
         if (!caps.writable) {
             return false;

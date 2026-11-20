@@ -17,6 +17,7 @@
 #include "xpcog/platform/SettingsStore.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <exception>
@@ -61,6 +62,27 @@ namespace {
         return trf("Reading %s \xE2\x80\x94 %d of %d", name, activity.done, activity.total);
     }
     return trf("Reading %s", name);
+}
+
+/// Whether two chapter lists are the same chapters: start, title and the
+/// opaque identity, in start order. Ends are derived on write, so a reader's
+/// and a writer's rounding of them is not a difference worth a rewrite.
+[[nodiscard]] bool chaptersEqual(const ChapterList& a, const ChapterList& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    const auto byStart = [](const Chapter& x, const Chapter& y) { return x.startMs < y.startMs; };
+    ChapterList    sa = a;
+    ChapterList    sb = b;
+    std::stable_sort(sa.begin(), sa.end(), byStart);
+    std::stable_sort(sb.begin(), sb.end(), byStart);
+    for (std::size_t i = 0; i < sa.size(); ++i) {
+        if (sa[i].startMs != sb[i].startMs || sa[i].title != sb[i].title ||
+            sa[i].id != sb[i].id) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
@@ -423,6 +445,13 @@ void Session::pumpScanQueue() {
     // scan the window started, and every use of it is guarded on that.
     scanJobId_ = request.jobId;
 
+    // Before the inputs move into the task: the finish handler needs the
+    // file whose rows the results replace.
+    std::optional<Url> rebuildFile;
+    if (request.rebuild && !request.inputs.empty()) {
+        rebuildFile = request.inputs.front().withoutFragment();
+    }
+
     // Read per scan rather than once, so unticking the box in Preferences
     // applies to the next folder added instead of the next launch.
     //
@@ -461,7 +490,8 @@ void Session::pumpScanQueue() {
     const PlaylistSet::Id target = request.playlist;
     const bool reload = request.reload;
     subscriptions_.push_back(scan_->finished.connect(
-        [this, atRow, reload, target](const std::vector<PlaylistEntry>& entries, bool cancelled) {
+        [this, atRow, reload, rebuildFile, target](const std::vector<PlaylistEntry>& entries,
+                                                   bool cancelled) {
             // The task owns the thread it is still returning from, so it cannot
             // be destroyed from inside its own callback. Handing it to the event
             // loop to drop is what deleteLater() was doing.
@@ -487,6 +517,8 @@ void Session::pumpScanQueue() {
 
             if (reload) {
                 applyReloadedEntries(entries);
+            } else if (rebuildFile) {
+                rebuildRows(entries, *rebuildFile, cancelled, target);
             } else {
                 addScannedEntries(entries, atRow, cancelled, target);
             }
@@ -763,43 +795,78 @@ void Session::trashTracks(const std::vector<TrackId>& ids) {
     }
 }
 
+std::optional<Url> Session::tagFileUrl(const Url& url) {
+    if (!url.localPath()) {
+        return std::nullopt;
+    }
+    if (url.fragment().empty()) {
+        return url;
+    }
+    // A cue sheet's tracks -- a .cue's fragment, or an embedded sheet's
+    // .flac#NN -- have no file of their own: their tags live in the sheet.
+    // In this tree those are the only fragments on those extensions, so the
+    // extension says it without opening anything (Cog probes the base file
+    // for a cuesheet tag; the answer here is the same). Every other fragment
+    // names a chapter of its file -- FFmpegContainer's "#N" -- and the file
+    // is what an editor writes.
+    const std::string extension = url.extension();
+    if (extension == "cue" || extension == "flac") {
+        return std::nullopt;
+    }
+    return url.withoutFragment();
+}
+
 std::vector<TagEditorSource> Session::tagEditorSources(const std::vector<TrackId>& ids) const {
     // The same gate editTags applies, run ahead of the dialog: a row whose
     // file the registry will not write has no editor to show. Deduplicated by
-    // URL string for the same reason editTags groups by it -- one file, one
-    // set of rows.
-    std::vector<TagEditorSource> sources;
+    // the file's URL string for the same reason editTags groups by it -- one
+    // file, one set of rows, however many of its chapters are selected.
+    std::vector<TagEditorSource>    sources;
     std::unordered_set<std::string> seen;
     for (const TrackId id : ids) {
         const PlaylistEntry* entry = playlists_.find(id);
-        if (entry == nullptr || !entry->url.localPath() || !entry->url.fragment().empty()) {
+        if (entry == nullptr) {
             continue;
         }
-        if (!seen.insert(entry->url.toString()).second) {
+        const std::optional<Url> file = tagFileUrl(entry->url);
+        if (!file || !seen.insert(file->toString()).second) {
             continue;
         }
-        const MetadataCapabilities caps = registry_.metadataCapabilities(entry->url);
+        const MetadataCapabilities caps = registry_.metadataCapabilities(*file);
         if (!caps.writable) {
             continue;
+        }
+        int chapterIndex = -1;
+        if (!entry->url.fragment().empty()) {
+            const std::string_view fragment = entry->url.fragment();
+            int                    index    = 0;
+            const auto parsed =
+                std::from_chars(fragment.data(), fragment.data() + fragment.size(), index);
+            if (parsed.ec == std::errc{} &&
+                parsed.ptr == fragment.data() + fragment.size() && index >= 0) {
+                chapterIndex = index;
+            }
         }
         // A raw read, deliberately: the entry's own metadata may carry art
         // Scanner injected from a folder cover, and the model tells embedded
         // art from folder art precisely by asking what the file itself says.
         sources.push_back(TagEditorSource{
-            .entry    = *entry,
-            .fileTags = registry_.readMetadata(entry->url),
-            .caps     = caps,
+            .entry        = *entry,
+            .fileTags     = registry_.readMetadata(*file),
+            .caps         = caps,
+            .fileChapters = caps.chapters ? registry_.readChapters(*file) : ChapterList{},
+            .chapterIndex = chapterIndex,
         });
     }
     return sources;
 }
 
 void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
-                       TagEditMode mode) {
-    // A batch of rows sharing one file -- the same track in two playlists --
-    // is one save. Left ungrouped, the second row's dirty check would compare
-    // against the pre-edit entry, re-write a file the first row already wrote,
-    // and the status would count the same file twice.
+                       TagEditMode mode, const ChapterList* chapters) {
+    // A batch of rows sharing one file -- the same track in two playlists, or
+    // several of its chapters -- is one save. Left ungrouped, the second row's
+    // dirty check would compare against the pre-edit entry, re-write a file
+    // the first row already wrote, and the status would count it twice.
     struct SaveGroup {
         std::vector<TrackId> ids;
     };
@@ -809,7 +876,12 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
     std::size_t skipped = 0;
     for (const TrackId id : ids) {
         const PlaylistEntry* entry = playlists_.find(id);
-        if (entry == nullptr || !entry->url.localPath() || !entry->url.fragment().empty()) {
+        if (entry == nullptr) {
+            ++skipped;
+            continue;
+        }
+        const std::optional<Url> file = tagFileUrl(entry->url);
+        if (!file) {
             // A stream, or a cue sheet's track: localPath() on `album.cue#3`
             // is the .cue text file, and writing it would replace a track
             // listing with ID3 frames. The registry refuses one too; refusing
@@ -818,9 +890,18 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
             ++skipped;
             continue;
         }
+        const MetadataCapabilities caps = registry_.metadataCapabilities(*file);
+        if (!caps.writable || (chapters != nullptr && !caps.chapters)) {
+            ++skipped;
+            continue;
+        }
+        // Chapters are compared against the file, not the entry: they are
+        // the file's structure, and no playlist row carries them.
+        const bool chaptersDiffer =
+            chapters != nullptr && !chaptersEqual(registry_.readChapters(*file), *chapters);
         const MetadataMap current = entry->fullTagMap();
         if (mode == TagEditMode::replace) {
-            if (current.sameContentAs(tags)) {
+            if (current.sameContentAs(tags) && !chaptersDiffer) {
                 // Already the tags asked for. Skipping it is not just the speed:
                 // a rewrite through a lossy container folds what only just fit,
                 // and an unchanged row would pay for that every time the dialog
@@ -841,16 +922,12 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
                     merged.remove(held.key);
                 }
             }
-            if (merged.sameContentAs(current)) {
+            if (merged.sameContentAs(current) && !chaptersDiffer) {
                 continue;
             }
         }
-        if (!registry_.metadataCapabilities(entry->url).writable) {
-            ++skipped;
-            continue;
-        }
 
-        const std::string key = entry->url.toString();
+        const std::string key = file->toString();
         if (saves.find(key) == saves.end()) {
             order.push_back(key);
         }
@@ -858,12 +935,17 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
     }
 
     std::vector<TrackId> saved;
+    std::vector<Url>     chapterFiles;
     std::size_t          failed = 0;
     std::string          lastError;
     for (const std::string& key : order) {
         SaveGroup&                 group = saves[key];
         const PlaylistEntry* const entry = playlists_.find(group.ids.front());
         if (entry == nullptr) {
+            continue;
+        }
+        const std::optional<Url> file = tagFileUrl(entry->url);
+        if (!file) {
             continue;
         }
 
@@ -875,14 +957,19 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
 
         // What the entry should hold in memory afterwards. A replace write
         // takes the map as given; a merge write lands it on the entry's own
-        // map, which is what the file will answer on the read-back too.
+        // map, which is what the file will answer on the read-back too. A
+        // chapter row's own title comes back with the reload, which reads
+        // its fragment URL.
         MetadataMap applied = tags;
         if (mode == TagEditMode::merge) {
             applied = entry->fullTagMap();
             applied.mergeFrom(tags);
         }
 
-        if (registry_.writeMetadata(entry->url, tags, options)) {
+        const bool wrote = chapters != nullptr
+                               ? registry_.writeMetadata(*file, tags, *chapters, options)
+                               : registry_.writeMetadata(*file, tags, options);
+        if (wrote) {
             for (const TrackId id : group.ids) {
                 playlists_.update(id, [&applied](PlaylistEntry& e) { e.applyMetadata(applied); });
                 if (library_) {
@@ -891,6 +978,9 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
                     }
                 }
                 saved.push_back(id);
+            }
+            if (chapters != nullptr) {
+                chapterFiles.push_back(*file);
             }
         } else {
             ++failed;
@@ -907,6 +997,34 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
         reloadTracks(saved);
     }
 
+    // A chapter save can change what the file expands to -- one row becomes
+    // several, or the reverse -- and a reload matches rows by exact URL, so
+    // it cannot fix the row set. Compare each saved file's expansion against
+    // the rows every playlist holds for it, and report the ones that differ.
+    // One open per chapter-changed file, on the calling thread, which is
+    // where the writes already happened.
+    std::vector<Url> rowsChanged;
+    for (const Url& file : chapterFiles) {
+        std::unordered_set<std::string> listed;
+        for (const Url& row : registry_.expandContainer(file)) {
+            listed.insert(row.toString());
+        }
+        std::unordered_set<std::string> held;
+        for (std::size_t i = 0; i < playlists_.size(); ++i) {
+            for (const PlaylistEntry& entry : playlists_.at(i).playlist->entries()) {
+                if (entry.url.withoutFragment() == file) {
+                    held.insert(entry.url.toString());
+                }
+            }
+        }
+        if (listed != held) {
+            rowsChanged.push_back(file);
+        }
+    }
+    if (!rowsChanged.empty()) {
+        chaptersChanged.publish(rowsChanged);
+    }
+
     if (failed > 0) {
         const std::string reason = lastError.empty() ? tr("the file could not be written")
                                                      : lastError;
@@ -921,6 +1039,65 @@ void Session::editTags(const std::vector<TrackId>& ids, const MetadataMap& tags,
     } else {
         setStatus(statusSummary());
     }
+}
+
+void Session::rebuildChapterRows(const std::vector<Url>& files) {
+    for (const Url& file : files) {
+        const Url base = file.withoutFragment();
+        for (std::size_t i = 0; i < playlists_.size(); ++i) {
+            const PlaylistSet::Item& item = playlists_.at(i);
+            const bool               holds =
+                std::any_of(item.playlist->entries().begin(), item.playlist->entries().end(),
+                            [&base](const PlaylistEntry& entry) {
+                                return entry.url.withoutFragment() == base;
+                            });
+            if (holds) {
+                pendingScans_.push_back(ScanRequest{.inputs   = {base},
+                                                    .atRow    = -1,
+                                                    .reload   = false,
+                                                    .jobId    = {},
+                                                    .playlist = item.id,
+                                                    .rebuild  = true});
+            }
+        }
+    }
+    pumpScanQueue();
+}
+
+void Session::rebuildRows(std::vector<PlaylistEntry> entries, const Url& file, bool cancelled,
+                          PlaylistSet::Id target) {
+    Playlist* playlist = playlists_.playlist(target);
+    if (playlist == nullptr) {
+        // Deleted while the scan ran; what is on screen takes the results.
+        playlist = &playlists_.shown();
+        target   = playlists_.shownId();
+    }
+
+    // The positions are computed here, when the results land: another
+    // rebuild queued ahead of this one may have moved the rows since the
+    // request was made.
+    std::vector<TrackId> old;
+    std::size_t          first = playlist->size();
+    for (std::size_t i = 0; i < playlist->size(); ++i) {
+        if (playlist->at(i).url.withoutFragment() == file) {
+            old.push_back(playlist->at(i).id);
+            first = std::min(first, i);
+        }
+    }
+    if (old.empty()) {
+        return;  // the rows went while the scan ran
+    }
+
+    // Removal carries the playlist's own current-track semantics, as a
+    // listener removing the rows would; the insert below lands the file's
+    // new expansion where the first of them was.
+    if (target == playlists_.shownId()) {
+        commands_.remove(old);
+    } else {
+        playlist->remove(old);
+        parkedUndo_.erase(target);
+    }
+    addScannedEntries(std::move(entries), static_cast<int>(first), cancelled, target);
 }
 
 void Session::revealInFileManager(const std::vector<TrackId>& ids) {
