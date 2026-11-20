@@ -268,6 +268,11 @@ void MainWindow::wireUp() {
         tagCaps_.clear();
         refreshActionState();
     });
+    observe(session_.chaptersChanged, [this](const std::vector<Url>& files) {
+        // The save runs inside the tag dialog's Submit, which closes right
+        // after it returns; the question waits until the dialog is gone.
+        postToMainContext([this, files] { followChapters(files); });
+    });
     observe(session_.raiseRequested, [this] { present(); });
     observe(session_.quitRequested, [this] { quit(); });
     observe(session_.volumeChanged, [this](double gain) {
@@ -1205,6 +1210,67 @@ void MainWindow::trashSelected() {
                 p->self->session_.settings().setTrashAskedConsent(true);
             }
             p->self->session_.trashTracks(p->ids);
+        },
+        pending);
+}
+
+void MainWindow::followChapters(std::vector<Url> files) {
+    if (files.empty()) {
+        return;
+    }
+    Settings&       settings = session_.settings();
+    const std::string choice = settings.TagEditorChapterRows();
+    if (choice == "rebuild") {
+        session_.rebuildChapterRows(files);
+        return;
+    }
+    if (choice == "keep") {
+        return;
+    }
+
+    // Cog's question (TagEditorWindowController.followChapters): the first
+    // button rebuilds, anything else keeps, and the check remembers which.
+    const std::string heading =
+        files.size() == 1
+            ? app::fmt(app::tr("The chapters of \xE2\x80\x9C%s\xE2\x80\x9D changed."),
+                       files.front().fileName())
+            : app::fmt(app::trn("The chapters of %zu file changed.",
+                                "The chapters of %zu files changed.", files.size()),
+                       files.size());
+    AdwDialog* dialog = adw_alert_dialog_new(
+        heading.c_str(),
+        app::tr("Rebuild their rows in the playlists to match? Rows for the old chapters are "
+                "replaced with rows for the new ones.")
+            .c_str());
+    adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "keep", app::tr("Keep Rows").c_str(),
+                                   "rebuild", app::tr("Rebuild Rows").c_str(), nullptr);
+    adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "rebuild",
+                                             ADW_RESPONSE_SUGGESTED);
+    adw_alert_dialog_set_default_response(ADW_ALERT_DIALOG(dialog), "rebuild");
+    adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "keep");
+
+    GtkWidget* again = gtk_check_button_new_with_label(app::tr("Do this every time").c_str());
+    gtk_widget_set_halign(again, GTK_ALIGN_CENTER);
+    adw_alert_dialog_set_extra_child(ADW_ALERT_DIALOG(dialog), again);
+
+    struct Pending {
+        MainWindow*      self;
+        std::vector<Url> files;
+        GtkWidget*       again;
+    };
+    auto* pending = new Pending{this, std::move(files), again};
+    adw_alert_dialog_choose(
+        ADW_ALERT_DIALOG(dialog), GTK_WIDGET(window_), nullptr,
+        [](GObject* source, GAsyncResult* result, gpointer data) {
+            std::unique_ptr<Pending> p(static_cast<Pending*>(data));
+            const char* response = adw_alert_dialog_choose_finish(ADW_ALERT_DIALOG(source), result);
+            const bool  rebuild  = g_strcmp0(response, "rebuild") == 0;
+            if (gtk_check_button_get_active(GTK_CHECK_BUTTON(p->again))) {
+                p->self->session_.settings().setTagEditorChapterRows(rebuild ? "rebuild" : "keep");
+            }
+            if (rebuild) {
+                p->self->session_.rebuildChapterRows(p->files);
+            }
         },
         pending);
 }

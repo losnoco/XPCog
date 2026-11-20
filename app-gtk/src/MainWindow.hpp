@@ -136,13 +136,18 @@ private:
     /// playlist. Asks first, once, unless the listener has said not to.
     void trashSelected();
 
-    /// Whether the Edit Tags item applies: every selected row is a local file
-    /// with no URL fragment whose format some writer claims. Probes the files
-    /// it has not seen and remembers what they answered, because the probe
-    /// may open the file while the selection changes on every click; what was
-    /// remembered is dropped when the undo history or a scan says the files
-    /// themselves moved.
+    /// Whether the Edit Tags item applies: every selected row names a local
+    /// file some writer claims -- a chapter row through its file, a cue
+    /// track not at all. Probes the files it has not seen and remembers what
+    /// they answered, because the probe may open the file while the selection
+    /// changes on every click; what was remembered is dropped when the undo
+    /// history or a scan says the files themselves moved.
     bool canEditTags(const std::vector<TrackId>& ids);
+
+    /// After a tag save changed these files' chapters: rebuild their rows,
+    /// keep them, or ask, per the tagEditorChapterRows setting -- Cog's
+    /// question, with its suppression check writing the answer back.
+    void followChapters(std::vector<Url> files);
 
     /// Remembers the window's size and whether it is maximised, and the
     /// column widths, under this frontend's own keys.

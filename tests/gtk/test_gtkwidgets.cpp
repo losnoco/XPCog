@@ -789,6 +789,71 @@ bool makeTaggedFlac(const std::filesystem::path& target, const std::vector<std::
     return ok && std::filesystem::exists(target);
 }
 
+/// A second of silent MP3 carrying three chapters, written through the
+/// registry the way the editor would. False without ffmpeg or lame.
+bool makeChapterMp3(const std::filesystem::path& target) {
+    if (!xpcog::test::haveTool("ffmpeg")) {
+        return false;
+    }
+    const std::filesystem::path wav = target.parent_path() / "source.wav";
+    {
+        constexpr int kFrames = 44100;
+        std::ofstream out{wav, std::ios::binary};
+        const auto write32 = [&out](std::uint32_t value) {
+            const char bytes[4] = {static_cast<char>(value & 0xFF),
+                                   static_cast<char>((value >> 8) & 0xFF),
+                                   static_cast<char>((value >> 16) & 0xFF),
+                                   static_cast<char>((value >> 24) & 0xFF)};
+            out.write(bytes, 4);
+        };
+        const auto write16 = [&out](std::uint16_t value) {
+            const char bytes[2] = {static_cast<char>(value & 0xFF),
+                                   static_cast<char>((value >> 8) & 0xFF)};
+            out.write(bytes, 2);
+        };
+        const std::uint32_t dataBytes = kFrames * 4;
+        out.write("RIFF", 4);
+        write32(36 + dataBytes);
+        out.write("WAVEfmt ", 8);
+        write32(16);
+        write16(1);
+        write16(2);
+        write32(44100);
+        write32(44100 * 4);
+        write16(4);
+        write16(16);
+        out.write("data", 4);
+        write32(dataBytes);
+        for (int i = 0; i < kFrames; ++i) {
+            write32(0);
+        }
+    }
+    const std::string command = "ffmpeg -loglevel error -y -i \"" + wav.string() +
+                                "\" -codec:a libmp3lame -b:a 32k \"" + target.string() + "\""
+                                + xpcog::test::kSilenceStderr;
+    if (std::system(command.c_str()) != 0 || !std::filesystem::exists(target)) {
+        return false;
+    }
+    const xpcog::Url url = xpcog::Url::fromLocalPath(target);
+    // ffmpeg leaves its encoder settings in an ID3v2 tag; strip them so the
+    // dialog's only plain entries are the chapters'.
+    xpcog::MetadataWriteOptions strip;
+    if (!registry().writeMetadata(url, {}, strip)) {
+        return false;
+    }
+    xpcog::ChapterList chapters;
+    for (const auto& [start, title] : std::vector<std::pair<std::uint64_t, std::string>>{
+             {0, "One"}, {300, "Two"}, {600, "Three"}}) {
+        xpcog::Chapter chapter;
+        chapter.startMs = start;
+        chapter.title   = title;
+        chapters.push_back(std::move(chapter));
+    }
+    xpcog::MetadataWriteOptions options;
+    options.stripExisting = false;
+    return registry().writeMetadata(url, {}, chapters, options);
+}
+
 }  // namespace
 
 TEST_CASE("the tag editor opens on a real file and seeds its rows", "[gtk][tageditor]") {
@@ -910,6 +975,146 @@ TEST_CASE("the tag editor refuses a selection with no file to write", "[gtk][tag
     collect(GTK_WIDGET(window.window()), ADW_TYPE_DIALOG, dialogs);
     CHECK(dialogs.empty());
     CHECK(h.session.playlist().size() == 2);
+}
+
+TEST_CASE("the tag editor shows and edits a chaptered file's chapters",
+          "[gtk][tageditor][chapters]") {
+    if (!toolkit()) {
+        SKIP("no display: GTK could not initialise");
+    }
+    const std::filesystem::path dir = freshTagDir("chapters");
+    const std::filesystem::path mp3 = dir / "book.mp3";
+    if (!makeChapterMp3(mp3)) {
+        SKIP("ffmpeg or libmp3lame not on PATH");
+    }
+
+    const xpcog::ChapterList before = registry().readChapters(xpcog::Url::fromLocalPath(mp3));
+    REQUIRE(before.size() == 3);
+
+    SessionHarness h;
+    {
+        xpcog::PlaylistEntry entry;
+        entry.url      = xpcog::Url::fromLocalPath(mp3);
+        entry.rawTitle = mp3.filename().string();
+        h.session.playlist().insert(0, {std::move(entry)});
+    }
+    const std::vector<xpcog::TrackId> ids{h.session.playlist().entries().front().id};
+
+    GtkWidget* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    TestWindow window(content, 900, 700);
+    xpcog::gtk::showTagEditorDialog(window.window(), h.session, ids);
+    settle(3);
+
+    std::vector<GtkWidget*> dialogs;
+    collect(GTK_WIDGET(window.window()), ADW_TYPE_DIALOG, dialogs);
+    REQUIRE(dialogs.size() == 1);
+    auto* editor = ADW_DIALOG(dialogs.front());
+
+    std::vector<GtkWidget*> groups;
+    collect(GTK_WIDGET(editor), ADW_TYPE_PREFERENCES_GROUP, groups);
+    // The file line, the promoted fields, other tags, the cover, chapters.
+    CHECK(groups.size() == 5);
+
+    // Three chapters: a time and a title entry each. The fixture carries no
+    // other tags, so these are the dialog's only plain entries.
+    std::vector<GtkWidget*> entries;
+    collect(GTK_WIDGET(editor), GTK_TYPE_ENTRY, entries);
+    REQUIRE(entries.size() == 6);
+    const auto textOf = [](GtkWidget* entry) {
+        return std::string{gtk_editable_get_text(GTK_EDITABLE(entry))};
+    };
+    CHECK(textOf(entries[0]) == "0:00.000");
+    CHECK(textOf(entries[1]) == "One");
+
+    std::vector<GtkWidget*> buttons;
+    collect(GTK_WIDGET(editor), GTK_TYPE_BUTTON, buttons);
+    const auto labeled = [&buttons](const std::string& label) {
+        for (GtkWidget* button : buttons) {
+            if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(button)), label.c_str()) == 0) {
+                return button;
+            }
+        }
+        return static_cast<GtkWidget*>(nullptr);
+    };
+    GtkWidget* save = labeled(xpcog::app::tr("Save"));
+    GtkWidget* add  = labeled(xpcog::app::tr("Add Chapter"));
+    REQUIRE(save != nullptr);
+    REQUIRE(add != nullptr);
+    CHECK_FALSE(gtk_widget_get_sensitive(save));
+
+    // A time commits on Enter, and the field shows what the model took.
+    gtk_editable_set_text(GTK_EDITABLE(entries[0]), "0:05.000");
+    g_signal_emit_by_name(entries[0], "activate");
+    settle();
+    CHECK(textOf(entries[0]) == "0:05.000");
+    CHECK(gtk_widget_get_sensitive(save));
+
+    gtk_editable_set_text(GTK_EDITABLE(entries[1]), "A new name");
+    settle();
+
+    // Add a chapter, then take it away again: the rows rebuild around it.
+    // The new start is a second past the last one -- 5000 ms now, so 6000.
+    g_signal_emit_by_name(add, "clicked");
+    settle();
+    entries.clear();
+    collect(GTK_WIDGET(editor), GTK_TYPE_ENTRY, entries);
+    REQUIRE(entries.size() == 8);
+    CHECK(textOf(entries[6]) == "0:06.000");
+
+    buttons.clear();
+    collect(GTK_WIDGET(editor), GTK_TYPE_BUTTON, buttons);
+    std::vector<GtkWidget*> trashes;
+    for (GtkWidget* button : buttons) {
+        const char* tooltip = gtk_widget_get_tooltip_text(button);
+        if (tooltip != nullptr &&
+            g_strcmp0(tooltip, xpcog::app::tr("Remove this chapter").c_str()) == 0) {
+            trashes.push_back(button);
+        }
+    }
+    REQUIRE(trashes.size() == 4);
+    g_signal_emit_by_name(trashes.back(), "clicked");
+    settle();
+    entries.clear();
+    collect(GTK_WIDGET(editor), GTK_TYPE_ENTRY, entries);
+    CHECK(entries.size() == 6);
+
+    capture(GTK_WIDGET(window.window()), "tag-editor-chapters");
+
+    // The dialog hands the chapters to editTags, and a save that changed the
+    // file's expansion reports it. (The question that report raises is
+    // MainWindow's, and there is no MainWindow here.)
+    std::vector<std::vector<xpcog::Url>> reported;
+    xpcog::Subscription watch = h.session.chaptersChanged.connect(
+        [&reported](const std::vector<xpcog::Url>& files) { reported.push_back(files); });
+
+    // Save: the chapters land on disk as edited, the editor animates out,
+    // and the reload scan the save starts has to land before the file is
+    // read again -- TagLib is not two threads' library at once.
+    g_signal_emit_by_name(save, "clicked");
+    bool closed = false;
+    for (int i = 0; i < 200 && (!closed || h.session.scanning()); ++i) {
+        settle();
+        dialogs.clear();
+        collect(GTK_WIDGET(window.window()), ADW_TYPE_DIALOG, dialogs);
+        closed = dialogs.empty();
+    }
+    CHECK(closed);
+    CHECK_FALSE(h.session.scanning());
+    REQUIRE(reported.size() == 1);
+    CHECK(reported.front() == std::vector<xpcog::Url>{xpcog::Url::fromLocalPath(mp3)});
+
+    const xpcog::ChapterList onDisk = registry().readChapters(xpcog::Url::fromLocalPath(mp3));
+    REQUIRE(onDisk.size() == 3);
+    // The writer orders by start: the edited chapter (0 -> 5000 ms) is now
+    // the last, its identity rode along, and its neighbours are untouched.
+    const auto renamed = std::find_if(onDisk.begin(), onDisk.end(),
+                                      [](const xpcog::Chapter& c) { return c.title == "A new name"; });
+    REQUIRE(renamed != onDisk.end());
+    CHECK(renamed->startMs == 5000);
+    CHECK(renamed->id == before[0].id);
+    CHECK(onDisk[0].title == "Two");
+    CHECK(onDisk[1].title == "Three");
+    CHECK(toolkitComplaints().empty());
 }
 
 TEST_CASE("the equaliser's scales are not narrower than they need", "[gtk][equalizer]") {

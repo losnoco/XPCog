@@ -5,7 +5,9 @@
 
 #include <adwaita.h>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -64,6 +66,9 @@ struct State {
     /// a row back out, and a box it cannot remove from is a loop that never
     /// ends.
     GtkWidget*              freeBox    = nullptr;
+    /// The chapter rows' container, rebuilt the same way and for the same
+    /// reason.
+    GtkWidget*              chapterBox = nullptr;
     GtkWidget*              artStatus  = nullptr;
     GtkWidget*              artRemove  = nullptr;
     GtkWidget*              artKeep    = nullptr;
@@ -187,6 +192,84 @@ struct State {
         gtk_widget_set_visible(note, !noteText.empty());
     }
 
+    // --- chapter rows: rebuilt whenever their number moves ---------------------
+
+    void rebuildChapterRows() {
+        if (chapterBox == nullptr) {
+            return;
+        }
+        while (GtkWidget* child = gtk_widget_get_first_child(chapterBox)) {
+            gtk_box_remove(GTK_BOX(chapterBox), child);
+        }
+        std::size_t index = 0;
+        for (const Chapter& chapter : model.chapters()) {
+            buildChapterRow(index++, chapter);
+        }
+        refreshSave();
+    }
+
+    void buildChapterRow(std::size_t index, const Chapter& chapter) {
+        using Model = app::TagEditorModel;
+
+        GtkWidget* line = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+
+        GtkWidget* number = gtk_label_new(std::to_string(index + 1).c_str());
+        if (static_cast<int>(index) == model.highlightedChapter()) {
+            gtk_widget_add_css_class(number, "accent");
+        }
+        GtkWidget* time = gtk_entry_new();
+        gtk_entry_set_placeholder_text(GTK_ENTRY(time), "0:00.000");
+        gtk_editable_set_text(GTK_EDITABLE(time), Model::timeText(chapter.startMs).c_str());
+        gtk_editable_set_width_chars(GTK_EDITABLE(time), 12);
+        GtkWidget* title = gtk_entry_new();
+        gtk_entry_set_placeholder_text(GTK_ENTRY(title), tr("Chapter title").c_str());
+        gtk_editable_set_text(GTK_EDITABLE(title), chapter.title.c_str());
+        gtk_widget_set_hexpand(title, TRUE);
+        GtkWidget* remove = gtk_button_new_from_icon_name("user-trash-symbolic");
+        gtk_widget_set_tooltip_text(remove, tr("Remove this chapter").c_str());
+        gtk_box_append(GTK_BOX(line), number);
+        gtk_box_append(GTK_BOX(line), time);
+        gtk_box_append(GTK_BOX(line), title);
+        gtk_box_append(GTK_BOX(line), remove);
+        gtk_box_append(GTK_BOX(chapterBox), line);
+
+        // The time commits when the field is left or Enter is pressed, not
+        // on every keystroke: "1:" is a half-typed time, not an edit. What
+        // the model answers afterwards is what the field shows, so a
+        // rejection reads as the old time coming back.
+        const auto commitTime = [this, index, time] {
+            const std::optional<std::uint64_t> parsed =
+                Model::millisecondsFrom(gtk_editable_get_text(GTK_EDITABLE(time)));
+            if (parsed) {
+                model.setChapterStart(index, *parsed);
+            }
+            gtk_editable_set_text(GTK_EDITABLE(time),
+                                  Model::timeText(model.chapters()[index].startMs).c_str());
+            refreshSave();
+        };
+        connections.push_back(Connection::to<void(GtkEntry*)>(
+            time, "activate", [commitTime](GtkEntry*) { commitTime(); }));
+        GtkEventController* focus = gtk_event_controller_focus_new();
+        connections.push_back(Connection::to<void(GtkEventControllerFocus*)>(
+            GTK_EVENT_CONTROLLER_FOCUS(focus), "leave",
+            [commitTime](GtkEventControllerFocus*) { commitTime(); }));
+        gtk_widget_add_controller(time, focus);
+
+        // Text is set before connecting, so seeding a row does not count as
+        // editing it. The index is captured, not a pointer into the model's
+        // vector: adding or removing a row rebuilds this one from scratch.
+        connections.push_back(Connection::to<void(GtkEntry*)>(
+            title, "changed", [this, index](GtkEntry* entry) {
+                model.setChapterTitle(index, gtk_editable_get_text(GTK_EDITABLE(entry)));
+                refreshSave();
+            }));
+        connections.push_back(Connection::to<void(GtkButton*)>(
+            remove, "clicked", [this, index](GtkButton*) {
+                model.removeChapter(index);
+                rebuildChapterRows();
+            }));
+    }
+
     // --- cover section --------------------------------------------------------
 
     void updateArt() {
@@ -221,7 +304,11 @@ struct State {
         if (model.batch()) {
             session.editTags(ids, model.buildChanges(), app::Session::TagEditMode::merge);
         } else {
-            session.editTags(ids, model.build(), app::Session::TagEditMode::replace);
+            // Chapters ride only when they changed; nullopt leaves the
+            // file's own alone, so a tag-only save does not rewrite them.
+            const std::optional<ChapterList> chapters = model.buildChapters();
+            session.editTags(ids, model.build(), app::Session::TagEditMode::replace,
+                             chapters ? &*chapters : nullptr);
         }
         adw_dialog_close(ADW_DIALOG(dialog));
     }
@@ -423,6 +510,33 @@ void showTagEditorDialog(GtkWindow* parent, app::Session& session,
 
         adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), ADW_PREFERENCES_GROUP(group));
         state->updateArt();
+    }
+
+    // --- the chapters: single file, on formats that hold them --------------------
+
+    if (state->model.supportsChapters()) {
+        GtkWidget* group = adw_preferences_group_new();
+        adw_preferences_group_set_title(ADW_PREFERENCES_GROUP(group), tr("Chapters").c_str());
+        GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+        state->chapterBox = box;
+        adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), box);
+        GtkWidget* add = gtk_button_new_with_label(tr("Add Chapter").c_str());
+        gtk_widget_set_valign(add, GTK_ALIGN_CENTER);
+        adw_preferences_group_set_header_suffix(ADW_PREFERENCES_GROUP(group), add);
+        state->connections.push_back(Connection::to<void(GtkButton*)>(
+            add, "clicked", [state](GtkButton*) {
+                state->model.addChapter();
+                state->rebuildChapterRows();
+            }));
+        GtkWidget* note = gtk_label_new(
+            tr("Each chapter ends where the next one starts, and the last where the file ends.")
+                .c_str());
+        gtk_label_set_wrap(GTK_LABEL(note), TRUE);
+        gtk_label_set_xalign(GTK_LABEL(note), 0.0f);
+        gtk_widget_add_css_class(note, "dim-label");
+        adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), note);
+        adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), ADW_PREFERENCES_GROUP(group));
+        state->rebuildChapterRows();
     }
 
     state->connections.push_back(Connection::to<void(GtkButton*)>(
