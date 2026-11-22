@@ -19,10 +19,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <optional>
 
 namespace xpcog::winui {
 
@@ -504,6 +506,12 @@ void MainWindow::wireUp() {
         }
     });
     observe(session_.tracksUpdated, [this] { status_.Text(toH(session_.statusSummary())); });
+    observe(session_.chaptersChanged, [this](const std::vector<Url>& files) {
+        // The save runs inside the tag dialog's Submit, which has just
+        // closed; the question waits its turn on the interface thread, where
+        // one dialog at a time is the rule.
+        window_.DispatcherQueue().TryEnqueue([this, files] { followChapters(files); });
+    });
 
     playlist_->rowActivated = [this](std::size_t row) {
         if (const TrackId id = session_.view().trackAt(row); id != kInvalidTrackId) {
@@ -1746,6 +1754,10 @@ winrt::fire_and_forget MainWindow::editTags() {
         /// local: the rows' own handlers call it, and a lambda cannot name
         /// itself into its own capture.
         std::function<void()> rebuildFreeRows;
+        /// The chapter rows' container, rebuilt the same way.
+        mux::Controls::StackPanel chapterContainer = nullptr;
+        std::size_t               chapterHeadChildren = 0;
+        std::function<void()>     rebuildChapterRows;
         mux::Controls::TextBlock artStatus = nullptr;
         mux::Controls::Button    artRemove = nullptr;
         mux::Controls::Button    artKeep   = nullptr;
@@ -1819,7 +1831,11 @@ winrt::fire_and_forget MainWindow::editTags() {
             if (model.batch()) {
                 session.editTags(ids, model.buildChanges(), app::Session::TagEditMode::merge);
             } else {
-                session.editTags(ids, model.build(), app::Session::TagEditMode::replace);
+                // Chapters ride only when they changed; nullopt leaves the
+                // file's own alone, so a tag-only save does not rewrite them.
+                const std::optional<ChapterList> chapters = model.buildChapters();
+                session.editTags(ids, model.build(), app::Session::TagEditMode::replace,
+                                 chapters ? &*chapters : nullptr);
             }
         }
     };
@@ -2063,6 +2079,121 @@ winrt::fire_and_forget MainWindow::editTags() {
         state->updateArt();
     }
 
+    // --- the chapters: single file, on formats that hold them ------------------
+
+    if (model.supportsChapters()) {
+        auto chapters = mux::Controls::StackPanel();
+        chapters.Spacing(8);
+        page.Children().Append(chapters);
+
+        auto title = mux::Controls::TextBlock();
+        title.Text(toH(app::tr("Chapters")));
+        chapters.Children().Append(title);
+        auto add = mux::Controls::Button();
+        add.Content(winrt::box_value(toH(app::tr("Add Chapter"))));
+        chapters.Children().Append(add);
+
+        // The rows' own panel, rebuilt wholesale whenever their number
+        // moves, as the free tags' panel is; the note below it stays put.
+        auto rowsPanel = mux::Controls::StackPanel();
+        rowsPanel.Spacing(6);
+        chapters.Children().Append(rowsPanel);
+        state->chapterContainer    = rowsPanel;
+        state->chapterHeadChildren = 0;
+
+        auto note = mux::Controls::TextBlock();
+        note.TextWrapping(mux::TextWrapping::Wrap);
+        note.Foreground(themeBrush(L"TextFillColorSecondaryBrush"));
+        note.Text(toH(app::tr("Each chapter ends where the next one starts, and the last where "
+                              "the file ends.")));
+        chapters.Children().Append(note);
+
+        state->rebuildChapterRows = [state] {
+            auto& panel = state->chapterContainer;
+            auto  rows  = panel.Children();
+            while (rows.Size() > state->chapterHeadChildren) {
+                rows.RemoveAtEnd();
+            }
+            std::size_t index = 0;
+            for (const Chapter& chapter : state->model.chapters()) {
+                auto line = mux::Controls::StackPanel();
+                line.Orientation(mux::Controls::Orientation::Horizontal);
+                line.Spacing(6);
+
+                auto number = mux::Controls::TextBlock();
+                number.Text(toH(std::to_string(index + 1)));
+                number.VerticalAlignment(mux::VerticalAlignment::Center);
+                if (static_cast<int>(index) == state->model.highlightedChapter()) {
+                    number.Foreground(themeBrush(L"AccentTextFillColorPrimaryBrush"));
+                }
+                auto time = mux::Controls::TextBox();
+                time.Width(110);
+                time.Text(toH(app::TagEditorModel::timeText(chapter.startMs)));
+                auto chapterTitle = mux::Controls::TextBox();
+                chapterTitle.Text(toH(chapter.title));
+                chapterTitle.PlaceholderText(toH(app::tr("Chapter title")));
+                auto remove = mux::Controls::Button();
+                // "\uE74D" is Segoe MDL2's delete glyph, as the free rows use.
+                remove.Content(winrt::box_value(std::wstring{L"\uE74D"}));
+                mux::Controls::ToolTipService::SetToolTip(
+                    remove, winrt::box_value(toH(app::tr("Remove this chapter"))));
+                line.Children().Append(number);
+                line.Children().Append(time);
+                line.Children().Append(chapterTitle);
+                line.Children().Append(remove);
+                rows.Append(line);
+
+                // Text is set before connecting, so seeding a row does not
+                // count as editing it. The index is captured, not a pointer
+                // into the model's vector: this row is rebuilt from scratch
+                // whenever the set of rows moves.
+                const std::size_t i = index++;
+                // The time commits when the field is left or Enter is
+                // pressed, not on every keystroke: "1:" is a half-typed time,
+                // not an edit. What the model answers afterwards is what the
+                // field shows, so a rejection reads as the old time coming
+                // back.
+                const auto commitTime = [state, time, i] {
+                    if (i >= state->model.chapters().size()) {
+                        // The row was removed and its box is leaving focus
+                        // on the way out; there is no chapter left to
+                        // commit to.
+                        return;
+                    }
+                    const std::optional<std::uint64_t> parsed =
+                        app::TagEditorModel::millisecondsFrom(toUtf8(time.Text()));
+                    if (parsed) {
+                        state->model.setChapterStart(i, *parsed);
+                    }
+                    time.Text(toH(app::TagEditorModel::timeText(
+                        state->model.chapters()[i].startMs)));
+                    state->refreshSave();
+                };
+                time.LostFocus([commitTime](auto&&, auto&&) { commitTime(); });
+                time.KeyDown([commitTime](auto&&, mux::Input::KeyRoutedEventArgs const& args) {
+                    if (args.Key() == winrt::Windows::System::VirtualKey::Enter) {
+                        commitTime();
+                    }
+                });
+                chapterTitle.TextChanged([state, chapterTitle, i](auto&&, auto&&) {
+                    state->model.setChapterTitle(i, toUtf8(chapterTitle.Text()));
+                    state->refreshSave();
+                });
+                remove.Click([state, i](auto&&, auto&&) {
+                    state->model.removeChapter(i);
+                    state->rebuildChapterRows();
+                    state->refreshSave();
+                });
+            }
+        };
+        add.Click([state](auto&&, auto&&) {
+            state->model.addChapter();
+            state->rebuildChapterRows();
+            state->refreshSave();
+        });
+        state->rebuildChapterRows();
+    }
+
     box.PrimaryButtonText(toH(app::tr("Save")));
     box.CloseButtonText(toH(app::tr("Cancel")));
     // Save says what the model can do: no edit, no write.
@@ -2074,6 +2205,58 @@ winrt::fire_and_forget MainWindow::editTags() {
     // answer and something to write, and nothing else.
     if (result == mux::Controls::ContentDialogResult::Primary && state->model.changed()) {
         state->submit();
+    }
+}
+
+winrt::fire_and_forget MainWindow::followChapters(std::vector<Url> files) {
+    if (files.empty() || dialogOpen_) {
+        co_return;
+    }
+    Settings&         settings = session_.settings();
+    const std::string choice   = settings.TagEditorChapterRows();
+    if (choice == "rebuild") {
+        session_.rebuildChapterRows(files);
+        co_return;
+    }
+    if (choice == "keep") {
+        co_return;
+    }
+
+    // Cog's question (TagEditorWindowController.followChapters): the primary
+    // button rebuilds, anything else keeps -- Escape and the close button
+    // among them -- and the check remembers which.
+    const std::string heading =
+        files.size() == 1
+            ? app::fmt(app::tr("The chapters of \xE2\x80\x9C%s\xE2\x80\x9D changed."),
+                       files.front().fileName())
+            : app::fmt(app::trn("The chapters of %zu file changed.",
+                                "The chapters of %zu files changed.", files.size()),
+                       files.size());
+    dialogOpen_ = true;
+    auto box    = dialog(heading);
+    auto body   = mux::Controls::StackPanel();
+    body.Spacing(12);
+    auto text = mux::Controls::TextBlock();
+    text.TextWrapping(mux::TextWrapping::Wrap);
+    text.Text(toH(app::tr("Rebuild their rows in the playlists to match? Rows for the old "
+                          "chapters are replaced with rows for the new ones.")));
+    auto again = mux::Controls::CheckBox();
+    again.Content(winrt::box_value(toH(app::tr("Do this every time"))));
+    body.Children().Append(text);
+    body.Children().Append(again);
+    box.Content(body);
+    box.PrimaryButtonText(toH(app::tr("Rebuild Rows")));
+    box.CloseButtonText(toH(app::tr("Keep Rows")));
+    box.DefaultButton(mux::Controls::ContentDialogButton::Primary);
+
+    const auto result  = co_await box.ShowAsync();
+    dialogOpen_        = false;
+    const bool rebuild = result == mux::Controls::ContentDialogResult::Primary;
+    if (again.IsChecked().Value()) {
+        settings.setTagEditorChapterRows(rebuild ? "rebuild" : "keep");
+    }
+    if (rebuild) {
+        session_.rebuildChapterRows(files);
     }
 }
 

@@ -238,6 +238,11 @@ struct State {
         // the model answers afterwards is what the field shows, so a
         // rejection reads as the old time coming back.
         const auto commitTime = [this, index, time] {
+            if (index >= model.chapters().size()) {
+                // The row was removed and its widgets are leaving focus on
+                // the way out; there is no chapter left to commit to.
+                return;
+            }
             const std::optional<std::uint64_t> parsed =
                 Model::millisecondsFrom(gtk_editable_get_text(GTK_EDITABLE(time)));
             if (parsed) {

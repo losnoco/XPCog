@@ -82,6 +82,28 @@ void PreferencesWindow::buildGeneralPage() {
         lyrics.enable(false);
         row->note(tr("This build was configured without HTTP support, so it cannot reach LRCLIB."));
     }
+
+    row->heading(tr("Tag editor"));
+    const std::vector<std::string> chapterChoices = {
+        tr("Ask every time"), tr("Rebuild the rows"), tr("Keep the rows")};
+    const std::vector<std::string> chapterValues = {"ask", "rebuild", "keep"};
+    uint32_t chapterChosen                       = 0;
+    for (std::size_t i = 0; i < chapterValues.size(); ++i) {
+        if (chapterValues[i] == settings_.TagEditorChapterRows()) {
+            chapterChosen = static_cast<uint32_t>(i);
+        }
+    }
+    row->picker(tr("After a save changes a file's chapters"), chapterChoices, chapterChosen,
+                [this, chapterValues](uint32_t index) {
+                    if (index >= chapterValues.size()) {
+                        return;
+                    }
+                    settings_.setTagEditorChapterRows(chapterValues[index]);
+                    settingChanged.publish("tagEditorChapterRows");
+                    settings_.sync();
+                });
+    row->note(tr("Rebuilding replaces the file's rows in every playlist with the chapters it "
+                 "has now. The question's own check writes this choice too."));
 }
 
 void PreferencesWindow::buildPlaylistPage() {

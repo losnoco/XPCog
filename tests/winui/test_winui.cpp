@@ -33,6 +33,14 @@
 #include "Win2D.hpp"
 #include "WinRT.hpp"
 
+// The chapter case presses the dialog's buttons the way a listener does:
+// a ContentDialog hands its buttons to no one, but their automation peers
+// invoke them.
+#include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
+// The peers header only declares IInvokeProvider::Invoke; its definition,
+// which MSVC needs before the call, is in the provider header.
+#include <winrt/Microsoft.UI.Xaml.Automation.Provider.h>
+
 #include "Commands.hpp"
 #include "Session.hpp"
 #include "Translations.hpp"
@@ -280,6 +288,71 @@ bool makeTaggedFlac(const std::filesystem::path& target, const std::vector<std::
     std::error_code ignored;
     std::filesystem::remove(wav, ignored);
     return ok && std::filesystem::exists(target);
+}
+
+/// A second of silent MP3 carrying three chapters, written through the
+/// registry the way the editor would. False without ffmpeg or lame.
+bool makeChapterMp3(const std::filesystem::path& target, PluginRegistry& registry) {
+    if (!xpcog::test::haveTool("ffmpeg")) {
+        return false;
+    }
+    const std::filesystem::path wav = target.parent_path() / "source.wav";
+    {
+        constexpr int kFrames = 44100;
+        std::ofstream out{wav, std::ios::binary};
+        const auto write32 = [&out](std::uint32_t value) {
+            const char bytes[4] = {static_cast<char>(value & 0xFF),
+                                   static_cast<char>((value >> 8) & 0xFF),
+                                   static_cast<char>((value >> 16) & 0xFF),
+                                   static_cast<char>((value >> 24) & 0xFF)};
+            out.write(bytes, 4);
+        };
+        const auto write16 = [&out](std::uint16_t value) {
+            const char bytes[2] = {static_cast<char>(value & 0xFF),
+                                   static_cast<char>((value >> 8) & 0xFF)};
+            out.write(bytes, 2);
+        };
+        const std::uint32_t dataBytes = kFrames * 4;
+        out.write("RIFF", 4);
+        write32(36 + dataBytes);
+        out.write("WAVEfmt ", 8);
+        write32(16);
+        write16(1);
+        write16(2);
+        write32(44100);
+        write32(44100 * 4);
+        write16(4);
+        write16(16);
+        out.write("data", 4);
+        write32(dataBytes);
+        for (int i = 0; i < kFrames; ++i) {
+            write32(0);
+        }
+    }
+    const std::string command = "ffmpeg -loglevel error -y -i \"" + wav.string() +
+                                "\" -codec:a libmp3lame -b:a 32k \"" + target.string() + "\""
+                                + xpcog::test::kSilenceStderr;
+    if (std::system(command.c_str()) != 0 || !std::filesystem::exists(target)) {
+        return false;
+    }
+    const Url url = Url::fromLocalPath(target);
+    // ffmpeg leaves its encoder settings in an ID3v2 tag; strip them so the
+    // dialog's chapter rows are the only plain entries it shows.
+    MetadataWriteOptions strip;
+    if (!registry.writeMetadata(url, {}, strip)) {
+        return false;
+    }
+    ChapterList chapters;
+    for (const auto& [start, title] : std::vector<std::pair<std::uint64_t, std::string>>{
+             {0, "One"}, {300, "Two"}, {600, "Three"}}) {
+        Chapter chapter;
+        chapter.startMs = start;
+        chapter.title   = title;
+        chapters.push_back(std::move(chapter));
+    }
+    MetadataWriteOptions options;
+    options.stripExisting = false;
+    return registry.writeMetadata(url, {}, chapters, options);
 }
 
 }  // namespace
@@ -560,6 +633,204 @@ TEST_CASE("The tag editor opens on a real file and seeds its rows", "[winui][tag
 
     ui([&] { opened.dialog.Hide(); });
     settle();
+    checkQuiet();
+}
+
+TEST_CASE("The tag editor shows and edits a chaptered file's chapters",
+          "[winui][tageditor][chapters]") {
+    Player&                     p   = thePlayer();
+    const std::filesystem::path dir = freshTagDir("chapters");
+    const std::filesystem::path mp3 = dir / "book.mp3";
+    if (!makeChapterMp3(mp3, p.registry)) {
+        SKIP("ffmpeg or libmp3lame is not installed");
+    }
+    const ChapterList before = p.registry.readChapters(Url::fromLocalPath(mp3));
+    REQUIRE(before.size() == 3);
+
+    PlaylistEntry entry;
+    entry.url      = Url::fromLocalPath(mp3);
+    entry.rawTitle = mp3.filename().string();
+    const TrackId id = ui([&] {
+        const std::vector<TrackId> inserted = p.session->playlist().insert(0, {std::move(entry)});
+        return inserted.empty() ? kInvalidTrackId : inserted.front();
+    });
+    settle();
+    ui([&] { TestAccess::playlist(*p.window).selectOnly(0); });
+    settle();
+    ui([&] { p.run(CommandId::PlaylistEditTags); });
+    settle();
+    checkQuiet();
+
+    // The dialog's widgets, by kind: the texts it shows, the boxes to type
+    // in, and the buttons to press.
+    struct Opened {
+        mux::Controls::ContentDialog              dialog = nullptr;
+        std::vector<std::wstring>                 texts;
+        std::vector<mux::Controls::TextBox>       boxes;
+        std::vector<mux::Controls::Button>        buttons;
+        bool                                      saveEnabled = true;
+    };
+    const auto inspect = [&p]() {
+        Opened out;
+        for (const auto& popup :
+             mux::Media::VisualTreeHelper::GetOpenPopupsForXamlRoot(
+                 TestAccess::window(*p.window).Content().XamlRoot())) {
+            if (const auto box = popup.Child().try_as<mux::Controls::ContentDialog>()) {
+                out.dialog = box;
+            }
+        }
+        if (out.dialog == nullptr) {
+            return out;
+        }
+        out.saveEnabled = out.dialog.IsPrimaryButtonEnabled();
+        std::function<void(const mux::DependencyObject&)> walk;
+        walk = [&out, &walk](const mux::DependencyObject& node) {
+            if (const auto text = node.try_as<mux::Controls::TextBlock>()) {
+                out.texts.push_back(std::wstring(text.Text()));
+            } else if (const auto box = node.try_as<mux::Controls::TextBox>()) {
+                out.texts.push_back(std::wstring(box.Text()));
+                out.boxes.push_back(box);
+            } else if (const auto button = node.try_as<mux::Controls::Button>()) {
+                out.buttons.push_back(button);
+            }
+            const int32_t count = mux::Media::VisualTreeHelper::GetChildrenCount(node);
+            for (int32_t child = 0; child < count; ++child) {
+                walk(mux::Media::VisualTreeHelper::GetChild(node, child));
+            }
+        };
+        walk(out.dialog);
+        return out;
+    };
+    const auto boxWithText = [](const Opened& opened, std::wstring_view text) {
+        for (const auto& box : opened.boxes) {
+            if (box.Text() == text) {
+                return box;
+            }
+        }
+        return mux::Controls::TextBox{nullptr};
+    };
+    const auto buttonLabeled = [](const Opened& opened, std::wstring_view label) {
+        for (const auto& button : opened.buttons) {
+            if (winrt::unbox_value_or<winrt::hstring>(button.Content(), winrt::hstring{}) ==
+                label) {
+                return button;
+            }
+        }
+        return mux::Controls::Button{nullptr};
+    };
+    const auto press = [](const mux::Controls::Button& button) {
+        mux::Automation::Peers::ButtonAutomationPeer(button).Invoke();
+    };
+
+    Opened opened = ui([&] { return inspect(); });
+    REQUIRE(opened.dialog != nullptr);
+    const auto hasText = [&](std::wstring_view needle) {
+        return std::find(opened.texts.begin(), opened.texts.end(), needle) !=
+               opened.texts.end();
+    };
+    CHECK(hasText(toH(app::tr("Chapters"))));
+    CHECK(hasText(L"One"));
+    CHECK(hasText(L"0:00.000"));
+    CHECK_FALSE(opened.saveEnabled);
+
+    // A title edit lights Save; the time commits when its field is left.
+    ui([&] {
+        const auto title = boxWithText(opened, L"One");
+        REQUIRE(title != nullptr);
+        title.Text(toH("A new name"));
+    });
+    settle();
+    opened = ui([&] { return inspect(); });
+    CHECK(opened.saveEnabled);
+    ui([&] {
+        const auto time = boxWithText(opened, L"0:00.000");
+        REQUIRE(time != nullptr);
+        time.Focus(mux::FocusState::Programmatic);
+        time.Text(toH("0:05.000"));
+        // Leaving the field is what commits it.
+        const auto title = boxWithText(opened, L"A new name");
+        REQUIRE(title != nullptr);
+        title.Focus(mux::FocusState::Programmatic);
+    });
+    settle();
+    opened = ui([&] { return inspect(); });
+    CHECK(hasText(L"0:05.000"));
+
+    // Add a chapter, then take it away again: the rows rebuild around it.
+    // The new start is a second past the last one -- 5000 ms now, so 6000.
+    ui([&] { press(buttonLabeled(opened, toH(app::tr("Add Chapter")))); });
+    settle();
+    opened = ui([&] { return inspect(); });
+    CHECK(hasText(L"0:06.000"));
+    ui([&] {
+        std::vector<mux::Controls::Button> trashes;
+        for (const auto& button : opened.buttons) {
+            if (winrt::unbox_value_or<winrt::hstring>(
+                    mux::Controls::ToolTipService::GetToolTip(button), winrt::hstring{}) ==
+                toH(app::tr("Remove this chapter"))) {
+                trashes.push_back(button);
+            }
+        }
+        REQUIRE(trashes.size() == 4);
+        press(trashes.back());
+    });
+    settle();
+    opened = ui([&] { return inspect(); });
+    CHECK_FALSE(hasText(L"0:06.000"));
+    checkQuiet();
+
+    // Save: the chapters land on disk as edited, the editor closes, and the
+    // question the save raises follows it -- this frontend has the real
+    // MainWindow, so unlike the GTK suite the question itself is up here.
+    ui([&] { press(buttonLabeled(opened, toH(app::tr("Save")))); });
+    settle();
+    checkQuiet();
+
+    bool asked = false;
+    for (int i = 0; i < 40 && !asked; ++i) {
+        settle();
+        asked = ui([&] {
+            for (const auto& popup :
+                 mux::Media::VisualTreeHelper::GetOpenPopupsForXamlRoot(
+                     TestAccess::window(*p.window).Content().XamlRoot())) {
+                if (const auto box = popup.Child().try_as<mux::Controls::ContentDialog>()) {
+                    const std::wstring heading{std::wstring_view{
+                        winrt::unbox_value_or<winrt::hstring>(box.Title(), winrt::hstring{})}};
+                    if (heading.find(L"book.mp3") != std::wstring::npos) {
+                        // Closing it keeps the rows, which is what the close
+                        // answer means.
+                        box.Hide();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+    }
+    CHECK(asked);
+    settle();
+
+    // The reload scan the save started has to land before the file is read
+    // again -- TagLib is not two threads' library at once.
+    bool busy = true;
+    for (int i = 0; i < 200 && busy; ++i) {
+        settle();
+        busy = ui([&] { return p.session->scanning(); });
+    }
+    CHECK_FALSE(busy);
+
+    const ChapterList onDisk = p.registry.readChapters(Url::fromLocalPath(mp3));
+    REQUIRE(onDisk.size() == 3);
+    // The writer orders by start: the edited chapter (0 -> 5000 ms) is now
+    // the last, its identity rode along, and its neighbours are untouched.
+    const auto renamed = std::find_if(onDisk.begin(), onDisk.end(),
+                                      [](const Chapter& c) { return c.title == "A new name"; });
+    REQUIRE(renamed != onDisk.end());
+    CHECK(renamed->startMs == 5000);
+    CHECK(renamed->id == before[0].id);
+    CHECK(onDisk[0].title == "Two");
+    CHECK(onDisk[1].title == "Three");
+    CHECK(id != kInvalidTrackId);
     checkQuiet();
 }
 

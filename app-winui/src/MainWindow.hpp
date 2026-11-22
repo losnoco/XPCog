@@ -129,6 +129,10 @@ private:
     winrt::fire_and_forget savePlaylist(bool selectionOnly);
     winrt::fire_and_forget trashSelected();
     winrt::fire_and_forget editTags();
+    /// After a tag save changed these files' chapters: rebuild their rows,
+    /// keep them, or ask, per the tagEditorChapterRows setting -- Cog's
+    /// question, with its suppression check writing the answer back.
+    winrt::fire_and_forget followChapters(std::vector<Url> files);
     winrt::fire_and_forget renameShownPlaylist();
     /// Deletes `id`, asking first when there are tracks in it.
     winrt::fire_and_forget confirmDeletePlaylist(PlaylistSet::Id id);
