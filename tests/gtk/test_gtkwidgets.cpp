@@ -789,6 +789,7 @@ bool makeTaggedFlac(const std::filesystem::path& target, const std::vector<std::
     return ok && std::filesystem::exists(target);
 }
 
+#if XPCOG_WITH_FFMPEG
 /// A second of silent MP3 carrying three chapters, written through the
 /// registry the way the editor would. False without ffmpeg or lame.
 bool makeChapterMp3(const std::filesystem::path& target) {
@@ -853,6 +854,7 @@ bool makeChapterMp3(const std::filesystem::path& target) {
     options.stripExisting = false;
     return registry().writeMetadata(url, {}, chapters, options);
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 }  // namespace
 
@@ -977,6 +979,7 @@ TEST_CASE("the tag editor refuses a selection with no file to write", "[gtk][tag
     CHECK(h.session.playlist().size() == 2);
 }
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("the tag editor shows and edits a chaptered file's chapters",
           "[gtk][tageditor][chapters]") {
     if (!toolkit()) {
@@ -1116,6 +1119,7 @@ TEST_CASE("the tag editor shows and edits a chaptered file's chapters",
     CHECK(onDisk[1].title == "Three");
     CHECK(toolkitComplaints().empty());
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 TEST_CASE("the equaliser's scales are not narrower than they need", "[gtk][equalizer]") {
     // The WXPORT.md lesson: a control forced narrower than its own minimum is

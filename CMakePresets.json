@@ -183,6 +183,19 @@
         "XPCOG_WITH_SENTRY": "OFF",
         "VCPKG_MANIFEST_FEATURES": "ffmpeg;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
       }
+    },
+    {
+      "name": "linux-minimal",
+      "displayName": "Linux minimal (no FFmpeg)",
+      "inherits": [
+        "linux",
+        "debug"
+      ],
+      "description": "The configuration the minimp3 chapter reader exists for: XPCOG_WITH_FFMPEG defaults OFF and every other preset turns it on, so without a preset of its own the no-FFmpeg path would never be built. Features restated without ffmpeg, as linux-headless restates them without sentry. The app builds too -- this is a listener's minimal build, not only a test shape.",
+      "cacheVariables": {
+        "XPCOG_WITH_FFMPEG": "OFF",
+        "VCPKG_MANIFEST_FEATURES": "sentry;vgmstream;mgba;psf-cores;sid;musepack;adplug;libvgm"
+      }
     }
   ],
   "buildPresets": [
@@ -213,6 +226,10 @@
     {
       "name": "linux-repo-release",
       "configurePreset": "linux-repo-release"
+    },
+    {
+      "name": "linux-minimal",
+      "configurePreset": "linux-minimal"
     },
     {
       "name": "windows-debug",
@@ -249,6 +266,13 @@
     {
       "name": "linux-repo-debug",
       "configurePreset": "linux-repo-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-minimal",
+      "configurePreset": "linux-minimal",
       "output": {
         "outputOnFailure": true
       }

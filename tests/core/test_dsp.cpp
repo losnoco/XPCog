@@ -393,6 +393,7 @@ TEST_CASE("bands above Nyquist become identity sections", "[dsp]") {
 
 namespace {
 
+#if XPCOG_WITH_FFMPEG
 std::filesystem::path dspFixtureDir() {
     static const std::filesystem::path dir = [] {
         auto path = std::filesystem::temp_directory_path() / "xpcog-dsp-tests";
@@ -509,9 +510,11 @@ std::vector<float> renderWith(double preampDb, int band, double bandDb) {
     }
     return std::sqrt(sum / static_cast<double>(samples.size() - skip));
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 }  // namespace
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("the engine renders through the equaliser", "[dsp]") {
     const std::vector<float> flat = renderWith(0.0, -1, 0.0);
     REQUIRE_FALSE(flat.empty());
@@ -534,7 +537,9 @@ TEST_CASE("the engine renders through the equaliser", "[dsp]") {
     INFO("expected " << expected << ", measured " << measured);
     REQUIRE(measured == Approx(expected).epsilon(0.02));
 }
+#endif  // XPCOG_WITH_FFMPEG
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("a flat equaliser leaves the engine's output untouched", "[dsp]") {
     // Bit-identical, which is the property that lets the equaliser exist in the
     // signal path at all times without costing anyone who never opens it.
@@ -543,7 +548,9 @@ TEST_CASE("a flat equaliser leaves the engine's output untouched", "[dsp]") {
     REQUIRE_FALSE(first.empty());
     REQUIRE(first == second);
 }
+#endif  // XPCOG_WITH_FFMPEG
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("the preamp reaches the engine's output", "[dsp]") {
     const std::vector<float> flat     = renderWith(0.0, -1, 0.0);
     const std::vector<float> attenuated = renderWith(-6.0, -1, 0.0);
@@ -551,7 +558,9 @@ TEST_CASE("the preamp reaches the engine's output", "[dsp]") {
     REQUIRE(rmsOf(attenuated) / rmsOf(flat) ==
             Approx(std::pow(10.0, -6.0 / 20.0)).epsilon(0.01));
 }
+#endif  // XPCOG_WITH_FFMPEG
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("an equaliser change is heard promptly", "[dsp]") {
     // The regression guard for the bug this design exists to fix. With the chain
     // behind the deep buffer, moving a slider changed nothing audible for about
@@ -620,6 +629,7 @@ TEST_CASE("an equaliser change is heard promptly", "[dsp]") {
     // turning scheduling noise into a failure.
     REQUIRE(latency < 1.0);
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 // ---------------------------------------------------------------------------
 // The fader.
@@ -1063,6 +1073,7 @@ TEST_CASE("a back centre does not clobber a routed back pair", "[dsp]") {
 // the chain, because the audio they fade is already queued for the device.
 // ---------------------------------------------------------------------------
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("pause fades out instead of cutting", "[dsp]") {
     RingBuffer ring{1U << 14};
     auto       output = makeOfflineOutput(ring, 8.0);
@@ -1122,7 +1133,9 @@ TEST_CASE("pause fades out instead of cutting", "[dsp]") {
     REQUIRE(before > 0.2);          // still playing back then
     REQUIRE(atEnd < before / 2.0);  // and well down by the end
 }
+#endif  // XPCOG_WITH_FFMPEG
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("pause cuts immediately when fading is off", "[dsp]") {
     // The setting has to mean something in both directions: with fading off the
     // device stops in pause() itself, with no ramp and no deferred stop.
@@ -1144,6 +1157,7 @@ TEST_CASE("pause cuts immediately when fading is off", "[dsp]") {
     REQUIRE_FALSE(output->ramping());
     engine.stop();
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 TEST_CASE("the crossfade tail is the discarded audio, not what was already heard",
           "[dsp]") {
@@ -1226,6 +1240,7 @@ TEST_CASE("the crossfade holds power, not amplitude", "[dsp]") {
     REQUIRE(leg == Approx(1.0 / std::sqrt(2.0)).margin(0.03));
 }
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("a track played after a faded stop is not silent", "[dsp]") {
     // The engine's play() begins with stop(), and a faded stop ramps the output to
     // zero. The ramp state used to survive into the next start(), so from the
@@ -1272,6 +1287,7 @@ TEST_CASE("a track played after a faded stop is not silent", "[dsp]") {
     INFO("steady-state RMS " << rmsOf(body));
     REQUIRE(rmsOf(body) > 0.1);
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 TEST_CASE("the level meter reads peak and RMS and falls back to rest", "[dsp]") {
     std::vector<float> tone(4800);

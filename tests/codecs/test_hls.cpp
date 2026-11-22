@@ -517,6 +517,7 @@ constexpr double kLeftAmp    = 0.67;
 constexpr double kRightAmp   = 0.55;
 constexpr int    kFrames     = 44100 * 4;  // four seconds, so there are segments
 
+#if XPCOG_WITH_FFMPEG
 std::filesystem::path fixtureDir() {
     static const std::filesystem::path dir = [] {
         auto path = std::filesystem::temp_directory_path() / "xpcog-hls-tests";
@@ -645,9 +646,11 @@ std::vector<float> drain(IDecoder& decoder) {
     }();
     return answer;
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 }  // namespace
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("an HLS stream decodes to the signal it was built from", "[hls][conformance]") {
     if (!haveHls()) SKIP("HLS is not built into this configuration");
 
@@ -689,7 +692,9 @@ TEST_CASE("an HLS stream decodes to the signal it was built from", "[hls][confor
     CHECK(stats[0].rms == Catch::Approx(kLeftAmp / std::sqrt(2.0)).margin(0.05));
     CHECK(stats[1].rms == Catch::Approx(kRightAmp / std::sqrt(2.0)).margin(0.05));
 }
+#endif  // XPCOG_WITH_FFMPEG
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("seeking an HLS stream lands on the right audio", "[hls][conformance]") {
     if (!haveHls()) SKIP("HLS is not built into this configuration");
 
@@ -754,3 +759,4 @@ TEST_CASE("seeking an HLS stream lands on the right audio", "[hls][conformance]"
         CHECK(worstDifference(strayOffset) > 0.3);
     }
 }
+#endif  // XPCOG_WITH_FFMPEG

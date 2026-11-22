@@ -22,12 +22,15 @@
 
 #include "minimp3_ex.h"
 
+#include <algorithm>
 #include <array>
+#include <charconv>
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -75,6 +78,10 @@ public:
         if (source_ == nullptr) {
             return false;
         }
+        seekable_ = source_->seekable();
+
+        int chapterIndex = -1;
+#if XPCOG_WITH_FFMPEG
         // "file.mp3#2" is a chapter FFMPEGContainer listed, which only FFmpeg
         // knows how to play; refusing it passes it to FFmpeg's decoder, next
         // in priority. (A cue sheet's tracks open their file without a
@@ -82,11 +89,28 @@ public:
         if (!source_->url().fragment().empty()) {
             return false;
         }
-        seekable_ = source_->seekable();
+#else
+        // Without FFmpeg there is no other decoder to take the chapter, so
+        // minimp3 plays the span itself. Numeric fragments on seekable files
+        // only: a stream cannot be indexed, and anything else is not a
+        // chapter this decoder could name.
+        if (!source_->url().fragment().empty()) {
+            if (!seekable_) {
+                return false;
+            }
+            const std::string_view fragment = source_->url().fragment();
+            const auto parsed = std::from_chars(
+                fragment.data(), fragment.data() + fragment.size(), chapterIndex);
+            if (parsed.ec != std::errc{} ||
+                parsed.ptr != fragment.data() + fragment.size() || chapterIndex < 0) {
+                return false;
+            }
+        }
+#endif
 
         output_.resize(MINIMP3_MAX_SAMPLES_PER_FRAME);
 
-        if (!(seekable_ ? openSeekable() : openStreaming())) {
+        if (!(seekable_ ? openSeekable(chapterIndex) : openStreaming())) {
             return false;
         }
 
@@ -97,11 +121,20 @@ public:
     }
 
     bool readAudio(AudioChunk& out) override {
+        // A chapter ends where its span ends, mid-frame if it must: the last
+        // chunk is truncated, and the next call is the end of the stream.
+        if (chapterMode_ && framePos_ >= totalFrames_) {
+            return false;
+        }
         while (framesReady_ == 0) {
             if (!pull()) {
                 return false;
             }
             syncFormat();
+        }
+        if (chapterMode_ &&
+            static_cast<std::int64_t>(framesReady_) > totalFrames_ - framePos_) {
+            framesReady_ = static_cast<std::size_t>(totalFrames_ - framePos_);
         }
 
         out.clear();
@@ -128,9 +161,12 @@ public:
             frame = totalFrames_;
         }
 
+        // Chapter positions are relative to the chapter's start; the ex
+        // layer's sample space is the whole file's, gapless-adjusted.
+        const std::int64_t absolute = chapterMode_ ? chapterStart_ + frame : frame;
         // Sample units, interleaved: mp3dec_ex counts what it hands back.
         const std::uint64_t target =
-            static_cast<std::uint64_t>(frame) *
+            static_cast<std::uint64_t>(absolute) *
             static_cast<std::uint64_t>(ex_.info.channels);
         if (mp3dec_ex_seek(&ex_, target) != 0) {
             return -1;
@@ -159,6 +195,12 @@ public:
         framePos_     = 0;
         layer_        = 0;
         format_       = {};
+        chapterMode_  = false;
+        chapterStart_ = 0;
+        chapterEnd_   = 0;
+        chapters_.clear();
+        chapterTitle_.clear();
+        fileTitle_.clear();
     }
 
     void interrupt() override {
@@ -179,6 +221,22 @@ public:
         return props;
     }
 
+    /// A chapter row carries its own title, and the file's title names the
+    /// whole -- FFmpeg's chapter harvest files that under album, and so does
+    /// this, so a chapter row reads the same in either build.
+    [[nodiscard]] MetadataMap metadata() const override {
+        MetadataMap tags;
+        if (chapterMode_) {
+            if (!chapterTitle_.empty()) {
+                tags.set("title", chapterTitle_);
+            }
+            if (!fileTitle_.empty()) {
+                tags.set("album", fileTitle_);
+            }
+        }
+        return tags;
+    }
+
 private:
     // --- minimp3-ex I/O ---------------------------------------------------
 
@@ -195,7 +253,7 @@ private:
 
     // --- opening ----------------------------------------------------------
 
-    bool openSeekable() {
+    bool openSeekable(int chapterIndex) {
         if (source_->seek(0, SEEK_END)) {
             fileSize_ = source_->tell();
         }
@@ -204,8 +262,13 @@ private:
         }
 
         // Before minimp3 sees the file: it skips the ID3v2 tag without reading
-        // it, and the gapless numbers iTunes writes are inside.
-        foundItunes_ = applyItunesGapless();
+        // it, and the gapless numbers iTunes writes are inside. Read once;
+        // the chapter frames ride the same bytes.
+        const std::vector<std::byte> tag = readId3v2Tag();
+        foundItunes_ = applyItunesGapless(tag);
+        if (chapterIndex >= 0) {
+            codecs::parseId3v2Chapters(tag, chapters_);
+        }
         if (!source_->seek(0, SEEK_SET)) {
             return false;
         }
@@ -265,6 +328,46 @@ private:
                 static_cast<double>(fileSize_ - static_cast<std::int64_t>(id3Length_)) *
                 8.0 / seconds / 1000.0);
         }
+
+        // The chapter span, set up last so the bitrate above keeps the whole
+        // file's numbers. Only the no-FFmpeg build ever asks for one.
+        if (chapterIndex >= 0) {
+            if (static_cast<std::size_t>(chapterIndex) >= chapters_.size()) {
+                return false;
+            }
+            const Chapter& chapter = chapters_[static_cast<std::size_t>(chapterIndex)];
+            // Milliseconds to frames at the file's own rate, rounded to
+            // nearest -- av_rescale_q's convention, so the span agrees with
+            // FFmpeg's within a frame.
+            const auto toFrames = [this](std::uint64_t ms) {
+                return (static_cast<std::int64_t>(ms) * info_.hz + 500) / 1000;
+            };
+            chapterStart_ = std::min(toFrames(chapter.startMs), totalFrames_);
+            chapterEnd_   = std::clamp(toFrames(chapter.endMs), chapterStart_, totalFrames_);
+            if (chapterEnd_ <= chapterStart_) {
+                return false;
+            }
+            chapterTitle_ = chapter.title;
+            MetadataMap fileTags;
+            if (codecs::parseId3v2(tag, fileTags)) {
+                fileTitle_ = std::string{fileTags.first("title")};
+            }
+            totalFrames_ = chapterEnd_ - chapterStart_;
+            chapterMode_ = true;
+            // Land on the chapter's first sample, dropping the opening frame
+            // the format proof decoded. Sample 0 here is the first real audio
+            // sample: the ex layer has already applied the encoder delay, so
+            // chapter 0 is gapless-correct by construction.
+            const std::uint64_t target =
+                static_cast<std::uint64_t>(chapterStart_) *
+                static_cast<std::uint64_t>(ex_.info.channels);
+            if (mp3dec_ex_seek(&ex_, target) != 0) {
+                return false;
+            }
+            framesReady_ = 0;
+            framePos_    = 0;
+            seconds_     = 0.0;
+        }
         return true;
     }
 
@@ -307,25 +410,18 @@ private:
 
     // --- gapless ----------------------------------------------------------
 
-    /// Reads iTunes's `iTunSMPB` comment out of the ID3v2 tag. Returns true when
-    /// it named a padding this decoder can act on.
-    ///
-    /// The field is a line of hex: a zero, the leading padding, the trailing
-    /// padding, the true sample count, another zero, and the offset of the last
-    /// eight frames. Only four of those matter here, and every one is bounded
-    /// before use -- a wrong padding is silence at the start of a track or a
-    /// truncated ending, both of which look like a bad rip rather than a bad
-    /// parse.
-    bool applyItunesGapless() {
+    /// The whole ID3v2 tag at the start of the file, or empty when there is
+    /// none. Leaves the source positioned after the tag; the caller rewinds.
+    [[nodiscard]] std::vector<std::byte> readId3v2Tag() {
         std::array<std::byte, 10> head{};
         if (source_->read(head.data(), static_cast<std::int64_t>(head.size())) !=
             static_cast<std::int64_t>(head.size())) {
-            return false;
+            return {};
         }
 
         const std::size_t length = codecs::id3v2TagLength(head);
         if (length <= head.size()) {
-            return false;
+            return {};
         }
         id3Length_ = length;
 
@@ -337,11 +433,26 @@ private:
                 source_->read(tag.data() + filled,
                               static_cast<std::int64_t>(length - filled));
             if (got <= 0) {
-                return false;
+                return {};
             }
             filled += static_cast<std::size_t>(got);
         }
+        return tag;
+    }
 
+    /// Reads iTunes's `iTunSMPB` comment out of the ID3v2 tag bytes. Returns
+    /// true when it named a padding this decoder can act on.
+    ///
+    /// The field is a line of hex: a zero, the leading padding, the trailing
+    /// padding, the true sample count, another zero, and the offset of the last
+    /// eight frames. Only four of those matter here, and every one is bounded
+    /// before use -- a wrong padding is silence at the start of a track or a
+    /// truncated ending, both of which look like a bad rip rather than a bad
+    /// parse.
+    bool applyItunesGapless(std::span<const std::byte> tag) {
+        if (tag.empty()) {
+            return false;
+        }
         MetadataMap tags;
         if (!codecs::parseId3v2(tag, tags)) {
             return false;
@@ -495,6 +606,14 @@ private:
     std::uint32_t endPadding_   = 0;
     bool          foundItunes_  = false;
     std::size_t   id3Length_    = 0;
+
+    // --- chapters: the no-FFmpeg build plays the spans itself --------------
+    bool        chapterMode_  = false;
+    std::int64_t chapterStart_ = 0;
+    std::int64_t chapterEnd_   = 0;
+    ChapterList chapters_;
+    std::string chapterTitle_;
+    std::string fileTitle_;
 };
 
 constexpr std::string_view kExtensions[] = {"mp3", "mp2", "mpa", "m2a"};

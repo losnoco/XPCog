@@ -662,6 +662,7 @@ TEST_CASE("a folder with no cover has no cover", "[scanner][artwork]") {
     REQUIRE_FALSE(findFolderArtwork(dir.path() / "does-not-exist").has_value());
 }
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("a folder's cover becomes the album art of the tracks in it",
           "[scanner][artwork]") {
     const TempDir dir{"folderart-scan"};
@@ -692,7 +693,9 @@ TEST_CASE("a folder's cover becomes the album art of the tracks in it",
     REQUIRE(library.adoptArtwork(second));
     REQUIRE(first.artHash == second.artHash);
 }
+#endif  // XPCOG_WITH_FFMPEG
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("folder artwork can be switched off", "[scanner][artwork]") {
     const TempDir dir{"folderart-off"};
     writeSilentWav(dir.file("01 Dogs.wav"));
@@ -707,6 +710,7 @@ TEST_CASE("folder artwork can be switched off", "[scanner][artwork]") {
     REQUIRE(entries.size() == 1);
     REQUIRE_FALSE(entries[0].metadata.contains("albumart"));
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 TEST_CASE("a picture embedded in the file beats the folder's", "[scanner][artwork]") {
     const TempDir dir{"folderart-embedded"};
@@ -737,6 +741,7 @@ TEST_CASE("a picture embedded in the file beats the folder's", "[scanner][artwor
     REQUIRE(*art == bytesOf(dir.file("embedded.png")));
 }
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("a cue sheet's tracks take the cover from the sheet's folder",
           "[scanner][artwork]") {
     const TempDir dir{"folderart-cue"};
@@ -761,3 +766,4 @@ TEST_CASE("a cue sheet's tracks take the cover from the sheet's folder",
         REQUIRE(*art == bytesOf(dir.file("folder.jpg")));
     }
 }
+#endif  // XPCOG_WITH_FFMPEG

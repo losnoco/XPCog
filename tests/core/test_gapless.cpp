@@ -444,6 +444,7 @@ TEST_CASE("three tracks join without accumulating drift", "[gapless]") {
     CHECK(played.size() == 30000 * kChannels);
 }
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("an advance gives up after a few dead tracks in a row", "[gapless]") {
     // The share went away. Every entry after the one playing is unopenable, and
     // the advance used to step over all of them -- opens fail at decode speed,
@@ -484,7 +485,9 @@ TEST_CASE("an advance gives up after a few dead tracks in a row", "[gapless]") {
     CHECK(delegate.handedOut.size() == 3);
     CHECK(delegate.failed.size() == 3);
 }
+#endif  // XPCOG_WITH_FFMPEG
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("repeat-one over an unopenable file stops rather than spinning",
           "[gapless]") {
     // The other half of the same rule, and the one a count alone answers only
@@ -518,6 +521,7 @@ TEST_CASE("repeat-one over an unopenable file stops rather than spinning",
     // Tried once. Asking again gets the same URL, and that is the stop.
     CHECK(delegate.failed.size() == 1);
 }
+#endif  // XPCOG_WITH_FFMPEG
 
 TEST_CASE("the track abandoned by a seek at the seam is not skipped", "[gapless][seek]") {
     // The playlist half of the seek-at-the-seam fix, against the real Playlist

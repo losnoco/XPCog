@@ -48,6 +48,7 @@ TEST_CASE("vgmstream claims the console formats", "[vgmstream]") {
     }
 }
 
+#if XPCOG_WITH_FFMPEG
 TEST_CASE("vgmstream does not displace the dedicated decoders", "[vgmstream]") {
     // The registry sorts candidates by descending priority, so the decoder that
     // opens a .flac must still be the FLAC one even though vgmstream will also
@@ -64,3 +65,4 @@ TEST_CASE("vgmstream does not displace the dedicated decoders", "[vgmstream]") {
     // a playlist into a single unplayable row.
     CHECK(registry().isContainer(Url::fromLocalPath("dummy.m3u")));
 }
+#endif  // XPCOG_WITH_FFMPEG

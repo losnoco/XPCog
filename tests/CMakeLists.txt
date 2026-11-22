@@ -92,6 +92,10 @@ endif()
 if(XPCOG_WITH_MINIMP3)
     target_sources(xpcog-tests PRIVATE codecs/test_mp3.cpp)
     target_sources(xpcog-tests PRIVATE codecs/test_mp3_seek_accuracy.cpp)
+    # The chapter cases accept fragments only in the build the decoder does;
+    # the XPCOG_WITH_FFMPEG define every test target gets (end of file) lets
+    # one file serve both configurations.
+    target_sources(xpcog-tests PRIVATE codecs/test_mp3_chapters.cpp)
 
     # Gapless is decided by fields no synthetic fixture can vouch for: a test
     # that writes the tag it then parses proves only that it is self-consistent.
@@ -572,3 +576,14 @@ if(XPCOG_BUILD_GTK_APP)
                                         RESOURCE_LOCK xvfb)
     endif()
 endif()
+
+# Every test binary learns whether FFmpeg is built: the chapter cases accept
+# fragments only in the build the decoder does, and the cases whose fixtures
+# only FFmpeg can decode (WAV above all) compile out of the minimal build
+# rather than failing there. One define, all four targets.
+foreach(test_target xpcog-tests xpcog-uicore-tests xpcog-winui-tests xpcog-gtk-tests)
+    if(TARGET ${test_target})
+        target_compile_definitions(${test_target} PRIVATE
+            XPCOG_WITH_FFMPEG=$<BOOL:${XPCOG_WITH_FFMPEG}>)
+    endif()
+endforeach()
