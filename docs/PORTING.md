@@ -3126,7 +3126,9 @@ still standing:
   there is no way to write one from the command line. That is worth having for
   its own sake — a batch of files needs a loop, not a dialog — and it is worth
   having as the writer's second caller, since a second caller with no toolkit in
-  sight is what keeps `tagwriter` honest about where the policy lives.
+  sight is what keeps `tagwriter` honest about where the policy lives. When it
+  lands, chapters ride the same `writeMetadata` overload the editor uses — the
+  contract is already there (`docs/CHAPTERS.md`).
 
   Both of the first two were ruled out of the first version's scope rather than
   deferred by accident, and the reasons are in the plan. So was writing tags to
@@ -3134,6 +3136,31 @@ still standing:
   probe says so rather than half-doing it. REST tag writes stay out for the
   reason `docs/REST.md` already gives — a network peer does not get to write to
   the filesystem.
+
+  **Chapters shipped in 4.3.0**, and they are the one part of the tag editor
+  that *is* port work: Cog's editor reads and writes chapters on the same
+  TagLib 2.3.2, and XPCog's follow its behaviour — CHAP/CTOC for the ID3v2
+  containers, one default edition for Matroska, both the QuickTime track and
+  the Nero list for MP4, identities kept across renames, ends derived, the
+  title→album retitling of a chaptered file, and the ask/rebuild/keep question
+  after a save changes a file's expansion. `docs/CHAPTERS.md` is the plan and
+  the record. The deliberate differences:
+
+  - Chapters are a typed side channel (`ChapterList` through optional
+    reader/writer functions), never `MetadataMap` values. Cog passes them
+    inside the tag dictionary because `NSDictionary` is untyped; XPCog's map
+    is the editor's document and persists into the library, and file
+    structure does not belong there.
+  - The cue-track gate is by extension (`.cue`, `.flac`) rather than Cog's
+    `isCueSheetTrack` probe of the base file for a `cuesheet` tag. Equivalent
+    in this tree: those are the only containers that fragment those files.
+  - Matroska and TrueAudio stay `conservative` for tag promises; chapter
+    support is its own capability predicate, not a family promotion.
+  - MPEG saves `AllTags` where Cog saves ID3v2-only — a pre-existing
+    difference of the write path, which chapters ride either way.
+  - A chapter reader in minimp3 itself was considered and deferred: it would
+    serve FFmpeg-less builds (MP3 only), and the seek-accuracy investigation
+    that should lead it is written up in the plan.
 
 **7. The MIDI leftovers**, all recorded in `docs/MIDI.md`. Two of the three are
 now closed and the third is the only one left:

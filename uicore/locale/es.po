@@ -2728,3 +2728,91 @@ msgstr "no se pudo escribir el archivo"
 #: uicore/src/Session.cpp
 msgid "No writable files in the selection."
 msgstr "Ninguno de los archivos seleccionados admite guardar etiquetas."
+
+#. The chapter rows' section, shown for one file whose format holds chapters.
+#: app-winui/src/MainWindow.cpp:2090 app-gtk/src/TagEditorDialog.cpp:524
+msgid "Chapters"
+msgstr "Capítulos"
+
+#: app-winui/src/MainWindow.cpp:2093 app-gtk/src/TagEditorDialog.cpp:528
+msgid "Add Chapter"
+msgstr "Añadir capítulo"
+
+#. The section's footer: the ends are derived, not typed.
+#: app-winui/src/MainWindow.cpp:2107 app-gtk/src/TagEditorDialog.cpp:537
+msgid ""
+"Each chapter ends where the next one starts, and the last where the file ends."
+msgstr ""
+"Cada capítulo termina donde empieza el siguiente, y el último donde termina "
+"el archivo."
+
+#: app-winui/src/MainWindow.cpp:2134 app-gtk/src/TagEditorDialog.cpp:225
+msgid "Chapter title"
+msgstr "Título del capítulo"
+
+#: app-winui/src/MainWindow.cpp:2139 app-gtk/src/TagEditorDialog.cpp:229
+msgid "Remove this chapter"
+msgstr "Quitar este capítulo"
+
+#. The question after a save changed what the file expands to. The name is
+#. the file's, in Spanish quotes.
+#: app-winui/src/MainWindow.cpp:2230 app-gtk/src/MainWindow.cpp:1235
+msgid "The chapters of “%s” changed."
+msgstr "Los capítulos de «%s» cambiaron."
+
+#: app-winui/src/MainWindow.cpp:2232 app-gtk/src/MainWindow.cpp:1237
+msgid "The chapters of %zu file changed."
+msgid_plural "The chapters of %zu files changed."
+msgstr[0] "Los capítulos de %zu archivo cambiaron."
+msgstr[1] "Los capítulos de %zu archivos cambiaron."
+
+#: app-winui/src/MainWindow.cpp:2241 app-gtk/src/MainWindow.cpp:1242
+msgid ""
+"Rebuild their rows in the playlists to match? Rows for the old chapters are "
+"replaced with rows for the new ones."
+msgstr ""
+"¿Reconstruir sus filas en las listas de reproducción para que coincidan? "
+"Las filas de los capítulos anteriores se reemplazan por las de los nuevos."
+
+#: app-winui/src/MainWindow.cpp:2244 app-gtk/src/MainWindow.cpp:1252
+msgid "Do this every time"
+msgstr "Hacer esto siempre"
+
+#: app-winui/src/MainWindow.cpp:2248 app-gtk/src/MainWindow.cpp:1246
+msgid "Rebuild Rows"
+msgstr "Reconstruir filas"
+
+#: app-winui/src/MainWindow.cpp:2249 app-gtk/src/MainWindow.cpp:1245
+msgid "Keep Rows"
+msgstr "Conservar filas"
+
+#. The preferences section the chapter-rows choice lives in.
+#: app-winui/src/PreferencesGeneral.cpp:86 app-gtk/src/PreferencesDialog.cpp:934
+msgid "Tag editor"
+msgstr "Editor de etiquetas"
+
+#. The picker's three answers, in order.
+#: app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:936
+msgid "Ask every time"
+msgstr "Preguntar siempre"
+
+#: app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:936
+msgid "Rebuild the rows"
+msgstr "Reconstruir las filas"
+
+#: app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:936
+msgid "Keep the rows"
+msgstr "Conservar las filas"
+
+#: app-winui/src/PreferencesGeneral.cpp:96 app-gtk/src/PreferencesDialog.cpp:944
+msgid "After a save changes a file's chapters"
+msgstr "Cuando al guardar cambian los capítulos de un archivo"
+
+#: app-winui/src/PreferencesGeneral.cpp:105 app-gtk/src/PreferencesDialog.cpp:953
+msgid ""
+"Rebuilding replaces the file's rows in every playlist with the chapters it "
+"has now. The question's own check writes this choice too."
+msgstr ""
+"Reconstruir reemplaza las filas del archivo en todas las listas de "
+"reproducción por los capítulos que tiene ahora. La casilla de la propia "
+"pregunta también guarda esta elección."

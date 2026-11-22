@@ -392,8 +392,33 @@ what the columns show is what the file now holds, not what the dialog was
 told. If a file that appears twice in a playlist was written once, both rows
 change, because both are the same file.
 
-Cog never wrote tags at all, so none of this is port work. `docs/TAGEDITOR.md`
-has the design and the reasons behind the write semantics.
+**Chapters.** Where the file holds them — MP3 and the other ID3v2 containers
+(WAV, AIFF, DSF, DSDIFF, TrueAudio), MP4/M4A/M4B, and Matroska/MKA — a Chapters
+section lists them: a start time and a title per row, with add and remove.
+Times are typed as `m:ss.mmm` or `h:mm:ss.mmm`; ends are not typed, because
+each chapter ends where the next one starts and the last where the file does.
+MP4 is written in both kinds at once — Apple's QuickTime chapter track and the
+Nero `chpl` the rest of the world reads — from the one list. Renaming a chapter
+keeps its identity (the ID3v2 element ID, the Matroska UID), so a player that
+keys on it sees the same chapter renamed rather than a new one; a save that
+never touched the chapters does not rewrite them at all. Formats with no
+chapter mechanism — FLAC, Ogg, WavPack and the rest — show no section.
+
+A chapter row in the playlist (`book.mp3#2`) opens the editor on its file, with
+that chapter highlighted; a cue sheet's track still has no file of its own to
+write. A chaptered file's title names the whole — an audiobook's name — so it
+reads as the album, and each chapter row carries its own title. Saving chapters
+that change what the file expands to then asks: rebuild its rows in every
+playlist to match, or keep them, with a *Do this every time* that remembers the
+answer (`tagEditorChapterRows`, also on the General preferences page).
+Rebuilding replaces the file's old rows with its new chapters where the first
+of them was, and playback carries on into them.
+
+Cog never wrote tags at all, so none of this is port work — chapters are the
+exception: their read/write behaviour and the rebuild question follow Cog's
+chapter implementation, on the same TagLib. `docs/TAGEDITOR.md` has the design
+and the reasons behind the write semantics; `docs/CHAPTERS.md` has the chapter
+plan and its decisions.
 
 ## Remote control
 

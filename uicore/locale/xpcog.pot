@@ -743,147 +743,147 @@ msgstr ""
 msgid "No playable track found"
 msgstr ""
 
-#: uicore/src/Session.cpp:55
+#: uicore/src/Session.cpp:56
 msgid "Looking for files…"
 msgstr ""
 
-#: uicore/src/Session.cpp:57
+#: uicore/src/Session.cpp:58
 msgid "Looking for files in %s…"
 msgstr ""
 
-#: uicore/src/Session.cpp:61
+#: uicore/src/Session.cpp:62
 msgid "Reading %s — %d of %d"
 msgstr ""
 
-#: uicore/src/Session.cpp:63
+#: uicore/src/Session.cpp:64
 msgid "Reading %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:101
+#: uicore/src/Session.cpp:123
 msgid "Library unavailable: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:132
+#: uicore/src/Session.cpp:154
 msgid "Connecting to %s..."
 msgstr ""
 
-#: uicore/src/Session.cpp:133
+#: uicore/src/Session.cpp:155
 msgid "Connecting..."
 msgstr ""
 
-#: uicore/src/Session.cpp:246
+#: uicore/src/Session.cpp:268
 msgid "Could not save the playlist: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:294 uicore/src/Session.cpp:296
+#: uicore/src/Session.cpp:316 uicore/src/Session.cpp:318
 msgid "Playlist %zu"
 msgstr ""
 
-#: uicore/src/Session.cpp:357 app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:642
+#: uicore/src/Session.cpp:379 app-winui/src/PreferencesGeneral.cpp:110 app-gtk/src/PreferencesDialog.cpp:642
 msgid "Playlist"
 msgstr ""
 
-#: uicore/src/Session.cpp:366
+#: uicore/src/Session.cpp:388
 msgid "%zu track — %s"
 msgid_plural "%zu tracks — %s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:503
+#: uicore/src/Session.cpp:535
 msgid "Nothing was added."
 msgstr ""
 
-#: uicore/src/Session.cpp:503
+#: uicore/src/Session.cpp:535
 msgid "Nothing playable was found."
 msgstr ""
 
-#: uicore/src/Session.cpp:563
+#: uicore/src/Session.cpp:595
 msgid "Nothing could be read."
 msgstr ""
 
-#: uicore/src/Session.cpp:622
+#: uicore/src/Session.cpp:654
 msgid "Re-read %zu track."
 msgid_plural "Re-read %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:721
+#: uicore/src/Session.cpp:753
 msgid "Playlist saved: %zu selected track."
 msgid_plural "Playlist saved: %zu selected tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:725
+#: uicore/src/Session.cpp:757
 msgid "Playlist saved: %zu of %zu tracks, the rest hidden by the filter."
 msgstr ""
 
-#: uicore/src/Session.cpp:728
+#: uicore/src/Session.cpp:760
 msgid "Playlist saved."
 msgstr ""
 
-#: uicore/src/Session.cpp:758
+#: uicore/src/Session.cpp:790
 msgid "%zu file could not be moved to the trash."
 msgid_plural "%zu files could not be moved to the trash."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:911
+#: uicore/src/Session.cpp:1029
 msgid "the file could not be written"
 msgstr ""
 
-#: uicore/src/Session.cpp:913
+#: uicore/src/Session.cpp:1031
 msgid "%zu file could not have its tags saved: %s"
 msgid_plural "%zu files could not have their tags saved: %s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:917
+#: uicore/src/Session.cpp:1035
 msgid "Saved tags for %zu file."
 msgid_plural "Saved tags for %zu files."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:920
+#: uicore/src/Session.cpp:1038
 msgid "No writable files in the selection."
 msgstr ""
 
-#: uicore/src/Session.cpp:937
+#: uicore/src/Session.cpp:1114
 msgid "Could not show the file."
 msgstr ""
 
-#: uicore/src/Session.cpp:947
+#: uicore/src/Session.cpp:1124
 msgid "Play count reset for %zu track."
 msgid_plural "Play count reset for %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:961
+#: uicore/src/Session.cpp:1138
 msgid "Rating removed from %zu track."
 msgid_plural "Rating removed from %zu tracks."
 msgstr[0] ""
 msgstr[1] ""
 
-#: uicore/src/Session.cpp:1119
+#: uicore/src/Session.cpp:1296
 msgid "Last.fm access was withdrawn. Reconnect in Preferences."
 msgstr ""
 
-#: uicore/src/Session.cpp:1134
+#: uicore/src/Session.cpp:1311
 msgid "ListenBrainz rejected the token. Reconnect in Preferences."
 msgstr ""
 
-#: uicore/src/Session.cpp:1412
+#: uicore/src/Session.cpp:1589
 msgid "Now Playing"
 msgstr ""
 
-#: uicore/src/Session.cpp:1565
+#: uicore/src/Session.cpp:1742
 msgid "The remote control could not create an access token."
 msgstr ""
 
-#: uicore/src/Session.cpp:1599
+#: uicore/src/Session.cpp:1776
 msgid "Remote control unavailable: %s"
 msgstr ""
 
-#: uicore/src/Session.cpp:1604
+#: uicore/src/Session.cpp:1781
 msgid "Remote control listening on http://%s:%d"
 msgstr ""
 
@@ -1129,7 +1129,7 @@ msgstr ""
 msgid "Stereo upmixed to 5.1"
 msgstr ""
 
-#: uicore/src/SignalChain.cpp:95 uicore/src/SignalChain.cpp:99 uicore/src/TrackText.cpp:170 app-winui/src/PreferencesGeneral.cpp:211 app-winui/src/PreferencesGeneral.cpp:227 app-winui/src/PreferencesSound.cpp:243 app-gtk/src/PreferencesDialog.cpp:873 app-gtk/src/PreferencesDialog.cpp:1348 app-gtk/src/PreferencesDialog.cpp:1364
+#: uicore/src/SignalChain.cpp:95 uicore/src/SignalChain.cpp:99 uicore/src/TrackText.cpp:170 app-winui/src/PreferencesGeneral.cpp:233 app-winui/src/PreferencesGeneral.cpp:249 app-winui/src/PreferencesSound.cpp:243 app-gtk/src/PreferencesDialog.cpp:873 app-gtk/src/PreferencesDialog.cpp:1370 app-gtk/src/PreferencesDialog.cpp:1386
 msgid "Channels"
 msgstr ""
 
@@ -1157,7 +1157,7 @@ msgstr ""
 msgid "Off or flat"
 msgstr ""
 
-#: uicore/src/SignalChain.cpp:118 uicore/src/SignalChain.cpp:120 app-winui/src/MainWindow.cpp:240 app-winui/src/MiniPlayer.cpp:153 app-gtk/ui/window.blp:102
+#: uicore/src/SignalChain.cpp:118 uicore/src/SignalChain.cpp:120 app-winui/src/MainWindow.cpp:242 app-winui/src/MiniPlayer.cpp:153 app-gtk/ui/window.blp:102
 msgid "Volume"
 msgstr ""
 
@@ -1197,59 +1197,59 @@ msgstr ""
 msgid "Underruns: %zu"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:178 uicore/src/TrackText.cpp:166
+#: uicore/src/TagEditorModel.cpp:194 uicore/src/TrackText.cpp:166
 msgid "Album"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:179
+#: uicore/src/TagEditorModel.cpp:195
 msgid "Album artist"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:180 uicore/src/TrackText.cpp:165
+#: uicore/src/TagEditorModel.cpp:196 uicore/src/TrackText.cpp:165
 msgid "Artist"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:181 uicore/src/TrackText.cpp:167
+#: uicore/src/TagEditorModel.cpp:197 uicore/src/TrackText.cpp:167
 msgid "Title"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:182 uicore/src/TrackText.cpp:169
+#: uicore/src/TagEditorModel.cpp:198 uicore/src/TrackText.cpp:169
 msgid "Genre"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:183 uicore/src/TrackText.cpp:166
+#: uicore/src/TagEditorModel.cpp:199 uicore/src/TrackText.cpp:166
 msgid "Composer"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:184 uicore/src/TrackText.cpp:168
+#: uicore/src/TagEditorModel.cpp:200 uicore/src/TrackText.cpp:168
 msgid "Date"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:185 uicore/src/TrackText.cpp:167
+#: uicore/src/TagEditorModel.cpp:201 uicore/src/TrackText.cpp:167
 msgid "Track"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:186
+#: uicore/src/TagEditorModel.cpp:202
 msgid "Disc"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:187 uicore/src/TrackText.cpp:174
+#: uicore/src/TagEditorModel.cpp:203 uicore/src/TrackText.cpp:174
 msgid "Comment"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:188 app-winui/src/PreferencesGeneral.cpp:67 app-gtk/src/PreferencesDialog.cpp:915 app-gtk/ui/window.blp:159
+#: uicore/src/TagEditorModel.cpp:204 app-winui/src/PreferencesGeneral.cpp:67 app-gtk/src/PreferencesDialog.cpp:915 app-gtk/ui/window.blp:159
 msgid "Lyrics"
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:206 uicore/src/TagEditorModel.cpp:272
+#: uicore/src/TagEditorModel.cpp:222 uicore/src/TagEditorModel.cpp:288
 msgid "This format keeps only the first value."
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:264
+#: uicore/src/TagEditorModel.cpp:280
 msgid "The field above already covers this name; it will not be written."
 msgstr ""
 
-#: uicore/src/TagEditorModel.cpp:266
+#: uicore/src/TagEditorModel.cpp:282
 msgid ""
 "This format has no field for this name; it will be stored generically."
 msgstr ""
@@ -1346,19 +1346,19 @@ msgstr ""
 msgid "Pause"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:62 app-winui/src/MainWindow.cpp:200 app-winui/src/MiniPlayer.cpp:74
+#: uicore/src/TrayMenu.cpp:62 app-winui/src/MainWindow.cpp:202 app-winui/src/MiniPlayer.cpp:74
 msgid "Play"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:64 app-winui/src/MainWindow.cpp:203 app-winui/src/MiniPlayer.cpp:77 app-gtk/ui/window.blp:50
+#: uicore/src/TrayMenu.cpp:64 app-winui/src/MainWindow.cpp:205 app-winui/src/MiniPlayer.cpp:77 app-gtk/ui/window.blp:50
 msgid "Stop"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:66 app-winui/src/MainWindow.cpp:198 app-winui/src/MiniPlayer.cpp:72 app-gtk/ui/window.blp:40
+#: uicore/src/TrayMenu.cpp:66 app-winui/src/MainWindow.cpp:200 app-winui/src/MiniPlayer.cpp:72 app-gtk/ui/window.blp:40
 msgid "Previous"
 msgstr ""
 
-#: uicore/src/TrayMenu.cpp:67 app-winui/src/MainWindow.cpp:205 app-winui/src/MiniPlayer.cpp:79 app-gtk/ui/window.blp:55
+#: uicore/src/TrayMenu.cpp:67 app-winui/src/MainWindow.cpp:207 app-winui/src/MiniPlayer.cpp:79 app-gtk/ui/window.blp:55
 msgid "Next"
 msgstr ""
 
@@ -1466,128 +1466,128 @@ msgstr ""
 msgid "&Add to Playlist"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:583 app-gtk/src/MainWindow.cpp:411
+#: app-winui/src/MainWindow.cpp:591 app-gtk/src/MainWindow.cpp:416
 msgid "XPCog is still running"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:584 app-gtk/src/MainWindow.cpp:412
+#: app-winui/src/MainWindow.cpp:592 app-gtk/src/MainWindow.cpp:417
 msgid ""
 "Playback continues. Use the tray icon to bring the window back or to quit."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1071 app-gtk/src/MainWindow.cpp:531
+#: app-winui/src/MainWindow.cpp:1084 app-gtk/src/MainWindow.cpp:536
 msgid "The playing track is hidden by the filter"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1212 app-gtk/src/MainWindow.cpp:1075
+#: app-winui/src/MainWindow.cpp:1225 app-gtk/src/MainWindow.cpp:1080
 msgid "Add to Playlist"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1516 app-gtk/src/MainWindow.cpp:849
+#: app-winui/src/MainWindow.cpp:1528 app-gtk/src/MainWindow.cpp:854
 msgid "Audio Files"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1517 app-winui/src/MainWindow.cpp:2023 app-gtk/src/MainWindow.cpp:854 app-gtk/src/PreferencesDialog.cpp:268 app-gtk/src/TagEditorDialog.cpp:387
+#: app-winui/src/MainWindow.cpp:1529 app-winui/src/MainWindow.cpp:2043 app-gtk/src/MainWindow.cpp:859 app-gtk/src/PreferencesDialog.cpp:268 app-gtk/src/TagEditorDialog.cpp:479
 msgid "All Files"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1559
+#: app-winui/src/MainWindow.cpp:1571
 msgid "M3U Playlist (*.m3u8)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1561
+#: app-winui/src/MainWindow.cpp:1573
 msgid "PLS Playlist (*.pls)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1563
+#: app-winui/src/MainWindow.cpp:1575
 msgid "XSPF Playlist (*.xspf)"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1572 app-gtk/src/Dialogs.cpp:250
+#: app-winui/src/MainWindow.cpp:1584 app-gtk/src/Dialogs.cpp:250
 msgid "Could not write the playlist."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1585 app-gtk/src/Dialogs.cpp:76
+#: app-winui/src/MainWindow.cpp:1597 app-gtk/src/Dialogs.cpp:76
 msgid "Open URL"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1590 app-gtk/src/Dialogs.cpp:120
+#: app-winui/src/MainWindow.cpp:1602 app-gtk/src/Dialogs.cpp:120
 msgid "Open"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1591 app-winui/src/MainWindow.cpp:1626 app-winui/src/MainWindow.cpp:1657 app-winui/src/MainWindow.cpp:1700 app-winui/src/MainWindow.cpp:2053 app-winui/src/PreferencesServices.cpp:90 app-winui/src/PreferencesServices.cpp:461 app-gtk/src/Dialogs.cpp:119 app-gtk/src/Dialogs.cpp:159 app-gtk/src/MainWindow.cpp:1173 app-gtk/src/PreferencesDialog.cpp:951 app-gtk/src/PreferencesDialog.cpp:1463 app-gtk/src/TagEditorDialog.cpp:251 app-gtk/ui/window.blp:200
+#: app-winui/src/MainWindow.cpp:1603 app-winui/src/MainWindow.cpp:1638 app-winui/src/MainWindow.cpp:1669 app-winui/src/MainWindow.cpp:1712 app-winui/src/MainWindow.cpp:2198 app-winui/src/PreferencesServices.cpp:90 app-winui/src/PreferencesServices.cpp:461 app-gtk/src/Dialogs.cpp:119 app-gtk/src/Dialogs.cpp:159 app-gtk/src/MainWindow.cpp:1183 app-gtk/src/PreferencesDialog.cpp:973 app-gtk/src/PreferencesDialog.cpp:1485 app-gtk/src/TagEditorDialog.cpp:343 app-gtk/ui/window.blp:200
 msgid "Cancel"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1620 app-gtk/src/MainWindow.cpp:1103
+#: app-winui/src/MainWindow.cpp:1632 app-gtk/src/MainWindow.cpp:1108
 msgid "Rename Playlist"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1625 app-gtk/src/MainWindow.cpp:1104
+#: app-winui/src/MainWindow.cpp:1637 app-gtk/src/MainWindow.cpp:1109
 msgid "Rename"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1650 app-gtk/src/MainWindow.cpp:1093
+#: app-winui/src/MainWindow.cpp:1662 app-gtk/src/MainWindow.cpp:1098
 msgid "Delete “%s”?"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1652 app-gtk/src/MainWindow.cpp:1094
+#: app-winui/src/MainWindow.cpp:1664 app-gtk/src/MainWindow.cpp:1099
 msgid "Its %zu track is removed from the playlist. This cannot be undone."
 msgid_plural ""
 "Its %zu tracks are removed from the playlist. This cannot be undone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/MainWindow.cpp:1656 app-gtk/src/MainWindow.cpp:1098
+#: app-winui/src/MainWindow.cpp:1668 app-gtk/src/MainWindow.cpp:1103
 msgid "Delete"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1682 app-gtk/src/MainWindow.cpp:1166
+#: app-winui/src/MainWindow.cpp:1694 app-gtk/src/MainWindow.cpp:1176
 msgid "Move %u file to the trash?"
 msgid_plural "Move %u files to the trash?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/MainWindow.cpp:1692 app-gtk/src/MainWindow.cpp:1170
+#: app-winui/src/MainWindow.cpp:1704 app-gtk/src/MainWindow.cpp:1180
 msgid ""
 "Undo puts the rows back in the playlist. It does not bring the files back -- restore those from the trash itself."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1695 app-gtk/src/MainWindow.cpp:1180
+#: app-winui/src/MainWindow.cpp:1707 app-gtk/src/MainWindow.cpp:1190
 msgid "Do not ask again"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1769 app-gtk/src/TagEditorDialog.cpp:95
+#: app-winui/src/MainWindow.cpp:1785 app-gtk/src/TagEditorDialog.cpp:100
 msgid ""
 "The selected files disagree here; what you type replaces it in all of them."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1792 app-gtk/src/TagEditorDialog.cpp:198
+#: app-winui/src/MainWindow.cpp:1808 app-gtk/src/TagEditorDialog.cpp:286
 msgid "The file carries its own cover image."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1794 app-gtk/src/TagEditorDialog.cpp:200
+#: app-winui/src/MainWindow.cpp:1810 app-gtk/src/TagEditorDialog.cpp:288
 msgid ""
 "This album's picture comes from a file in its folder; it is not stored in this file."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1797 app-gtk/src/TagEditorDialog.cpp:203
+#: app-winui/src/MainWindow.cpp:1813 app-gtk/src/TagEditorDialog.cpp:291
 msgid "The file carries no cover image."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1800 app-gtk/src/TagEditorDialog.cpp:207
+#: app-winui/src/MainWindow.cpp:1816 app-gtk/src/TagEditorDialog.cpp:295
 msgid "The cover will be removed when you save."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1803 app-gtk/src/TagEditorDialog.cpp:211
+#: app-winui/src/MainWindow.cpp:1819 app-gtk/src/TagEditorDialog.cpp:299
 msgid "The chosen image will replace the file's cover."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1825 app-gtk/src/TagEditorDialog.cpp:243
+#: app-winui/src/MainWindow.cpp:1845 app-gtk/src/TagEditorDialog.cpp:335
 msgid "Edit Tags"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1842 app-gtk/src/TagEditorDialog.cpp:268
+#: app-winui/src/MainWindow.cpp:1862 app-gtk/src/TagEditorDialog.cpp:360
 msgid ""
 "Editing %zu file. Fields you change here are written to every one of them; the rest stays as it is."
 msgid_plural ""
@@ -1595,78 +1595,126 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/MainWindow.cpp:1890 app-gtk/src/TagEditorDialog.cpp:322
+#: app-winui/src/MainWindow.cpp:1910 app-gtk/src/TagEditorDialog.cpp:414
 msgid "Other tags"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1892 app-gtk/src/TagEditorDialog.cpp:329
+#: app-winui/src/MainWindow.cpp:1912 app-gtk/src/TagEditorDialog.cpp:421
 msgid "Add another tag"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1917 app-gtk/src/TagEditorDialog.cpp:139
+#: app-winui/src/MainWindow.cpp:1937 app-gtk/src/TagEditorDialog.cpp:144
 msgid "Name"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1920 app-gtk/src/TagEditorDialog.cpp:143
+#: app-winui/src/MainWindow.cpp:1940 app-gtk/src/TagEditorDialog.cpp:148
 msgid "Values, separated by commas"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1925 app-gtk/src/TagEditorDialog.cpp:147
+#: app-winui/src/MainWindow.cpp:1945 app-gtk/src/TagEditorDialog.cpp:152
 msgid "Remove this tag"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1979 app-gtk/src/TagEditorDialog.cpp:345
+#: app-winui/src/MainWindow.cpp:1999 app-gtk/src/TagEditorDialog.cpp:437
 msgid "Cover"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1990 app-winui/src/PreferencesServices.cpp:111 app-gtk/src/PreferencesDialog.cpp:972 app-gtk/src/TagEditorDialog.cpp:354
+#: app-winui/src/MainWindow.cpp:2010 app-winui/src/PreferencesServices.cpp:111 app-gtk/src/PreferencesDialog.cpp:994 app-gtk/src/TagEditorDialog.cpp:446
 msgid "Remove"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1992 app-gtk/src/TagEditorDialog.cpp:355
+#: app-winui/src/MainWindow.cpp:2012 app-gtk/src/TagEditorDialog.cpp:447
 msgid "Keep"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:1994 app-gtk/src/TagEditorDialog.cpp:356
+#: app-winui/src/MainWindow.cpp:2014 app-gtk/src/TagEditorDialog.cpp:448
 msgid "Replace..."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2020 app-gtk/src/TagEditorDialog.cpp:382
+#: app-winui/src/MainWindow.cpp:2040 app-gtk/src/TagEditorDialog.cpp:474
 msgid "Images"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2052 app-gtk/src/TagEditorDialog.cpp:252
+#: app-winui/src/MainWindow.cpp:2090 app-gtk/src/TagEditorDialog.cpp:524
+msgid "Chapters"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2093 app-gtk/src/TagEditorDialog.cpp:528
+msgid "Add Chapter"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2107 app-gtk/src/TagEditorDialog.cpp:537
+msgid ""
+"Each chapter ends where the next one starts, and the last where the file ends."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2134 app-gtk/src/TagEditorDialog.cpp:225
+msgid "Chapter title"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2139 app-gtk/src/TagEditorDialog.cpp:229
+msgid "Remove this chapter"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2197 app-gtk/src/TagEditorDialog.cpp:344
 msgid "Save"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2072
+#: app-winui/src/MainWindow.cpp:2230 app-gtk/src/MainWindow.cpp:1235
+msgid "The chapters of “%s” changed."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2232 app-gtk/src/MainWindow.cpp:1237
+msgid "The chapters of %zu file changed."
+msgid_plural "The chapters of %zu files changed."
+msgstr[0] ""
+msgstr[1] ""
+
+#: app-winui/src/MainWindow.cpp:2241 app-gtk/src/MainWindow.cpp:1242
+msgid ""
+"Rebuild their rows in the playlists to match? Rows for the old chapters are replaced with rows for the new ones."
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2244 app-gtk/src/MainWindow.cpp:1252
+msgid "Do this every time"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2248 app-gtk/src/MainWindow.cpp:1246
+msgid "Rebuild Rows"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2249 app-gtk/src/MainWindow.cpp:1245
+msgid "Keep Rows"
+msgstr ""
+
+#: app-winui/src/MainWindow.cpp:2268
 msgid "About XPCog"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2074 app-winui/src/Panes.cpp:835 app-winui/src/PlaylistTable.cpp:393
+#: app-winui/src/MainWindow.cpp:2270 app-winui/src/Panes.cpp:835 app-winui/src/PlaylistTable.cpp:393
 msgid "Close"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2094 app-gtk/src/MainWindow.cpp:1222
+#: app-winui/src/MainWindow.cpp:2290 app-gtk/src/MainWindow.cpp:1293
 msgid "Crash reporting"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2099 app-gtk/src/MainWindow.cpp:1223
+#: app-winui/src/MainWindow.cpp:2295 app-gtk/src/MainWindow.cpp:1294
 msgid ""
 "Would you like to allow Sentry to submit crash reports?\n"
 "\n"
 "You may turn this off again in Preferences. We won't ask you again."
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2102 app-winui/src/PreferencesGeneral.cpp:61 app-gtk/src/MainWindow.cpp:1234 app-gtk/src/PreferencesDialog.cpp:909
+#: app-winui/src/MainWindow.cpp:2298 app-winui/src/PreferencesGeneral.cpp:61 app-gtk/src/MainWindow.cpp:1305 app-gtk/src/PreferencesDialog.cpp:909
 msgid "Privacy policy"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2108 app-gtk/src/MainWindow.cpp:1227
+#: app-winui/src/MainWindow.cpp:2304 app-gtk/src/MainWindow.cpp:1298
 msgid "Yes"
 msgstr ""
 
-#: app-winui/src/MainWindow.cpp:2109 app-gtk/src/MainWindow.cpp:1226
+#: app-winui/src/MainWindow.cpp:2305 app-gtk/src/MainWindow.cpp:1297
 msgid "No"
 msgstr ""
 
@@ -1674,35 +1722,35 @@ msgstr ""
 msgid "Signal Inspector"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:34 app-winui/src/PreferencesGeneral.cpp:204 app-winui/src/PreferencesGeneral.cpp:221 app-winui/src/Visualizers.cpp:33 app-gtk/src/PreferencesDialog.cpp:1341 app-gtk/src/PreferencesDialog.cpp:1358 app-gtk/src/Visualizers.cpp:211 app-gtk/src/Visualizers.cpp:522
+#: app-winui/src/Oscilloscope.cpp:34 app-winui/src/PreferencesGeneral.cpp:226 app-winui/src/PreferencesGeneral.cpp:243 app-winui/src/Visualizers.cpp:33 app-gtk/src/PreferencesDialog.cpp:1363 app-gtk/src/PreferencesDialog.cpp:1380 app-gtk/src/Visualizers.cpp:211 app-gtk/src/Visualizers.cpp:522
 msgid "Mono"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:35 app-winui/src/PreferencesGeneral.cpp:205 app-winui/src/PreferencesGeneral.cpp:222 app-winui/src/Visualizers.cpp:34 app-gtk/src/PreferencesDialog.cpp:1342 app-gtk/src/PreferencesDialog.cpp:1359 app-gtk/src/Visualizers.cpp:212 app-gtk/src/Visualizers.cpp:523
+#: app-winui/src/Oscilloscope.cpp:35 app-winui/src/PreferencesGeneral.cpp:227 app-winui/src/PreferencesGeneral.cpp:244 app-winui/src/Visualizers.cpp:34 app-gtk/src/PreferencesDialog.cpp:1364 app-gtk/src/PreferencesDialog.cpp:1381 app-gtk/src/Visualizers.cpp:212 app-gtk/src/Visualizers.cpp:523
 msgid "Left"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:36 app-winui/src/PreferencesGeneral.cpp:206 app-winui/src/PreferencesGeneral.cpp:223 app-winui/src/Visualizers.cpp:35 app-gtk/src/PreferencesDialog.cpp:1343 app-gtk/src/PreferencesDialog.cpp:1360 app-gtk/src/Visualizers.cpp:213 app-gtk/src/Visualizers.cpp:524
+#: app-winui/src/Oscilloscope.cpp:36 app-winui/src/PreferencesGeneral.cpp:228 app-winui/src/PreferencesGeneral.cpp:245 app-winui/src/Visualizers.cpp:35 app-gtk/src/PreferencesDialog.cpp:1365 app-gtk/src/PreferencesDialog.cpp:1382 app-gtk/src/Visualizers.cpp:213 app-gtk/src/Visualizers.cpp:524
 msgid "Right"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:37 app-winui/src/PreferencesGeneral.cpp:208 app-winui/src/PreferencesGeneral.cpp:224 app-winui/src/Visualizers.cpp:37 app-gtk/src/PreferencesDialog.cpp:1345 app-gtk/src/PreferencesDialog.cpp:1361 app-gtk/src/Visualizers.cpp:215 app-gtk/src/Visualizers.cpp:525
+#: app-winui/src/Oscilloscope.cpp:37 app-winui/src/PreferencesGeneral.cpp:230 app-winui/src/PreferencesGeneral.cpp:246 app-winui/src/Visualizers.cpp:37 app-gtk/src/PreferencesDialog.cpp:1367 app-gtk/src/PreferencesDialog.cpp:1383 app-gtk/src/Visualizers.cpp:215 app-gtk/src/Visualizers.cpp:525
 msgid "Stereo, stacked"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:38 app-winui/src/PreferencesGeneral.cpp:209 app-winui/src/PreferencesGeneral.cpp:225 app-winui/src/Visualizers.cpp:38 app-gtk/src/PreferencesDialog.cpp:1346 app-gtk/src/PreferencesDialog.cpp:1362 app-gtk/src/Visualizers.cpp:216 app-gtk/src/Visualizers.cpp:526
+#: app-winui/src/Oscilloscope.cpp:38 app-winui/src/PreferencesGeneral.cpp:231 app-winui/src/PreferencesGeneral.cpp:247 app-winui/src/Visualizers.cpp:38 app-gtk/src/PreferencesDialog.cpp:1368 app-gtk/src/PreferencesDialog.cpp:1384 app-gtk/src/Visualizers.cpp:216 app-gtk/src/Visualizers.cpp:526
 msgid "Stereo, overlaid"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:332 app-winui/src/PreferencesGeneral.cpp:234 app-gtk/src/PreferencesDialog.cpp:1371 app-gtk/src/Visualizers.cpp:530
+#: app-winui/src/Oscilloscope.cpp:332 app-winui/src/PreferencesGeneral.cpp:256 app-gtk/src/PreferencesDialog.cpp:1393 app-gtk/src/Visualizers.cpp:530
 msgid "Hold a steady tone still"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:336 app-winui/src/PreferencesGeneral.cpp:237 app-gtk/src/PreferencesDialog.cpp:1374 app-gtk/src/Visualizers.cpp:531
+#: app-winui/src/Oscilloscope.cpp:336 app-winui/src/PreferencesGeneral.cpp:259 app-gtk/src/PreferencesDialog.cpp:1396 app-gtk/src/Visualizers.cpp:531
 msgid "Fill under the trace"
 msgstr ""
 
-#: app-winui/src/Oscilloscope.cpp:340 app-winui/src/PreferencesGeneral.cpp:238 app-gtk/src/PreferencesDialog.cpp:1375 app-gtk/src/Visualizers.cpp:532
+#: app-winui/src/Oscilloscope.cpp:340 app-winui/src/PreferencesGeneral.cpp:260 app-gtk/src/PreferencesDialog.cpp:1397 app-gtk/src/Visualizers.cpp:532
 msgid "Logarithmic scale"
 msgstr ""
 
@@ -1866,7 +1914,7 @@ msgstr ""
 msgid "About LRCLIB"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:80 app-winui/src/PreferencesServices.cpp:270 app-gtk/src/PreferencesDialog.cpp:928 app-gtk/src/PreferencesDialog.cpp:1131
+#: app-winui/src/PreferencesGeneral.cpp:80 app-winui/src/PreferencesServices.cpp:270 app-gtk/src/PreferencesDialog.cpp:928 app-gtk/src/PreferencesDialog.cpp:1153
 msgid "API address"
 msgstr ""
 
@@ -1875,454 +1923,479 @@ msgid ""
 "This build was configured without HTTP support, so it cannot reach LRCLIB."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:89 app-gtk/src/PreferencesDialog.cpp:643
+#: app-winui/src/PreferencesGeneral.cpp:86 app-gtk/src/PreferencesDialog.cpp:934
+msgid "Tag editor"
+msgstr ""
+
+#: app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:936
+msgid "Ask every time"
+msgstr ""
+
+#: app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:936
+msgid "Rebuild the rows"
+msgstr ""
+
+#: app-winui/src/PreferencesGeneral.cpp:88 app-gtk/src/PreferencesDialog.cpp:936
+msgid "Keep the rows"
+msgstr ""
+
+#: app-winui/src/PreferencesGeneral.cpp:96 app-gtk/src/PreferencesDialog.cpp:944
+msgid "After a save changes a file's chapters"
+msgstr ""
+
+#: app-winui/src/PreferencesGeneral.cpp:105 app-gtk/src/PreferencesDialog.cpp:953
+msgid ""
+"Rebuilding replaces the file's rows in every playlist with the chapters it has now. The question's own check writes this choice too."
+msgstr ""
+
+#: app-winui/src/PreferencesGeneral.cpp:111 app-gtk/src/PreferencesDialog.cpp:643
 msgid "Stop after every track"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:90 app-gtk/src/PreferencesDialog.cpp:644
+#: app-winui/src/PreferencesGeneral.cpp:112 app-gtk/src/PreferencesDialog.cpp:644
 msgid "Follow the playing track in the playlist"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:91 app-gtk/src/PreferencesDialog.cpp:645
+#: app-winui/src/PreferencesGeneral.cpp:113 app-gtk/src/PreferencesDialog.cpp:645
 msgid "Move the selection to each track as it starts."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:92 app-gtk/src/PreferencesDialog.cpp:646
+#: app-winui/src/PreferencesGeneral.cpp:114 app-gtk/src/PreferencesDialog.cpp:646
 msgid "Keep playing while looking for the next playable track"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:94 app-gtk/src/PreferencesDialog.cpp:648
+#: app-winui/src/PreferencesGeneral.cpp:116 app-gtk/src/PreferencesDialog.cpp:648
 msgid ""
 "When Next or Previous lands on a track that will not open, carry on playing the current one until a playable track is found."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:96 app-gtk/src/PreferencesDialog.cpp:650
+#: app-winui/src/PreferencesGeneral.cpp:118 app-gtk/src/PreferencesDialog.cpp:650
 msgid "Resume playback on startup"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:97 app-gtk/src/PreferencesDialog.cpp:651
+#: app-winui/src/PreferencesGeneral.cpp:119 app-gtk/src/PreferencesDialog.cpp:651
 msgid ""
 "Continue the last track from where it stopped. The track is selected either way."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:99 app-gtk/src/PreferencesDialog.cpp:653
+#: app-winui/src/PreferencesGeneral.cpp:121 app-gtk/src/PreferencesDialog.cpp:653
 msgid "Read cue sheets when adding folders"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:100 app-gtk/src/PreferencesDialog.cpp:654
+#: app-winui/src/PreferencesGeneral.cpp:122 app-gtk/src/PreferencesDialog.cpp:654
 msgid "Read playlists when adding folders"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:101 app-gtk/src/PreferencesDialog.cpp:655
+#: app-winui/src/PreferencesGeneral.cpp:123 app-gtk/src/PreferencesDialog.cpp:655
 msgid "Ignore AppleDouble files"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:102 app-gtk/src/PreferencesDialog.cpp:656
+#: app-winui/src/PreferencesGeneral.cpp:124 app-gtk/src/PreferencesDialog.cpp:656
 msgid ""
 "The \"._\" files macOS leaves beside the audio. They keep the track's extension but hold no audio."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:107 app-gtk/src/PreferencesDialog.cpp:1212
+#: app-winui/src/PreferencesGeneral.cpp:129 app-gtk/src/PreferencesDialog.cpp:1234
 msgid "Appearance"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:109 app-gtk/src/PreferencesDialog.cpp:1214
+#: app-winui/src/PreferencesGeneral.cpp:131 app-gtk/src/PreferencesDialog.cpp:1236
 msgid "Close to tray"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:110 app-gtk/src/PreferencesDialog.cpp:1215
+#: app-winui/src/PreferencesGeneral.cpp:132 app-gtk/src/PreferencesDialog.cpp:1237
 msgid ""
 "Closing the window leaves XPCog running in the notification area instead of quitting."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:117 app-gtk/src/PreferencesDialog.cpp:1222
+#: app-winui/src/PreferencesGeneral.cpp:139 app-gtk/src/PreferencesDialog.cpp:1244
 msgid "This session has no notification area to keep XPCog in."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:121 app-gtk/src/PreferencesDialog.cpp:1226
+#: app-winui/src/PreferencesGeneral.cpp:143 app-gtk/src/PreferencesDialog.cpp:1248
 msgid "Keep the mini player on top"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:123 app-gtk/src/PreferencesDialog.cpp:1229
+#: app-winui/src/PreferencesGeneral.cpp:145 app-gtk/src/PreferencesDialog.cpp:1251
 msgid "Show the waveform in the seek bar"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:124 app-gtk/src/PreferencesDialog.cpp:1230
+#: app-winui/src/PreferencesGeneral.cpp:146 app-gtk/src/PreferencesDialog.cpp:1252
 msgid ""
 "The track's shape behind the playhead, analysed the first time it plays and kept for every play after."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:126 app-gtk/src/PreferencesDialog.cpp:1232
+#: app-winui/src/PreferencesGeneral.cpp:148 app-gtk/src/PreferencesDialog.cpp:1254
 msgid "Rectified: stand the waveform on the bottom edge"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:128 app-gtk/src/PreferencesDialog.cpp:1234
+#: app-winui/src/PreferencesGeneral.cpp:150 app-gtk/src/PreferencesDialog.cpp:1256
 msgid "Instead of mirroring it about the centre line."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:129 app-gtk/src/PreferencesDialog.cpp:1235
+#: app-winui/src/PreferencesGeneral.cpp:151 app-gtk/src/PreferencesDialog.cpp:1257
 msgid "Logarithmic: draw levels in decibels"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:130 app-gtk/src/PreferencesDialog.cpp:1237
+#: app-winui/src/PreferencesGeneral.cpp:152 app-gtk/src/PreferencesDialog.cpp:1259
 msgid "So quiet material is a shape rather than a line."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:131 app-gtk/src/PreferencesDialog.cpp:1238
+#: app-winui/src/PreferencesGeneral.cpp:153 app-gtk/src/PreferencesDialog.cpp:1260
 msgid "Height"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:163 app-gtk/src/PreferencesDialog.cpp:1274
+#: app-winui/src/PreferencesGeneral.cpp:185 app-gtk/src/PreferencesDialog.cpp:1296
 msgid "Played part follows the system accent colour"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:164 app-gtk/src/PreferencesDialog.cpp:1275
+#: app-winui/src/PreferencesGeneral.cpp:186 app-gtk/src/PreferencesDialog.cpp:1297
 msgid "Played colour"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:165 app-gtk/src/PreferencesDialog.cpp:1276
+#: app-winui/src/PreferencesGeneral.cpp:187 app-gtk/src/PreferencesDialog.cpp:1298
 msgid "Unplayed part follows the theme's text colour"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:166 app-gtk/src/PreferencesDialog.cpp:1277
+#: app-winui/src/PreferencesGeneral.cpp:188 app-gtk/src/PreferencesDialog.cpp:1299
 msgid "Unplayed colour"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:186 app-gtk/src/PreferencesDialog.cpp:936
+#: app-winui/src/PreferencesGeneral.cpp:208 app-gtk/src/PreferencesDialog.cpp:958
 msgid "Notifications"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:187 app-gtk/src/PreferencesDialog.cpp:937
+#: app-winui/src/PreferencesGeneral.cpp:209 app-gtk/src/PreferencesDialog.cpp:959
 msgid "Enable notifications"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:188 app-gtk/src/PreferencesDialog.cpp:938
+#: app-winui/src/PreferencesGeneral.cpp:210 app-gtk/src/PreferencesDialog.cpp:960
 msgid "Show album art"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:189 app-gtk/src/PreferencesDialog.cpp:939
+#: app-winui/src/PreferencesGeneral.cpp:211 app-gtk/src/PreferencesDialog.cpp:961
 msgid ""
 "Shown as each track starts. Focus Assist or Do Not Disturb can hold notifications back."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:194 app-gtk/src/PreferencesDialog.cpp:1331
+#: app-winui/src/PreferencesGeneral.cpp:216 app-gtk/src/PreferencesDialog.cpp:1353
 msgid "Visualizers"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:196 app-gtk/src/PreferencesDialog.cpp:1333
+#: app-winui/src/PreferencesGeneral.cpp:218 app-gtk/src/PreferencesDialog.cpp:1355
 msgid "Spectrum"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:197 app-gtk/src/PreferencesDialog.cpp:1334
+#: app-winui/src/PreferencesGeneral.cpp:219 app-gtk/src/PreferencesDialog.cpp:1356
 msgid "Bands"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:198 app-gtk/src/PreferencesDialog.cpp:1335
+#: app-winui/src/PreferencesGeneral.cpp:220 app-gtk/src/PreferencesDialog.cpp:1357
 msgid "Musical notes (one bar per semitone)"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:198 app-gtk/src/PreferencesDialog.cpp:1335
+#: app-winui/src/PreferencesGeneral.cpp:220 app-gtk/src/PreferencesDialog.cpp:1357
 msgid "Even frequency spacing"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:207 app-winui/src/Visualizers.cpp:36 app-gtk/src/PreferencesDialog.cpp:1344 app-gtk/src/Visualizers.cpp:214
+#: app-winui/src/PreferencesGeneral.cpp:229 app-winui/src/Visualizers.cpp:36 app-gtk/src/PreferencesDialog.cpp:1366 app-gtk/src/Visualizers.cpp:214
 msgid "Stereo, mirrored"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:212 app-gtk/src/PreferencesDialog.cpp:1349
+#: app-winui/src/PreferencesGeneral.cpp:234 app-gtk/src/PreferencesDialog.cpp:1371
 msgid "Bar colour"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:213 app-gtk/src/PreferencesDialog.cpp:1350
+#: app-winui/src/PreferencesGeneral.cpp:235 app-gtk/src/PreferencesDialog.cpp:1372
 msgid "Peak colour"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:214 app-winui/src/Visualizers.cpp:288 app-gtk/src/PreferencesDialog.cpp:1351 app-gtk/src/Visualizers.cpp:220
+#: app-winui/src/PreferencesGeneral.cpp:236 app-winui/src/Visualizers.cpp:288 app-gtk/src/PreferencesDialog.cpp:1373 app-gtk/src/Visualizers.cpp:220
 msgid "Show peak markers"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:215 app-gtk/src/PreferencesDialog.cpp:1352
+#: app-winui/src/PreferencesGeneral.cpp:237 app-gtk/src/PreferencesDialog.cpp:1374
 msgid "Quietest level shown (dB)"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:216 app-gtk/src/PreferencesDialog.cpp:1353
+#: app-winui/src/PreferencesGeneral.cpp:238 app-gtk/src/PreferencesDialog.cpp:1375
 msgid ""
 "Bars sit on semitones from C0, so the display lines up with the notes being played."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:219 app-gtk/src/PreferencesDialog.cpp:1356
+#: app-winui/src/PreferencesGeneral.cpp:241 app-gtk/src/PreferencesDialog.cpp:1378
 msgid "Oscilloscope"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:228 app-gtk/src/PreferencesDialog.cpp:1365
+#: app-winui/src/PreferencesGeneral.cpp:250 app-gtk/src/PreferencesDialog.cpp:1387
 msgid "Trace colour"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:229 app-gtk/src/PreferencesDialog.cpp:1366
+#: app-winui/src/PreferencesGeneral.cpp:251 app-gtk/src/PreferencesDialog.cpp:1388
 msgid "Background"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:230 app-gtk/src/PreferencesDialog.cpp:1367
+#: app-winui/src/PreferencesGeneral.cpp:252 app-gtk/src/PreferencesDialog.cpp:1389
 msgid "Stroke width"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:231 app-gtk/src/PreferencesDialog.cpp:1368
+#: app-winui/src/PreferencesGeneral.cpp:253 app-gtk/src/PreferencesDialog.cpp:1390
 msgid "Vertical gain"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:232 app-gtk/src/PreferencesDialog.cpp:1369
+#: app-winui/src/PreferencesGeneral.cpp:254 app-gtk/src/PreferencesDialog.cpp:1391
 msgid "Window (ms)"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:233 app-gtk/src/PreferencesDialog.cpp:1370
+#: app-winui/src/PreferencesGeneral.cpp:255 app-gtk/src/PreferencesDialog.cpp:1392
 msgid "Frames per second"
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:235 app-gtk/src/PreferencesDialog.cpp:1372
+#: app-winui/src/PreferencesGeneral.cpp:257 app-gtk/src/PreferencesDialog.cpp:1394
 msgid ""
 "Start each frame at a rising zero crossing, so a tone does not crawl across the display."
 msgstr ""
 
-#: app-winui/src/PreferencesGeneral.cpp:239 app-gtk/src/PreferencesDialog.cpp:1376
+#: app-winui/src/PreferencesGeneral.cpp:261 app-gtk/src/PreferencesDialog.cpp:1398
 msgid ""
 "Levels in decibels rather than linear, so quiet material is a shape rather than a line."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:87 app-gtk/src/PreferencesDialog.cpp:948
+#: app-winui/src/PreferencesServices.cpp:87 app-gtk/src/PreferencesDialog.cpp:970
 msgid "Scrobble to Last.fm"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:89 app-gtk/src/PreferencesDialog.cpp:950
+#: app-winui/src/PreferencesServices.cpp:89 app-gtk/src/PreferencesDialog.cpp:972
 msgid "Connect..."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:91 app-winui/src/PreferencesServices.cpp:265 app-gtk/src/PreferencesDialog.cpp:952 app-gtk/src/PreferencesDialog.cpp:1126
+#: app-winui/src/PreferencesServices.cpp:91 app-winui/src/PreferencesServices.cpp:265 app-gtk/src/PreferencesDialog.cpp:974 app-gtk/src/PreferencesDialog.cpp:1148
 msgid "Disconnect"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:93 app-winui/src/PreferencesServices.cpp:267 app-gtk/src/PreferencesDialog.cpp:954 app-gtk/src/PreferencesDialog.cpp:1128
+#: app-winui/src/PreferencesServices.cpp:93 app-winui/src/PreferencesServices.cpp:267 app-gtk/src/PreferencesDialog.cpp:976 app-gtk/src/PreferencesDialog.cpp:1150
 msgid ""
 "Plays are sent once you have heard half a track, or four minutes of it, whichever comes first. Tracks under 30 seconds are never scrobbled."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:95 app-gtk/src/PreferencesDialog.cpp:956
+#: app-winui/src/PreferencesServices.cpp:95 app-gtk/src/PreferencesDialog.cpp:978
 msgid "Your Last.fm applications"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:96 app-gtk/src/PreferencesDialog.cpp:957
+#: app-winui/src/PreferencesServices.cpp:96 app-gtk/src/PreferencesDialog.cpp:979
 msgid ""
 "Revoking access there stops scrobbling immediately, whatever this pane says."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:98 app-gtk/src/PreferencesDialog.cpp:959
+#: app-winui/src/PreferencesServices.cpp:98 app-gtk/src/PreferencesDialog.cpp:981
 msgid "API account"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:100 app-gtk/src/PreferencesDialog.cpp:961
+#: app-winui/src/PreferencesServices.cpp:100 app-gtk/src/PreferencesDialog.cpp:983
 msgid "Create a Last.fm API account"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:105 app-gtk/src/PreferencesDialog.cpp:964
+#: app-winui/src/PreferencesServices.cpp:105 app-gtk/src/PreferencesDialog.cpp:986
 msgid "API key"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:109 app-gtk/src/PreferencesDialog.cpp:968
+#: app-winui/src/PreferencesServices.cpp:109 app-gtk/src/PreferencesDialog.cpp:990
 msgid "Shared secret"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:110 app-gtk/src/PreferencesDialog.cpp:971
+#: app-winui/src/PreferencesServices.cpp:110 app-gtk/src/PreferencesDialog.cpp:993
 msgid "Use this key"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:113 app-gtk/src/PreferencesDialog.cpp:974
+#: app-winui/src/PreferencesServices.cpp:113 app-gtk/src/PreferencesDialog.cpp:996
 msgid ""
 "A connection belongs to the key that opened it, so changing the key disconnects you and you connect again under the new one."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:143 app-gtk/src/PreferencesDialog.cpp:1001
+#: app-winui/src/PreferencesServices.cpp:143 app-gtk/src/PreferencesDialog.cpp:1023
 msgid "Using your own API key."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:145 app-gtk/src/PreferencesDialog.cpp:1004
+#: app-winui/src/PreferencesServices.cpp:145 app-gtk/src/PreferencesDialog.cpp:1026
 msgid ""
 "Using the key built into XPCog. Enter your own to scrobble as an application of your own."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:148 app-gtk/src/PreferencesDialog.cpp:1009
+#: app-winui/src/PreferencesServices.cpp:148 app-gtk/src/PreferencesDialog.cpp:1031
 msgid "This build carries no API key, so scrobbling needs one of yours."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:156 app-gtk/src/PreferencesDialog.cpp:1019
+#: app-winui/src/PreferencesServices.cpp:156 app-gtk/src/PreferencesDialog.cpp:1041
 msgid ""
 "The system password store is not available, so a Last.fm session cannot be kept."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:160 app-gtk/src/PreferencesDialog.cpp:1023
+#: app-winui/src/PreferencesServices.cpp:160 app-gtk/src/PreferencesDialog.cpp:1045
 msgid "Waiting for you to allow access in your browser..."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:162 app-winui/src/PreferencesServices.cpp:304 app-gtk/src/PreferencesDialog.cpp:1025 app-gtk/src/PreferencesDialog.cpp:1166
+#: app-winui/src/PreferencesServices.cpp:162 app-winui/src/PreferencesServices.cpp:304 app-gtk/src/PreferencesDialog.cpp:1047 app-gtk/src/PreferencesDialog.cpp:1188
 msgid "Connected as %s."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:164 app-gtk/src/PreferencesDialog.cpp:1027
+#: app-winui/src/PreferencesServices.cpp:164 app-gtk/src/PreferencesDialog.cpp:1049
 msgid ""
 "Not connected. Connecting opens Last.fm in your browser; XPCog never sees your password."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:169 app-winui/src/PreferencesServices.cpp:311 app-gtk/src/PreferencesDialog.cpp:1032 app-gtk/src/PreferencesDialog.cpp:1173
+#: app-winui/src/PreferencesServices.cpp:169 app-winui/src/PreferencesServices.cpp:311 app-gtk/src/PreferencesDialog.cpp:1054 app-gtk/src/PreferencesDialog.cpp:1195
 msgid "%zu play waiting to be sent."
 msgid_plural "%zu plays waiting to be sent."
 msgstr[0] ""
 msgstr[1] ""
 
-#: app-winui/src/PreferencesServices.cpp:216 app-gtk/src/PreferencesDialog.cpp:1078
+#: app-winui/src/PreferencesServices.cpp:216 app-gtk/src/PreferencesDialog.cpp:1100
 msgid ""
 "The key changed, so you have been disconnected. Connect again to scrobble under it."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:220 app-gtk/src/PreferencesDialog.cpp:1082
+#: app-winui/src/PreferencesServices.cpp:220 app-gtk/src/PreferencesDialog.cpp:1104
 msgid "Both the API key and the shared secret are needed."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:223 app-gtk/src/PreferencesDialog.cpp:1085
+#: app-winui/src/PreferencesServices.cpp:223 app-gtk/src/PreferencesDialog.cpp:1107
 msgid "The system password store would not keep the key."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:258 app-gtk/src/PreferencesDialog.cpp:1119
+#: app-winui/src/PreferencesServices.cpp:258 app-gtk/src/PreferencesDialog.cpp:1141
 msgid "Scrobble to ListenBrainz"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:262 app-gtk/src/PreferencesDialog.cpp:1122
+#: app-winui/src/PreferencesServices.cpp:262 app-gtk/src/PreferencesDialog.cpp:1144
 msgid "User token"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:263 app-gtk/src/PreferencesDialog.cpp:1124
+#: app-winui/src/PreferencesServices.cpp:263 app-gtk/src/PreferencesDialog.cpp:1146
 msgid "Your ListenBrainz user token"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:264 app-gtk/src/PreferencesDialog.cpp:1125
+#: app-winui/src/PreferencesServices.cpp:264 app-gtk/src/PreferencesDialog.cpp:1147
 msgid "Connect"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:269 app-gtk/src/PreferencesDialog.cpp:1130
+#: app-winui/src/PreferencesServices.cpp:269 app-gtk/src/PreferencesDialog.cpp:1152
 msgid "Server"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:271 app-gtk/src/PreferencesDialog.cpp:1132
+#: app-winui/src/PreferencesServices.cpp:271 app-gtk/src/PreferencesDialog.cpp:1154
 msgid ""
 "The public service by default. A ListenBrainz you run yourself, or Maloja, takes the same requests at its own address."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:298 app-gtk/src/PreferencesDialog.cpp:1160
+#: app-winui/src/PreferencesServices.cpp:298 app-gtk/src/PreferencesDialog.cpp:1182
 msgid ""
 "The system password store is not available, so a ListenBrainz token cannot be kept."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:302 app-gtk/src/PreferencesDialog.cpp:1164
+#: app-winui/src/PreferencesServices.cpp:302 app-gtk/src/PreferencesDialog.cpp:1186
 msgid "Checking the token with ListenBrainz..."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:306 app-gtk/src/PreferencesDialog.cpp:1168
+#: app-winui/src/PreferencesServices.cpp:306 app-gtk/src/PreferencesDialog.cpp:1190
 msgid ""
 "Not connected. Paste the user token from your ListenBrainz settings page and press Connect."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:354 app-gtk/src/PreferencesDialog.cpp:1381
+#: app-winui/src/PreferencesServices.cpp:354 app-gtk/src/PreferencesDialog.cpp:1403
 msgid "Remote"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:356 app-gtk/src/PreferencesDialog.cpp:1383
+#: app-winui/src/PreferencesServices.cpp:356 app-gtk/src/PreferencesDialog.cpp:1405
 msgid "Allow remote control over HTTP"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:358 app-gtk/src/PreferencesDialog.cpp:1385
+#: app-winui/src/PreferencesServices.cpp:358 app-gtk/src/PreferencesDialog.cpp:1407
 msgid "This computer only"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:359 app-gtk/src/PreferencesDialog.cpp:1386
+#: app-winui/src/PreferencesServices.cpp:359 app-gtk/src/PreferencesDialog.cpp:1408
 msgid "Any computer on the network"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:361 app-gtk/src/PreferencesDialog.cpp:1388
+#: app-winui/src/PreferencesServices.cpp:361 app-gtk/src/PreferencesDialog.cpp:1410
 msgid "Listen on"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:362 app-gtk/src/PreferencesDialog.cpp:1389
+#: app-winui/src/PreferencesServices.cpp:362 app-gtk/src/PreferencesDialog.cpp:1411
 msgid "Port"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:363 app-gtk/src/PreferencesDialog.cpp:1390
+#: app-winui/src/PreferencesServices.cpp:363 app-gtk/src/PreferencesDialog.cpp:1412
 msgid "Allow changes, not just reading"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:364 app-gtk/src/PreferencesDialog.cpp:1391
+#: app-winui/src/PreferencesServices.cpp:364 app-gtk/src/PreferencesDialog.cpp:1413
 msgid "Let programs on this computer connect without the token"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:366 app-gtk/src/PreferencesDialog.cpp:1393
+#: app-winui/src/PreferencesServices.cpp:366 app-gtk/src/PreferencesDialog.cpp:1415
 msgid ""
 "For a script or a command line driving your own player. Any program on this computer can then control it, including a web page that was told to try. Other computers still need the token."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:370 app-gtk/src/PreferencesDialog.cpp:1401
+#: app-winui/src/PreferencesServices.cpp:370 app-gtk/src/PreferencesDialog.cpp:1423
 msgid "Copy"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:371 app-winui/src/PreferencesServices.cpp:460 app-gtk/src/PreferencesDialog.cpp:1402 app-gtk/src/PreferencesDialog.cpp:1464
+#: app-winui/src/PreferencesServices.cpp:371 app-winui/src/PreferencesServices.cpp:460 app-gtk/src/PreferencesDialog.cpp:1424 app-gtk/src/PreferencesDialog.cpp:1486
 msgid "Regenerate"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:379 app-gtk/src/PreferencesDialog.cpp:1398
+#: app-winui/src/PreferencesServices.cpp:379 app-gtk/src/PreferencesDialog.cpp:1420
 msgid "Access token"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:402 app-gtk/src/PreferencesDialog.cpp:1419
+#: app-winui/src/PreferencesServices.cpp:402 app-gtk/src/PreferencesDialog.cpp:1441
 msgid "This build has no remote-control server."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:404 app-gtk/src/PreferencesDialog.cpp:1421
+#: app-winui/src/PreferencesServices.cpp:404 app-gtk/src/PreferencesDialog.cpp:1443
 msgid ""
 "The system password store is not available, so an access token cannot be kept safely."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:412 app-gtk/src/PreferencesDialog.cpp:1427
+#: app-winui/src/PreferencesServices.cpp:412 app-gtk/src/PreferencesDialog.cpp:1449
 msgid "Off. Nothing is listening."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:418 app-gtk/src/PreferencesDialog.cpp:1433
+#: app-winui/src/PreferencesServices.cpp:418 app-gtk/src/PreferencesDialog.cpp:1455
 msgid "Listening on %s -- open %s/docs in a browser to try it."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:421 app-gtk/src/PreferencesDialog.cpp:1436
+#: app-winui/src/PreferencesServices.cpp:421 app-gtk/src/PreferencesDialog.cpp:1458
 msgid "Programs on this computer are connecting without the token."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:425 app-gtk/src/PreferencesDialog.cpp:1440
+#: app-winui/src/PreferencesServices.cpp:425 app-gtk/src/PreferencesDialog.cpp:1462
 msgid ""
 "Reachable from other machines. The connection is not encrypted and the access token is sent with every request, so use this on a network you trust."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:454 app-gtk/src/PreferencesDialog.cpp:1459
+#: app-winui/src/PreferencesServices.cpp:454 app-gtk/src/PreferencesDialog.cpp:1481
 msgid "Regenerate Access Token"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:457 app-gtk/src/PreferencesDialog.cpp:1460
+#: app-winui/src/PreferencesServices.cpp:457 app-gtk/src/PreferencesDialog.cpp:1482
 msgid ""
 "Every device using the current token will stop working until it is given the new one.\n"
 "\n"
 "Generate a new token?"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:477 app-gtk/src/PreferencesDialog.cpp:1492
+#: app-winui/src/PreferencesServices.cpp:477 app-gtk/src/PreferencesDialog.cpp:1514
 msgid "Advanced"
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:548 app-gtk/src/PreferencesDialog.cpp:1538
+#: app-winui/src/PreferencesServices.cpp:548 app-gtk/src/PreferencesDialog.cpp:1560
 msgid "Maintained automatically, and not meant to be edited."
 msgstr ""
 
-#: app-winui/src/PreferencesServices.cpp:551 app-gtk/src/PreferencesDialog.cpp:1542
+#: app-winui/src/PreferencesServices.cpp:551 app-gtk/src/PreferencesDialog.cpp:1564
 msgid ""
 "The greyed rows are what XPCog remembers about the last session, not settings."
 msgstr ""
@@ -2446,45 +2519,45 @@ msgid ""
 "Varispeed resamples, as a record player would: one tempo slider, and the pitch follows it."
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:265 app-gtk/src/PreferencesDialog.cpp:1311
+#: app-winui/src/PreferencesSound.cpp:265 app-gtk/src/PreferencesDialog.cpp:1333
 msgid "Synthesiser"
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:266 app-gtk/src/PreferencesDialog.cpp:1312
+#: app-winui/src/PreferencesSound.cpp:266 app-gtk/src/PreferencesDialog.cpp:1334
 msgid "SoundFont"
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:268 app-gtk/src/PreferencesDialog.cpp:1314
+#: app-winui/src/PreferencesSound.cpp:268 app-gtk/src/PreferencesDialog.cpp:1336
 msgid "SC-55 ROMs"
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:269 app-gtk/src/PreferencesDialog.cpp:1315
+#: app-winui/src/PreferencesSound.cpp:269 app-gtk/src/PreferencesDialog.cpp:1337
 msgid "Sample rate (Hz)"
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:270 app-gtk/src/PreferencesDialog.cpp:1316
+#: app-winui/src/PreferencesSound.cpp:270 app-gtk/src/PreferencesDialog.cpp:1338
 msgid "Default play time (s)"
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:271 app-gtk/src/PreferencesDialog.cpp:1317
+#: app-winui/src/PreferencesSound.cpp:271 app-gtk/src/PreferencesDialog.cpp:1339
 msgid "Default fade time (s)"
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:272 app-gtk/src/PreferencesDialog.cpp:1318
+#: app-winui/src/PreferencesSound.cpp:272 app-gtk/src/PreferencesDialog.cpp:1340
 msgid "Default loop count"
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:273 app-gtk/src/PreferencesDialog.cpp:1319
+#: app-winui/src/PreferencesSound.cpp:273 app-gtk/src/PreferencesDialog.cpp:1341
 msgid ""
 "SpessaSynth needs a bank: any .sf2, .sf3 or .dls. Files that carry their own bank use that instead."
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:275 app-gtk/src/PreferencesDialog.cpp:1321
+#: app-winui/src/PreferencesSound.cpp:275 app-gtk/src/PreferencesDialog.cpp:1343
 msgid ""
 "The SC-55 needs its five ROM files, which are not supplied. Choose the folder or the archive they came in; they are recognised by content, so nothing needs renaming. Without them, MIDI plays on the OPL3. It also ignores the sample rate and always renders at its own."
 msgstr ""
 
-#: app-winui/src/PreferencesSound.cpp:280 app-gtk/src/PreferencesDialog.cpp:1326
+#: app-winui/src/PreferencesSound.cpp:280 app-gtk/src/PreferencesDialog.cpp:1348
 msgid "These apply to every synthesised format, not only MIDI."
 msgstr ""
 
@@ -2584,15 +2657,15 @@ msgstr ""
 msgid "Ported from Cog"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:842
+#: app-gtk/src/MainWindow.cpp:847
 msgid "Open Files"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:880
+#: app-gtk/src/MainWindow.cpp:885
 msgid "Open Folder"
 msgstr ""
 
-#: app-gtk/src/MainWindow.cpp:1174
+#: app-gtk/src/MainWindow.cpp:1184
 msgid "Move to Trash"
 msgstr ""
 
@@ -2616,7 +2689,7 @@ msgstr ""
 msgid "No Results Found"
 msgstr ""
 
-#: app-gtk/src/TagEditorDialog.cpp:380
+#: app-gtk/src/TagEditorDialog.cpp:472
 msgid "Choose a cover image"
 msgstr ""
 
