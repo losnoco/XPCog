@@ -16,9 +16,15 @@
 //
 // Not a replacement for TagLib, which reads tags from files and does the whole
 // standard. This is for the streaming path, where TagLib has nothing to open.
+//
+// A sibling entry point, parseId3v2Chapters, reads the chapter frames
+// (CHAP/CTOC) over the same walk for the minimp3 chapter path -- see
+// docs/MINIMP3-CHAPTERS.md. The narrow parser itself stays text and comments;
+// the sibling is a separate question asked of the same bytes.
 
 #pragma once
 
+#include "xpcog/core/Chapters.hpp"
 #include "xpcog/core/MetadataMap.hpp"
 
 #include <cstddef>
@@ -41,5 +47,17 @@ namespace xpcog::codecs {
 /// `TPE1` -> `artist`, ...), so a tag parsed here merges with one the demuxer
 /// harvested rather than sitting beside it under a different name.
 bool parseId3v2(std::span<const std::byte> data, MetadataMap& out);
+
+/// Parses the CHAP/CTOC frames of the ID3v2 tag at the start of `data`,
+/// replacing `out`. Returns false when there is no readable tag there; a
+/// readable tag with no chapter frames yields an empty list.
+///
+/// Order is the top-level *ordered* CTOC's child order when one resolves,
+/// else every chapter stable-sorted by start -- TagLib's reader's rule, so
+/// the minimp3 path and the TagLib path list the same chapters the same way.
+/// Element IDs are kept opaque in `Chapter::id`; titles come from the TIT2
+/// embedded in each CHAP. CHAP/CTOC are ID3v2.3+ frames: a .2 tag yields
+/// nothing, correctly.
+bool parseId3v2Chapters(std::span<const std::byte> data, ChapterList& out);
 
 }  // namespace xpcog::codecs

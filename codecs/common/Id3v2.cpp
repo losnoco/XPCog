@@ -403,4 +403,212 @@ bool parseId3v2(std::span<const std::byte> data, MetadataMap& out) {
     return found;
 }
 
+namespace {
+
+struct RawToc {
+    bool                     topLevel = false;
+    bool                     ordered  = false;
+    std::vector<std::string> children;
+};
+
+/// CHAP and CTOC are four-character frames, so they exist only in .3 and .4;
+/// the size rules are the narrow parser's, including the plain-integer
+/// fallback for taggers that write .4 sizes wrong.
+[[nodiscard]] std::size_t chapterFrameSize(std::span<const std::byte> body, std::size_t at,
+                                           std::uint8_t major) {
+    if (major == 3) {
+        return bigEndian32(body, at + 4);
+    }
+    const bool plain = (byteAt(body, at + 4) & 0x80U) != 0 ||
+                       (byteAt(body, at + 5) & 0x80U) != 0 ||
+                       (byteAt(body, at + 6) & 0x80U) != 0 ||
+                       (byteAt(body, at + 7) & 0x80U) != 0;
+    return plain ? bigEndian32(body, at + 4) : syncsafe(body, at + 4);
+}
+
+/// The null-terminated element ID at the front of a CHAP or CTOC payload.
+/// Returns the offset past the terminator, or npos when there is none.
+[[nodiscard]] std::size_t elementIdEnd(std::span<const std::byte> payload, std::string& out) {
+    std::size_t at = 0;
+    while (at < payload.size() && byteAt(payload, at) != 0) {
+        ++at;
+    }
+    if (at >= payload.size()) {
+        return std::string_view::npos;
+    }
+    out.assign(reinterpret_cast<const char*>(payload.data()), at);
+    return at + 1;
+}
+
+[[nodiscard]] bool parseChapFrame(std::span<const std::byte> payload, std::uint8_t major,
+                                  Chapter& out) {
+    // The element ID is kept opaque in Chapter::id: players key chapter
+    // identity on it, and the writer keeps it across renames.
+    const std::size_t afterId = elementIdEnd(payload, out.id);
+    if (afterId == std::string_view::npos || afterId + 16 > payload.size()) {
+        return false;
+    }
+    // Start and end in milliseconds; the two byte offsets after them are
+    // ignored, as TagLib's reader ignores them -- the times are what count.
+    out.startMs = bigEndian32(payload, afterId);
+    out.endMs   = bigEndian32(payload, afterId + 4);
+
+    // Embedded frames: a chapter's title is a TIT2 inside its CHAP. Walk them
+    // with the same size rules; anything else is left alone.
+    std::size_t at = afterId + 16;
+    while (at + 10 <= payload.size()) {
+        const std::string_view identifier{reinterpret_cast<const char*>(payload.data() + at), 4};
+        if (identifier[0] == '\0' || !isFrameIdentifier(identifier)) {
+            break;
+        }
+        const std::size_t frameSize = chapterFrameSize(payload, at, major);
+        at += 10;
+        if (frameSize == 0 || frameSize > payload.size() - at) {
+            break;
+        }
+        const std::span<const std::byte> embedded = payload.subspan(at, frameSize);
+        at += frameSize;
+        if (identifier == "TIT2" && !embedded.empty() && out.title.empty()) {
+            const std::vector<std::string> values =
+                decodeTextList(byteAt(embedded, 0), embedded.subspan(1));
+            if (!values.empty()) {
+                out.title = values.front();
+            }
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] bool parseCtocFrame(std::span<const std::byte> payload, RawToc& out) {
+    std::string       id;
+    const std::size_t afterId = elementIdEnd(payload, id);
+    if (afterId == std::string_view::npos || afterId + 2 > payload.size()) {
+        return false;
+    }
+    const std::uint8_t flags = byteAt(payload, afterId);
+    out.topLevel             = (flags & 0x02U) != 0;
+    out.ordered              = (flags & 0x01U) != 0;
+    const std::uint8_t count = byteAt(payload, afterId + 1);
+    std::size_t        at    = afterId + 2;
+    for (std::uint8_t i = 0; i < count; ++i) {
+        std::string       child;
+        const std::size_t next = elementIdEnd(payload.subspan(at), child);
+        if (next == std::string_view::npos) {
+            break;  // truncated table: keep what was read
+        }
+        out.children.push_back(std::move(child));
+        at += next;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool parseId3v2Chapters(std::span<const std::byte> data, ChapterList& out) {
+    out.clear();
+    if (!looksLikeHeader(data)) {
+        return false;
+    }
+
+    const std::uint8_t  major = byteAt(data, 3);
+    const std::uint8_t  flags = byteAt(data, 5);
+    const std::uint32_t size  = syncsafe(data, 6);
+    if (major < 2 || major > 4 || size == 0) {
+        return false;
+    }
+
+    const std::size_t available =
+        std::min<std::size_t>(size, data.size() - kHeaderSize);
+    std::span<const std::byte> body = data.subspan(kHeaderSize, available);
+
+    std::vector<std::byte> unsynchronised;
+    if ((flags & 0x80U) != 0) {
+        unsynchronised = deUnsynchronise(body);
+        body           = unsynchronised;
+    }
+    if ((flags & 0x40U) != 0) {
+        if (major == 2) {
+            return false;
+        }
+        if (body.size() < 4) {
+            return false;
+        }
+        const std::size_t extended =
+            (major >= 4) ? syncsafe(body, 0) : bigEndian32(body, 0) + 4;
+        if (extended >= body.size()) {
+            return false;
+        }
+        body = body.subspan(extended);
+    }
+
+    // A readable .2 tag holds no chapters: CHAP and CTOC are .3 frames onward.
+    if (major == 2) {
+        return true;
+    }
+
+    std::vector<Chapter> chapters;
+    RawToc               toc;
+    bool                 haveToc = false;
+    std::size_t             at      = 0;
+    while (at + 10 <= body.size()) {
+        const std::string_view identifier{reinterpret_cast<const char*>(body.data() + at), 4};
+        if (identifier[0] == '\0' || !isFrameIdentifier(identifier)) {
+            break;
+        }
+        const std::size_t frameSize = chapterFrameSize(body, at, major);
+        at += 10;
+        if (frameSize == 0 || frameSize > body.size() - at) {
+            break;
+        }
+        const std::span<const std::byte> payload = body.subspan(at, frameSize);
+        at += frameSize;
+
+        if (identifier == "CHAP") {
+            Chapter raw;
+            if (!parseChapFrame(payload, major, raw)) {
+                continue;
+            }
+            // Duplicate element IDs: the first frame wins, which is what
+            // TagLib's findByElementID answers.
+            const bool duplicate =
+                std::any_of(chapters.begin(), chapters.end(),
+                            [&raw](const Chapter& held) { return held.id == raw.id; });
+            if (!duplicate) {
+                chapters.push_back(std::move(raw));
+            }
+        } else if (identifier == "CTOC" && !haveToc) {
+            RawToc raw;
+            if (parseCtocFrame(payload, raw) && raw.topLevel) {
+                toc     = std::move(raw);
+                haveToc = true;
+            }
+        }
+    }
+
+    // The top-level ordered table's order when it gives one -- the order a
+    // player lists -- otherwise every chapter by start. TagLib's reader
+    // resolves it the same way, so the two agree by construction.
+    if (haveToc && toc.ordered) {
+        for (const std::string& child : toc.children) {
+            const auto found = std::find_if(chapters.begin(), chapters.end(),
+                                            [&child](const Chapter& raw) {
+                                                return raw.id == child;
+                                            });
+            if (found != chapters.end()) {
+                out.push_back(*found);
+            }
+        }
+    }
+    if (out.empty()) {
+        for (Chapter& raw : chapters) {
+            out.push_back(std::move(raw));
+        }
+        std::stable_sort(out.begin(), out.end(),
+                         [](const Chapter& a, const Chapter& b) {
+                             return a.startMs < b.startMs;
+                         });
+    }
+    return true;
+}
+
 }  // namespace xpcog::codecs
