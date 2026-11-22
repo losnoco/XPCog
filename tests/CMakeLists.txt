@@ -91,6 +91,7 @@ endif()
 # to feed the muxer from through the ffmpeg binary.
 if(XPCOG_WITH_MINIMP3)
     target_sources(xpcog-tests PRIVATE codecs/test_mp3.cpp)
+    target_sources(xpcog-tests PRIVATE codecs/test_mp3_seek_accuracy.cpp)
 
     # Gapless is decided by fields no synthetic fixture can vouch for: a test
     # that writes the tag it then parses proves only that it is self-consistent.
