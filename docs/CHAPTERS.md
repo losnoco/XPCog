@@ -240,6 +240,12 @@ playlist edit and follows the existing structural-edit policy);
 
 ## Considered: a chapter reader in minimp3 (follow-up, not parity)
 
+**Landed in 4.4.0** as the phased follow-up sketched below, on branch
+`mp3-chapters`. `docs/MINIMP3-CHAPTERS.md` is the plan and record;
+`docs/MINIMP3-CHAPTER-PROBE.md` is the seek-accuracy investigation that
+de-risked it (zero-sample positional error, CBR and VBR alike). The notes here
+are the original consideration, kept as the rationale.
+
 Raised after Phase 3: Cog's minimp3 imports libid3tag, and XPCog's already
 parses ID3v2, so could minimp3 read chapters and play the spans itself?
 

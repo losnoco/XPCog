@@ -414,6 +414,13 @@ answer (`tagEditorChapterRows`, also on the General preferences page).
 Rebuilding replaces the file's old rows with its new chapters where the first
 of them was, and playback carries on into them.
 
+MP3 chapters play in every build. With FFmpeg built it plays the spans; without
+it (`XPCOG_WITH_FFMPEG=OFF`, the option's default) minimp3 reads the same
+CHAP/CTOC frames, lists the same rows through a container of its own, and plays
+the spans itself — chapter 0 starting at the first real audio sample, the
+encoder's gapless delay already removed. M4A and Matroska chapters need FFmpeg.
+`docs/MINIMP3-CHAPTERS.md` has the design and the cross-build agreement tests.
+
 Cog never wrote tags at all, so none of this is port work — chapters are the
 exception: their read/write behaviour and the rebuild question follow Cog's
 chapter implementation, on the same TagLib. `docs/TAGEDITOR.md` has the design

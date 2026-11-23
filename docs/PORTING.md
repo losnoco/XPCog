@@ -1108,6 +1108,21 @@ The badge and progress bar stay a Windows feature and macOS keeps the do-nothing
   not vendored: `-DXPCOG_FATE_SUITE=/path/to/fate-suite` points at a copy that
   already exists, and the cases skip when it is unset.
 
+  **A deliberate divergence: chapters without FFmpeg.** Cog's MP3Decoder refuses
+  URL fragments unconditionally -- FFmpeg plays its chapters. XPCog's minimp3
+  accepts a numeric `#N` fragment when FFmpeg is *not* built
+  (`XPCOG_WITH_FFMPEG=OFF`, the option's default): a sibling of the narrow ID3v2
+  parser reads the CHAP/CTOC frames, the decoder plays the span in minimp3-ex's
+  gapless-adjusted sample space, and a 0.4 container beside it lists the rows --
+  below FFmpegContainer's 0.5, so a full build's expansion is unchanged. With
+  FFmpeg built the refusal stands, exactly as Cog. The reason is the default: a
+  minimal build has no FFmpeg, so chaptered MP3s would otherwise neither expand
+  into rows nor play as chapters while the editor still writes them. Chapter 0
+  starts at the first real sample, the encoder delay already removed -- the one
+  place this is more accurate than FFmpeg's span. `docs/MINIMP3-CHAPTERS.md` is
+  the plan and record; the agreement tests prove the two readers list the same
+  chapters from both TagLib- and ffmpeg-written fixtures.
+
 - **Chained Vorbis and Opus, the same two answers.** Both libraries already
   chained: `ov_read_float` and `op_read_float` decode straight across a link
   boundary, so unlike FLAC these never stopped. What they did instead was
