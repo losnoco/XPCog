@@ -221,8 +221,9 @@ chapters play in every build and gapless chapter 0; `docs/PORTING.md`'s
 minimp3 survey records the deliberate divergence from Cog and its gating;
 `docs/CHAPTERS.md`'s follow-up section is marked landed and points here.
 This file and the probe note are committed as the record. The manual E2E
-walkthrough in a minimal build is the one remaining step, done by hand
-against the `~/Music/XPCog-Chapter-E2E` fixtures.
+walkthrough in a minimal build (`build/linux-minimal-local`) against the
+`~/Music/XPCog-Chapter-E2E` fixtures was verified by hand on 2026-11-22 —
+the last step, now closed.
 
 ## Verification
 
