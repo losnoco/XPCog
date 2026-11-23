@@ -619,6 +619,50 @@ private:
 constexpr std::string_view kExtensions[] = {"mp3", "mp2", "mpa", "m2a"};
 constexpr std::string_view kMimeTypes[]  = {"audio/mpeg", "audio/mp3", "audio/x-mp3"};
 
+/// A tagged file lists its chapters as #N rows, the shape FFmpegContainer
+/// produces, so a build without FFmpeg opens an audiobook one chapter per row.
+/// Registered below FFmpegContainer, which wins mp3 in a full build. Reads only
+/// the ID3v2 tag -- never the audio -- and a stream it cannot seek is left whole.
+[[nodiscard]] std::vector<Url> expandMp3Chapters(const Url& url, ISource& source,
+                                                 const PluginRegistry&) {
+    if (!url.fragment().empty() || !source.seekable()) {
+        return {url};
+    }
+
+    std::array<std::byte, 10> head{};
+    if (source.read(head.data(), static_cast<std::int64_t>(head.size())) !=
+        static_cast<std::int64_t>(head.size())) {
+        return {url};
+    }
+    const std::size_t length = codecs::id3v2TagLength(head);
+    if (length <= head.size()) {
+        return {url};
+    }
+    std::vector<std::byte> tag(length);
+    std::memcpy(tag.data(), head.data(), head.size());
+    std::size_t filled = head.size();
+    while (filled < length) {
+        const std::int64_t got =
+            source.read(tag.data() + filled, static_cast<std::int64_t>(length - filled));
+        if (got <= 0) {
+            break;  // a truncated tag still parses the chapters it holds
+        }
+        filled += static_cast<std::size_t>(got);
+    }
+    tag.resize(filled);
+
+    ChapterList chapters;
+    if (!codecs::parseId3v2Chapters(tag, chapters) || chapters.size() <= 1) {
+        return {url};
+    }
+    std::vector<Url> urls;
+    urls.reserve(chapters.size());
+    for (std::size_t i = 0; i < chapters.size(); ++i) {
+        urls.push_back(url.withFragment(std::to_string(i)));
+    }
+    return urls;
+}
+
 }  // namespace
 }  // namespace xpcog
 
@@ -633,5 +677,12 @@ void xpcog_register_minimp3(xpcog::PluginRegistry& r) {
             return std::make_unique<xpcog::Mp3Decoder>();
         },
         .available = nullptr,
+    });
+    r.addContainer({
+        .name       = "Mp3ChapterContainer",
+        .priority   = 0.4F,
+        .extensions = xpcog::kExtensions,
+        .mimeTypes  = {},
+        .expand     = &xpcog::expandMp3Chapters,
     });
 }

@@ -174,11 +174,9 @@ Chapter chapterAt(std::uint64_t startMs, std::string title) {
     return chapter;
 }
 
-#if XPCOG_WITH_FFMPEG
 ChapterList threeChapters() {
     return ChapterList{chapterAt(0, "One"), chapterAt(300, "Two"), chapterAt(600, "Three")};
 }
-#endif  // XPCOG_WITH_FFMPEG
 
 bool putChapters(const std::filesystem::path& file, const ChapterList& chapters) {
     MetadataWriteOptions options;
@@ -836,7 +834,6 @@ TEST_CASE("an edit behind a parked undo history drops it", "[uicore][session][pl
     CHECK(h.session.playlist().size() == 3);
 }
 
-#if XPCOG_WITH_FFMPEG
 TEST_CASE("a chapter row opens the editor on its file; a cue track does not",
           "[uicore][session][tags][chapters]") {
     const auto book = makeMp3("chapter-gate");
@@ -875,9 +872,7 @@ TEST_CASE("a chapter row opens the editor on its file; a cue track does not",
     CHECK_FALSE(app::Session::tagFileUrl(flacCue.url).has_value());
     CHECK(app::Session::tagFileUrl(h.session.playlist().at(2).url)->fragment().empty());
 }
-#endif  // XPCOG_WITH_FFMPEG
 
-#if XPCOG_WITH_FFMPEG
 TEST_CASE("a chapter save reports the row change, and rebuild replaces the rows",
           "[uicore][session][playlist][tags][chapters]") {
     const auto book = makeMp3("chapter-save");
@@ -917,9 +912,7 @@ TEST_CASE("a chapter save reports the row change, and rebuild replaces the rows"
     // The chapter's own title, which the decoder answers for its span.
     CHECK(h.session.playlist().at(1).title() == "Two");
 }
-#endif  // XPCOG_WITH_FFMPEG
 
-#if XPCOG_WITH_FFMPEG
 TEST_CASE("a rebuild reaches every playlist at the first old row's position",
           "[uicore][session][playlist][tags][chapters]") {
     const auto book = makeMp3("chapter-rebuild-copies");
@@ -963,9 +956,7 @@ TEST_CASE("a rebuild reaches every playlist at the first old row's position",
     REQUIRE(h.session.playlist().size() == 3);
     CHECK(h.session.playlist().at(0).url.fragment() == "0");
 }
-#endif  // XPCOG_WITH_FFMPEG
 
-#if XPCOG_WITH_FFMPEG
 TEST_CASE("removing chapters rebuilds the file back to one row",
           "[uicore][session][playlist][tags][chapters]") {
     const auto book = makeMp3("chapter-removal");
@@ -1000,7 +991,6 @@ TEST_CASE("removing chapters rebuilds the file back to one row",
     CHECK(h.session.playlist().at(0).url.fragment().empty());
     CHECK(registry().readChapters(Url::fromLocalPath(*book)).empty());
 }
-#endif  // XPCOG_WITH_FFMPEG
 
 TEST_CASE("an unchanged chapter payload writes nothing",
           "[uicore][session][playlist][tags][chapters]") {
@@ -1041,7 +1031,6 @@ TEST_CASE("an unchanged chapter payload writes nothing",
     CHECK(registry().readChapters(Url::fromLocalPath(*book)).front().title == "A new name");
 }
 
-#if XPCOG_WITH_FFMPEG
 TEST_CASE("rebuilding under the playing row keeps the playlist's removal semantics",
           "[uicore][session][playlist][tags][chapters]") {
     const auto book = makeMp3("chapter-playing");
@@ -1091,4 +1080,3 @@ TEST_CASE("rebuilding under the playing row keeps the playlist's removal semanti
     CHECK(h.session.playlist().size() == 3);
     h.session.playback().stop();
 }
-#endif  // XPCOG_WITH_FFMPEG

@@ -4,6 +4,8 @@
 // TagWriterTests.swift). Compiled only when FFmpeg is (tests/CMakeLists.txt);
 // the fixtures still need the ffmpeg binary at runtime and skip without it.
 
+#include "common/Id3v2.hpp"
+
 #include "xpcog/core/PluginRegistry.hpp"
 #include "xpcog/core/Url.hpp"
 
@@ -11,11 +13,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <span>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -152,6 +158,95 @@ void checkChapterPlayback(const fs::path& file) {
     CHECK(*values == std::vector<std::string>{"Second"});
 }
 
+std::vector<std::uint8_t> fileBytes(const fs::path& path) {
+    std::ifstream in{path, std::ios::binary};
+    return std::vector<std::uint8_t>{std::istreambuf_iterator<char>{in},
+                                     std::istreambuf_iterator<char>{}};
+}
+
+/// The same three chapters, muxed by ffmpeg's ffmetadata writer rather than
+/// TagLib's -- the other implementation that writes CHAP/CTOC, so the agreement
+/// below is checked against both writers, not just the one this project ships.
+bool makeFfmpegChapterMp3(const fs::path& wav, const fs::path& mp3) {
+    const fs::path plain = mp3.parent_path() / "plain.mp3";
+    if (!makeFromWav(wav, plain, "-codec:a libmp3lame -b:a 32k")) {
+        return false;
+    }
+    const fs::path meta = mp3.parent_path() / "chapters.ffmeta";
+    {
+        std::ofstream out{meta};
+        out << ";FFMETADATA1\n";
+        for (const auto& [start, end, title] :
+             std::vector<std::tuple<int, int, std::string>>{
+                 {0, 300, "First"}, {300, 600, "Second"}, {600, 1000, "Third"}}) {
+            out << "[CHAPTER]\nTIMEBASE=1/1000\nSTART=" << start << "\nEND=" << end
+                << "\ntitle=" << title << "\n";
+        }
+    }
+    std::error_code ignored;
+    fs::remove(mp3, ignored);
+    const std::string command = "ffmpeg -loglevel error -y -f ffmetadata -i \"" +
+                                meta.string() + "\" -i \"" + plain.string() +
+                                "\" -c copy -map_metadata 1 -map_chapters 0 \"" +
+                                mp3.string() + "\"" + kSilenceStderr;
+    return std::system(command.c_str()) == 0 && fs::exists(mp3);
+}
+
+/// The narrow parser the minimp3 path reads and the FFmpeg container/decoder
+/// the full build plays must agree: same chapters in the same order, starting
+/// at the same frames, with interior spans matching to within a frame. The
+/// parser's milliseconds become frames at the file's own rate.
+void checkParserAgreement(const fs::path& file) {
+    const Url book = Url::fromLocalPath(file);
+
+    ChapterList parsed;
+    const auto  bytes = fileBytes(file);
+    REQUIRE(codecs::parseId3v2Chapters(
+        std::span<const std::byte>{reinterpret_cast<const std::byte*>(bytes.data()),
+                                   bytes.size()},
+        parsed));
+    REQUIRE(parsed.size() == 3);
+
+    const std::vector<Url> rows = registry().expandContainer(book);
+    REQUIRE(rows.size() == parsed.size());
+
+    const auto whole = registry().open(book);
+    REQUIRE(whole);
+    const double rate = whole.decoder->properties().format.sampleRate;
+    REQUIRE(rate > 0.0);
+    const auto toFrames = [rate](std::uint64_t ms) {
+        return (static_cast<std::int64_t>(ms) * static_cast<std::int64_t>(rate) + 500) / 1000;
+    };
+
+    // The chapters tile the file, so the spans before row i sum to its start.
+    // That checks every chapter boundary without leaning on the file's end:
+    // the last chapter runs to the end of the audio, and the two decoders
+    // measure that end differently -- minimp3 trims the encoder's gapless
+    // padding, FFmpeg reports the raw length -- so the final tail is not a
+    // boundary the two can agree on to the frame. Its start still is.
+    std::int64_t played = 0;
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        CHECK(rows[i].toString() == book.withFragment(std::to_string(i)).toString());
+        const auto opened = registry().open(rows[i]);
+        REQUIRE(opened);
+        // Order: row i carries the parser's chapter i title.
+        CHECK(opened.decoder->metadata().first("title") == parsed[i].title);
+
+        const std::int64_t start = toFrames(parsed[i].startMs);
+        CHECK(played >= start - 1);
+        CHECK(played <= start + 1);
+
+        const std::int64_t got = opened.decoder->properties().totalFrames;
+        if (i + 1 < rows.size()) {
+            // An interior span ends where the next chapter begins.
+            const std::int64_t expect = toFrames(parsed[i + 1].startMs) - start;
+            CHECK(got >= expect - 1);
+            CHECK(got <= expect + 1);
+        }
+        played += got;
+    }
+}
+
 }  // namespace
 
 TEST_CASE("FFmpeg lists an MP3's chapters as the editor wrote them",
@@ -221,4 +316,33 @@ TEST_CASE("FFmpeg lists a Matroska file's chapters as the editor wrote them",
     }
     checkExpansionAgreement(dir / "book.mka");
     checkChapterPlayback(dir / "book.mka");
+}
+
+TEST_CASE("the narrow parser and FFmpeg agree on TagLib-written chapters",
+          "[tags][chapters][ffmpeg]") {
+    const fs::path dir = freshDir("mp3-parser-agreement");
+    if (!haveTool("ffmpeg")) {
+        SKIP("ffmpeg is not installed");
+    }
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFromWav(wav, dir / "book.mp3", "-codec:a libmp3lame -b:a 32k")) {
+        SKIP("libmp3lame is not available");
+    }
+    REQUIRE(writeChapters(dir / "book.mp3", threeChapters()));
+    checkParserAgreement(dir / "book.mp3");
+}
+
+TEST_CASE("the narrow parser and FFmpeg agree on ffmpeg-written chapters",
+          "[tags][chapters][ffmpeg]") {
+    const fs::path dir = freshDir("mp3-parser-agreement-ffmpeg");
+    if (!haveTool("ffmpeg")) {
+        SKIP("ffmpeg is not installed");
+    }
+    const fs::path wav = dir / "source.wav";
+    writeSilentWav(wav);
+    if (!makeFfmpegChapterMp3(wav, dir / "book.mp3")) {
+        SKIP("libmp3lame is not available");
+    }
+    checkParserAgreement(dir / "book.mp3");
 }

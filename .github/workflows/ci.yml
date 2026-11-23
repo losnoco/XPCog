@@ -596,6 +596,62 @@ jobs:
         run: |
           build/linux-headless/bin/xpcog-cli --version
           build/linux-headless/bin/xpcog-cli codecs
+
+  minimal:
+    # The configuration the MP3-chapter work targets: FFmpeg not built at all
+    # (XPCOG_WITH_FFMPEG=OFF), so minimp3 plays the chapter spans itself and
+    # its own container lists the rows. Every other Linux job builds FFmpeg,
+    # so this path -- the decoder's fragment acceptance, the 0.4 container and
+    # the chapter cases that used to be FFmpeg-gated -- had never been built or
+    # run in CI. The same GTK app and suite as the Linux job, minus FFmpeg;
+    # ubuntu-26.04 for the GTK 4.22 / libadwaita 1.9 floor. The ffmpeg *binary*
+    # stays installed: the fixtures shell out to it even though nothing links
+    # the libraries. nasm is gone with the ffmpeg port it assembled.
+    name: Linux (no FFmpeg)
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-26.04' || fromJSON('["self-hosted", "ubuntu-26.04"]') }}
+    # See the matrix job above for why.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends locales \
+            ninja-build pkg-config autoconf autoconf-archive automake libtool \
+            libgtk-4-dev libadwaita-1-dev gir1.2-gtk-4.0 gir1.2-adw-1 \
+            blueprint-compiler libglib2.0-dev libsecret-1-dev xvfb \
+            flac vorbis-tools opus-tools lame wavpack ffmpeg
+          sudo locale-gen en_US.UTF-8
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          runVcpkgInstall: false
+          # See the headless job: the overlay ports' manifests must not be read
+          # as the project's own.
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
+
+      - name: Connect vcpkg to the binary cache
+        uses: ./.github/actions/vcpkg-cache
+        with:
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint: ${{ secrets.R2_ENDPOINT }}
+
+      - name: Configure without FFmpeg
+        run: cmake --preset linux-minimal
+
+      - name: Build
+        run: cmake --build --preset linux-minimal
+
+      - name: Test
+        run: ctest --preset linux-minimal
+
+      - name: Smoke-test the CLI
+        run: |
+          build/linux-minimal/bin/xpcog-cli --version
+          build/linux-minimal/bin/xpcog-cli codecs
   installer:
     # The Windows installer, built the way it would ship rather than merely
     # proved to compile.
