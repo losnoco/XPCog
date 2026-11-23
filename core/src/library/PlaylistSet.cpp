@@ -220,6 +220,11 @@ void PlaylistSet::update(TrackId id, const std::function<void(PlaylistEntry&)>& 
     }
 }
 
+void PlaylistSet::atomically(const std::function<void()>& edit) {
+    const std::lock_guard lock(mutex_);
+    edit();
+}
+
 std::optional<TrackId> PlaylistSet::peekNextForPlayback() const {
     const std::lock_guard lock(mutex_);
     return playlist(cursorOwner_)->peekNextForPlayback();

@@ -479,18 +479,26 @@ TEST_CASE("The About box opens", "[winui]") {
     checkQuiet();
 
     // A ContentDialog draws in a popup of the window's XAML root; closing the
-    // one open there is what the Close button does.
-    const bool closed = ui([&] {
-        const auto root  = TestAccess::window(*p.window).Content().XamlRoot();
-        bool       found = false;
-        for (const auto& popup : mux::Media::VisualTreeHelper::GetOpenPopupsForXamlRoot(root)) {
-            if (const auto box = popup.Child().try_as<mux::Controls::ContentDialog>()) {
-                box.Hide();
-                found = true;
+    // one open there is what the Close button does. The popup joins the root's
+    // list a frame or two after the command returns, so wait for it rather than
+    // sampling once: on a loaded runner the first scan can come back empty.
+    bool closed = false;
+    for (int attempt = 0; attempt < 40 && !closed; ++attempt) {
+        closed = ui([&] {
+            const auto root  = TestAccess::window(*p.window).Content().XamlRoot();
+            bool       found = false;
+            for (const auto& popup : mux::Media::VisualTreeHelper::GetOpenPopupsForXamlRoot(root)) {
+                if (const auto box = popup.Child().try_as<mux::Controls::ContentDialog>()) {
+                    box.Hide();
+                    found = true;
+                }
             }
+            return found;
+        });
+        if (!closed) {
+            settle();
         }
-        return found;
-    });
+    }
     CHECK(closed);
     settle();
     checkQuiet();

@@ -1090,14 +1090,18 @@ void Session::rebuildRows(std::vector<PlaylistEntry> entries, const Url& file, b
 
     // Removal carries the playlist's own current-track semantics, as a
     // listener removing the rows would; the insert below lands the file's
-    // new expansion where the first of them was.
-    if (target == playlists_.shownId()) {
-        commands_.remove(old);
-    } else {
-        playlist->remove(old);
-        parkedUndo_.erase(target);
-    }
-    addScannedEntries(std::move(entries), static_cast<int>(first), cancelled, target);
+    // new expansion where the first of them was. The two are one locked step:
+    // this rebuild runs while the file plays, and a feeder ask between the
+    // remove and the insert would find an empty playlist and stop playback.
+    playlists_.atomically([&] {
+        if (target == playlists_.shownId()) {
+            commands_.remove(old);
+        } else {
+            playlist->remove(old);
+            parkedUndo_.erase(target);
+        }
+        addScannedEntries(std::move(entries), static_cast<int>(first), cancelled, target);
+    });
 }
 
 void Session::revealInFileManager(const std::vector<TrackId>& ids) {

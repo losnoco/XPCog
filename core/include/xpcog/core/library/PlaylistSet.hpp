@@ -135,6 +135,16 @@ public:
 
     void update(TrackId id, const std::function<void(PlaylistEntry&)>& mutate);
 
+    /// Runs `edit` with the set locked, so the feeder cannot see it half done.
+    /// Every feeder-thread read of a playlist goes through a method that takes
+    /// this lock, so an edit held under it is atomic with respect to playback.
+    /// The chapter rebuild needs that: it removes a file's rows and inserts its
+    /// new expansion as one step, and between the two the playlist is briefly
+    /// empty -- a nextForPlayback() landing there would read end-of-playlist and
+    /// stop for good. Other playlist edits happen with playback stopped first
+    /// (see PlaybackController::nextTrack); this is the one that does not.
+    void atomically(const std::function<void()>& edit);
+
     // --- playback across playlists -------------------------------------------
 
     /// Playlist::nextForPlayback(), following the queue into another playlist.

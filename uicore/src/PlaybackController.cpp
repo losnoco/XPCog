@@ -664,6 +664,9 @@ std::optional<Url> PlaybackController::nextTrack() {
     // rule this class relies on, and the reason playlist edits go through the
     // undo stack on the interface's thread rather than being touched here. The
     // list of playlists does change under playback, and PlaylistSet locks for it.
+    // The chapter rebuild is the one content edit made under playback, and it
+    // holds that same lock across its remove and insert (PlaylistSet::atomically)
+    // so this read never sees the playlist empty between them.
     const auto id = playlists_.nextForPlayback();
     // A queued track was taken off the queue without a word, because the queue
     // column is a widget. It is said here, on the interface's thread.
